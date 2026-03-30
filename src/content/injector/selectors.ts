@@ -35,8 +35,19 @@ export function isLikelyAuthPage(config: SelectorConfigLike | null | undefined):
       return true;
     }
 
+    const promptSelectors = normalizeSelectors(config);
+    const hasPromptSurface = promptSelectors.some((selector) =>
+      Boolean(findElementDeep(selector, document, { visibleOnly: true, editableOnly: true }))
+    );
+
+    if (hasPromptSurface) {
+      return false;
+    }
+
     return Array.isArray(config?.authSelectors)
-      ? config.authSelectors.some((selector) => Boolean(findElementDeep(selector)))
+      ? config.authSelectors.some((selector) =>
+          Boolean(findElementDeep(selector, document, { visibleOnly: true }))
+        )
       : false;
   } catch (error) {
     logError("Auth page detection failed", error);
@@ -46,7 +57,10 @@ export function isLikelyAuthPage(config: SelectorConfigLike | null | undefined):
 
 function createMatcher(selectors: string[]): { element: Element; selector: string } | null {
   for (const selector of selectors) {
-    const element = findElementDeep(selector);
+    const element = findElementDeep(selector, document, {
+      visibleOnly: true,
+      editableOnly: true,
+    });
     if (element) {
       return { element, selector };
     }

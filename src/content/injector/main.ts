@@ -1,7 +1,12 @@
 import { log, logError, sleep } from "./dom";
 import { copyPromptToClipboard, sendRuntimeMessage } from "./fallback";
 import { normalizeSelectors, isLikelyAuthPage, waitForElement } from "./selectors";
-import { strategyExecCommand, strategyNativeSetter, strategyPasteEvent } from "./strategies";
+import {
+  strategyDirectContenteditable,
+  strategyExecCommand,
+  strategyNativeSetter,
+  strategyPasteEvent,
+} from "./strategies";
 import { submitPrompt } from "./submit";
 
 interface InjectorConfig {
@@ -22,6 +27,7 @@ interface InjectResult {
   copied?: boolean;
   selector?: string;
   strategy?: string;
+  inputType?: string;
   elapsedMs?: number;
   error?: string;
 }
@@ -65,9 +71,23 @@ async function injectPrompt(prompt: string, config: InjectorConfig): Promise<Inj
     }
 
     const { element, selector, elapsedMs } = match;
-    const strategies = config?.inputType === "contenteditable"
+    const resolvedInputType =
+      element instanceof HTMLTextAreaElement
+        ? "textarea"
+        : element instanceof HTMLInputElement
+          ? "input"
+          : (element as HTMLElement).isContentEditable
+            ? "contenteditable"
+            : config?.inputType === "input"
+              ? "input"
+              : config?.inputType === "contenteditable"
+                ? "contenteditable"
+                : "textarea";
+
+    const strategies = resolvedInputType === "contenteditable"
       ? [
           { name: "execCommand", run: () => strategyExecCommand(element, prompt) },
+          { name: "directContenteditable", run: () => strategyDirectContenteditable(element, prompt) },
           { name: "paste", run: () => strategyPasteEvent(element, prompt) },
         ]
       : [
@@ -107,9 +127,7 @@ async function injectPrompt(prompt: string, config: InjectorConfig): Promise<Inj
       elapsedMs,
     });
 
-    await sleep(100);
-
-    if (!submitPrompt(element, config)) {
+    if (!(await submitPrompt(element, config))) {
       return { status: "submit_failed" };
     }
 
@@ -117,6 +135,7 @@ async function injectPrompt(prompt: string, config: InjectorConfig): Promise<Inj
       status: "submitted",
       selector,
       strategy: usedStrategy,
+      inputType: resolvedInputType,
       elapsedMs,
     };
   } catch (error) {

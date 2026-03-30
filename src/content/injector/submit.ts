@@ -1,19 +1,33 @@
-import { findElementDeep, logError } from "./dom";
+import { findElementDeep, logError, sleep } from "./dom";
 
 export interface SubmitConfigLike {
   submitMethod?: string;
   submitSelector?: string;
 }
 
-export function submitByClick(selector: string): boolean {
-  try {
-    const button = findElementDeep(selector);
-    if (!button) {
-      return false;
-    }
+const SUBMIT_BUTTON_WAIT_TIMEOUT_MS = 5000;
+const SUBMIT_BUTTON_POLL_INTERVAL_MS = 100;
 
-    (button as HTMLElement).click();
-    return true;
+export async function submitByClick(selector: string): Promise<boolean> {
+  try {
+    const deadline = performance.now() + SUBMIT_BUTTON_WAIT_TIMEOUT_MS;
+
+    while (true) {
+      const button = findElementDeep(selector, document, {
+        visibleOnly: true,
+        enabledOnly: true,
+      });
+      if (button) {
+        (button as HTMLElement).click();
+        return true;
+      }
+
+      if (performance.now() >= deadline) {
+        return false;
+      }
+
+      await sleep(SUBMIT_BUTTON_POLL_INTERVAL_MS);
+    }
   } catch (error) {
     logError("Click submit failed", error);
     return false;
@@ -44,7 +58,10 @@ export function submitByEnter(element: Element, shiftKey: boolean = false): bool
   }
 }
 
-export function submitPrompt(element: Element, config: SubmitConfigLike | null | undefined): boolean {
+export async function submitPrompt(
+  element: Element,
+  config: SubmitConfigLike | null | undefined,
+): Promise<boolean> {
   if (config?.submitMethod === "click") {
     return config?.submitSelector ? submitByClick(config.submitSelector) : submitByEnter(element, false);
   }

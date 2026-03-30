@@ -48,6 +48,7 @@
 
         <div class="compose-actions">
           <button id="save-favorite-btn" class="ghost-button" type="button" data-i18n="popup_save_favorite"></button>
+          <button id="cancel-send-btn" class="ghost-button danger-button" type="button" hidden></button>
           <button id="send-btn" class="primary-button" type="button" data-i18n="popup_send"></button>
         </div>
       </section>
@@ -152,6 +153,39 @@
                 <option value="shift+enter">shift+enter</option>
               </select>
             </label>
+
+            <div class="modal-section">
+              <div class="section-row section-row-start">
+                <strong id="service-advanced-title"></strong>
+              </div>
+
+              <label class="field-stack" for="service-fallback-selectors-input">
+                <span id="service-fallback-selectors-label"></span>
+                <textarea id="service-fallback-selectors-input" class="search-input textarea-input" rows="3"></textarea>
+              </label>
+
+              <label class="field-stack" for="service-auth-selectors-input">
+                <span id="service-auth-selectors-label"></span>
+                <textarea id="service-auth-selectors-input" class="search-input textarea-input" rows="3"></textarea>
+              </label>
+
+              <label class="field-stack" for="service-hostname-aliases-input">
+                <span id="service-hostname-aliases-label"></span>
+                <textarea id="service-hostname-aliases-input" class="search-input textarea-input" rows="2"></textarea>
+              </label>
+
+              <div class="inline-field-grid">
+                <label class="field-stack" for="service-last-verified-input">
+                  <span id="service-last-verified-label"></span>
+                  <input id="service-last-verified-input" class="search-input" type="text" />
+                </label>
+
+                <label class="field-stack" for="service-verified-version-input">
+                  <span id="service-verified-version-label"></span>
+                  <input id="service-verified-version-input" class="search-input" type="text" />
+                </label>
+              </div>
+            </div>
 
             <div class="field-stack">
               <span id="service-wait-label"></span>

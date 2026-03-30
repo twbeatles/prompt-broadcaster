@@ -29,31 +29,81 @@
     });
   }
 
-  function findElementDeep(selector, root = document) {
+  function isElementVisible(element) {
+    if (!(element instanceof HTMLElement) && !(element instanceof SVGElement)) {
+      return true;
+    }
+
+    const style = window.getComputedStyle(element);
+    if (
+      element.hidden ||
+      element.getAttribute("hidden") !== null ||
+      element.getAttribute("aria-hidden") === "true" ||
+      style.display === "none" ||
+      style.visibility === "hidden" ||
+      style.visibility === "collapse"
+    ) {
+      return false;
+    }
+
+    return element.getClientRects().length > 0;
+  }
+
+  function isEditableElement(element) {
+    if (element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement) {
+      return !element.readOnly;
+    }
+
+    return element instanceof HTMLElement ? element.isContentEditable : false;
+  }
+
+  function matchesOptions(element, options = {}) {
+    if (options.visibleOnly && !isElementVisible(element)) {
+      return false;
+    }
+
+    if (options.editableOnly && !isEditableElement(element)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  function collectElementsDeep(selector, root, matches, seen) {
+    if (typeof root.querySelectorAll === "function") {
+      for (const element of Array.from(root.querySelectorAll(selector))) {
+        if (!seen.has(element)) {
+          seen.add(element);
+          matches.push(element);
+        }
+      }
+    }
+
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+    let currentNode = walker.currentNode;
+
+    while (currentNode) {
+      if (currentNode.shadowRoot) {
+        collectElementsDeep(selector, currentNode.shadowRoot, matches, seen);
+      }
+
+      currentNode = walker.nextNode();
+    }
+  }
+
+  function findElementDeep(selector, root = document, options = {}) {
     try {
       if (!selector || typeof selector !== "string") {
         return null;
       }
 
-      if (typeof root.querySelector === "function") {
-        const directMatch = root.querySelector(selector);
-        if (directMatch) {
-          return directMatch;
+      const matches = [];
+      collectElementsDeep(selector, root, matches, new Set());
+
+      for (const element of matches) {
+        if (matchesOptions(element, options)) {
+          return element;
         }
-      }
-
-      const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
-      let currentNode = walker.currentNode;
-
-      while (currentNode) {
-        if (currentNode.shadowRoot) {
-          const shadowMatch = findElementDeep(selector, currentNode.shadowRoot);
-          if (shadowMatch) {
-            return shadowMatch;
-          }
-        }
-
-        currentNode = walker.nextNode();
       }
 
       return null;
@@ -63,12 +113,12 @@
     }
   }
 
-  async function waitForSelector(selector, timeoutMs = 4000, intervalMs = 250) {
+  async function waitForSelector(selector, timeoutMs = 4000, intervalMs = 250, options = {}) {
     try {
       const deadline = Date.now() + timeoutMs;
 
       while (Date.now() <= deadline) {
-        const element = findElementDeep(selector);
+        const element = findElementDeep(selector, document, options);
         if (element) {
           return element;
         }
@@ -96,11 +146,26 @@
         return true;
       }
 
+      const promptSelectors = [
+        site?.inputSelector,
+        ...(Array.isArray(site?.fallbackSelectors) ? site.fallbackSelectors : []),
+      ].filter((selector) => typeof selector === "string" && selector.trim());
+
+      const hasPromptSurface = promptSelectors.some((selector) =>
+        Boolean(findElementDeep(selector, document, { visibleOnly: true, editableOnly: true }))
+      );
+
+      if (hasPromptSurface) {
+        return false;
+      }
+
       if (!Array.isArray(site?.authSelectors)) {
         return false;
       }
 
-      return site.authSelectors.some((selector) => Boolean(findElementDeep(selector)));
+      return site.authSelectors.some((selector) =>
+        Boolean(findElementDeep(selector, document, { visibleOnly: true }))
+      );
     } catch (error) {
       logError("Failed auth page detection in selector checker.", error);
       return false;
@@ -139,6 +204,7 @@
             site.inputSelector,
             ...(Array.isArray(site.fallbackSelectors) ? site.fallbackSelectors : []),
           ].filter((selector) => typeof selector === "string" && selector.trim()),
+          options: { visibleOnly: true, editableOnly: true },
         },
       ];
 
@@ -146,6 +212,7 @@
         checks.push({
           field: "submitSelector",
           selectors: [site.submitSelector],
+          options: { visibleOnly: true },
         });
       }
 
@@ -154,7 +221,7 @@
       for (const check of checks) {
         let found = null;
         for (const selector of check.selectors) {
-          found = await waitForSelector(selector, 5000, 250);
+          found = await waitForSelector(selector, 5000, 250, check.options);
           if (found) {
             break;
           }

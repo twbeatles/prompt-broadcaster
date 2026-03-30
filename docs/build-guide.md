@@ -56,6 +56,28 @@ Useful related command:
 npm run clean
 ```
 
+## Local Smoke QA
+
+Run the fixture-based smoke QA after building:
+
+```bash
+npm run qa:smoke
+```
+
+The smoke flow loads local fixtures from `qa/fixtures/` and validates the built runtime in `dist/`, including:
+
+- direct selector injection
+- fallback selector resolution
+- delayed submit-button enablement after async contenteditable input
+- `click`, `enter`, and `shift+enter` submit flows
+- selector checker `ok` and `auth_page` reporting
+
+If Playwright does not have a browser installed yet, run:
+
+```bash
+npx playwright install chromium
+```
+
 ## Output Layout
 
 After a successful build, Chrome-ready files are placed in `dist/`.
@@ -109,9 +131,10 @@ The generated ZIP contains the built extension from `dist/` only.
 1. `npm install`
 2. `npm run typecheck`
 3. `npm run build`
-4. Load `dist/` in Chrome and verify the extension
-5. Run the packaging script for your platform
-6. Upload the generated ZIP to Chrome Web Store or attach it to a GitHub release
+4. `npm run qa:smoke`
+5. Load `dist/` in Chrome and verify the extension
+6. Run the packaging script for your platform
+7. Upload the generated ZIP to Chrome Web Store or attach it to a GitHub release
 
 ## Troubleshooting
 
@@ -126,6 +149,7 @@ The generated ZIP contains the built extension from `dist/` only.
 - Re-run `npm run build`
 - Click refresh for the unpacked extension
 - Reopen the popup or options page
+- If you changed `src/background/main.ts`, reload the extension so the MV3 service worker is replaced
 
 ### Packaging fails with file lock or `EBUSY`
 
@@ -137,6 +161,12 @@ The generated ZIP contains the built extension from `dist/` only.
 
 - Confirm that you edited `src/` rather than `dist/`
 - Re-run `npm run build`
+
+### Console shows `Could not find an active browser window`
+
+- This can happen when the background worker tries to open the toolbar popup from a notification click or another background-only context
+- Current builds first try `chrome.action.openPopup()`, then focus an existing browser window, then fall back to opening `popup/popup.html` as a standalone popup window
+- If you still see the old error path, rebuild and reload the unpacked extension from `dist/`
 
 ## Related Docs
 

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Keyboard Submit Fixture</title>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      margin: 24px;
+    }
+
+    main {
+      display: grid;
+      gap: 16px;
+      max-width: 720px;
+    }
+
+    .field-group {
+      display: grid;
+      gap: 8px;
+    }
+
+    input,
+    textarea {
+      padding: 12px;
+      font: inherit;
+    }
+
+    textarea {
+      min-height: 140px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Keyboard Submit Fixture</h1>
+
+    <label class="field-group" for="single-line-input">
+      <span>Enter submit target</span>
+      <input id="single-line-input" type="text" />
+    </label>
+
+    <label class="field-group" for="multi-line-input">
+      <span>Shift+Enter submit target</span>
+      <textarea id="multi-line-input"></textarea>
+    </label>
+  </main>
+
+  <script>
+    window.fixtureState = {
+      submittedBy: "",
+      submitTarget: "",
+      promptValue: "",
+      keyEvents: [],
+    };
+
+    function recordSubmit(event) {
+      if (event.key !== "Enter") {
+        return;
+      }
+
+      window.fixtureState.keyEvents.push({
+        target: event.target.id,
+        shiftKey: event.shiftKey,
+      });
+
+      window.fixtureState.submittedBy = event.shiftKey ? "shift+enter" : "enter";
+      window.fixtureState.submitTarget = event.target.id;
+      window.fixtureState.promptValue = event.target.value;
+      event.preventDefault();
+    }
+
+    document.getElementById("single-line-input").addEventListener("keydown", recordSubmit);
+    document.getElementById("multi-line-input").addEventListener("keydown", recordSubmit);
+  </script>
+</body>
+</html>

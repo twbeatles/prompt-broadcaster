@@ -45,7 +45,7 @@
 | ChatGPT | `https://chatgpt.com/` | `contenteditable` + 버튼 클릭 | 지원, Best effort |
 | Gemini | `https://gemini.google.com/app` | `contenteditable` + 버튼 클릭 | 지원, Best effort |
 | Claude | `https://claude.ai/new` | `contenteditable` + 버튼 클릭 | 지원, Best effort |
-| Grok | `https://grok.com/` | `textarea` + 버튼 클릭 | 지원, Best effort |
+| Grok | `https://grok.com/` | `contenteditable` + 버튼 클릭 | 지원, Best effort |
 
 `Best effort`는 대상 사이트의 DOM 구조 변경, 로그인 상태, 반자동화 정책에 따라 주입 성공률이 달라질 수 있음을 의미합니다.
 
@@ -167,11 +167,16 @@ For build and packaging steps, see [docs/build-guide.md](docs/build-guide.md). F
 - Automatic prompt history for successful broadcasts
 - Favorites with editable titles and live search
 - JSON export/import for history and favorites
+- History keeps requested, submitted, and failed service ids so partial broadcasts can be replayed accurately
+- Template variables support both Korean and English system aliases such as `{{날짜}}` and `{{date}}`
+- Custom services can store fallback selectors, auth selectors, hostname aliases, and verification metadata
 - Pure MV3 extension, no backend required
 - Dynamic prompt injection using `chrome.scripting.executeScript`
 - Central site configuration in `src/config/sites.ts`
+- Click-submit flows wait for the submit button to become enabled so async React editors can finish state updates before submission
 - Clipboard copy fallback and non-blocking banner on injection failure
 - Selector self-diagnostics with Chrome notifications
+- Popup-open requests can fall back to a standalone extension window when Chrome cannot open the toolbar action popup from the background worker
 - Developer helper script for finding replacement selectors
 
 ### Supported AI Services
@@ -181,7 +186,7 @@ For build and packaging steps, see [docs/build-guide.md](docs/build-guide.md). F
 | ChatGPT | `https://chatgpt.com/` | `contenteditable` + click submit | Supported, Best effort |
 | Gemini | `https://gemini.google.com/app` | `contenteditable` + click submit | Supported, Best effort |
 | Claude | `https://claude.ai/new` | `contenteditable` + click submit | Supported, Best effort |
-| Grok | `https://grok.com/` | `textarea` + click submit | Supported, Best effort |
+| Grok | `https://grok.com/` | `contenteditable` + click submit | Supported, Best effort |
 
 `Best effort` means injection can break when a target site changes its DOM, redirects to login, or blocks synthetic input events.
 
@@ -219,7 +224,39 @@ npm run build
 5. The extension opens one tab per selected service and attempts prompt injection.
 6. If automatic injection fails, a fallback banner appears and the prompt is copied to the clipboard when possible.
 
+If a keyboard shortcut or notification tries to reopen the UI while Chrome has no active browser window, the extension stores the prompt first and falls back to a standalone popup window when needed.
+
 GIF placeholder: `docs/assets/usage-demo.gif`
+
+### Template Variables
+Template prompts support both user-defined variables and built-in system variables.
+
+Supported system aliases:
+
+- `{{date}}` or `{{날짜}}`
+- `{{time}}` or `{{시간}}`
+- `{{weekday}}` or `{{요일}}`
+- `{{clipboard}}` or `{{클립보드}}`
+
+User variables can use any name, for example `{{topic}}` or `{{audience}}`.
+
+When a prompt contains template variables, the popup opens a confirmation modal, fills system values automatically, and caches user-provided values for reuse.
+
+### History and Favorites Semantics
+- History entries now store `requestedSiteIds`, `submittedSiteIds`, and `failedSiteIds`.
+- The legacy `sentTo` field is still exported for backward compatibility and mirrors the submitted service ids.
+- Reloading a history entry or creating a favorite from it uses the requested service set first, so partially failed broadcasts can be retried with the original target list intact.
+
+### Custom Service Advanced Settings
+The popup service editor supports the following advanced fields for custom services:
+
+- `fallbackSelectors`: alternate selectors checked when the primary input selector fails
+- `authSelectors`: selectors that indicate a dedicated login or auth screen when no prompt surface is visible
+- `hostnameAliases`: extra allowed hostnames for redirects or alternate app domains
+- `lastVerified`: a free-form verification date such as `2026-03`
+- `verifiedVersion`: a free-form UI or app build tag
+
+If `submitMethod` is `click`, `submitSelector` is required and validation blocks saving until it is provided.
 
 ### Limitations
 - You must already be logged in to each target AI service.
@@ -244,7 +281,14 @@ Example:
   name: "NewAI",
   url: "https://newai.example.com/",
   hostname: "newai.example.com",
+  hostnameAliases: [
+    "app.newai.example.com"
+  ],
   inputSelector: "textarea[name='prompt']",
+  fallbackSelectors: [
+    "textarea",
+    "div[contenteditable='true'][role='textbox']"
+  ],
   inputType: "textarea",
   submitSelector: "button[type='submit']",
   submitMethod: "click",
@@ -253,7 +297,9 @@ Example:
   authSelectors: [
     "a[href*='login']",
     "input[type='password']"
-  ]
+  ],
+  lastVerified: "2026-03",
+  verifiedVersion: "newai-web-mar-2026"
 }
 ```
 
@@ -262,6 +308,32 @@ Additional notes:
 - Prefer stable selectors using `id`, `data-testid`, or `aria-label`.
 - Set `waitMs` conservatively to account for hydration and delayed editors.
 - Run `npm run build` again after any source change so `dist/` stays current.
+
+### Local Smoke QA
+The repository includes Playwright-based local fixtures under `qa/fixtures/`.
+
+Run the local smoke flow with:
+
+```bash
+npm run build
+npm run qa:smoke
+```
+
+The smoke script verifies:
+
+- direct selector injection
+- fallback selector injection
+- visible element preference when hidden matches exist
+- delayed click-submit activation for async contenteditable editors
+- `click`, `enter`, and `shift+enter` submission paths
+- selector checker `ok` reporting
+- auth page detection through `authSelectors`
+
+If Chromium is not installed yet for Playwright, run:
+
+```bash
+npx playwright install chromium
+```
 
 ### How to Fix Broken Selectors
 1. Open the target AI site in Chrome.

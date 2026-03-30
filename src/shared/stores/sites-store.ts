@@ -55,6 +55,48 @@ function normalizeSubmitMethod(value, fallback = "click") {
   return VALID_SUBMIT_METHODS.has(submitMethod) ? submitMethod : fallback;
 }
 
+function normalizeHostname(value) {
+  const input = safeText(value).replace(/\/+$/g, "");
+  if (!input) {
+    return "";
+  }
+
+  try {
+    return new URL(input).hostname.toLowerCase();
+  } catch (_error) {
+    return input.toLowerCase();
+  }
+}
+
+function normalizeStringList(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => safeText(entry))
+      .filter(Boolean);
+  }
+
+  if (typeof value === "string") {
+    return value
+      .split(/\r?\n/g)
+      .map((entry) => safeText(entry))
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
+function normalizeHostnameAliases(value, primaryHostname = "") {
+  const normalizedPrimaryHostname = normalizeHostname(primaryHostname);
+
+  return Array.from(
+    new Set(
+      normalizeStringList(value)
+        .map((entry) => normalizeHostname(entry))
+        .filter((entry) => entry && entry !== normalizedPrimaryHostname)
+    )
+  );
+}
+
 function deriveHostname(url) {
   try {
     return new URL(url).hostname;
@@ -85,12 +127,14 @@ function createCustomSiteId(name) {
 function buildBaseSiteRecord(site, builtInMeta = {}) {
   const style = BUILT_IN_SITE_STYLE_MAP[site.id] ?? {};
   const url = safeText(site.url);
+  const hostname = normalizeHostname(site.hostname || deriveHostname(url));
 
   return {
     id: safeText(site.id),
     name: safeText(site.name) || "AI Service",
     url,
-    hostname: site.hostname || deriveHostname(url),
+    hostname,
+    hostnameAliases: normalizeHostnameAliases(site.hostnameAliases, hostname),
     inputSelector: safeText(site.inputSelector),
     inputType: normalizeInputType(site.inputType, "textarea"),
     submitSelector: safeText(site.submitSelector),
@@ -129,6 +173,11 @@ function sanitizeBuiltInOverride(override = {}, originalSite = {}) {
       : Array.isArray(originalSite.fallbackSelectors)
         ? [...originalSite.fallbackSelectors]
         : [],
+    authSelectors: Array.isArray(override.authSelectors)
+      ? override.authSelectors.filter((entry) => typeof entry === "string" && entry.trim())
+      : Array.isArray(originalSite.authSelectors)
+        ? [...originalSite.authSelectors]
+        : [],
     lastVerified: safeText(override.lastVerified) || safeText(originalSite.lastVerified),
     verifiedVersion:
       safeText(override.verifiedVersion) || safeText(originalSite.verifiedVersion),
@@ -145,23 +194,23 @@ function sanitizeBuiltInOverride(override = {}, originalSite = {}) {
 
 function normalizeCustomSite(site) {
   const url = safeText(site?.url);
+  const hostname = normalizeHostname(site?.hostname || deriveHostname(url));
 
   return buildBaseSiteRecord(
     {
       id: safeText(site?.id) || createCustomSiteId(site?.name),
       name: safeText(site?.name) || "Custom AI",
       url,
-      hostname: deriveHostname(url),
+      hostname,
+      hostnameAliases: normalizeHostnameAliases(site?.hostnameAliases, hostname),
       inputSelector: safeText(site?.inputSelector),
       inputType: normalizeInputType(site?.inputType, "textarea"),
       submitSelector: safeText(site?.submitSelector),
       submitMethod: normalizeSubmitMethod(site?.submitMethod, "click"),
       waitMs: normalizeWaitMs(site?.waitMs, 2000),
-      fallbackSelectors: Array.isArray(site?.fallbackSelectors)
-        ? site.fallbackSelectors.filter((entry) => typeof entry === "string" && entry.trim())
-        : [],
+      fallbackSelectors: normalizeStringList(site?.fallbackSelectors),
       fallback: normalizeBoolean(site?.fallback, true),
-      authSelectors: [],
+      authSelectors: normalizeStringList(site?.authSelectors),
       lastVerified: safeText(site?.lastVerified),
       verifiedVersion: safeText(site?.verifiedVersion),
       enabled: normalizeBoolean(site?.enabled, true),
@@ -236,6 +285,10 @@ export function validateSiteDraft(draft, { isBuiltIn = false } = {}) {
 
   if (!VALID_SUBMIT_METHODS.has(safeText(draft?.submitMethod))) {
     errors.push("Submit method is invalid.");
+  }
+
+  if (safeText(draft?.submitMethod) === "click" && !safeText(draft?.submitSelector)) {
+    errors.push("Submit selector is required when using click submit.");
   }
 
   return {

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Auth Fixture</title>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      margin: 24px;
+    }
+
+    main {
+      display: grid;
+      gap: 12px;
+      max-width: 480px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Auth Fixture</h1>
+    <p>This page simulates a login screen.</p>
+    <button data-testid="login-button" type="button">Log in</button>
+    <input type="password" placeholder="Password" />
+  </main>
+
+  <script>
+    window.fixtureState = {
+      submittedBy: "",
+      promptValue: "",
+    };
+  </script>
+</body>
+</html>

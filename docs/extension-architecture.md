@@ -83,6 +83,7 @@ prompt-broadcaster/
 npm install
 npm run typecheck
 npm run build
+npm run qa:smoke
 ```
 
 The output bundle is written to `dist/`.
@@ -112,6 +113,7 @@ Responsibilities:
 - reconcile `chrome.storage.session` state after worker restarts
 - maintain action badge state
 - create Chrome notifications
+- reopen the UI through the toolbar popup when possible and fall back to a standalone popup window when no active browser window exists
 - handle commands and context menu actions
 
 ### Popup
@@ -122,6 +124,7 @@ Responsibilities:
 
 - compose and send prompts
 - template variable detection and substitution
+- system template alias support for both Korean and English keys
 - history and favorites UI
 - runtime site management UI
 - toast-based feedback
@@ -145,8 +148,10 @@ Source: `src/content/injector/`
 Responsibilities:
 
 - deep selector lookup with fallback selectors
+- visible and enabled element preference so hidden fallbacks do not win
 - synthetic input strategies for `textarea`, `input`, and `contenteditable`
 - submit handling by click or keyboard
+- polling of click-submit buttons until they become enabled after async editor state updates
 - clipboard fallback when automatic injection fails
 
 ### Selector Checker
@@ -157,7 +162,14 @@ Responsibilities:
 
 - verify configured selectors against the live page
 - report selector failures back to the background worker
+- clear stale selector warnings when a later report returns `ok`
 - help surface broken integrations before injection fails silently
+
+Selector checker reports use these main statuses:
+
+- `ok`
+- `selector_missing`
+- `auth_page`
 
 ### Selection Script
 
@@ -191,6 +203,18 @@ Responsibilities:
 
 This merged view is used by popup, options, and background flows.
 
+Runtime site records can include:
+
+- `fallbackSelectors`
+- `authSelectors`
+- `hostnameAliases`
+- `lastVerified`
+- `verifiedVersion`
+
+The background worker uses `hostname` plus `hostnameAliases` as an allowlist when resolving runtime tabs back to site definitions. Built-in services keep their default hostname, while custom services can extend the allowlist with aliases.
+
+`authSelectors` are treated as dedicated auth indicators only when no visible prompt surface is currently available on the page. This prevents public landing pages with both a login link and an editor from being misclassified as auth-only.
+
 ### Prompt and Runtime State Storage
 
 `src/shared/stores/prompt-store.ts` and `src/shared/stores/runtime-state.ts` keep the extension state consistent.
@@ -207,15 +231,64 @@ Important storage keys:
 - `pendingUiToasts`
 - `onboardingCompleted`
 
+### Prompt History Schema
+
+Prompt history entries are normalized in `src/shared/stores/prompt-store.ts` and now keep three explicit service id arrays:
+
+- `requestedSiteIds`: every service the user asked to target
+- `submittedSiteIds`: services that actually reached the submission step
+- `failedSiteIds`: services that failed before submission
+
+The legacy `sentTo` field is still stored and exported for backward compatibility, and mirrors `submittedSiteIds`.
+
+Popup and options flows should read `requestedSiteIds` first when reconstructing the original broadcast target list.
+
 ## High-Level Execution Flow
 
 1. The user submits a prompt from the popup, a keyboard shortcut, or the context menu.
 2. The background worker resolves the selected target sites and creates one tab per site.
 3. Each pending injection is recorded in `chrome.storage.session`.
 4. When the tab finishes loading, the background worker injects `content/injector.js`.
-5. The injector locates the input field, applies the prompt, and attempts submission.
+5. The injector locates the input field, applies the prompt, and waits for click-submit buttons to become enabled when async editors defer their internal state updates.
 6. Success or failure is written back into session/local state.
 7. Popup, options, badge state, and notifications reflect the latest result.
+
+## Popup Open Flow
+
+When the background worker needs to reopen the UI, it first persists `lastPrompt` to local storage. It then tries `chrome.action.openPopup()`. If Chrome reports that there is no active browser window, the worker focuses an existing normal browser window and retries. If that still fails, it opens `popup/popup.html` in a standalone popup window so command and notification flows still surface the composer.
+
+## Template Variable Flow
+
+System template variables are normalized through `src/shared/template-utils.ts`.
+
+Canonical system keys:
+
+- `date`
+- `time`
+- `weekday`
+- `clipboard`
+
+Supported aliases:
+
+- Korean: `날짜`, `시간`, `요일`, `클립보드`
+- English: `date`, `time`, `weekday`, `clipboard`
+
+Detection, preview rendering, and final prompt rendering all normalize aliases to canonical keys so mixed-language templates still resolve consistently.
+
+## Local QA
+
+The repository includes a fixture-based smoke script at `scripts/qa-smoke.mjs`.
+
+It uses Playwright against local pages in `qa/fixtures/` and validates the built injector and selector checker bundles from `dist/`.
+
+Current smoke coverage includes:
+
+- textarea plus click submit
+- contenteditable plus click submit
+- delayed contenteditable submit-button activation
+- input and textarea keyboard submit paths
+- fallback selector resolution
+- auth selector detection for selector-check flows
 
 ## i18n and Static Assets
 

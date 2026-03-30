@@ -10,10 +10,14 @@ export const AI_SITES = Object.freeze([
     name: "ChatGPT",
     url: "https://chatgpt.com/",
     hostname: "chatgpt.com",
-    inputSelector: "#prompt-textarea, div#prompt-textarea[contenteditable='true']",
+    inputSelector:
+      "#prompt-textarea, div#prompt-textarea[contenteditable='true'], textarea[aria-label*='chatgpt' i], textarea[aria-label*='채팅' i]",
     fallbackSelectors: [
       "#prompt-textarea",
       "div#prompt-textarea[contenteditable='true']",
+      "textarea[aria-label*='chatgpt' i]",
+      "textarea[aria-label*='채팅' i]",
+      "textarea.wcDTda_fallbackTextarea",
       "div[contenteditable='true'][data-id='root']",
       "main div[contenteditable='true']",
     ],
@@ -26,9 +30,9 @@ export const AI_SITES = Object.freeze([
     lastVerified: "2026-03",
     verifiedVersion: "web-ui-mar-2026",
     authSelectors: [
-      "button[data-testid='login-button']",
-      "a[href*='/auth/login']",
-      "button[aria-label*='log in' i]",
+      "form[action*='/auth']",
+      "input[name='email']",
+      "input[name='username']",
     ],
   },
   {
@@ -53,8 +57,8 @@ export const AI_SITES = Object.freeze([
     lastVerified: "2026-03",
     verifiedVersion: "gemini-app-mar-2026",
     authSelectors: [
-      "a[href*='ServiceLogin']",
-      "a[href*='accounts.google.com']",
+      "input[type='email']",
+      "input[type='password']",
     ],
   },
   {
@@ -80,8 +84,9 @@ export const AI_SITES = Object.freeze([
     verifiedVersion: "claude-web-mar-2026",
     authSelectors: [
       "input#email",
+      "input[type='email']",
+      "input[type='password']",
       "form[action*='login']",
-      "button[type='submit']",
     ],
   },
   {
@@ -90,14 +95,16 @@ export const AI_SITES = Object.freeze([
     url: "https://grok.com/",
     hostname: "grok.com",
     inputSelector:
-      "textarea[aria-label*='grok' i], textarea[placeholder*='help' i], textarea",
+      "div.tiptap.ProseMirror[contenteditable='true'], div.ProseMirror[contenteditable='true'][translate='no'], div.ProseMirror[contenteditable='true']",
     fallbackSelectors: [
+      "div.tiptap.ProseMirror[contenteditable='true']",
+      "div.ProseMirror[contenteditable='true'][translate='no']",
+      "div.ProseMirror[contenteditable='true']",
       "textarea[aria-label*='grok' i]",
       "textarea[placeholder*='help' i]",
       "textarea",
-      "div[contenteditable='true']",
     ],
-    inputType: "textarea",
+    inputType: "contenteditable",
     submitSelector:
       "button[aria-label*='submit' i], button[aria-label*='제출' i]",
     submitMethod: "click",
@@ -106,9 +113,8 @@ export const AI_SITES = Object.freeze([
     lastVerified: "2026-03",
     verifiedVersion: "grok-web-mar-2026",
     authSelectors: [
-      "a[href*='/sign-in']",
-      "a[href*='/login']",
       "input[autocomplete='username']",
+      "input[type='password']",
     ],
   },
 ]);

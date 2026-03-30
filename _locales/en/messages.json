@@ -32,6 +32,9 @@
   "popup_send": {
     "message": "Send"
   },
+  "popup_stop_sending": {
+    "message": "Stop"
+  },
   "popup_save_favorite": {
     "message": "Save favorite"
   },
@@ -665,6 +668,9 @@
   "popup_broadcast_restored_sending": {
     "message": "A previous broadcast is still in progress."
   },
+  "popup_broadcast_cancelled": {
+    "message": "Broadcast cancelled."
+  },
   "toast_history_deleted": {
     "message": "History item deleted."
   },
@@ -716,6 +722,9 @@
         "content": "$1"
       }
     }
+  },
+  "toast_broadcast_cancelled": {
+    "message": "Broadcast cancelled."
   },
   "toast_injection_failed": {
     "message": "$SERVICE$ automatic injection failed.",

@@ -233,7 +233,19 @@ function getSiteLabel(siteId) {
 
 function getRequestedServices(entry) {
   const siteResultKeys = Object.keys(entry.siteResults ?? {});
+  if (Array.isArray(entry?.requestedSiteIds) && entry.requestedSiteIds.length > 0) {
+    return entry.requestedSiteIds;
+  }
+
   return siteResultKeys.length > 0 ? siteResultKeys : entry.sentTo ?? [];
+}
+
+function getSubmittedServices(entry) {
+  if (Array.isArray(entry?.submittedSiteIds) && entry.submittedSiteIds.length > 0) {
+    return entry.submittedSiteIds;
+  }
+
+  return entry.sentTo ?? [];
 }
 
 function getStatusInfo(status) {
@@ -506,7 +518,7 @@ function renderServiceFilterOptions() {
 function renderServicesSection() {
   servicesGrid.innerHTML = state.runtimeSites.map((site, index) => {
     const requestedEntries = state.history.filter((entry) => getRequestedServices(entry).includes(site.id));
-    const successCount = state.history.filter((entry) => (entry.sentTo ?? []).includes(site.id)).length;
+    const successCount = state.history.filter((entry) => getSubmittedServices(entry).includes(site.id)).length;
     const requestCount = requestedEntries.length;
     const successRate = requestCount > 0 ? Math.round((successCount / requestCount) * 100) : 0;
     const lastUsed = requestedEntries[0]?.createdAt ? formatDateTime(requestedEntries[0].createdAt) : t.services.none;

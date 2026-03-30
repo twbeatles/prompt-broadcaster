@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Textarea Fallback Fixture</title>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      margin: 24px;
+    }
+
+    main {
+      display: grid;
+      gap: 12px;
+      max-width: 720px;
+    }
+
+    textarea {
+      min-height: 140px;
+      padding: 12px;
+      font: inherit;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Textarea Fallback Fixture</h1>
+    <textarea id="fallback-box" placeholder="Fallback prompt input"></textarea>
+    <button id="send-btn" type="button">Send</button>
+  </main>
+
+  <script>
+    window.fixtureState = {
+      submittedBy: "",
+      promptValue: "",
+      submitCount: 0,
+    };
+
+    const promptBox = document.getElementById("fallback-box");
+    const sendButton = document.getElementById("send-btn");
+
+    sendButton.addEventListener("click", () => {
+      window.fixtureState.submittedBy = "click";
+      window.fixtureState.promptValue = promptBox.value;
+      window.fixtureState.submitCount += 1;
+    });
+  </script>
+</body>
+</html>

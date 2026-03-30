@@ -42,6 +42,10 @@ function normalizeSentTo(sentTo) {
   );
 }
 
+function normalizeSiteIdList(value) {
+  return normalizeSentTo(value);
+}
+
 function normalizeIsoDate(value, fallback = new Date().toISOString()) {
   if (typeof value !== "string") {
     return fallback;
@@ -153,14 +157,34 @@ async function writeLocal(key, value) {
 
 export function buildHistoryEntry(entry) {
   const createdAt = normalizeIsoDate(entry?.createdAt);
+  const siteResults = normalizeStringRecord(entry?.siteResults);
+  const siteResultKeys = normalizeSiteIdList(Object.keys(siteResults));
+  const submittedSiteIds = normalizeSiteIdList(
+    Array.isArray(entry?.submittedSiteIds) ? entry.submittedSiteIds : entry?.sentTo
+  );
+  const failedSiteIds = normalizeSiteIdList(
+    Array.isArray(entry?.failedSiteIds)
+      ? entry.failedSiteIds
+      : siteResultKeys.filter((siteId) => !submittedSiteIds.includes(siteId))
+  );
+  const requestedSiteIds = normalizeSiteIdList(
+    Array.isArray(entry?.requestedSiteIds)
+      ? entry.requestedSiteIds
+      : siteResultKeys.length > 0
+        ? siteResultKeys
+        : submittedSiteIds
+  );
 
   return {
     id: Number.isFinite(entry?.id) ? Number(entry.id) : Date.now(),
     text: safeText(entry?.text),
-    sentTo: normalizeSentTo(entry?.sentTo),
+    requestedSiteIds,
+    submittedSiteIds,
+    failedSiteIds,
+    sentTo: submittedSiteIds,
     createdAt,
     status: normalizeStatus(entry?.status),
-    siteResults: normalizeStringRecord(entry?.siteResults),
+    siteResults,
   };
 }
 
@@ -306,7 +330,10 @@ export async function addFavoriteFromHistory(historyItem) {
     sourceHistoryId: Number.isFinite(sourceHistoryId) ? sourceHistoryId : null,
     title: "",
     text: historyItem?.text,
-    sentTo: historyItem?.sentTo,
+    sentTo:
+      Array.isArray(historyItem?.requestedSiteIds) && historyItem.requestedSiteIds.length > 0
+        ? historyItem.requestedSiteIds
+        : historyItem?.sentTo,
     createdAt,
     favoritedAt: new Date().toISOString(),
     templateDefaults: {},
@@ -376,7 +403,7 @@ export async function exportPromptData() {
 
   return {
     exportedAt: new Date().toISOString(),
-    version: 1,
+    version: 2,
     history,
     favorites,
     templateVariableCache,
@@ -416,15 +443,15 @@ export async function importPromptData(jsonString) {
     });
   }
 
+  await setAppSettings(importedSettings);
   await Promise.all([
-    setPromptHistory(normalizedHistory),
     setPromptFavorites(normalizedFavorites),
     setTemplateVariableCache(templateVariableCache),
-    setAppSettings(importedSettings),
     setCustomSites(importedCustomSites),
     setBuiltInSiteStates(importedBuiltInSiteStates),
     setBuiltInSiteOverrides(importedBuiltInSiteOverrides),
   ]);
+  await setPromptHistory(normalizedHistory);
 
   return {
     history: normalizedHistory,

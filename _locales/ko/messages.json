@@ -32,6 +32,9 @@
   "popup_send": {
     "message": "전송"
   },
+  "popup_stop_sending": {
+    "message": "중지"
+  },
   "popup_save_favorite": {
     "message": "즐겨찾기 저장"
   },
@@ -665,6 +668,9 @@
   "popup_broadcast_restored_sending": {
     "message": "이전 전송이 아직 진행 중입니다."
   },
+  "popup_broadcast_cancelled": {
+    "message": "전송을 중지했습니다."
+  },
   "toast_history_deleted": {
     "message": "히스토리 항목을 삭제했습니다."
   },
@@ -716,6 +722,9 @@
         "content": "$1"
       }
     }
+  },
+  "toast_broadcast_cancelled": {
+    "message": "전송을 중지했습니다."
   },
   "toast_injection_failed": {
     "message": "$SERVICE$ 자동 전송에 실패했습니다.",

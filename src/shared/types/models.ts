@@ -6,6 +6,7 @@ export interface SiteConfig {
   name: string;
   url: string;
   hostname?: string;
+  hostnameAliases?: string[];
   inputSelector: string;
   inputType: InputType;
   submitSelector?: string;
@@ -32,6 +33,9 @@ export interface RuntimeSite extends SiteConfig {
 export interface PromptHistoryItem {
   id: number;
   text: string;
+  requestedSiteIds: string[];
+  submittedSiteIds: string[];
+  failedSiteIds: string[];
   sentTo: string[];
   createdAt: string;
   status: string;

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Contenteditable Click Fixture</title>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      margin: 24px;
+    }
+
+    main {
+      display: grid;
+      gap: 12px;
+      max-width: 720px;
+    }
+
+    [contenteditable="true"] {
+      min-height: 140px;
+      border: 1px solid #c9d4de;
+      border-radius: 12px;
+      padding: 12px;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Contenteditable Click Fixture</h1>
+    <div id="editor" contenteditable="true" role="textbox" aria-label="Prompt editor"></div>
+    <button id="send-btn" type="button">Send</button>
+  </main>
+
+  <script>
+    window.fixtureState = {
+      submittedBy: "",
+      promptValue: "",
+      submitCount: 0,
+    };
+
+    const editor = document.getElementById("editor");
+    const sendButton = document.getElementById("send-btn");
+
+    editor.addEventListener("paste", (event) => {
+      event.preventDefault();
+      editor.textContent = event.clipboardData.getData("text/plain");
+    });
+
+    sendButton.addEventListener("click", () => {
+      window.fixtureState.submittedBy = "click";
+      window.fixtureState.promptValue = editor.textContent;
+      window.fixtureState.submitCount += 1;
+    });
+  </script>
+</body>
+</html>

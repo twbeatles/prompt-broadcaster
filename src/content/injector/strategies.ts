@@ -3,12 +3,16 @@ import {
   getElementValueSnapshot,
   getNativeValueSetter,
   logError,
+  replaceContentEditableText,
   selectAllEditableContents,
+  setTextInputSelectionToEnd,
+  syncReactValueTracker,
 } from "./dom";
 
 export function strategyNativeSetter(element: Element, prompt: string): boolean {
   try {
     const setter = getNativeValueSetter(element);
+    const previousValue = getElementValueSnapshot(element);
     (element as HTMLElement).focus();
 
     if (typeof setter === "function") {
@@ -19,6 +23,8 @@ export function strategyNativeSetter(element: Element, prompt: string): boolean 
       return false;
     }
 
+    syncReactValueTracker(element, previousValue);
+    setTextInputSelectionToEnd(element);
     dispatchInputEvents(element, prompt);
     return getElementValueSnapshot(element).trim() === prompt.trim();
   } catch (error) {
@@ -36,6 +42,25 @@ export function strategyExecCommand(element: Element, prompt: string): boolean {
     return Boolean(inserted) || getElementValueSnapshot(element).trim() === prompt.trim();
   } catch (error) {
     logError("execCommand strategy failed", error);
+    return false;
+  }
+}
+
+export function strategyDirectContenteditable(element: Element, prompt: string): boolean {
+  try {
+    if (!(element as HTMLElement).isContentEditable) {
+      return false;
+    }
+
+    const replaced = replaceContentEditableText(element as HTMLElement, prompt);
+    if (!replaced) {
+      return false;
+    }
+
+    dispatchInputEvents(element, prompt);
+    return getElementValueSnapshot(element).trim() === prompt.trim();
+  } catch (error) {
+    logError("Direct contenteditable strategy failed", error);
     return false;
   }
 }

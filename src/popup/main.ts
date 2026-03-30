@@ -1,8 +1,10 @@
 // @ts-nocheck
 import {
+  SYSTEM_TEMPLATE_VARIABLES,
   buildSystemTemplateValues,
   detectTemplateVariables,
   findMissingTemplateValues,
+  getTemplateVariableDisplayName,
   renderTemplatePrompt,
 } from "../shared/template-utils";
 import {
@@ -86,6 +88,8 @@ const t = {
   sent: (count) => msg("status_success", [String(count)]),
   warnEmpty: msg("popup_warn_empty"),
   warnNoSite: msg("popup_warn_no_site"),
+  stopSending: msg("popup_stop_sending") || "Stop",
+  broadcastCancelled: msg("popup_broadcast_cancelled") || "Broadcast cancelled.",
   error: (message) => msg("status_failed", [String(message ?? "")]),
   historySearch: msg("popup_history_search"),
   favoritesSearch: msg("popup_favorites_search"),
@@ -158,6 +162,12 @@ const t = {
   serviceFieldInputType: msg("popup_service_field_input_type") || "Input Type",
   serviceFieldSubmitSelector: msg("popup_service_field_submit_selector") || "Submit Selector",
   serviceFieldSubmitMethod: msg("popup_service_field_submit_method") || "Submit Method",
+  serviceFieldAdvanced: msg("popup_service_field_advanced") || "Advanced Settings",
+  serviceFieldFallbackSelectors: msg("popup_service_field_fallback_selectors") || "Fallback Selectors",
+  serviceFieldAuthSelectors: msg("popup_service_field_auth_selectors") || "Auth Selectors",
+  serviceFieldHostnameAliases: msg("popup_service_field_hostname_aliases") || "Hostname Aliases",
+  serviceFieldLastVerified: msg("popup_service_field_last_verified") || "Last Verified",
+  serviceFieldVerifiedVersion: msg("popup_service_field_verified_version") || "Verified Version",
   serviceFieldWait: msg("popup_service_field_wait") || "Wait Time",
   serviceFieldColor: msg("popup_service_field_color") || "Color",
   serviceFieldIcon: msg("popup_service_field_icon") || "Icon",
@@ -238,6 +248,7 @@ const sitesLabel = document.getElementById("sites-label");
 const sitesContainer = document.getElementById("sites-container");
 const toggleAllBtn = document.getElementById("toggle-all");
 const saveFavoriteBtn = document.getElementById("save-favorite-btn");
+const cancelSendBtn = document.getElementById("cancel-send-btn");
 const sendBtn = document.getElementById("send-btn");
 const statusMsg = document.getElementById("status-message");
 const historySearchInput = document.getElementById("history-search");
@@ -271,6 +282,17 @@ const serviceSubmitSelectorLabel = document.getElementById("service-submit-selec
 const serviceSubmitSelectorInput = document.getElementById("service-submit-selector-input");
 const serviceSubmitMethodLabel = document.getElementById("service-submit-method-label");
 const serviceSubmitMethodSelect = document.getElementById("service-submit-method-select");
+const serviceAdvancedTitle = document.getElementById("service-advanced-title");
+const serviceFallbackSelectorsLabel = document.getElementById("service-fallback-selectors-label");
+const serviceFallbackSelectorsInput = document.getElementById("service-fallback-selectors-input");
+const serviceAuthSelectorsLabel = document.getElementById("service-auth-selectors-label");
+const serviceAuthSelectorsInput = document.getElementById("service-auth-selectors-input");
+const serviceHostnameAliasesLabel = document.getElementById("service-hostname-aliases-label");
+const serviceHostnameAliasesInput = document.getElementById("service-hostname-aliases-input");
+const serviceLastVerifiedLabel = document.getElementById("service-last-verified-label");
+const serviceLastVerifiedInput = document.getElementById("service-last-verified-input");
+const serviceVerifiedVersionLabel = document.getElementById("service-verified-version-label");
+const serviceVerifiedVersionInput = document.getElementById("service-verified-version-input");
 const serviceWaitLabel = document.getElementById("service-wait-label");
 const serviceWaitRange = document.getElementById("service-wait-range");
 const serviceWaitValue = document.getElementById("service-wait-value");
@@ -347,6 +369,9 @@ function setSendingState(isSending) {
   state.isSending = Boolean(isSending);
   sendBtn.disabled = state.isSending;
   sendBtn.classList.toggle("loading", state.isSending);
+  cancelSendBtn.hidden = !state.isSending;
+  cancelSendBtn.disabled = !state.isSending;
+  cancelSendBtn.textContent = t.stopSending;
 }
 
 function clearSendSafetyTimer() {
@@ -458,8 +483,45 @@ function formatDate(isoString) {
   }
 }
 
-function renderServiceBadges(sentTo = []) {
-  return sentTo
+function normalizeSiteIdList(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      value
+        .filter((entry) => typeof entry === "string" && entry.trim())
+        .map((entry) => entry.trim())
+    )
+  );
+}
+
+function getHistorySelectedSiteIds(item) {
+  return normalizeSiteIdList(
+    Array.isArray(item?.requestedSiteIds) && item.requestedSiteIds.length > 0
+      ? item.requestedSiteIds
+      : item?.sentTo
+  );
+}
+
+function getTemplateDisplayName(name) {
+  return getTemplateVariableDisplayName(name, uiLanguage);
+}
+
+function joinMultilineValues(values) {
+  return Array.isArray(values) ? values.join("\n") : "";
+}
+
+function splitMultilineValues(value) {
+  return String(value ?? "")
+    .split(/\r?\n/g)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
+function renderServiceBadges(siteIds = []) {
+  return siteIds
     .map((siteId) => {
       const site = state.runtimeSites.find((entry) => entry.id === siteId);
       const label = getSiteIcon(site) ?? siteId.slice(0, 2).toUpperCase();
@@ -485,7 +547,7 @@ function syncToggleAllLabel() {
 }
 
 function applySiteSelection(sentTo) {
-  const selected = new Set(Array.isArray(sentTo) ? sentTo : []);
+  const selected = new Set(normalizeSiteIdList(sentTo));
 
   allCheckboxes().forEach((checkbox) => {
     const shouldCheck = selected.size === 0 ? checkbox.checked : selected.has(checkbox.value);
@@ -539,7 +601,7 @@ function buildHistoryItemMarkup(item) {
       <button class="prompt-main" type="button" data-load-history="${item.id}">
         <div class="prompt-preview">${escapeHtml(previewText(item.text))}</div>
         <div class="prompt-meta">
-          <div class="service-icons">${renderServiceBadges(item.sentTo)}</div>
+          <div class="service-icons">${renderServiceBadges(getHistorySelectedSiteIds(item))}</div>
           <span>${escapeHtml(formatDate(item.createdAt))}</span>
         </div>
       </button>
@@ -638,9 +700,11 @@ function renderTemplateSummary() {
     .map((variable) => {
       const kindLabel =
         variable.kind === "system" ? t.templateSystemKind : t.templateUserKind;
+      const variableLabel =
+        variable.kind === "system" ? getTemplateDisplayName(variable.name) : variable.name;
       return `
         <span class="template-chip ${variable.kind}">
-          <span>{{${escapeHtml(variable.name)}}}</span>
+          <span>{{${escapeHtml(variableLabel)}}}</span>
           <span class="template-chip-kind">${escapeHtml(kindLabel)}</span>
         </span>
       `;
@@ -727,7 +791,7 @@ function setLoadedTemplateContext(item) {
 
 function loadPromptIntoComposer(item) {
   promptInput.value = item.text;
-  applySiteSelection(item.sentTo);
+  applySiteSelection(getHistorySelectedSiteIds(item));
   setLoadedTemplateContext(item);
   renderTemplateSummary();
   switchTab("compose");
@@ -770,6 +834,7 @@ function applyLastBroadcastState(summary, { silentToast = false } = {}) {
   if (!summary) {
     clearSendSafetyTimer();
     setSendingState(false);
+    clearStatus();
     return;
   }
 
@@ -792,10 +857,18 @@ function applyLastBroadcastState(summary, { silentToast = false } = {}) {
   const finishedAtMs = Date.parse(summary.finishedAt || "");
   const isRecent = Number.isFinite(finishedAtMs) && Date.now() - finishedAtMs <= 5 * 60 * 1000;
   const signature = buildBroadcastToastSignature(summary);
+  const successCount = (summary.submittedSiteIds ?? []).length;
+  const failedCount = (summary.failedSiteIds ?? []).length;
+
+  if (summary.status === "submitted") {
+    setStatus(t.sent(successCount || summary.total || summary.siteIds?.length || 0), "success");
+  } else {
+    const doneMessage = (msg("popup_broadcast_restored_done", [String(successCount), String(failedCount)]) ||
+      `Last broadcast: ${successCount} success, ${failedCount} failed`);
+    setStatus(doneMessage, failedCount > 0 ? "warning" : "success");
+  }
 
   if (!silentToast && isRecent && state.lastBroadcastToastSignature !== signature) {
-    const successCount = (summary.submittedSiteIds ?? []).length;
-    const failedCount = (summary.failedSiteIds ?? []).length;
     const message = (msg("popup_broadcast_restored_done", [String(successCount), String(failedCount)]) ||
       `Last broadcast: ${successCount} success, ${failedCount} failed`);
 
@@ -807,6 +880,42 @@ function applyLastBroadcastState(summary, { silentToast = false } = {}) {
       }
     );
     state.lastBroadcastToastSignature = signature;
+  }
+}
+
+async function cancelCurrentBroadcast() {
+  const broadcastId = state.lastBroadcast?.status === "sending"
+    ? state.lastBroadcast.broadcastId
+    : "";
+
+  if (!broadcastId) {
+    setSendingState(false);
+    clearSendSafetyTimer();
+    return;
+  }
+
+  cancelSendBtn.disabled = true;
+
+  try {
+    const response = await chrome.runtime.sendMessage({
+      action: "cancelBroadcast",
+      broadcastId,
+    });
+
+    if (!response?.ok) {
+      throw new Error(response?.error ?? getUnknownErrorText());
+    }
+
+    applyLastBroadcastState(response.summary ?? await getLastBroadcast(), { silentToast: true });
+    setStatus(t.broadcastCancelled, "warning");
+    showAppToast(t.broadcastCancelled, "warning", 2600);
+  } catch (error) {
+    console.error("[AI Prompt Broadcaster] Failed to cancel broadcast.", error);
+    setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
+    showAppToast(t.error(error?.message ?? getUnknownErrorText()), "error", 4000);
+    if (state.lastBroadcast?.status === "sending") {
+      cancelSendBtn.disabled = false;
+    }
   }
 }
 
@@ -917,7 +1026,7 @@ async function sendResolvedPrompt(finalPrompt, sites) {
         });
       }
 
-      setStatus(t.sent(response.createdSiteCount ?? sites.length), "success");
+      setStatus(t.sending(response.createdSiteCount ?? sites.length), "warning");
       showAppToast(t.toastSendSuccess(response.createdSiteCount ?? sites.length), "success", 2200);
 
       const settings = await getAppSettings();
@@ -1146,8 +1255,8 @@ async function confirmTemplateModalSend() {
     return;
   }
 
-  renderTemplateModal();
-  const previewState = buildTemplateSendPreviewState();
+  renderTemplateModalV2();
+  const previewState = buildTemplateSendPreviewStateV2();
 
   if (!previewState || previewState.missingUserValues.length > 0 || previewState.clipboardMissing) {
     return;
@@ -1160,6 +1269,132 @@ async function confirmTemplateModalSend() {
   const finalPrompt = renderTemplatePrompt(modalState.prompt, previewState.values);
   hideTemplateModal();
   await sendResolvedPrompt(finalPrompt, modalState.sites);
+}
+
+function buildTemplateSendPreviewStateV2() {
+  const modalState = state.pendingTemplateSend;
+  if (!modalState) {
+    return null;
+  }
+
+  const values = mergeTemplateSources(modalState.systemValues, modalState.userValues);
+  const preview = renderTemplatePrompt(modalState.prompt, values);
+  const missingUserValues = findMissingTemplateValues(modalState.prompt, modalState.userValues);
+  const clipboardRequired = modalState.variables.some(
+    (variable) => variable.name === SYSTEM_TEMPLATE_VARIABLES.clipboard
+  );
+  const clipboardMissing =
+    clipboardRequired && !String(modalState.systemValues[SYSTEM_TEMPLATE_VARIABLES.clipboard] ?? "").length;
+
+  return {
+    values,
+    preview,
+    missingUserValues,
+    clipboardMissing,
+  };
+}
+
+function renderTemplateModalV2() {
+  const modalState = state.pendingTemplateSend;
+  if (!modalState) {
+    return;
+  }
+
+  templateModalTitle.textContent = t.templateModalTitle;
+  templateModalDesc.textContent = t.templateModalDesc;
+  templatePreviewLabel.textContent = t.templatePreviewLabel;
+  templateModalCancel.textContent = t.templateModalCancel;
+  templateModalConfirm.textContent = t.templateModalConfirm;
+
+  const automaticVariables = modalState.variables.filter((variable) => variable.kind === "system");
+  if (automaticVariables.length > 0) {
+    const labels = automaticVariables
+      .map((variable) => `{{${getTemplateDisplayName(variable.name)}}}`)
+      .join(", ");
+    const notices = [t.templateSystemNotice, labels];
+
+    if (automaticVariables.some((variable) => variable.name === SYSTEM_TEMPLATE_VARIABLES.clipboard)) {
+      notices.push(t.templateClipboardNotice);
+    }
+
+    templateModalSystemInfo.hidden = false;
+    templateModalSystemInfo.textContent = notices.join(" · ");
+  } else {
+    templateModalSystemInfo.hidden = true;
+    templateModalSystemInfo.textContent = "";
+  }
+
+  const userVariables = modalState.variables.filter((variable) => variable.kind === "user");
+  templateFields.innerHTML = userVariables
+    .map((variable) => {
+      const value = modalState.userValues[variable.name] ?? "";
+      return `
+        <label class="field-stack">
+          <span>${escapeHtml(t.templateFieldLabel(variable.name))}</span>
+          <input
+            class="search-input"
+            type="text"
+            data-template-input="${escapeAttribute(variable.name)}"
+            value="${escapeAttribute(value)}"
+            placeholder="${escapeAttribute(t.templateFieldPlaceholder(variable.name))}"
+          />
+        </label>
+      `;
+    })
+    .join("");
+
+  const previewState = buildTemplateSendPreviewStateV2();
+  const errorMessage = previewState?.clipboardMissing
+    ? t.templateClipboardError
+    : previewState && previewState.missingUserValues.length > 0
+      ? t.templateMissingValues
+      : "";
+
+  templatePreview.textContent = previewState?.preview ?? modalState.prompt;
+  setTemplateModalError(errorMessage);
+  templateModalConfirm.disabled = Boolean(errorMessage);
+}
+
+async function openTemplateModalV2(prompt, sites) {
+  const variables = detectTemplateVariables(prompt);
+
+  if (variables.length === 0) {
+    await sendResolvedPrompt(prompt, sites);
+    return;
+  }
+
+  const baseDefaults = mergeTemplateSources(
+    state.templateVariableCache,
+    state.loadedTemplateDefaults
+  );
+
+  const userValues = Object.fromEntries(
+    variables
+      .filter((variable) => variable.kind === "user")
+      .map((variable) => [variable.name, baseDefaults[variable.name] ?? ""])
+  );
+
+  const systemValues = buildSystemTemplateValues(new Date(), {
+    locale: isKorean ? "ko" : "en",
+  });
+
+  if (variables.some((variable) => variable.name === SYSTEM_TEMPLATE_VARIABLES.clipboard)) {
+    const clipboardResult = await readClipboardTemplateValue();
+    if (clipboardResult.ok) {
+      systemValues[SYSTEM_TEMPLATE_VARIABLES.clipboard] = clipboardResult.text;
+    }
+  }
+
+  state.pendingTemplateSend = {
+    prompt,
+    sites,
+    variables,
+    userValues,
+    systemValues,
+  };
+
+  renderTemplateModalV2();
+  templateModal.hidden = false;
 }
 
 function renderFavoriteDefaultFields() {
@@ -1307,6 +1542,12 @@ function renderTabLabels() {
   serviceInputTypeLabel.textContent = t.serviceFieldInputType;
   serviceSubmitSelectorLabel.textContent = t.serviceFieldSubmitSelector;
   serviceSubmitMethodLabel.textContent = t.serviceFieldSubmitMethod;
+  serviceAdvancedTitle.textContent = t.serviceFieldAdvanced;
+  serviceFallbackSelectorsLabel.textContent = t.serviceFieldFallbackSelectors;
+  serviceAuthSelectorsLabel.textContent = t.serviceFieldAuthSelectors;
+  serviceHostnameAliasesLabel.textContent = t.serviceFieldHostnameAliases;
+  serviceLastVerifiedLabel.textContent = t.serviceFieldLastVerified;
+  serviceVerifiedVersionLabel.textContent = t.serviceFieldVerifiedVersion;
   serviceWaitLabel.textContent = t.serviceFieldWait;
   serviceColorLabel.textContent = t.serviceFieldColor;
   serviceIconLabel.textContent = t.serviceFieldIcon;
@@ -1396,6 +1637,12 @@ function resetServiceEditorForm() {
   document.querySelector("input[name='service-input-type'][value='textarea']").checked = true;
   serviceSubmitSelectorInput.value = "";
   serviceSubmitMethodSelect.value = "click";
+  serviceFallbackSelectorsInput.value = "";
+  serviceAuthSelectorsInput.value = "";
+  serviceHostnameAliasesInput.value = "";
+  serviceHostnameAliasesInput.disabled = false;
+  serviceLastVerifiedInput.value = "";
+  serviceVerifiedVersionInput.value = "";
   serviceWaitRange.value = "2000";
   serviceWaitValue.textContent = "2000ms";
   serviceColorInput.value = "#c24f2e";
@@ -1432,6 +1679,12 @@ function populateServiceEditor(site) {
   }
   serviceSubmitSelectorInput.value = site?.submitSelector ?? "";
   serviceSubmitMethodSelect.value = site?.submitMethod ?? "click";
+  serviceFallbackSelectorsInput.value = joinMultilineValues(site?.fallbackSelectors);
+  serviceAuthSelectorsInput.value = joinMultilineValues(site?.authSelectors);
+  serviceHostnameAliasesInput.value = joinMultilineValues(site?.hostnameAliases);
+  serviceHostnameAliasesInput.disabled = Boolean(site?.isBuiltIn);
+  serviceLastVerifiedInput.value = site?.lastVerified ?? "";
+  serviceVerifiedVersionInput.value = site?.verifiedVersion ?? "";
   serviceWaitRange.value = String(site?.waitMs ?? 2000);
   serviceWaitValue.textContent = `${site?.waitMs ?? 2000}ms`;
   serviceColorInput.value = site?.color ?? "#c24f2e";
@@ -1500,6 +1753,11 @@ function readServiceEditorDraft() {
     inputType: selectedInputType?.value ?? "textarea",
     submitSelector: serviceSubmitSelectorInput.value.trim(),
     submitMethod: serviceSubmitMethodSelect.value,
+    fallbackSelectors: splitMultilineValues(serviceFallbackSelectorsInput.value),
+    authSelectors: splitMultilineValues(serviceAuthSelectorsInput.value),
+    hostnameAliases: splitMultilineValues(serviceHostnameAliasesInput.value),
+    lastVerified: serviceLastVerifiedInput.value.trim(),
+    verifiedVersion: serviceVerifiedVersionInput.value.trim(),
     waitMs: Number(serviceWaitRange.value),
     color: serviceColorInput.value,
     icon: serviceIconInput.value.trim(),
@@ -1790,7 +2048,7 @@ async function handleSend() {
   }
 
   await chrome.storage.local.set({ lastPrompt: prompt });
-  await openTemplateModal(prompt, selectedSites);
+  await openTemplateModalV2(prompt, selectedSites);
 }
 
 function bindGlobalEvents() {
@@ -1824,6 +2082,10 @@ function bindGlobalEvents() {
       console.error("[AI Prompt Broadcaster] Failed to open favorite modal.", error);
       setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
     });
+  });
+
+  cancelSendBtn.addEventListener("click", () => {
+    void cancelCurrentBroadcast();
   });
 
   sendBtn.addEventListener("click", (event) => {
@@ -2145,7 +2407,7 @@ function bindGlobalEvents() {
     }
 
     state.pendingTemplateSend.userValues[input.dataset.templateInput] = input.value;
-    renderTemplateModal();
+    renderTemplateModalV2();
   });
   templateModalConfirm.addEventListener("click", () => {
     void confirmTemplateModalSend().catch((error) => {

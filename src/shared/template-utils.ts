@@ -2,25 +2,89 @@
 const TEMPLATE_VARIABLE_PATTERN = /{{\s*([^{}]+?)\s*}}/g;
 
 export const SYSTEM_TEMPLATE_VARIABLES = Object.freeze({
-  date: "날짜",
-  time: "시간",
-  weekday: "요일",
-  clipboard: "클립보드",
+  date: "date",
+  time: "time",
+  weekday: "weekday",
+  clipboard: "clipboard",
 });
 
-const SYSTEM_VARIABLE_NAMES = new Set(Object.values(SYSTEM_TEMPLATE_VARIABLES));
-const KOREAN_WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
+const SYSTEM_TEMPLATE_DEFINITIONS = Object.freeze({
+  [SYSTEM_TEMPLATE_VARIABLES.date]: {
+    aliases: ["date", "날짜"],
+    labels: { ko: "날짜", en: "date" },
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.time]: {
+    aliases: ["time", "시간"],
+    labels: { ko: "시간", en: "time" },
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.weekday]: {
+    aliases: ["weekday", "요일"],
+    labels: { ko: "요일", en: "weekday" },
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.clipboard]: {
+    aliases: ["clipboard", "클립보드"],
+    labels: { ko: "클립보드", en: "clipboard" },
+  },
+});
+
+const SYSTEM_TEMPLATE_ALIAS_MAP = new Map(
+  Object.entries(SYSTEM_TEMPLATE_DEFINITIONS).flatMap(([canonicalName, definition]) =>
+    definition.aliases.map((alias) => [alias.toLowerCase(), canonicalName])
+  )
+);
+
+const SYSTEM_TEMPLATE_KEYS = new Set(Object.keys(SYSTEM_TEMPLATE_DEFINITIONS));
+const WEEKDAY_LOCALES = Object.freeze({
+  ko: "ko-KR",
+  en: "en-US",
+});
 
 function pad2(value) {
   return String(value).padStart(2, "0");
+}
+
+function normalizeLocale(locale) {
+  return typeof locale === "string" && locale.toLowerCase().startsWith("ko") ? "ko" : "en";
 }
 
 export function normalizeTemplateVariableName(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+export function canonicalizeTemplateVariableName(value) {
+  const normalizedValue = normalizeTemplateVariableName(value);
+  if (!normalizedValue) {
+    return "";
+  }
+
+  return SYSTEM_TEMPLATE_ALIAS_MAP.get(normalizedValue.toLowerCase()) ?? normalizedValue;
+}
+
 export function isSystemTemplateVariable(name) {
-  return SYSTEM_VARIABLE_NAMES.has(normalizeTemplateVariableName(name));
+  return SYSTEM_TEMPLATE_KEYS.has(canonicalizeTemplateVariableName(name));
+}
+
+export function getTemplateVariableDisplayName(name, locale = "en") {
+  const canonicalName = canonicalizeTemplateVariableName(name);
+  if (!SYSTEM_TEMPLATE_KEYS.has(canonicalName)) {
+    return normalizeTemplateVariableName(name);
+  }
+
+  const normalizedLocale = normalizeLocale(locale);
+  return SYSTEM_TEMPLATE_DEFINITIONS[canonicalName].labels[normalizedLocale];
+}
+
+function normalizeTemplateValueRecord(values = {}) {
+  if (!values || typeof values !== "object" || Array.isArray(values)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(values).map(([key, value]) => [
+      canonicalizeTemplateVariableName(key),
+      value,
+    ])
+  );
 }
 
 export function detectTemplateVariables(template) {
@@ -29,16 +93,16 @@ export function detectTemplateVariables(template) {
   const variables = [];
 
   for (const match of source.matchAll(TEMPLATE_VARIABLE_PATTERN)) {
-    const name = normalizeTemplateVariableName(match[1]);
+    const canonicalName = canonicalizeTemplateVariableName(match[1]);
 
-    if (!name || seen.has(name)) {
+    if (!canonicalName || seen.has(canonicalName)) {
       continue;
     }
 
-    seen.add(name);
+    seen.add(canonicalName);
     variables.push({
-      name,
-      kind: isSystemTemplateVariable(name) ? "system" : "user",
+      name: canonicalName,
+      kind: SYSTEM_TEMPLATE_KEYS.has(canonicalName) ? "system" : "user",
     });
   }
 
@@ -53,8 +117,9 @@ export function hasTemplateVariables(template) {
   return detectTemplateVariables(template).length > 0;
 }
 
-export function buildSystemTemplateValues(now = new Date()) {
+export function buildSystemTemplateValues(now = new Date(), options = {}) {
   const date = now instanceof Date ? now : new Date();
+  const locale = normalizeLocale(options?.locale);
 
   return {
     [SYSTEM_TEMPLATE_VARIABLES.date]: [
@@ -63,28 +128,40 @@ export function buildSystemTemplateValues(now = new Date()) {
       pad2(date.getDate()),
     ].join("-"),
     [SYSTEM_TEMPLATE_VARIABLES.time]: `${pad2(date.getHours())}:${pad2(date.getMinutes())}`,
-    [SYSTEM_TEMPLATE_VARIABLES.weekday]: KOREAN_WEEKDAYS[date.getDay()] ?? "",
+    [SYSTEM_TEMPLATE_VARIABLES.weekday]: new Intl.DateTimeFormat(WEEKDAY_LOCALES[locale], {
+      weekday: locale === "ko" ? "short" : "long",
+    }).format(date),
   };
 }
 
 export function renderTemplatePrompt(template, values = {}) {
   const source = typeof template === "string" ? template : "";
+  const normalizedValues = normalizeTemplateValueRecord(values);
 
   return source.replace(TEMPLATE_VARIABLE_PATTERN, (_match, rawName) => {
-    const name = normalizeTemplateVariableName(rawName);
+    const normalizedName = normalizeTemplateVariableName(rawName);
+    const canonicalName = canonicalizeTemplateVariableName(rawName);
 
-    if (!name) {
+    if (!normalizedName) {
       return "";
     }
 
-    return Object.prototype.hasOwnProperty.call(values, name)
-      ? String(values[name] ?? "")
-      : `{{${name}}}`;
+    if (Object.prototype.hasOwnProperty.call(normalizedValues, canonicalName)) {
+      return String(normalizedValues[canonicalName] ?? "");
+    }
+
+    if (Object.prototype.hasOwnProperty.call(normalizedValues, normalizedName)) {
+      return String(normalizedValues[normalizedName] ?? "");
+    }
+
+    return `{{${normalizedName}}}`;
   });
 }
 
 export function findMissingTemplateValues(template, values = {}) {
+  const normalizedValues = normalizeTemplateValueRecord(values);
+
   return getUserTemplateVariables(template)
     .map((variable) => variable.name)
-    .filter((name) => !String(values[name] ?? "").trim());
+    .filter((name) => !String(normalizedValues[name] ?? "").trim());
 }

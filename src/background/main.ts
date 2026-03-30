@@ -13,6 +13,7 @@ import { getEnabledRuntimeSites, getRuntimeSites } from "../shared/stores/sites-
 const INJECTOR_SCRIPT_PATH = "content/injector.js";
 const SELECTION_SCRIPT_PATH = "content/selection.js";
 const ONBOARDING_URL = "onboarding/onboarding.html";
+const POPUP_PAGE_URL = "popup/popup.html";
 const PENDING_INJECTIONS_KEY = "pendingInjections";
 const PENDING_BROADCASTS_KEY = "pendingBroadcasts";
 const SELECTOR_ALERTS_KEY = "selectorAlerts";
@@ -26,9 +27,15 @@ const BADGE_CLEAR_ALARM = "apb-clear-badge";
 const PENDING_TIMEOUT_MS = 60_000;
 const BADGE_CLEAR_DELAY_MS = 5_000;
 const KEEPALIVE_PERIOD_MINUTES = 0.5;
+const TAB_LOAD_READY_TIMEOUT_MS = 10_000;
+const TAB_POST_SUBMIT_SETTLE_MS = 1_400;
+const STANDALONE_POPUP_WIDTH = 460;
+const STANDALONE_POPUP_HEIGHT = 860;
 
 const activeInjections = new Set();
 const selectionCache = new Map();
+let contextMenuRefreshChain = Promise.resolve();
+let injectionProcessChain = Promise.resolve();
 
 function getI18nMessage(key, substitutions) {
   return chrome.i18n.getMessage(key, substitutions) || "";
@@ -38,12 +45,19 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, Number.isFinite(ms) ? ms : 0);
+  });
+}
+
 function buildInjectionConfig(site) {
   return {
     id: site?.id ?? "",
     name: site?.name ?? "",
     url: site?.url ?? "",
     hostname: site?.hostname ?? "",
+    hostnameAliases: Array.isArray(site?.hostnameAliases) ? site.hostnameAliases : [],
     inputSelector: site?.inputSelector ?? "",
     fallbackSelectors: Array.isArray(site?.fallbackSelectors) ? site.fallbackSelectors : [],
     inputType: site?.inputType ?? "textarea",
@@ -99,6 +113,123 @@ function buildLastBroadcastSummary(record, overrides = {}) {
         : "",
     ...overrides,
   };
+}
+
+async function getFocusedTabContext() {
+  try {
+    const [activeTab] = await chrome.tabs.query({
+      active: true,
+      lastFocusedWindow: true,
+    });
+
+    if (!activeTab?.id || !Number.isFinite(activeTab.windowId)) {
+      return null;
+    }
+
+    return {
+      tabId: activeTab.id,
+      windowId: activeTab.windowId,
+    };
+  } catch (error) {
+    console.error("[AI Prompt Broadcaster] Failed to read focused tab context.", error);
+    return null;
+  }
+}
+
+async function isTabLoadReady(tabId) {
+  try {
+    const [executionResult] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => ({ readyState: document.readyState }),
+    });
+
+    const result = executionResult?.result ?? {};
+    return result.readyState === "interactive" || result.readyState === "complete";
+  } catch (_error) {
+    return false;
+  }
+}
+
+async function waitForTabInteractionReady(tabId, timeoutMs = TAB_LOAD_READY_TIMEOUT_MS) {
+  const deadline = Date.now() + Math.max(timeoutMs, 0);
+
+  while (Date.now() <= deadline) {
+    if (await isTabLoadReady(tabId)) {
+      return true;
+    }
+
+    await sleep(150);
+  }
+
+  return false;
+}
+
+async function restoreFocusedTabContext(context) {
+  if (!context?.tabId || !Number.isFinite(context.windowId)) {
+    return;
+  }
+
+  try {
+    await chrome.windows.update(context.windowId, { focused: true });
+    await chrome.tabs.update(context.tabId, { active: true });
+  } catch (_error) {
+    // Ignore restore failures when the original tab or window no longer exists.
+  }
+}
+
+function queuePendingInjection(tabId, tab) {
+  injectionProcessChain = injectionProcessChain
+    .catch(() => undefined)
+    .then(() => processPendingInjectionNow(tabId, tab))
+    .catch((error) => {
+      console.error("[AI Prompt Broadcaster] Queued injection processing failed.", {
+        tabId,
+        error,
+      });
+    });
+
+  return injectionProcessChain;
+}
+
+function getBroadcastAgeMs(record) {
+  const startedAtMs = Date.parse(record?.startedAt ?? "");
+  return Number.isFinite(startedAtMs) ? Date.now() - startedAtMs : 0;
+}
+
+function getUnresolvedSiteIds(record) {
+  const siteResults = record?.siteResults ?? {};
+  return Array.isArray(record?.siteIds)
+    ? record.siteIds.filter((siteId) => !siteResults?.[siteId])
+    : [];
+}
+
+async function finalizeBroadcastSites(broadcastId, siteIds, status) {
+  let lastSummary = null;
+
+  for (const siteId of Array.isArray(siteIds) ? siteIds : []) {
+    lastSummary = (await recordBroadcastSiteResult(broadcastId, siteId, status)) ?? lastSummary;
+  }
+
+  return lastSummary;
+}
+
+async function closeTabQuietly(tabId) {
+  try {
+    await chrome.tabs.remove(tabId);
+  } catch (_error) {
+    // Ignore already-closed tabs.
+  }
+}
+
+async function restoreBroadcastFocus(record) {
+  if (!record) {
+    return;
+  }
+
+  await restoreFocusedTabContext({
+    tabId: Number.isFinite(Number(record.originTabId)) ? Number(record.originTabId) : null,
+    windowId: Number.isFinite(Number(record.originWindowId)) ? Number(record.originWindowId) : null,
+  });
 }
 
 async function readSessionValue(key, fallbackValue) {
@@ -187,7 +318,20 @@ async function getSiteForUrl(urlString) {
   try {
     const url = new URL(urlString);
     const sites = await getRuntimeSites();
-    return sites.find((site) => site.hostname === url.hostname) ?? null;
+    const normalizedHostname = url.hostname.toLowerCase();
+
+    return (
+      sites.find((site) => {
+        const allowedHostnames = [
+          site?.hostname,
+          ...(Array.isArray(site?.hostnameAliases) ? site.hostnameAliases : []),
+        ]
+          .filter((entry) => typeof entry === "string" && entry.trim())
+          .map((entry) => entry.trim().toLowerCase());
+
+        return allowedHostnames.includes(normalizedHostname);
+      }) ?? null
+    );
   } catch (error) {
     console.error("[AI Prompt Broadcaster] Failed to resolve site for URL.", {
       urlString,
@@ -243,14 +387,73 @@ async function storePromptForPopup(prompt) {
   }
 }
 
+async function tryOpenActionPopup() {
+  if (typeof chrome.action?.openPopup !== "function") {
+    return false;
+  }
+
+  try {
+    await chrome.action.openPopup();
+    return true;
+  } catch (error) {
+    console.warn("[AI Prompt Broadcaster] Action popup open failed; trying fallback.", error);
+    return false;
+  }
+}
+
+async function focusExistingBrowserWindow() {
+  try {
+    const windows = await chrome.windows.getAll({
+      windowTypes: ["normal"],
+    });
+    const targetWindow = windows.find((windowInfo) => Number.isFinite(windowInfo?.id));
+
+    if (!targetWindow?.id) {
+      return false;
+    }
+
+    await chrome.windows.update(targetWindow.id, { focused: true });
+    return true;
+  } catch (error) {
+    console.warn("[AI Prompt Broadcaster] Failed to focus an existing browser window.", error);
+    return false;
+  }
+}
+
+async function openStandalonePopupPage() {
+  try {
+    await chrome.windows.create({
+      url: chrome.runtime.getURL(POPUP_PAGE_URL),
+      type: "popup",
+      focused: true,
+      width: STANDALONE_POPUP_WIDTH,
+      height: STANDALONE_POPUP_HEIGHT,
+    });
+    return true;
+  } catch (error) {
+    console.error("[AI Prompt Broadcaster] Failed to open standalone popup page.", error);
+    return false;
+  }
+}
+
 async function openPopupWithPrompt(prompt = "") {
   try {
     if (typeof prompt === "string") {
       await storePromptForPopup(prompt);
     }
 
-    if (typeof chrome.action?.openPopup === "function") {
-      await chrome.action.openPopup();
+    if (await tryOpenActionPopup()) {
+      return;
+    }
+
+    if (await focusExistingBrowserWindow()) {
+      if (await tryOpenActionPopup()) {
+        return;
+      }
+    }
+
+    if (!(await openStandalonePopupPage())) {
+      console.error("[AI Prompt Broadcaster] Failed to open extension popup.");
     }
   } catch (error) {
     console.error("[AI Prompt Broadcaster] Failed to open extension popup.", error);
@@ -337,57 +540,91 @@ async function getContextMenuTargetSiteIds(menuItemId) {
   return [];
 }
 
-async function createContextMenus() {
-  try {
-    await chrome.contextMenus.removeAll();
-    const enabledSites = await getEnabledRuntimeSites();
-    const menuSites = (
-      await Promise.all(
-        enabledSites.map(async (site) => {
-          if (!site.isCustom || !site.permissionPattern) {
-            return site;
-          }
+function removeAllContextMenus() {
+  return new Promise((resolve, reject) => {
+    chrome.contextMenus.removeAll(() => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
 
-          try {
-            const granted = await chrome.permissions.contains({
-              origins: [site.permissionPattern],
-            });
-            return granted ? site : null;
-          } catch (error) {
-            console.error("[AI Prompt Broadcaster] Failed to check custom site permission.", {
-              siteId: site.id,
-              error,
-            });
-            return null;
-          }
-        })
-      )
-    ).filter(Boolean);
-
-    chrome.contextMenus.create({
-      id: CONTEXT_MENU_ROOT_ID,
-      title: getI18nMessage("context_menu_root"),
-      contexts: ["selection"],
+      resolve();
     });
+  });
+}
 
-    chrome.contextMenus.create({
-      id: CONTEXT_MENU_ALL_ID,
+function createContextMenuItem(createProperties) {
+  return new Promise((resolve, reject) => {
+    chrome.contextMenus.create(createProperties, () => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+
+      resolve();
+    });
+  });
+}
+
+async function rebuildContextMenus() {
+  await removeAllContextMenus();
+
+  const enabledSites = await getEnabledRuntimeSites();
+  const menuSites = (
+    await Promise.all(
+      enabledSites.map(async (site) => {
+        if (!site.isCustom || !site.permissionPattern) {
+          return site;
+        }
+
+        try {
+          const granted = await chrome.permissions.contains({
+            origins: [site.permissionPattern],
+          });
+          return granted ? site : null;
+        } catch (error) {
+          console.error("[AI Prompt Broadcaster] Failed to check custom site permission.", {
+            siteId: site.id,
+            error,
+          });
+          return null;
+        }
+      })
+    )
+  ).filter(Boolean);
+
+  await createContextMenuItem({
+    id: CONTEXT_MENU_ROOT_ID,
+    title: getI18nMessage("context_menu_root"),
+    contexts: ["selection"],
+  });
+
+  await createContextMenuItem({
+    id: CONTEXT_MENU_ALL_ID,
+    parentId: CONTEXT_MENU_ROOT_ID,
+    title: getI18nMessage("context_menu_send_all"),
+    contexts: ["selection"],
+  });
+
+  for (const site of menuSites) {
+    await createContextMenuItem({
+      id: `${CONTEXT_MENU_SITE_PREFIX}${site.id}`,
       parentId: CONTEXT_MENU_ROOT_ID,
-      title: getI18nMessage("context_menu_send_all"),
+      title: getI18nMessage("context_menu_send_to", [site.name]),
       contexts: ["selection"],
     });
-
-    menuSites.forEach((site) => {
-      chrome.contextMenus.create({
-        id: `${CONTEXT_MENU_SITE_PREFIX}${site.id}`,
-        parentId: CONTEXT_MENU_ROOT_ID,
-        title: getI18nMessage("context_menu_send_to", [site.name]),
-        contexts: ["selection"],
-      });
-    });
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to create context menus.", error);
   }
+}
+
+function createContextMenus() {
+  contextMenuRefreshChain = contextMenuRefreshChain
+    .catch(() => undefined)
+    .then(() => rebuildContextMenus())
+    .catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to create context menus.", error);
+    });
+
+  return contextMenuRefreshChain;
 }
 
 async function handleContextMenuBroadcast(prompt, siteIds) {
@@ -477,6 +714,7 @@ async function createPendingBroadcast(prompt, sites) {
   }
 
   const pendingBroadcasts = await getPendingBroadcasts();
+  const originContext = await getFocusedTabContext();
   const broadcastId =
     typeof crypto?.randomUUID === "function"
       ? crypto.randomUUID()
@@ -493,6 +731,8 @@ async function createPendingBroadcast(prompt, sites) {
     siteResults: {},
     startedAt: nowIso(),
     status: "sending",
+    originTabId: originContext?.tabId ?? null,
+    originWindowId: originContext?.windowId ?? null,
   };
 
   pendingBroadcasts[broadcastId] = record;
@@ -624,6 +864,9 @@ async function recordBroadcastSiteResult(broadcastId, siteId, status) {
       await appendPromptHistory({
         id: Date.now(),
         text: record.prompt,
+        requestedSiteIds: record.siteIds,
+        submittedSiteIds: record.submittedSiteIds,
+        failedSiteIds: record.failedSiteIds,
         sentTo: record.submittedSiteIds,
         createdAt: record.startedAt,
         status: summary.status,
@@ -631,6 +874,7 @@ async function recordBroadcastSiteResult(broadcastId, siteId, status) {
       });
 
       await syncLastBroadcast(summary);
+      await restoreBroadcastFocus(record);
       await maybeCreateBroadcastNotification(summary);
     } else {
       pendingBroadcasts[broadcastId] = record;
@@ -647,6 +891,107 @@ async function recordBroadcastSiteResult(broadcastId, siteId, status) {
       error,
     });
     return null;
+  }
+}
+
+async function cancelBroadcast(broadcastId, reason = "cancelled") {
+  const normalizedBroadcastId = typeof broadcastId === "string" ? broadcastId.trim() : "";
+  if (!normalizedBroadcastId) {
+    return null;
+  }
+
+  const pendingBroadcastsBeforeCancel = await getPendingBroadcasts();
+  const recordBeforeCancel = pendingBroadcastsBeforeCancel[normalizedBroadcastId] ?? null;
+
+  const pendingInjections = await getPendingInjections();
+  const matchingJobs = Object.entries(pendingInjections).filter(([, job]) =>
+    job?.broadcastId === normalizedBroadcastId
+  );
+
+  const pendingSiteIds = new Set();
+  for (const [tabIdKey, job] of matchingJobs) {
+    const tabId = Number(tabIdKey);
+    if (job?.siteId) {
+      pendingSiteIds.add(job.siteId);
+    }
+
+    await removePendingInjection(tabId);
+    activeInjections.delete(tabId);
+  }
+
+  let lastSummary = null;
+  lastSummary = (await finalizeBroadcastSites(normalizedBroadcastId, [...pendingSiteIds], reason)) ?? lastSummary;
+
+  const refreshedPendingBroadcasts = await getPendingBroadcasts();
+  const record = refreshedPendingBroadcasts[normalizedBroadcastId];
+  const unresolvedSiteIds = getUnresolvedSiteIds(record).filter((siteId) => !pendingSiteIds.has(siteId));
+  lastSummary = (await finalizeBroadcastSites(normalizedBroadcastId, unresolvedSiteIds, reason)) ?? lastSummary;
+
+  await Promise.all(
+    matchingJobs.map(async ([tabIdKey]) => {
+      await closeTabQuietly(Number(tabIdKey));
+    })
+  );
+
+  await restoreBroadcastFocus(recordBeforeCancel);
+
+  const fallbackSummary = await getLastBroadcast();
+  const summary = lastSummary ?? fallbackSummary;
+
+  await enqueueUiToast({
+    message:
+      getI18nMessage("toast_broadcast_cancelled") ||
+      "Broadcast cancelled.",
+    type: "warning",
+    duration: 5000,
+    meta: {
+      broadcastId: normalizedBroadcastId,
+      reason,
+    },
+  });
+
+  return summary;
+}
+
+async function reconcilePendingBroadcasts() {
+  const pendingBroadcasts = await getPendingBroadcasts();
+  const pendingInjections = await getPendingInjections();
+
+  const jobsByBroadcastId = new Map();
+  for (const [tabIdKey, job] of Object.entries(pendingInjections)) {
+    if (!job?.broadcastId) {
+      continue;
+    }
+
+    const current = jobsByBroadcastId.get(job.broadcastId) ?? [];
+    current.push([tabIdKey, job]);
+    jobsByBroadcastId.set(job.broadcastId, current);
+  }
+
+  for (const [broadcastId, record] of Object.entries(pendingBroadcasts)) {
+    const unresolvedSiteIds = getUnresolvedSiteIds(record);
+    if (unresolvedSiteIds.length === 0) {
+      continue;
+    }
+
+    const relatedJobs = jobsByBroadcastId.get(broadcastId) ?? [];
+    if (relatedJobs.length === 0) {
+      await finalizeBroadcastSites(broadcastId, unresolvedSiteIds, "broadcast_stale");
+      continue;
+    }
+
+    if (getBroadcastAgeMs(record) <= PENDING_TIMEOUT_MS) {
+      continue;
+    }
+
+    for (const [tabIdKey] of relatedJobs) {
+      const tabId = Number(tabIdKey);
+      await removePendingInjection(tabId);
+      activeInjections.delete(tabId);
+      await closeTabQuietly(tabId);
+    }
+
+    await finalizeBroadcastSites(broadcastId, unresolvedSiteIds, "injection_timeout");
   }
 }
 
@@ -676,7 +1021,14 @@ async function injectIntoTab(tabId, prompt, site) {
 
 function isSameSiteOrigin(tabUrl, site) {
   try {
-    return new URL(tabUrl).hostname === site.hostname;
+    const hostname = new URL(tabUrl).hostname.toLowerCase();
+    const allowedHostnames = new Set(
+      [site?.hostname, ...(Array.isArray(site?.hostnameAliases) ? site.hostnameAliases : [])]
+        .filter((entry) => typeof entry === "string" && entry.trim())
+        .map((entry) => entry.trim().toLowerCase())
+    );
+
+    return allowedHostnames.has(hostname);
   } catch (error) {
     console.error("[AI Prompt Broadcaster] Failed to compare site origin.", {
       tabUrl,
@@ -703,7 +1055,7 @@ async function handlePendingInjectionTimeout(tabId, job, reason = "timeout") {
   });
 }
 
-async function processPendingInjectionForTab(tabId, tab) {
+async function processPendingInjectionNow(tabId, tab) {
   if (activeInjections.has(tabId)) {
     return;
   }
@@ -711,6 +1063,13 @@ async function processPendingInjectionForTab(tabId, tab) {
   const pending = await getPendingInjections();
   const job = pending[String(tabId)];
   if (!job || job.injected === true) {
+    return;
+  }
+
+  const pendingBroadcasts = await getPendingBroadcasts();
+  if (!pendingBroadcasts[job.broadcastId]) {
+    await removePendingInjection(tabId);
+    activeInjections.delete(tabId);
     return;
   }
 
@@ -731,7 +1090,8 @@ async function processPendingInjectionForTab(tabId, tab) {
   );
 
   try {
-    const currentTab = tab ?? (await chrome.tabs.get(tabId));
+    await waitForTabInteractionReady(tabId);
+    const currentTab = await chrome.tabs.get(tabId);
     const currentUrl = currentTab?.url ?? "";
 
     if (!isSameSiteOrigin(currentUrl, job.site)) {
@@ -748,6 +1108,11 @@ async function processPendingInjectionForTab(tabId, tab) {
 
     const result = await injectIntoTab(tabId, job.prompt, job.site);
     const finalStatus = result?.status === "submitted" ? "submitted" : result?.status || "failed";
+
+    if (finalStatus === "submitted") {
+      await sleep(TAB_POST_SUBMIT_SETTLE_MS);
+    }
+
     await recordBroadcastSiteResult(job.broadcastId, job.siteId, finalStatus);
 
     if (finalStatus === "login_required") {
@@ -802,7 +1167,7 @@ async function reconcilePendingInjections() {
     try {
       const tab = await chrome.tabs.get(tabId);
       if (tab?.status === "complete") {
-        await processPendingInjectionForTab(tabId, tab);
+        await queuePendingInjection(tabId, tab);
       }
     } catch (_error) {
       await recordBroadcastSiteResult(job.broadcastId, job.siteId, "tab_closed");
@@ -826,6 +1191,7 @@ async function initializeServiceWorker() {
   await createContextMenus();
   await ensureReconcileAlarm();
   await reconcilePendingInjections();
+  await reconcilePendingBroadcasts();
 }
 
 function handleSelectionUpdateMessage(message, sender) {
@@ -852,6 +1218,8 @@ function handleSelectionUpdateMessage(message, sender) {
 }
 
 async function handleBroadcastMessage(message) {
+  await reconcilePendingBroadcasts();
+
   const prompt = normalizePrompt(message?.prompt).trim();
   const selectedSites = await resolveSelectedSites(message?.sites);
   let createdSiteCount = 0;
@@ -871,9 +1239,23 @@ async function handleBroadcastMessage(message) {
   await Promise.all(
     selectedSites.map(async (site) => {
       try {
-        const createdTab = await chrome.tabs.create({ url: site.url });
+        const pendingBeforeCreate = await getPendingBroadcasts();
+        if (!pendingBeforeCreate[broadcast.id]) {
+          return;
+        }
+
+        const createdTab = await chrome.tabs.create({
+          url: site.url,
+          active: false,
+        });
         if (!createdTab?.id) {
           throw new Error("Tab was created without a valid id.");
+        }
+
+        const pendingAfterCreate = await getPendingBroadcasts();
+        if (!pendingAfterCreate[broadcast.id]) {
+          await closeTabQuietly(createdTab.id);
+          return;
         }
 
         await addPendingInjection(createdTab.id, {
@@ -890,7 +1272,7 @@ async function handleBroadcastMessage(message) {
         createdTabSiteIds.push(site.id);
 
         if (createdTab.status === "complete") {
-          void processPendingInjectionForTab(createdTab.id, createdTab);
+          void queuePendingInjection(createdTab.id, createdTab);
         }
       } catch (error) {
         console.error("[AI Prompt Broadcaster] Failed to create broadcast tab.", {
@@ -927,6 +1309,11 @@ async function handleSelectorCheckInit(message) {
 }
 
 async function handleSelectorCheckReport(message) {
+  if (message?.status === "ok" && message?.siteId) {
+    await clearFailedSelector(message.siteId);
+    return { ok: true };
+  }
+
   if (message?.status !== "selector_missing") {
     return { ok: true };
   }
@@ -999,6 +1386,7 @@ async function handleUiToastMessage(message) {
 }
 
 async function handlePopupOpened() {
+  await reconcilePendingBroadcasts();
   const lastBroadcast = await getLastBroadcast();
   if (!lastBroadcast || lastBroadcast.status !== "sending") {
     await clearBadge();
@@ -1007,6 +1395,14 @@ async function handlePopupOpened() {
   return {
     ok: true,
     lastBroadcast,
+  };
+}
+
+async function handleCancelBroadcastMessage(message) {
+  const summary = await cancelBroadcast(message?.broadcastId ?? "", "cancelled");
+  return {
+    ok: Boolean(summary),
+    summary,
   };
 }
 
@@ -1080,6 +1476,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           sendResponse({ ok: false, error: error?.message ?? String(error) });
         });
       return true;
+    case "cancelBroadcast":
+      void handleCancelBroadcastMessage(message)
+        .then((result) => sendResponse(result))
+        .catch((error) => {
+          sendResponse({ ok: false, error: error?.message ?? String(error) });
+        });
+      return true;
     case "selection:update":
       sendResponse(handleSelectionUpdateMessage(message, sender));
       return false;
@@ -1146,7 +1549,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     return;
   }
 
-  void processPendingInjectionForTab(tabId, tab);
+  void queuePendingInjection(tabId, tab);
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
