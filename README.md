@@ -164,6 +164,8 @@ For build and packaging steps, see [docs/build-guide.md](docs/build-guide.md). F
 
 ### Key Features
 - Send one prompt to multiple AI services in parallel
+- Discover already-open AI tabs in the current window and reuse them by default
+- Choose a specific open tab, force a new tab, or keep the default routing per service from the popup
 - Automatic prompt history for successful broadcasts
 - Favorites with editable titles and live search
 - JSON export/import for history and favorites
@@ -220,13 +222,21 @@ npm run build
 1. Click the `AI Prompt Broadcaster` icon in the Chrome toolbar.
 2. Enter a prompt.
 3. Select one or more target AI services.
-4. Click `Send`.
-5. The extension opens one tab per selected service and attempts prompt injection.
-6. If automatic injection fails, a fallback banner appears and the prompt is copied to the clipboard when possible.
+4. Optionally choose `default behavior`, `always open a new tab`, or a specific already-open AI tab for each selected service.
+5. Click `Send`.
+6. The extension reuses matching tabs in the current window when that setting is enabled, otherwise it opens fresh tabs.
+7. Tabs are focused and processed in sequence so prompt injection can run against focus-sensitive editors more reliably.
+8. If automatic injection fails, a fallback banner appears and the prompt is copied to the clipboard when possible.
 
 If a keyboard shortcut or notification tries to reopen the UI while Chrome has no active browser window, the extension stores the prompt first and falls back to a standalone popup window when needed.
 
 GIF placeholder: `docs/assets/usage-demo.gif`
+
+### Tab Routing and Reuse
+- The popup can list currently open AI tabs in the active browser window and let you target a specific tab per service.
+- A reusable-tab setting is available in both the popup settings tab and the options page.
+- The default routing mode reuses a matching open AI tab before opening a new one when `reuseExistingTabs` is enabled.
+- Cancelling a broadcast closes only tabs opened by the current broadcast and leaves reused conversation tabs untouched.
 
 ### Template Variables
 Template prompts support both user-defined variables and built-in system variables.
@@ -261,6 +271,7 @@ If `submitMethod` is `click`, `submitSelector` is required and validation blocks
 ### Limitations
 - You must already be logged in to each target AI service.
 - The extension depends on each site's DOM structure and selectors, so automatic injection can break when a site updates its UI.
+- Open-tab discovery is scoped to a normal Chrome browser window and only matches tabs whose hostnames map back to configured services.
 - Some services may restrict automation or synthetic input events, which can force the fallback flow.
 - Support is provided on a best-effort basis and is not guaranteed to work in every environment.
 

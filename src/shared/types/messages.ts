@@ -1,7 +1,7 @@
 export interface BroadcastMessage {
   action: "broadcast";
   prompt: string;
-  sites: Array<string | { id?: string }>;
+  sites: Array<string | { id?: string; tabId?: number; reuseExistingTab?: boolean; openInNewTab?: boolean; target?: string }>;
 }
 
 export interface SelectorCheckInitMessage {
@@ -42,6 +42,11 @@ export interface PopupOpenedMessage {
   action: "popupOpened";
 }
 
+export interface GetOpenAiTabsMessage {
+  action: "getOpenAiTabs";
+  windowId?: number | null;
+}
+
 export interface UiToastMessage {
   action: "uiToast";
   toast: Record<string, unknown>;
@@ -60,5 +65,6 @@ export type RuntimeMessage =
   | InjectSuccessMessage
   | InjectFallbackMessage
   | PopupOpenedMessage
+  | GetOpenAiTabsMessage
   | UiToastMessage
   | SelectionUpdateMessage;

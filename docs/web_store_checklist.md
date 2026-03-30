@@ -30,7 +30,7 @@
 - `activeTab`
   - 현재 탭의 선택 텍스트를 읽는 단축키/컨텍스트 메뉴 흐름에 사용
 - `tabs`
-  - 대상 AI 서비스 탭 생성 및 조회에 사용
+  - 대상 AI 서비스 탭 생성, 현재 창의 열린 AI 탭 탐지, 탭 상태 추적에 사용
 - `scripting`
   - 대상 탭에 injector 및 selection script를 주입하는 데 사용
 - `alarms`

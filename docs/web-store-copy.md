@@ -56,6 +56,8 @@ AI Prompt Broadcaster is a Chrome extension that removes repetitive copy-and-pas
 Key features:
 
 - Send the same prompt to ChatGPT, Gemini, Claude, and Grok
+- Reuse matching AI tabs already open in the current Chrome window
+- Pick a specific open tab or force a fresh tab per service from the popup
 - Use selected text from any page through shortcuts or the context menu
 - Prompt history, favorites, and template variables
 - Local browser storage for user data
@@ -70,7 +72,7 @@ This extension helps users open one or more AI web service tabs and automaticall
 ### Permission Justification
 
 - `activeTab`: used to read selected text and run selector tests on the current tab
-- `tabs`: used to open AI service pages and track tab state
+- `tabs`: used to discover open AI tabs, open AI service pages, and track tab state
 - `scripting`: used to find input elements and inject prompts on the destination page
 - `storage`: used to store local history, favorites, template values, and settings
 - `contextMenus`: used to provide right-click send actions

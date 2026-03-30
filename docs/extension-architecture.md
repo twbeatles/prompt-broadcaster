@@ -2,7 +2,7 @@
 
 ## Overview
 
-AI Prompt Broadcaster is a Chrome Manifest V3 extension that opens one tab per selected AI service, injects the prompt into the target page, and records the result in local Chrome storage.
+AI Prompt Broadcaster is a Chrome Manifest V3 extension that can reuse an already-open AI tab in the current window or open a fresh tab per service, inject the prompt into the target page, and record the result in local Chrome storage.
 
 The repository now uses a `src/ -> dist/` build pipeline:
 
@@ -109,6 +109,7 @@ Source: `src/background/main.ts`
 Responsibilities:
 
 - receive popup and content-script messages
+- resolve target routing, including specific reused tabs and forced new tabs
 - open target tabs and track pending broadcasts
 - reconcile `chrome.storage.session` state after worker restarts
 - maintain action badge state
@@ -123,10 +124,13 @@ Source: `src/popup/main.ts`
 Responsibilities:
 
 - compose and send prompts
+- discover currently open AI tabs in the active browser window
+- let each service use default routing, a specific tab, or a forced new tab
 - template variable detection and substitution
 - system template alias support for both Korean and English keys
 - history and favorites UI
 - runtime site management UI
+- reusable-tab settings control
 - toast-based feedback
 - restore recent broadcast state and selector warnings
 
@@ -213,6 +217,8 @@ Runtime site records can include:
 
 The background worker uses `hostname` plus `hostnameAliases` as an allowlist when resolving runtime tabs back to site definitions. Built-in services keep their default hostname, while custom services can extend the allowlist with aliases.
 
+Popup tab targeting relies on that same hostname allowlist, so open-tab discovery and explicit tab selection stay aligned with the configured service registry.
+
 `authSelectors` are treated as dedicated auth indicators only when no visible prompt surface is currently available on the page. This prevents public landing pages with both a login link and an editor from being misclassified as auth-only.
 
 ### Prompt and Runtime State Storage
@@ -224,6 +230,7 @@ Important storage keys:
 - `promptHistory`
 - `promptFavorites`
 - `templateVariableCache`
+- `appSettings`
 - `failedSelectors`
 - `pendingInjections`
 - `pendingBroadcasts`
@@ -243,15 +250,20 @@ The legacy `sentTo` field is still stored and exported for backward compatibilit
 
 Popup and options flows should read `requestedSiteIds` first when reconstructing the original broadcast target list.
 
+`appSettings` also stores reusable-tab behavior, including `reuseExistingTabs`, which controls whether the default routing mode prefers matching open AI tabs before creating new ones.
+
 ## High-Level Execution Flow
 
 1. The user submits a prompt from the popup, a keyboard shortcut, or the context menu.
-2. The background worker resolves the selected target sites and creates one tab per site.
-3. Each pending injection is recorded in `chrome.storage.session`.
-4. When the tab finishes loading, the background worker injects `content/injector.js`.
-5. The injector locates the input field, applies the prompt, and waits for click-submit buttons to become enabled when async editors defer their internal state updates.
-6. Success or failure is written back into session/local state.
-7. Popup, options, badge state, and notifications reflect the latest result.
+2. Popup routing can specify default behavior, a forced new tab, or a specific already-open AI tab per service.
+3. The background worker resolves the final target for each service and queues them in the selected order.
+4. Each pending injection is recorded in `chrome.storage.session`.
+5. When a target tab is ready, the background worker focuses it, injects `content/injector.js`, and waits for the injection result before moving on to the next queued tab.
+6. The injector locates the input field, applies the prompt, and waits for click-submit buttons to become enabled when async editors defer their internal state updates.
+7. Success or failure is written back into session/local state.
+8. Popup, options, badge state, and notifications reflect the latest result.
+
+If a broadcast is cancelled, the worker closes only tabs that were opened for that broadcast. Reused tabs are left open.
 
 ## Popup Open Flow
 
@@ -289,6 +301,8 @@ Current smoke coverage includes:
 - input and textarea keyboard submit paths
 - fallback selector resolution
 - auth selector detection for selector-check flows
+
+Popup open-tab discovery and explicit tab targeting are validated manually in Chrome, not by the local fixture smoke suite.
 
 ## i18n and Static Assets
 

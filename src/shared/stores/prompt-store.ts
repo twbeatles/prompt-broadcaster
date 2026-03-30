@@ -22,6 +22,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   historyLimit: DEFAULT_HISTORY_LIMIT,
   autoClosePopup: false,
   desktopNotifications: true,
+  reuseExistingTabs: true,
 });
 
 function safeText(value) {
@@ -93,6 +94,10 @@ function normalizeSettings(value) {
     desktopNotifications: normalizeBoolean(
       value?.desktopNotifications,
       DEFAULT_SETTINGS.desktopNotifications
+    ),
+    reuseExistingTabs: normalizeBoolean(
+      value?.reuseExistingTabs,
+      DEFAULT_SETTINGS.reuseExistingTabs
     ),
   };
 }

@@ -110,6 +110,10 @@ const t = {
     importFailed: msg("options_settings_import_failed"),
     shortcutsOpenFailed: msg("options_settings_shortcuts_open_failed"),
     waitSaved: msg("options_wait_saved") || "Wait time saved.",
+    reuseTabsTitle:
+      msg("options_settings_reuse_tabs_title") || "Reuse current-window AI tabs",
+    reuseTabsDesc:
+      msg("options_settings_reuse_tabs_desc") || "When enabled, matching open AI tabs are reused before opening a new one.",
   },
   statuses: {
     submitted: msg("options_status_complete"),
@@ -158,6 +162,9 @@ const historyLimitSlider = document.getElementById("history-limit-slider");
 const historyLimitValue = document.getElementById("history-limit-value");
 const autoCloseToggle = document.getElementById("auto-close-toggle");
 const desktopNotificationToggle = document.getElementById("desktop-notification-toggle");
+const reuseTabsToggle = document.getElementById("reuse-tabs-toggle");
+const reuseTabsSettingTitle = document.getElementById("reuse-tabs-setting-title");
+const reuseTabsSettingDesc = document.getElementById("reuse-tabs-setting-desc");
 const shortcutList = document.getElementById("shortcut-list");
 const openShortcutsBtn = document.getElementById("open-shortcuts-btn");
 const settingsResetData = document.getElementById("settings-reset-data");
@@ -560,6 +567,9 @@ function applySettingsToControls() {
   historyLimitValue.textContent = t.settings.historyLimitValue(state.settings.historyLimit);
   autoCloseToggle.checked = state.settings.autoClosePopup;
   desktopNotificationToggle.checked = state.settings.desktopNotifications;
+  reuseTabsToggle.checked = state.settings.reuseExistingTabs;
+  reuseTabsSettingTitle.textContent = t.settings.reuseTabsTitle;
+  reuseTabsSettingDesc.textContent = t.settings.reuseTabsDesc;
 }
 
 function openHistoryModal(historyId) {
@@ -795,6 +805,14 @@ function bindEvents() {
   desktopNotificationToggle.addEventListener("change", (event) => {
     void saveSettings({ desktopNotifications: event.target.checked }).catch((error) => {
       console.error("[AI Prompt Broadcaster] Failed to save desktop notification setting.", error);
+      setStatus(error?.message ?? t.saveFailed, "error");
+      showAppToast(error?.message ?? t.saveFailed, "error", 3000);
+    });
+  });
+
+  reuseTabsToggle.addEventListener("change", (event) => {
+    void saveSettings({ reuseExistingTabs: event.target.checked }).catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to save tab reuse setting.", error);
       setStatus(error?.message ?? t.saveFailed, "error");
       showAppToast(error?.message ?? t.saveFailed, "error", 3000);
     });

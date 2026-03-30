@@ -33,6 +33,7 @@ const STANDALONE_POPUP_WIDTH = 460;
 const STANDALONE_POPUP_HEIGHT = 860;
 
 const activeInjections = new Set();
+const queuedInjectionTabIds = new Set();
 const selectionCache = new Map();
 let contextMenuRefreshChain = Promise.resolve();
 let injectionProcessChain = Promise.resolve();
@@ -178,14 +179,30 @@ async function restoreFocusedTabContext(context) {
 }
 
 function queuePendingInjection(tabId, tab) {
+  if (!Number.isFinite(Number(tabId))) {
+    return injectionProcessChain;
+  }
+
+  if (activeInjections.has(tabId) || queuedInjectionTabIds.has(tabId)) {
+    return injectionProcessChain;
+  }
+
+  queuedInjectionTabIds.add(tabId);
   injectionProcessChain = injectionProcessChain
     .catch(() => undefined)
-    .then(() => processPendingInjectionNow(tabId, tab))
+    .then(async () => {
+      try {
+        await processPendingInjectionNow(tabId, tab);
+      } finally {
+        queuedInjectionTabIds.delete(tabId);
+      }
+    })
     .catch((error) => {
       console.error("[AI Prompt Broadcaster] Queued injection processing failed.", {
         tabId,
         error,
       });
+      queuedInjectionTabIds.delete(tabId);
     });
 
   return injectionProcessChain;
@@ -302,6 +319,7 @@ async function addPendingInjection(tabId, payload) {
     createdAt: Number(payload?.createdAt) || Date.now(),
     injected: Boolean(payload?.injected),
     status: payload?.status || "pending",
+    closeOnCancel: payload?.closeOnCancel !== false,
   });
 }
 
@@ -321,16 +339,7 @@ async function getSiteForUrl(urlString) {
     const normalizedHostname = url.hostname.toLowerCase();
 
     return (
-      sites.find((site) => {
-        const allowedHostnames = [
-          site?.hostname,
-          ...(Array.isArray(site?.hostnameAliases) ? site.hostnameAliases : []),
-        ]
-          .filter((entry) => typeof entry === "string" && entry.trim())
-          .map((entry) => entry.trim().toLowerCase());
-
-        return allowedHostnames.includes(normalizedHostname);
-      }) ?? null
+      sites.find((site) => getAllowedSiteHostnames(site).has(normalizedHostname)) ?? null
     );
   } catch (error) {
     console.error("[AI Prompt Broadcaster] Failed to resolve site for URL.", {
@@ -341,13 +350,20 @@ async function getSiteForUrl(urlString) {
   }
 }
 
-async function resolveSelectedSites(siteRefs) {
+function normalizeTargetTabId(value) {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : null;
+}
+
+async function resolveSelectedTargets(siteRefs) {
   const runtimeSites = await getRuntimeSites();
-  const resolvedSites = [];
+  const resolvedTargets = [];
   const seenIds = new Set();
 
   for (const siteRef of Array.isArray(siteRefs) ? siteRefs : []) {
     let resolvedSite = null;
+    let targetTabId = null;
+    let forceNewTab = false;
 
     if (typeof siteRef === "string") {
       resolvedSite = runtimeSites.find((site) => site.id === siteRef) ?? null;
@@ -357,6 +373,12 @@ async function resolveSelectedSites(siteRefs) {
       } else {
         resolvedSite = buildInjectionConfig(siteRef);
       }
+
+      targetTabId = normalizeTargetTabId(siteRef.tabId);
+      forceNewTab =
+        siteRef.reuseExistingTab === false ||
+        siteRef.openInNewTab === true ||
+        siteRef.target === "new";
     }
 
     if (!resolvedSite || !resolvedSite.id || seenIds.has(resolvedSite.id)) {
@@ -364,10 +386,14 @@ async function resolveSelectedSites(siteRefs) {
     }
 
     seenIds.add(resolvedSite.id);
-    resolvedSites.push(buildInjectionConfig(resolvedSite));
+    resolvedTargets.push({
+      site: buildInjectionConfig(resolvedSite),
+      targetTabId,
+      forceNewTab,
+    });
   }
 
-  return resolvedSites;
+  return resolvedTargets;
 }
 
 function isInjectableTabUrl(urlString) {
@@ -376,6 +402,189 @@ function isInjectableTabUrl(urlString) {
     return url.protocol === "http:" || url.protocol === "https:";
   } catch (_error) {
     return false;
+  }
+}
+
+function getAllowedSiteHostnames(site) {
+  return new Set(
+    [
+      site?.hostname,
+      ...(Array.isArray(site?.hostnameAliases) ? site.hostnameAliases : []),
+      isInjectableTabUrl(site?.url ?? "") ? new URL(site.url).hostname : "",
+    ]
+      .filter((entry) => typeof entry === "string" && entry.trim())
+      .map((entry) => entry.trim().toLowerCase())
+  );
+}
+
+function scoreReusableTabForSite(tab, site) {
+  const tabUrl = typeof tab?.url === "string" ? tab.url : "";
+  const siteUrl = typeof site?.url === "string" ? site.url : "";
+  const exactUrlMatch = Boolean(siteUrl && tabUrl.startsWith(siteUrl));
+  const activePenalty = tab?.active ? 10 : 0;
+
+  return (exactUrlMatch ? 0 : 5) + activePenalty;
+}
+
+async function findReusableTabsForSites(sites, options = {}) {
+  const windowId = Number(options?.windowId);
+  if (!Number.isFinite(windowId)) {
+    return new Map();
+  }
+
+  try {
+    const [tabs, pendingInjections] = await Promise.all([
+      chrome.tabs.query({ windowId }),
+      getPendingInjections(),
+    ]);
+
+    const excludedTabIds = new Set(
+      Object.keys(pendingInjections)
+        .map((tabId) => Number(tabId))
+        .filter((tabId) => Number.isFinite(tabId))
+    );
+
+    if (Number.isFinite(Number(options?.excludeTabId))) {
+      excludedTabIds.add(Number(options.excludeTabId));
+    }
+
+    const reusableTabsBySiteId = new Map();
+    const usedTabIds = new Set();
+
+    for (const site of Array.isArray(sites) ? sites : []) {
+      const candidates = tabs
+        .filter((tab) => {
+          if (!Number.isFinite(tab?.id) || usedTabIds.has(tab.id) || excludedTabIds.has(tab.id)) {
+            return false;
+          }
+
+          if (!isInjectableTabUrl(tab?.url ?? "")) {
+            return false;
+          }
+
+          return isSameSiteOrigin(tab.url, site);
+        })
+        .sort((left, right) => scoreReusableTabForSite(left, site) - scoreReusableTabForSite(right, site));
+
+      const match = candidates[0];
+      if (!match?.id) {
+        continue;
+      }
+
+      reusableTabsBySiteId.set(site.id, match);
+      usedTabIds.add(match.id);
+    }
+
+    return reusableTabsBySiteId;
+  } catch (error) {
+    console.error("[AI Prompt Broadcaster] Failed to discover reusable AI tabs.", {
+      windowId,
+      error,
+    });
+    return new Map();
+  }
+}
+
+async function getPreferredNormalWindowId(preferredWindowId = null) {
+  const normalizedPreferredWindowId = Number(preferredWindowId);
+  if (Number.isFinite(normalizedPreferredWindowId)) {
+    try {
+      const preferredWindow = await chrome.windows.get(normalizedPreferredWindowId);
+      if (preferredWindow?.type === "normal") {
+        return preferredWindow.id;
+      }
+    } catch (_error) {
+      // Fall through to auto-discovery when the preferred window no longer exists.
+    }
+  }
+
+  try {
+    const [lastFocusedTab] = await chrome.tabs.query({
+      active: true,
+      lastFocusedWindow: true,
+    });
+
+    if (Number.isFinite(lastFocusedTab?.windowId)) {
+      const windowInfo = await chrome.windows.get(lastFocusedTab.windowId).catch(() => null);
+      if (windowInfo?.type === "normal") {
+        return windowInfo.id;
+      }
+    }
+  } catch (_error) {
+    // Fall back to the currently available normal windows below.
+  }
+
+  try {
+    const windows = await chrome.windows.getAll({
+      windowTypes: ["normal"],
+    });
+    const focusedWindow = windows.find((windowInfo) => windowInfo?.focused && Number.isFinite(windowInfo?.id));
+    return focusedWindow?.id ?? windows.find((windowInfo) => Number.isFinite(windowInfo?.id))?.id ?? null;
+  } catch (error) {
+    console.error("[AI Prompt Broadcaster] Failed to resolve preferred normal window.", error);
+    return null;
+  }
+}
+
+async function getOpenAiTabsForWindow(windowId) {
+  const normalizedWindowId = Number(windowId);
+  if (!Number.isFinite(normalizedWindowId)) {
+    return [];
+  }
+
+  try {
+    const [runtimeSites, tabs] = await Promise.all([
+      getRuntimeSites(),
+      chrome.tabs.query({ windowId: normalizedWindowId }),
+    ]);
+
+    return tabs
+      .map((tab) => {
+        if (!Number.isFinite(tab?.id) || !isInjectableTabUrl(tab?.url ?? "")) {
+          return null;
+        }
+
+        const site = runtimeSites.find((entry) => isSameSiteOrigin(tab.url, entry));
+        if (!site) {
+          return null;
+        }
+
+        return {
+          siteId: site.id,
+          siteName: site.name,
+          tabId: tab.id,
+          title: typeof tab.title === "string" ? tab.title : "",
+          url: typeof tab.url === "string" ? tab.url : "",
+          active: Boolean(tab.active),
+          status: typeof tab.status === "string" ? tab.status : "",
+          windowId: normalizedWindowId,
+        };
+      })
+      .filter(Boolean);
+  } catch (error) {
+    console.error("[AI Prompt Broadcaster] Failed to collect open AI tabs.", {
+      windowId: normalizedWindowId,
+      error,
+    });
+    return [];
+  }
+}
+
+async function getExplicitReusableTabForTarget(target) {
+  const targetTabId = Number(target?.targetTabId);
+  if (!Number.isFinite(targetTabId)) {
+    return null;
+  }
+
+  try {
+    const tab = await chrome.tabs.get(targetTabId);
+    if (!tab?.id || !isInjectableTabUrl(tab?.url ?? "")) {
+      return null;
+    }
+
+    return isSameSiteOrigin(tab.url, target.site) ? tab : null;
+  } catch (_error) {
+    return null;
   }
 }
 
@@ -928,7 +1137,11 @@ async function cancelBroadcast(broadcastId, reason = "cancelled") {
   lastSummary = (await finalizeBroadcastSites(normalizedBroadcastId, unresolvedSiteIds, reason)) ?? lastSummary;
 
   await Promise.all(
-    matchingJobs.map(async ([tabIdKey]) => {
+    matchingJobs.map(async ([tabIdKey, job]) => {
+      if (job?.closeOnCancel === false) {
+        return;
+      }
+
       await closeTabQuietly(Number(tabIdKey));
     })
   );
@@ -1022,13 +1235,7 @@ async function injectIntoTab(tabId, prompt, site) {
 function isSameSiteOrigin(tabUrl, site) {
   try {
     const hostname = new URL(tabUrl).hostname.toLowerCase();
-    const allowedHostnames = new Set(
-      [site?.hostname, ...(Array.isArray(site?.hostnameAliases) ? site.hostnameAliases : [])]
-        .filter((entry) => typeof entry === "string" && entry.trim())
-        .map((entry) => entry.trim().toLowerCase())
-    );
-
-    return allowedHostnames.has(hostname);
+    return getAllowedSiteHostnames(site).has(hostname);
   } catch (error) {
     console.error("[AI Prompt Broadcaster] Failed to compare site origin.", {
       tabUrl,
@@ -1093,6 +1300,22 @@ async function processPendingInjectionNow(tabId, tab) {
     await waitForTabInteractionReady(tabId);
     const currentTab = await chrome.tabs.get(tabId);
     const currentUrl = currentTab?.url ?? "";
+
+    // Activate the tab before injection so that focus-dependent DOM APIs
+    // (execCommand, Selection, ClipboardEvent) work correctly.
+    try {
+      if (Number.isFinite(currentTab?.windowId)) {
+        await chrome.windows.update(currentTab.windowId, { focused: true });
+      }
+      await chrome.tabs.update(tabId, { active: true });
+      // Brief pause to let the browser fully render and focus the tab
+      await sleep(300);
+    } catch (activateError) {
+      console.warn("[AI Prompt Broadcaster] Failed to activate tab before injection.", {
+        tabId,
+        activateError,
+      });
+    }
 
     if (!isSameSiteOrigin(currentUrl, job.site)) {
       await recordBroadcastSiteResult(job.broadcastId, job.siteId, "redirected_or_login_required");
@@ -1221,8 +1444,9 @@ async function handleBroadcastMessage(message) {
   await reconcilePendingBroadcasts();
 
   const prompt = normalizePrompt(message?.prompt).trim();
-  const selectedSites = await resolveSelectedSites(message?.sites);
-  let createdSiteCount = 0;
+  const selectedTargets = await resolveSelectedTargets(message?.sites);
+  const selectedSites = selectedTargets.map((target) => target.site);
+  let queuedSiteCount = 0;
 
   if (!prompt) {
     throw new Error("Prompt is required.");
@@ -1233,66 +1457,93 @@ async function handleBroadcastMessage(message) {
   }
 
   const broadcast = await createPendingBroadcast(prompt, selectedSites);
+  const settings = await getAppSettings();
   const createdTabSiteIds = [];
+  const reusedTabSiteIds = [];
   const failedTabSiteIds = [];
+  const reusableTabsBySiteId = settings.reuseExistingTabs
+    ? await findReusableTabsForSites(selectedSites, {
+        windowId: broadcast.originWindowId,
+        excludeTabId: broadcast.originTabId,
+      })
+    : new Map();
 
-  await Promise.all(
-    selectedSites.map(async (site) => {
-      try {
-        const pendingBeforeCreate = await getPendingBroadcasts();
-        if (!pendingBeforeCreate[broadcast.id]) {
-          return;
-        }
+  for (const target of selectedTargets) {
+    const site = target.site;
 
-        const createdTab = await chrome.tabs.create({
+    try {
+      const pendingBeforeCreate = await getPendingBroadcasts();
+      if (!pendingBeforeCreate[broadcast.id]) {
+        continue;
+      }
+
+      const explicitTab = await getExplicitReusableTabForTarget(target);
+      const reusableTab =
+        explicitTab ??
+        (
+          !target.forceNewTab && settings.reuseExistingTabs
+            ? reusableTabsBySiteId.get(site.id) ?? null
+            : null
+        );
+      const targetTab =
+        reusableTab ??
+        await chrome.tabs.create({
           url: site.url,
           active: false,
         });
-        if (!createdTab?.id) {
-          throw new Error("Tab was created without a valid id.");
-        }
 
-        const pendingAfterCreate = await getPendingBroadcasts();
-        if (!pendingAfterCreate[broadcast.id]) {
-          await closeTabQuietly(createdTab.id);
-          return;
-        }
-
-        await addPendingInjection(createdTab.id, {
-          broadcastId: broadcast.id,
-          siteId: site.id,
-          prompt,
-          site,
-          injected: false,
-          status: "pending",
-          createdAt: Date.now(),
-        });
-
-        createdSiteCount += 1;
-        createdTabSiteIds.push(site.id);
-
-        if (createdTab.status === "complete") {
-          void queuePendingInjection(createdTab.id, createdTab);
-        }
-      } catch (error) {
-        console.error("[AI Prompt Broadcaster] Failed to create broadcast tab.", {
-          site,
-          error,
-        });
-        failedTabSiteIds.push(site.id);
-        await recordBroadcastSiteResult(broadcast.id, site.id, "tab_create_failed");
+      if (!targetTab?.id) {
+        throw new Error("Tab was queued without a valid id.");
       }
-    })
-  );
+
+      const pendingAfterCreate = await getPendingBroadcasts();
+      if (!pendingAfterCreate[broadcast.id]) {
+        if (!reusableTab) {
+          await closeTabQuietly(targetTab.id);
+        }
+        continue;
+      }
+
+      await addPendingInjection(targetTab.id, {
+        broadcastId: broadcast.id,
+        siteId: site.id,
+        prompt,
+        site,
+        injected: false,
+        status: "pending",
+        createdAt: Date.now(),
+        closeOnCancel: !reusableTab,
+      });
+
+      queuedSiteCount += 1;
+
+      if (reusableTab) {
+        reusedTabSiteIds.push(site.id);
+      } else {
+        createdTabSiteIds.push(site.id);
+      }
+
+      void queuePendingInjection(targetTab.id, targetTab);
+    } catch (error) {
+      console.error("[AI Prompt Broadcaster] Failed to create broadcast tab.", {
+        site,
+        error,
+      });
+      failedTabSiteIds.push(site.id);
+      await recordBroadcastSiteResult(broadcast.id, site.id, "tab_create_failed");
+    }
+  }
 
   return {
-    ok: createdSiteCount > 0,
-    createdSiteCount,
+    ok: queuedSiteCount > 0,
+    createdSiteCount: queuedSiteCount,
+    queuedSiteCount,
     requestedSiteCount: selectedSites.length,
     createdTabSiteIds,
+    reusedTabSiteIds,
     failedTabSiteIds,
     broadcastId: broadcast.id,
-    error: createdSiteCount > 0 ? undefined : "No tabs could be created.",
+    error: queuedSiteCount > 0 ? undefined : "No tabs could be queued.",
   };
 }
 
@@ -1398,6 +1649,17 @@ async function handlePopupOpened() {
   };
 }
 
+async function handleGetOpenAiTabsMessage(message) {
+  const windowId = await getPreferredNormalWindowId(message?.windowId ?? null);
+  const tabs = await getOpenAiTabsForWindow(windowId);
+
+  return {
+    ok: true,
+    windowId,
+    tabs,
+  };
+}
+
 async function handleCancelBroadcastMessage(message) {
   const summary = await cancelBroadcast(message?.broadcastId ?? "", "cancelled");
   return {
@@ -1471,6 +1733,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
     case "popupOpened":
       void handlePopupOpened()
+        .then((result) => sendResponse(result))
+        .catch((error) => {
+          sendResponse({ ok: false, error: error?.message ?? String(error) });
+        });
+      return true;
+    case "getOpenAiTabs":
+      void handleGetOpenAiTabsMessage(message)
         .then((result) => sendResponse(result))
         .catch((error) => {
           sendResponse({ ok: false, error: error?.message ?? String(error) });

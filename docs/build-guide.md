@@ -72,6 +72,8 @@ The smoke flow loads local fixtures from `qa/fixtures/` and validates the built 
 - `click`, `enter`, and `shift+enter` submit flows
 - selector checker `ok` and `auth_page` reporting
 
+The smoke suite does not cover live Chrome popup behavior such as open-tab discovery, per-service tab targeting, or the reusable-tab setting. Check those manually in a real browser window before release.
+
 If Playwright does not have a browser installed yet, run:
 
 ```bash
@@ -133,8 +135,10 @@ The generated ZIP contains the built extension from `dist/` only.
 3. `npm run build`
 4. `npm run qa:smoke`
 5. Load `dist/` in Chrome and verify the extension
-6. Run the packaging script for your platform
-7. Upload the generated ZIP to Chrome Web Store or attach it to a GitHub release
+6. In the popup, verify that currently open AI tabs appear under the matching service cards and that `Reuse open AI tabs` behaves as expected
+7. Confirm that cancelling a broadcast leaves reused tabs open and closes only newly opened tabs
+8. Run the packaging script for your platform
+9. Upload the generated ZIP to Chrome Web Store or attach it to a GitHub release
 
 ## Troubleshooting
 
@@ -150,6 +154,13 @@ The generated ZIP contains the built extension from `dist/` only.
 - Click refresh for the unpacked extension
 - Reopen the popup or options page
 - If you changed `src/background/main.ts`, reload the extension so the MV3 service worker is replaced
+
+### Popup does not show open AI tabs
+
+- Open the popup from a normal Chrome browser window, not from an extension-only popup window
+- Confirm the target AI tabs are already open in the same window
+- Rebuild and reload the extension if you recently changed popup or background code
+- Make sure the tab URL still matches one of the configured service hostnames or hostname aliases
 
 ### Packaging fails with file lock or `EBUSY`
 

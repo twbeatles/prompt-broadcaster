@@ -98,6 +98,7 @@ export interface PendingInjectionRecord {
   createdAt: number;
   injected: boolean;
   status: string;
+  closeOnCancel?: boolean;
 }
 
 export interface PendingBroadcastRecord {

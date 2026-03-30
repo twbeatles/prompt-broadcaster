@@ -363,15 +363,20 @@ select {
 
 /* ── Site cards ── */
 .site-card {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  display: grid;
+  gap: 10px;
   border: 1.5px solid var(--border);
   border-radius: 12px;
   padding: 10px 11px;
-  cursor: pointer;
   background: rgba(255, 255, 255, 0.4);
   transition: all var(--transition);
+}
+
+.site-card-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
   user-select: none;
 }
 
@@ -416,6 +421,97 @@ select {
   flex-shrink: 0;
 }
 
+.site-tabs {
+  display: grid;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.site-tabs-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-soft);
+  font-size: 11px;
+}
+
+.site-tabs-list {
+  display: grid;
+  gap: 6px;
+}
+
+.site-tab-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.36);
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.site-tab-option:hover {
+  background: rgba(255, 255, 255, 0.58);
+}
+
+@media (prefers-color-scheme: dark) {
+  .site-tab-option {
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .site-tab-option:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+}
+
+.site-tab-option input[type="radio"] {
+  margin: 2px 0 0;
+  accent-color: var(--site-color, var(--accent));
+}
+
+.site-tab-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  flex: 1;
+}
+
+.site-tab-title {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.site-tab-meta {
+  color: var(--text-soft);
+  font-size: 11px;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.site-tab-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-soft);
+  background: rgba(255, 255, 255, 0.42);
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+
+@media (prefers-color-scheme: dark) {
+  .site-tab-pill {
+    background: rgba(255, 255, 255, 0.05);
+  }
+}
+
 .site-card.sending .site-status {
   display: inline-block;
   width: 14px;
@@ -439,7 +535,8 @@ select {
 }
 
 .site-card .retry-btn {
-  margin-left: 4px;
+  margin-left: 0;
+  justify-self: start;
   padding: 2px 7px;
   border: 1px solid var(--danger);
   border-radius: 8px;
@@ -812,6 +909,11 @@ select {
 .settings-actions {
   display: grid;
   gap: 8px;
+}
+
+.settings-toggle-row {
+  justify-content: flex-start;
+  gap: 10px;
 }
 
 .service-settings-group,

@@ -8,6 +8,7 @@ import {
   renderTemplatePrompt,
 } from "../shared/template-utils";
 import {
+  DEFAULT_SETTINGS,
   addFavoriteFromHistory,
   clearPromptHistory,
   createFavoritePrompt,
@@ -20,6 +21,7 @@ import {
   getTemplateVariableCache,
   importPromptData,
   updateFavoriteTitle,
+  updateAppSettings,
   updateTemplateVariableCache,
 } from "../shared/stores/prompt-store";
 import {
@@ -199,6 +201,32 @@ const t = {
   toastPromptEmpty: msg("toast_prompt_empty") || msg("popup_warn_empty") || "Please enter a prompt.",
   toastNoService: msg("toast_no_service") || "Please select at least one service.",
   toastSelectorFailed: (name) => msg("toast_selector_failed", [String(name)]) || `${name} selector was not found.`,
+  reuseTabsLabel:
+    msg("popup_reuse_tabs_label") || "Reuse open AI tabs in the current window by default",
+  reuseTabsDescEnabled:
+    msg("popup_reuse_tabs_desc_enabled") || "When no tab is chosen explicitly, the broadcaster reuses a matching open AI tab before opening a new one.",
+  reuseTabsDescDisabled:
+    msg("popup_reuse_tabs_desc_disabled") || "When no tab is chosen explicitly, the broadcaster always opens a fresh tab.",
+  openTabsTitle: (count) =>
+    msg("popup_open_tabs_title", [String(count)]) || `${count} open tab${count === 1 ? "" : "s"}`,
+  openTabsUseDefault:
+    msg("popup_open_tabs_use_default") || "Use default behavior",
+  openTabsUseDefaultDetail: (modeLabel) =>
+    msg("popup_open_tabs_use_default_detail", [String(modeLabel)]) || `Current setting: ${modeLabel}`,
+  openTabsDefaultReuse:
+    msg("popup_open_tabs_default_reuse") || "reuse a matching tab",
+  openTabsDefaultNew:
+    msg("popup_open_tabs_default_new") || "open a new tab",
+  openTabsAlwaysNew:
+    msg("popup_open_tabs_always_new") || "Always open a new tab",
+  openTabsAlwaysNewDetail:
+    msg("popup_open_tabs_always_new_detail") || "Ignore matching open tabs for this service only.",
+  openTabsActive:
+    msg("popup_open_tabs_active") || "Active",
+  openTabsReady:
+    msg("popup_open_tabs_ready") || "Ready",
+  openTabsLoading:
+    msg("popup_open_tabs_loading") || "Loading",
 };
 
 function getUnknownErrorText() {
@@ -232,6 +260,11 @@ const state = {
   lastBroadcastToastSignature: "",
   isSending: false,
   sendSafetyTimer: null,
+  settings: { ...DEFAULT_SETTINGS },
+  openSiteTabs: [],
+  siteTargetSelections: {},
+  openTabsWindowId: null,
+  openTabsRefreshTimer: null,
 };
 
 const extTitle = document.getElementById("ext-title");
@@ -257,6 +290,9 @@ const historyList = document.getElementById("history-list");
 const favoritesList = document.getElementById("favorites-list");
 const settingsTitle = document.getElementById("settings-title");
 const settingsDesc = document.getElementById("settings-desc");
+const reuseExistingTabsToggle = document.getElementById("reuse-existing-tabs-toggle");
+const reuseExistingTabsLabel = document.getElementById("reuse-existing-tabs-label");
+const reuseExistingTabsDesc = document.getElementById("reuse-existing-tabs-desc");
 const openOptionsBtn = document.getElementById("open-options-btn");
 const clearHistoryBtn = document.getElementById("clear-history-btn");
 const exportJsonBtn = document.getElementById("export-json-btn");
@@ -431,6 +467,42 @@ function getEnabledSites() {
 
 function getRuntimeSiteLabel(siteId) {
   return state.runtimeSites.find((site) => site.id === siteId)?.name ?? siteId;
+}
+
+function getOpenSiteTabs(siteId) {
+  return state.openSiteTabs.filter((tab) => tab.siteId === siteId);
+}
+
+function getDefaultTargetModeLabel() {
+  return state.settings.reuseExistingTabs ? t.openTabsDefaultReuse : t.openTabsDefaultNew;
+}
+
+function getDefaultSiteTargetSelection() {
+  return "default";
+}
+
+function syncSiteTargetSelections() {
+  const enabledSiteIds = new Set(getEnabledSites().map((site) => site.id));
+  const nextSelections = {};
+
+  enabledSiteIds.forEach((siteId) => {
+    const currentSelection = state.siteTargetSelections?.[siteId];
+    const availableTabIds = new Set(getOpenSiteTabs(siteId).map((tab) => Number(tab.tabId)));
+
+    if (typeof currentSelection === "number" && availableTabIds.has(currentSelection)) {
+      nextSelections[siteId] = currentSelection;
+      return;
+    }
+
+    if (currentSelection === "new" || currentSelection === "default") {
+      nextSelections[siteId] = currentSelection;
+      return;
+    }
+
+    nextSelections[siteId] = getDefaultSiteTargetSelection();
+  });
+
+  state.siteTargetSelections = nextSelections;
 }
 
 function updatePromptCounter() {
@@ -724,15 +796,99 @@ function mergeTemplateSources(...sources) {
   return Object.assign({}, ...sources.filter(Boolean));
 }
 
+function normalizeOpenSiteTab(entry) {
+  const tabId = Number(entry?.tabId);
+  if (!Number.isFinite(tabId) || typeof entry?.siteId !== "string" || !entry.siteId.trim()) {
+    return null;
+  }
+
+  return {
+    siteId: entry.siteId.trim(),
+    tabId,
+    title: typeof entry?.title === "string" ? entry.title : "",
+    url: typeof entry?.url === "string" ? entry.url : "",
+    active: Boolean(entry?.active),
+    status: typeof entry?.status === "string" ? entry.status : "",
+    windowId: Number.isFinite(Number(entry?.windowId)) ? Number(entry.windowId) : null,
+  };
+}
+
+async function refreshOpenSiteTabs() {
+  try {
+    const response = await chrome.runtime.sendMessage({ action: "getOpenAiTabs" }).catch(() => null);
+    const tabs = Array.isArray(response?.tabs)
+      ? response.tabs.map((entry) => normalizeOpenSiteTab(entry)).filter(Boolean)
+      : [];
+
+    state.openTabsWindowId = Number.isFinite(Number(response?.windowId))
+      ? Number(response.windowId)
+      : null;
+    state.openSiteTabs = tabs;
+    syncSiteTargetSelections();
+  } catch (error) {
+    console.error("[AI Prompt Broadcaster] Failed to refresh open AI tabs.", error);
+    state.openTabsWindowId = null;
+    state.openSiteTabs = [];
+    syncSiteTargetSelections();
+  }
+}
+
+function scheduleOpenSiteTabsRefresh(delayMs = 180) {
+  if (state.openTabsRefreshTimer) {
+    window.clearTimeout(state.openTabsRefreshTimer);
+  }
+
+  state.openTabsRefreshTimer = window.setTimeout(() => {
+    state.openTabsRefreshTimer = null;
+    void refreshOpenSiteTabs()
+      .then(() => renderSiteCheckboxesPanel())
+      .catch((error) => {
+        console.error("[AI Prompt Broadcaster] Scheduled AI tab refresh failed.", error);
+      });
+  }, delayMs);
+}
+
+function applySettingsToControls() {
+  reuseExistingTabsToggle.checked = Boolean(state.settings.reuseExistingTabs);
+  reuseExistingTabsLabel.textContent = t.reuseTabsLabel;
+  reuseExistingTabsDesc.textContent = state.settings.reuseExistingTabs
+    ? t.reuseTabsDescEnabled
+    : t.reuseTabsDescDisabled;
+}
+
+function buildBroadcastTargets(siteIds = []) {
+  return normalizeSiteIdList(siteIds).map((siteId) => {
+    const targetSelection = state.siteTargetSelections?.[siteId];
+
+    if (typeof targetSelection === "number") {
+      return {
+        id: siteId,
+        tabId: targetSelection,
+      };
+    }
+
+    if (targetSelection === "new") {
+      return {
+        id: siteId,
+        reuseExistingTab: false,
+        target: "new",
+      };
+    }
+
+    return { id: siteId };
+  });
+}
+
 async function loadStoredData() {
   try {
-    const [history, favorites, variableCache, runtimeSites, promptResult, failedSelectors] = await Promise.all([
+    const [history, favorites, variableCache, runtimeSites, promptResult, failedSelectors, settings] = await Promise.all([
       getPromptHistory(),
       getPromptFavorites(),
       getTemplateVariableCache(),
       getRuntimeSites(),
       chrome.storage.local.get(["lastPrompt"]),
       getFailedSelectors(),
+      getAppSettings(),
     ]);
 
     state.history = history;
@@ -740,12 +896,16 @@ async function loadStoredData() {
     state.templateVariableCache = variableCache;
     state.runtimeSites = runtimeSites;
     state.failedSelectors = new Map(failedSelectors.map((entry) => [entry.serviceId, entry]));
+    state.settings = settings;
+
+    await refreshOpenSiteTabs();
 
     if (typeof promptResult.lastPrompt === "string" && !promptInput.value.trim()) {
       promptInput.value = promptResult.lastPrompt;
     }
 
-    renderSiteCheckboxes();
+    applySettingsToControls();
+    renderSiteCheckboxesPanel();
     renderManagedSites();
     updatePromptCounter();
     autoResizePromptInput();
@@ -759,12 +919,13 @@ async function loadStoredData() {
 
 async function refreshStoredData() {
   try {
-    const [history, favorites, variableCache, runtimeSites, failedSelectors] = await Promise.all([
+    const [history, favorites, variableCache, runtimeSites, failedSelectors, settings] = await Promise.all([
       getPromptHistory(),
       getPromptFavorites(),
       getTemplateVariableCache(),
       getRuntimeSites(),
       getFailedSelectors(),
+      getAppSettings(),
     ]);
 
     state.history = history;
@@ -772,7 +933,10 @@ async function refreshStoredData() {
     state.templateVariableCache = variableCache;
     state.runtimeSites = runtimeSites;
     state.failedSelectors = new Map(failedSelectors.map((entry) => [entry.serviceId, entry]));
-    renderSiteCheckboxes();
+    state.settings = settings;
+    await refreshOpenSiteTabs();
+    applySettingsToControls();
+    renderSiteCheckboxesPanel();
     renderManagedSites();
     renderLists();
   } catch (error) {
@@ -927,7 +1091,7 @@ async function flushPendingSessionToasts() {
 }
 
 function getSiteCardElement(siteId) {
-  return sitesContainer.querySelector(`label.site-card[for="site-${CSS.escape(siteId)}"]`);
+  return sitesContainer.querySelector(`[data-site-id="${CSS.escape(siteId)}"]`);
 }
 
 function setSiteCardState(siteId, cardState) {
@@ -953,7 +1117,7 @@ function addRetryButton(siteId, finalPrompt) {
   const retryBtn = document.createElement("button");
   retryBtn.type = "button";
   retryBtn.className = "retry-btn";
-  retryBtn.textContent = isKorean ? "재시도" : "Retry";
+  retryBtn.textContent = "Retry";
   retryBtn.addEventListener("click", async (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -964,10 +1128,11 @@ function addRetryButton(siteId, finalPrompt) {
     retryBtn.disabled = true;
     setSiteCardState(siteId, "sending");
     try {
+      await refreshOpenSiteTabs();
       const response = await chrome.runtime.sendMessage({
         action: "broadcast",
         prompt: finalPrompt,
-        sites: [siteId],
+        sites: buildBroadcastTargets([siteId]),
       });
       if (response?.ok) {
         setSiteCardState(siteId, "sent");
@@ -1000,22 +1165,26 @@ async function sendResolvedPrompt(finalPrompt, sites) {
     return;
   }
 
+  const siteIds = normalizeSiteIdList(
+    sites.map((site) => (typeof site === "string" ? site : site?.id))
+  );
+
   setSendingState(true);
   armSendSafetyTimer();
 
-  const siteIds = sites.map((s) => (typeof s === "string" ? s : s.id));
   siteIds.forEach((siteId) => setSiteCardState(siteId, "sending"));
 
-  setStatus(t.sending(sites.length));
+  setStatus(t.sending(siteIds.length));
 
   try {
+    await refreshOpenSiteTabs();
     await chrome.storage.local.set({ lastPrompt: promptInput.value });
     clearAllToasts();
 
     const response = await chrome.runtime.sendMessage({
       action: "broadcast",
       prompt: finalPrompt,
-      sites,
+      sites: buildBroadcastTargets(siteIds),
     });
 
     if (response?.ok) {
@@ -1026,11 +1195,10 @@ async function sendResolvedPrompt(finalPrompt, sites) {
         });
       }
 
-      setStatus(t.sending(response.createdSiteCount ?? sites.length), "warning");
-      showAppToast(t.toastSendSuccess(response.createdSiteCount ?? sites.length), "success", 2200);
+      setStatus(t.sending(response.createdSiteCount ?? siteIds.length), "warning");
+      showAppToast(t.toastSendSuccess(response.createdSiteCount ?? siteIds.length), "success", 2200);
 
-      const settings = await getAppSettings();
-      if (settings.autoClosePopup) {
+      if (state.settings.autoClosePopup) {
         window.close();
       }
     } else {
@@ -1526,6 +1694,10 @@ function renderTabLabels() {
   favoritesSearchInput.placeholder = t.favoritesSearch;
   settingsTitle.textContent = t.settingsTitle;
   settingsDesc.textContent = t.settingsDesc;
+  reuseExistingTabsLabel.textContent = t.reuseTabsLabel;
+  reuseExistingTabsDesc.textContent = state.settings.reuseExistingTabs
+    ? t.reuseTabsDescEnabled
+    : t.reuseTabsDescDisabled;
   openOptionsBtn.textContent = t.openOptions;
   clearHistoryBtn.textContent = t.clearHistory;
   exportJsonBtn.textContent = t.exportJson;
@@ -1609,6 +1781,158 @@ function renderSiteCheckboxes() {
 
     card.classList.toggle("checked", checkbox.checked);
     card.append(checkbox, siteIcon, siteName, warningIcon, siteStatus);
+    sitesContainer.appendChild(card);
+  });
+
+  syncToggleAllLabel();
+  setCardStatesFromBroadcast(state.lastBroadcast);
+}
+
+function renderSiteCheckboxesPanel() {
+  const previousSelection = new Set(checkedSiteIds());
+  sitesContainer.innerHTML = "";
+
+  getEnabledSites().forEach((site) => {
+    const card = document.createElement("article");
+    card.className = "site-card checked";
+    card.dataset.siteId = site.id;
+    card.style.setProperty("--site-color", site.color || "#c24f2e");
+
+    const mainRow = document.createElement("label");
+    mainRow.className = "site-card-main";
+    mainRow.htmlFor = `site-${site.id}`;
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.id = `site-${site.id}`;
+    checkbox.value = site.id;
+    checkbox.checked = previousSelection.size > 0 ? previousSelection.has(site.id) : true;
+
+    const siteIcon = document.createElement("span");
+    siteIcon.className = "site-icon";
+    siteIcon.textContent = getSiteIcon(site);
+
+    const siteName = document.createElement("span");
+    siteName.className = "site-name";
+    siteName.textContent = `${getRuntimeSiteLabel(site.id)}`;
+
+    const selectorWarning = state.failedSelectors.get(site.id);
+    if (selectorWarning) {
+      card.classList.add("selector-warning");
+      card.title = t.selectorWarningTooltip;
+    }
+
+    checkbox.addEventListener("change", () => {
+      card.classList.toggle("checked", checkbox.checked);
+      syncToggleAllLabel();
+    });
+
+    const siteStatus = document.createElement("span");
+    siteStatus.className = "site-status";
+    siteStatus.setAttribute("aria-hidden", "true");
+
+    const warningIcon = document.createElement("span");
+    warningIcon.className = "site-warning";
+    warningIcon.setAttribute("aria-hidden", "true");
+    warningIcon.textContent = selectorWarning ? "!" : "";
+
+    mainRow.append(checkbox, siteIcon, siteName, warningIcon, siteStatus);
+    card.classList.toggle("checked", checkbox.checked);
+    card.appendChild(mainRow);
+
+    const openTabs = getOpenSiteTabs(site.id);
+    const selectedTarget = state.siteTargetSelections?.[site.id] ?? getDefaultSiteTargetSelection();
+
+    if (openTabs.length > 0) {
+      const tabsWrap = document.createElement("div");
+      tabsWrap.className = "site-tabs";
+
+      const tabsHead = document.createElement("div");
+      tabsHead.className = "site-tabs-head";
+      tabsHead.textContent = t.openTabsTitle(openTabs.length);
+
+      const tabsList = document.createElement("div");
+      tabsList.className = "site-tabs-list";
+      const radioName = `site-target-${site.id}`;
+
+      const appendTargetOption = (choiceValue, title, detail, pillText = "") => {
+        const option = document.createElement("label");
+        option.className = "site-tab-option";
+
+        const radio = document.createElement("input");
+        radio.type = "radio";
+        radio.name = radioName;
+        radio.value = typeof choiceValue === "number" ? `tab:${choiceValue}` : String(choiceValue);
+        radio.checked = choiceValue === selectedTarget;
+
+        const copy = document.createElement("span");
+        copy.className = "site-tab-copy";
+
+        const titleNode = document.createElement("span");
+        titleNode.className = "site-tab-title";
+        titleNode.textContent = title;
+
+        const detailNode = document.createElement("span");
+        detailNode.className = "site-tab-meta";
+        detailNode.textContent = detail;
+
+        copy.append(titleNode, detailNode);
+        option.append(radio, copy);
+
+        if (pillText) {
+          const pill = document.createElement("span");
+          pill.className = "site-tab-pill";
+          pill.textContent = pillText;
+          option.appendChild(pill);
+        }
+
+        radio.addEventListener("change", () => {
+          if (!radio.checked) {
+            return;
+          }
+
+          state.siteTargetSelections[site.id] = choiceValue;
+          if (!checkbox.checked) {
+            checkbox.checked = true;
+            card.classList.add("checked");
+          }
+          syncToggleAllLabel();
+        });
+
+        tabsList.appendChild(option);
+      };
+
+      appendTargetOption(
+        "default",
+        t.openTabsUseDefault,
+        t.openTabsUseDefaultDetail(getDefaultTargetModeLabel())
+      );
+      appendTargetOption(
+        "new",
+        t.openTabsAlwaysNew,
+        t.openTabsAlwaysNewDetail
+      );
+
+      openTabs.forEach((tab) => {
+        const detailText = previewText(tab.url || tab.title || "", 52);
+        const pillText = tab.active
+          ? t.openTabsActive
+          : tab.status === "loading"
+            ? t.openTabsLoading
+            : t.openTabsReady;
+
+        appendTargetOption(
+          tab.tabId,
+          previewText(tab.title || tab.url || `${site.name} tab`, 48),
+          detailText,
+          pillText
+        );
+      });
+
+      tabsWrap.append(tabsHead, tabsList);
+      card.appendChild(tabsWrap);
+    }
+
     sitesContainer.appendChild(card);
   });
 
@@ -2048,7 +2372,7 @@ async function handleSend() {
   }
 
   await chrome.storage.local.set({ lastPrompt: prompt });
-  await openTemplateModalV2(prompt, selectedSites);
+  await openTemplateModalV2(prompt, selectedSiteIds);
 }
 
 function bindGlobalEvents() {
@@ -2270,6 +2594,22 @@ function bindGlobalEvents() {
     });
   });
 
+  reuseExistingTabsToggle.addEventListener("change", (event) => {
+    const nextValue = Boolean(event.target.checked);
+    state.settings = {
+      ...state.settings,
+      reuseExistingTabs: nextValue,
+    };
+    applySettingsToControls();
+    renderSiteCheckboxesPanel();
+
+    void updateAppSettings({ reuseExistingTabs: nextValue }).catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to save tab reuse setting.", error);
+      setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
+      showAppToast(t.error(error?.message ?? getUnknownErrorText()), "error", 3200);
+    });
+  });
+
   openOptionsBtn.addEventListener("click", () => {
     void chrome.runtime.openOptionsPage().catch((error) => {
       console.error("[AI Prompt Broadcaster] Failed to open options page.", error);
@@ -2446,6 +2786,24 @@ function bindGlobalEvents() {
     });
   });
 
+  chrome.tabs.onCreated.addListener(() => {
+    scheduleOpenSiteTabsRefresh();
+  });
+
+  chrome.tabs.onRemoved.addListener(() => {
+    scheduleOpenSiteTabsRefresh();
+  });
+
+  chrome.tabs.onUpdated.addListener((_tabId, changeInfo) => {
+    if (changeInfo.status || typeof changeInfo.title === "string" || typeof changeInfo.url === "string") {
+      scheduleOpenSiteTabsRefresh();
+    }
+  });
+
+  chrome.tabs.onActivated.addListener(() => {
+    scheduleOpenSiteTabsRefresh();
+  });
+
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === "session") {
       if (changes.lastBroadcast) {
@@ -2468,6 +2826,7 @@ function bindGlobalEvents() {
       changes.promptFavorites ||
       changes.lastPrompt ||
       changes.templateVariableCache ||
+      changes.appSettings ||
       changes.customSites ||
       changes.builtInSiteStates ||
       changes.builtInSiteOverrides ||
