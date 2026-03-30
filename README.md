@@ -49,11 +49,16 @@
 
 `Best effort`는 대상 사이트의 DOM 구조 변경, 로그인 상태, 반자동화 정책에 따라 주입 성공률이 달라질 수 있음을 의미합니다.
 
+### 이런 분께 좋아요
+- 같은 프롬프트를 여러 AI에 동시에 보내고 답변을 비교하고 싶은 사용자
+- 반복적으로 프롬프트를 테스트하는 프롬프트 엔지니어와 개발자
+- 여러 AI 탭을 일일이 열고 붙여넣는 작업을 줄이고 싶은 사용자
+
 ### 설치 방법
 #### 1. 저장소 준비
 ```bash
-git clone https://github.com/your-org/ai-prompt-broadcaster.git
-cd ai-prompt-broadcaster
+git clone https://github.com/twbeatles/prompt-broadcaster.git
+cd prompt-broadcaster
 npm install
 npm run build
 ```
@@ -79,6 +84,18 @@ npm run build
 6. 실패한 경우 클립보드 복사 및 수동 전송 안내 배너가 표시됩니다.
 
 GIF 자리표시자: `docs/assets/usage-demo.gif`
+
+### 제한 사항
+- 각 AI 서비스에 미리 로그인되어 있어야 정상 동작합니다.
+- 이 확장 프로그램은 각 사이트의 DOM 구조와 입력창 셀렉터에 의존하므로, 사이트 UI가 바뀌면 자동 주입이 일시적으로 깨질 수 있습니다.
+- 일부 서비스는 자동화 또는 합성 입력 이벤트를 제한할 수 있어, 환경에 따라 수동 붙여넣기 폴백이 사용될 수 있습니다.
+- 지원 상태는 `Best effort`이며, 모든 환경에서 100% 동작을 보장하지는 않습니다.
+
+### 개인정보 및 데이터 처리
+- 이 프로젝트는 별도 백엔드를 사용하지 않습니다.
+- 프롬프트 전송은 사용자의 브라우저에서 직접 대상 AI 서비스 탭으로 수행됩니다.
+- 히스토리와 즐겨찾기 데이터는 브라우저 로컬 저장소에 보관됩니다.
+- API 키를 요구하지 않으며, 별도 서버를 통해 프롬프트를 중계하지 않습니다.
 
 ### 새 AI 서비스 추가 방법
 기본 작업은 `src/config/sites.ts`에 새 항목을 추가하는 것입니다.
@@ -168,11 +185,16 @@ For build and packaging steps, see [docs/build-guide.md](docs/build-guide.md). F
 
 `Best effort` means injection can break when a target site changes its DOM, redirects to login, or blocks synthetic input events.
 
+### Who This Is For
+- People who want to send the same prompt to multiple AI services and compare responses
+- Prompt engineers and developers running repeated prompt experiments
+- Users who want to avoid manually opening several AI tabs and pasting the same prompt over and over
+
 ### Installation
 #### 1. Clone the repository
 ```bash
-git clone https://github.com/your-org/ai-prompt-broadcaster.git
-cd ai-prompt-broadcaster
+git clone https://github.com/twbeatles/prompt-broadcaster.git
+cd prompt-broadcaster
 npm install
 npm run build
 ```
@@ -198,6 +220,18 @@ npm run build
 6. If automatic injection fails, a fallback banner appears and the prompt is copied to the clipboard when possible.
 
 GIF placeholder: `docs/assets/usage-demo.gif`
+
+### Limitations
+- You must already be logged in to each target AI service.
+- The extension depends on each site's DOM structure and selectors, so automatic injection can break when a site updates its UI.
+- Some services may restrict automation or synthetic input events, which can force the fallback flow.
+- Support is provided on a best-effort basis and is not guaranteed to work in every environment.
+
+### Privacy and Data Handling
+- This project does not require a backend server.
+- Prompts are sent directly from the user's browser to the target AI service tabs.
+- History and favorites are stored in the browser's local storage.
+- No API keys are required, and prompts are not relayed through a separate server.
 
 ### Adding a New AI Service
 The primary change goes into `src/config/sites.ts`.
