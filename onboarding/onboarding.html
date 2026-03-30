@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Prompt Broadcaster Onboarding</title>
+  <link rel="stylesheet" href="onboarding.css" />
+</head>
+<body>
+  <main class="onboarding-shell">
+    <div class="step-dots" aria-hidden="true">
+      <span class="step-dot active" data-step-dot="0"></span>
+      <span class="step-dot" data-step-dot="1"></span>
+      <span class="step-dot" data-step-dot="2"></span>
+    </div>
+
+    <section class="step-card active" data-step="0">
+      <div class="hero-mark">APB</div>
+      <h1 id="hero-title"></h1>
+      <p id="hero-desc" class="hero-copy"></p>
+      <div class="logo-grid">
+        <div class="logo-card">GPT<br /><span>ChatGPT</span></div>
+        <div class="logo-card">Gem<br /><span>Gemini</span></div>
+        <div class="logo-card">Cl<br /><span>Claude</span></div>
+        <div class="logo-card">Gk<br /><span>Grok</span></div>
+      </div>
+      <button class="primary-button" type="button" data-next></button>
+    </section>
+
+    <section class="step-card" data-step="1">
+      <h2 id="permission-title"></h2>
+      <p id="permission-desc" class="hero-copy"></p>
+      <div id="permission-list" class="info-grid"></div>
+      <div id="privacy-note" class="notice-box"></div>
+      <div class="button-row">
+        <button class="ghost-button" type="button" data-prev></button>
+        <button class="primary-button" type="button" data-next></button>
+      </div>
+    </section>
+
+    <section class="step-card" data-step="2">
+      <h2 id="usage-title"></h2>
+      <p id="usage-desc" class="hero-copy"></p>
+      <div id="usage-list" class="flow-grid"></div>
+      <div class="button-row">
+        <button class="ghost-button" type="button" data-prev></button>
+        <button id="finish-btn" class="primary-button" type="button"></button>
+      </div>
+    </section>
+  </main>
+
+  <script src="onboarding.js" type="module"></script>
+</body>
+</html>

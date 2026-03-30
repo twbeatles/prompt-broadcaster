@@ -1,0 +1,188 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f4efe7;
+  --panel: rgba(255, 255, 255, 0.86);
+  --panel-strong: #ffffff;
+  --border: rgba(92, 73, 47, 0.16);
+  --text: #201a15;
+  --text-soft: #726658;
+  --accent: #c24f2e;
+  --accent-soft: rgba(194, 79, 46, 0.12);
+  --shadow: 0 18px 40px rgba(79, 53, 31, 0.14);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #171311;
+    --panel: rgba(35, 28, 24, 0.88);
+    --panel-strong: #221b17;
+    --border: rgba(255, 233, 214, 0.12);
+    --text: #f8efe6;
+    --text-soft: #c6b5a4;
+    --accent: #ff7a4f;
+    --accent-soft: rgba(255, 122, 79, 0.16);
+    --shadow: 0 20px 48px rgba(0, 0, 0, 0.28);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(255, 196, 153, 0.28), transparent 36%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 18%),
+    var(--bg);
+  color: var(--text);
+  font: 15px/1.5 "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+button {
+  font: inherit;
+}
+
+.onboarding-shell {
+  width: min(100%, 600px);
+  display: grid;
+  gap: 18px;
+}
+
+.step-dots {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.step-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.14);
+  transition: transform 160ms ease, background 160ms ease;
+}
+
+.step-dot.active {
+  background: var(--accent);
+  transform: scale(1.2);
+}
+
+.step-card {
+  display: none;
+  gap: 16px;
+  padding: 28px;
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  animation: step-in 200ms ease;
+}
+
+.step-card.active {
+  display: grid;
+}
+
+.hero-mark {
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--accent), #f3a24b);
+  color: #fff;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+.hero-copy {
+  color: var(--text-soft);
+}
+
+.logo-grid,
+.info-grid,
+.flow-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.logo-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.logo-card,
+.info-card,
+.flow-card {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--panel-strong);
+}
+
+.logo-card {
+  font-weight: 700;
+  text-align: center;
+}
+
+.logo-card span {
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
+.notice-box {
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: var(--accent-soft);
+}
+
+.button-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.primary-button,
+.ghost-button {
+  border-radius: 12px;
+  padding: 11px 16px;
+  cursor: pointer;
+}
+
+.primary-button {
+  border: 0;
+  background: linear-gradient(135deg, var(--accent), #f29d42);
+  color: #fff;
+}
+
+.ghost-button {
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.42);
+  color: var(--text);
+}
+
+@keyframes step-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

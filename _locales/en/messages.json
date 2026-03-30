@@ -1,0 +1,767 @@
+{
+  "ext_name": {
+    "message": "AI Prompt Broadcaster"
+  },
+  "ext_description": {
+    "message": "A Chrome extension that sends one prompt to ChatGPT, Gemini, Claude, and Grok at the same time"
+  },
+  "command_open_popup": {
+    "message": "Open the AI Prompt Broadcaster popup"
+  },
+  "command_capture_selected": {
+    "message": "Use the selected text as a prompt and open the popup"
+  },
+  "popup_sections_aria": {
+    "message": "Popup sections"
+  },
+  "common_close": {
+    "message": "Close"
+  },
+  "popup_placeholder": {
+    "message": "Write your prompt here...\n\nCtrl+Enter to send."
+  },
+  "popup_sites_label": {
+    "message": "Target services"
+  },
+  "popup_select_all": {
+    "message": "Select all"
+  },
+  "popup_deselect_all": {
+    "message": "Deselect all"
+  },
+  "popup_send": {
+    "message": "Send"
+  },
+  "popup_save_favorite": {
+    "message": "Save favorite"
+  },
+  "tab_write": {
+    "message": "Compose"
+  },
+  "tab_history": {
+    "message": "History"
+  },
+  "tab_favorites": {
+    "message": "Favorites"
+  },
+  "tab_settings": {
+    "message": "Settings"
+  },
+  "history_empty": {
+    "message": "No prompt history yet."
+  },
+  "favorites_empty": {
+    "message": "No favorites yet."
+  },
+  "status_sending": {
+    "message": "Sending to $COUNT$ service(s)...",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "status_success": {
+    "message": "Queued broadcast for $COUNT$ service(s)",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "status_failed": {
+    "message": "Error: $MESSAGE$",
+    "placeholders": {
+      "message": {
+        "content": "$1"
+      }
+    }
+  },
+  "settings_reset": {
+    "message": "Clear all history"
+  },
+  "settings_export": {
+    "message": "Export as JSON"
+  },
+  "settings_import": {
+    "message": "Import JSON"
+  },
+  "context_menu_root": {
+    "message": "Send to AI Broadcaster"
+  },
+  "context_menu_send_all": {
+    "message": "Send to all services"
+  },
+  "context_menu_send_to": {
+    "message": "Send to $SERVICE$ only",
+    "placeholders": {
+      "service": {
+        "content": "$1"
+      }
+    }
+  },
+  "popup_warn_empty": {
+    "message": "Please enter a prompt."
+  },
+  "popup_warn_no_site": {
+    "message": "Please select at least one service."
+  },
+  "popup_unknown_error": {
+    "message": "Unknown error"
+  },
+  "popup_history_search": {
+    "message": "Search history"
+  },
+  "popup_favorites_search": {
+    "message": "Search favorites"
+  },
+  "popup_add_favorite": {
+    "message": "Add to favorites"
+  },
+  "popup_delete": {
+    "message": "Delete"
+  },
+  "popup_favorite_added": {
+    "message": "Added to favorites."
+  },
+  "popup_favorite_saved": {
+    "message": "Template favorite saved."
+  },
+  "popup_history_deleted": {
+    "message": "Removed from history."
+  },
+  "popup_favorite_deleted": {
+    "message": "Removed from favorites."
+  },
+  "popup_title_placeholder": {
+    "message": "Favorite title"
+  },
+  "popup_title_saved": {
+    "message": "Favorite title saved."
+  },
+  "popup_settings_title": {
+    "message": "Data management"
+  },
+  "popup_settings_description": {
+    "message": "Clear history, export JSON, or import JSON data."
+  },
+  "popup_open_options": {
+    "message": "Open dashboard"
+  },
+  "popup_clear_history_confirm": {
+    "message": "Delete all history? Favorites will be kept."
+  },
+  "popup_history_cleared": {
+    "message": "History cleared."
+  },
+  "popup_import_success": {
+    "message": "JSON data imported."
+  },
+  "popup_import_failed": {
+    "message": "Failed to import JSON data."
+  },
+  "popup_export_success": {
+    "message": "JSON export generated."
+  },
+  "popup_empty_action_compose": {
+    "message": "Go to Compose"
+  },
+  "popup_no_search_results": {
+    "message": "No matching prompts."
+  },
+  "popup_imported_load": {
+    "message": "Prompt loaded into compose."
+  },
+  "popup_menu_more": {
+    "message": "More actions"
+  },
+  "popup_favorite_star": {
+    "message": "★"
+  },
+  "popup_template_summary": {
+    "message": "$COUNT$ template variable(s) detected",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "popup_template_user_kind": {
+    "message": "Input"
+  },
+  "popup_template_system_kind": {
+    "message": "System"
+  },
+  "popup_template_modal_title": {
+    "message": "Fill template variables"
+  },
+  "popup_template_modal_desc": {
+    "message": "Enter variable values and confirm the final prompt before sending."
+  },
+  "popup_template_preview_label": {
+    "message": "Preview"
+  },
+  "popup_template_cancel": {
+    "message": "Cancel"
+  },
+  "popup_template_confirm": {
+    "message": "Send final prompt"
+  },
+  "popup_template_system_notice": {
+    "message": "Automatic system variables"
+  },
+  "popup_template_clipboard_notice": {
+    "message": "Clipboard text is read automatically right before sending."
+  },
+  "popup_template_clipboard_error": {
+    "message": "Clipboard text could not be read. Check the clipboardRead permission and try again."
+  },
+  "popup_template_missing_values": {
+    "message": "Please fill in every template variable before sending."
+  },
+  "popup_template_field_placeholder": {
+    "message": "Enter $NAME$",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      }
+    }
+  },
+  "popup_favorite_modal_title": {
+    "message": "Save favorite"
+  },
+  "popup_favorite_modal_desc": {
+    "message": "Save the current prompt as a reusable favorite."
+  },
+  "popup_favorite_modal_cancel": {
+    "message": "Cancel"
+  },
+  "popup_favorite_modal_confirm": {
+    "message": "Save"
+  },
+  "popup_favorite_title_label": {
+    "message": "Favorite title"
+  },
+  "popup_favorite_save_defaults_label": {
+    "message": "Save template defaults with this favorite"
+  },
+  "popup_favorite_defaults_label": {
+    "message": "Template default values"
+  },
+  "popup_clear_prompt": {
+    "message": "Clear"
+  },
+  "popup_service_management_title": {
+    "message": "Service management"
+  },
+  "popup_service_management_desc": {
+    "message": "Add, edit, enable, or disable AI targets without changing the code."
+  },
+  "popup_service_add": {
+    "message": "Add service"
+  },
+  "popup_service_reset": {
+    "message": "Reset services"
+  },
+  "popup_service_reset_confirm": {
+    "message": "Restore built-in services and remove all custom services?"
+  },
+  "popup_service_builtin_badge": {
+    "message": "Built-in"
+  },
+  "popup_service_custom_badge": {
+    "message": "Custom"
+  },
+  "popup_service_disabled": {
+    "message": "Disabled"
+  },
+  "popup_service_edit": {
+    "message": "Edit"
+  },
+  "popup_service_delete": {
+    "message": "Delete"
+  },
+  "popup_service_test": {
+    "message": "Test in current tab"
+  },
+  "popup_service_editor_add_title": {
+    "message": "Add custom service"
+  },
+  "popup_service_editor_edit_title": {
+    "message": "Edit service"
+  },
+  "popup_service_editor_desc": {
+    "message": "Configure selector, submit strategy, style, and launch URL."
+  },
+  "popup_service_field_name": {
+    "message": "Service name"
+  },
+  "popup_service_field_url": {
+    "message": "Service URL"
+  },
+  "popup_service_field_input_selector": {
+    "message": "Input selector"
+  },
+  "popup_service_field_input_type": {
+    "message": "Input type"
+  },
+  "popup_service_field_submit_selector": {
+    "message": "Submit selector"
+  },
+  "popup_service_field_submit_method": {
+    "message": "Submit method"
+  },
+  "popup_service_field_wait": {
+    "message": "Page wait time"
+  },
+  "popup_service_field_color": {
+    "message": "Service color"
+  },
+  "popup_service_field_icon": {
+    "message": "Icon"
+  },
+  "popup_service_field_enabled": {
+    "message": "Enabled"
+  },
+  "popup_service_editor_save": {
+    "message": "Save"
+  },
+  "popup_service_editor_cancel": {
+    "message": "Cancel"
+  },
+  "popup_service_saved": {
+    "message": "Service settings saved."
+  },
+  "popup_service_deleted": {
+    "message": "Custom service deleted."
+  },
+  "popup_service_reset_done": {
+    "message": "Service settings were reset."
+  },
+  "popup_service_permission_denied": {
+    "message": "Host permission was not granted for this service URL."
+  },
+  "popup_service_validation_error": {
+    "message": "Please check the service form fields."
+  },
+  "popup_service_test_no_tab": {
+    "message": "No active tab is available for selector testing."
+  },
+  "popup_service_test_no_selector": {
+    "message": "Enter a selector first."
+  },
+  "popup_service_test_invalid_tab": {
+    "message": "Selector testing only works on http/https pages."
+  },
+  "popup_service_test_success": {
+    "message": "Element found ($TYPE$)",
+    "placeholders": {
+      "type": {
+        "content": "$1"
+      }
+    }
+  },
+  "popup_service_test_fail": {
+    "message": "Element not found."
+  },
+  "popup_service_test_error": {
+    "message": "Selector test failed: $MESSAGE$",
+    "placeholders": {
+      "message": {
+        "content": "$1"
+      }
+    }
+  },
+  "popup_service_empty_list": {
+    "message": "No services available."
+  },
+  "notification_selector_title": {
+    "message": "$SERVICE$ selector update required",
+    "placeholders": {
+      "service": {
+        "content": "$1"
+      }
+    }
+  },
+  "notification_selector_message": {
+    "message": "$SERVICE$ selector changed. Update config/sites.js to restore automatic injection.",
+    "placeholders": {
+      "service": {
+        "content": "$1"
+      }
+    }
+  },
+  "notification_broadcast_title_success": {
+    "message": "Broadcast completed"
+  },
+  "notification_broadcast_title_partial": {
+    "message": "Broadcast completed with partial failures"
+  },
+  "notification_broadcast_message_success": {
+    "message": "$COUNT$ service(s) completed",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "notification_broadcast_message_partial": {
+    "message": "$SUCCESS$ succeeded, $FAILED$ failed",
+    "placeholders": {
+      "success": {
+        "content": "$1"
+      },
+      "failed": {
+        "content": "$2"
+      }
+    }
+  },
+  "options_page_title": {
+    "message": "AI Prompt Broadcaster Dashboard"
+  },
+  "options_brand_subtitle": {
+    "message": "Dashboard & analytics"
+  },
+  "options_nav_dashboard": {
+    "message": "Dashboard"
+  },
+  "options_nav_history": {
+    "message": "History"
+  },
+  "options_nav_services": {
+    "message": "Services"
+  },
+  "options_nav_settings": {
+    "message": "Settings"
+  },
+  "options_dashboard_title": {
+    "message": "Dashboard"
+  },
+  "options_dashboard_desc": {
+    "message": "Review high-level usage metrics and recent prompt activity."
+  },
+  "options_history_title": {
+    "message": "History"
+  },
+  "options_history_desc": {
+    "message": "Browse transmission history, filter results, and export CSV."
+  },
+  "options_services_title": {
+    "message": "Service Management"
+  },
+  "options_services_desc": {
+    "message": "Inspect supported services, usage volume, and success rate."
+  },
+  "options_settings_title": {
+    "message": "Settings"
+  },
+  "options_settings_desc": {
+    "message": "Configure retention, notifications, shortcuts, and data management."
+  },
+  "options_chart_service_usage": {
+    "message": "Service usage share"
+  },
+  "options_chart_recent_daily": {
+    "message": "Sends in the last 7 days"
+  },
+  "options_chart_no_usage": {
+    "message": "No usage data available."
+  },
+  "options_chart_no_daily": {
+    "message": "No recent 7-day data available."
+  },
+  "options_chart_total_sent": {
+    "message": "Total sends"
+  },
+  "options_chart_donut_aria": {
+    "message": "Donut chart of service usage share"
+  },
+  "options_chart_bar_aria": {
+    "message": "Bar chart of send count for the last 7 days"
+  },
+  "options_card_total_transmissions": {
+    "message": "Total sends"
+  },
+  "options_card_most_used_service": {
+    "message": "Most used AI"
+  },
+  "options_card_week_count": {
+    "message": "This week"
+  },
+  "options_card_average_prompt_length": {
+    "message": "Average prompt length"
+  },
+  "options_card_char_suffix": {
+    "message": "chars"
+  },
+  "options_history_export_csv": {
+    "message": "Export CSV"
+  },
+  "options_history_empty_filtered": {
+    "message": "No history matches the current filters."
+  },
+  "options_history_modal_title": {
+    "message": "Prompt details"
+  },
+  "options_table_date": {
+    "message": "Date"
+  },
+  "options_table_prompt": {
+    "message": "Prompt"
+  },
+  "options_table_services": {
+    "message": "Services"
+  },
+  "options_table_status": {
+    "message": "Status"
+  },
+  "options_filter_all_services": {
+    "message": "All services"
+  },
+  "options_pagination_prev": {
+    "message": "Previous"
+  },
+  "options_pagination_next": {
+    "message": "Next"
+  },
+  "options_page_info": {
+    "message": "$CURRENT$ / $TOTAL$",
+    "placeholders": {
+      "current": {
+        "content": "$1"
+      },
+      "total": {
+        "content": "$2"
+      }
+    }
+  },
+  "options_service_input_type": {
+    "message": "Input type"
+  },
+  "options_service_wait_time": {
+    "message": "Wait time"
+  },
+  "options_service_request_count": {
+    "message": "Requests"
+  },
+  "options_service_success_rate": {
+    "message": "Success rate"
+  },
+  "options_service_last_used": {
+    "message": "Last used"
+  },
+  "options_service_default_color": {
+    "message": "Color"
+  },
+  "options_value_none": {
+    "message": "None"
+  },
+  "options_settings_history_limit": {
+    "message": "History retention"
+  },
+  "options_settings_history_limit_value": {
+    "message": "Keep up to $COUNT$ items",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "options_settings_auto_close": {
+    "message": "Auto-close popup after send"
+  },
+  "options_settings_desktop_notifications": {
+    "message": "Desktop notification on completion"
+  },
+  "options_settings_shortcuts": {
+    "message": "Keyboard shortcuts"
+  },
+  "options_settings_open_shortcuts": {
+    "message": "Open chrome://extensions/shortcuts"
+  },
+  "options_settings_data_management": {
+    "message": "Data management"
+  },
+  "options_settings_reset_data": {
+    "message": "Reset data"
+  },
+  "options_settings_saved": {
+    "message": "Settings saved."
+  },
+  "options_settings_save_failed": {
+    "message": "Failed to save settings."
+  },
+  "options_settings_reset_confirm": {
+    "message": "Delete saved history, favorites, and template cache?"
+  },
+  "options_settings_reset_success": {
+    "message": "All saved data was reset."
+  },
+  "options_settings_export_success": {
+    "message": "JSON data exported."
+  },
+  "options_settings_export_failed": {
+    "message": "Failed to export JSON data."
+  },
+  "options_settings_import_success": {
+    "message": "JSON data imported."
+  },
+  "options_settings_import_failed": {
+    "message": "Failed to import JSON data."
+  },
+  "options_settings_reset_failed": {
+    "message": "Failed to reset saved data."
+  },
+  "options_settings_shortcuts_open_failed": {
+    "message": "Failed to open the shortcuts page."
+  },
+  "options_status_complete": {
+    "message": "Completed"
+  },
+  "options_status_partial": {
+    "message": "Partial"
+  },
+  "options_status_failed": {
+    "message": "Failed"
+  },
+  "options_status_unknown": {
+    "message": "Unknown"
+  },
+  "options_shortcut_open_popup": {
+    "message": "Open popup"
+  },
+  "options_shortcut_capture_selected": {
+    "message": "Open popup with selected text"
+  },
+  "options_shortcut_unassigned": {
+    "message": "Not assigned"
+  },
+  "options_shortcut_load_failed": {
+    "message": "Could not load shortcut information."
+  },
+  "options_data_refresh_failed": {
+    "message": "Failed to refresh data."
+  },
+  "options_init_failed": {
+    "message": "Failed to initialize the options page."
+  },
+  "common_confirm": {
+    "message": "Confirm"
+  },
+  "popup_selector_warning_tooltip": {
+    "message": "The selector may have changed. Review the service configuration."
+  },
+  "popup_broadcast_restored_done": {
+    "message": "Last broadcast: $SUCCESS$ success, $FAILED$ failed",
+    "placeholders": {
+      "success": {
+        "content": "$1"
+      },
+      "failed": {
+        "content": "$2"
+      }
+    }
+  },
+  "popup_broadcast_restored_sending": {
+    "message": "A previous broadcast is still in progress."
+  },
+  "toast_history_deleted": {
+    "message": "History item deleted."
+  },
+  "toast_settings_saved": {
+    "message": "Settings saved."
+  },
+  "toast_send_success": {
+    "message": "Started sending to $COUNT$ service(s).",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "toast_prompt_empty": {
+    "message": "Please enter a prompt."
+  },
+  "toast_no_service": {
+    "message": "Select at least one service."
+  },
+  "toast_selector_failed": {
+    "message": "$SERVICE$ selector was not found.",
+    "placeholders": {
+      "service": {
+        "content": "$1"
+      }
+    }
+  },
+  "toast_inject_fallback_copied": {
+    "message": "$SERVICE$ copied the prompt to the clipboard. Paste it manually and send.",
+    "placeholders": {
+      "service": {
+        "content": "$1"
+      }
+    }
+  },
+  "toast_inject_fallback_manual": {
+    "message": "$SERVICE$ automatic injection failed. Paste the prompt manually and send.",
+    "placeholders": {
+      "service": {
+        "content": "$1"
+      }
+    }
+  },
+  "toast_injection_timeout": {
+    "message": "$SERVICE$ injection timed out.",
+    "placeholders": {
+      "service": {
+        "content": "$1"
+      }
+    }
+  },
+  "toast_injection_failed": {
+    "message": "$SERVICE$ automatic injection failed.",
+    "placeholders": {
+      "service": {
+        "content": "$1"
+      }
+    }
+  },
+  "toast_login_required": {
+    "message": "Log in to $SERVICE$ and try again.",
+    "placeholders": {
+      "service": {
+        "content": "$1"
+      }
+    }
+  },
+  "notification_broadcast_title_failed": {
+    "message": "Broadcast failed"
+  },
+  "notification_broadcast_message_failed": {
+    "message": "Broadcast failed. Check each tab for details."
+  },
+  "notification_broadcast_message_partial_named": {
+    "message": "$SUCCESS$ succeeded, $FAILED$ failed ($SERVICES$)",
+    "placeholders": {
+      "success": {
+        "content": "$1"
+      },
+      "failed": {
+        "content": "$2"
+      },
+      "services": {
+        "content": "$3"
+      }
+    }
+  },
+  "notification_broadcast_message_success_named": {
+    "message": "Sent to $COUNT$ service(s). ✅",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "options_wait_saved": {
+    "message": "Wait time saved."
+  }
+}

@@ -1,0 +1,767 @@
+{
+  "ext_name": {
+    "message": "AI 프롬프트 브로드캐스터"
+  },
+  "ext_description": {
+    "message": "하나의 프롬프트를 ChatGPT, Gemini, Claude, Grok에 동시에 전송하는 Chrome 확장 프로그램"
+  },
+  "command_open_popup": {
+    "message": "AI Prompt Broadcaster 팝업 열기"
+  },
+  "command_capture_selected": {
+    "message": "선택한 텍스트를 프롬프트로 넣고 팝업 열기"
+  },
+  "popup_sections_aria": {
+    "message": "팝업 섹션"
+  },
+  "common_close": {
+    "message": "닫기"
+  },
+  "popup_placeholder": {
+    "message": "프롬프트를 입력하세요...\n\nCtrl+Enter로 전송합니다."
+  },
+  "popup_sites_label": {
+    "message": "전송할 서비스"
+  },
+  "popup_select_all": {
+    "message": "전체 선택"
+  },
+  "popup_deselect_all": {
+    "message": "전체 해제"
+  },
+  "popup_send": {
+    "message": "전송"
+  },
+  "popup_save_favorite": {
+    "message": "즐겨찾기 저장"
+  },
+  "tab_write": {
+    "message": "작성"
+  },
+  "tab_history": {
+    "message": "히스토리"
+  },
+  "tab_favorites": {
+    "message": "즐겨찾기"
+  },
+  "tab_settings": {
+    "message": "설정"
+  },
+  "history_empty": {
+    "message": "저장된 프롬프트 히스토리가 없습니다."
+  },
+  "favorites_empty": {
+    "message": "즐겨찾기된 프롬프트가 없습니다."
+  },
+  "status_sending": {
+    "message": "$COUNT$개 서비스로 전송 중...",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "status_success": {
+    "message": "$COUNT$개 서비스로 전송 요청 완료",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "status_failed": {
+    "message": "오류: $MESSAGE$",
+    "placeholders": {
+      "message": {
+        "content": "$1"
+      }
+    }
+  },
+  "settings_reset": {
+    "message": "히스토리 전체 삭제"
+  },
+  "settings_export": {
+    "message": "JSON으로 내보내기"
+  },
+  "settings_import": {
+    "message": "JSON 가져오기"
+  },
+  "context_menu_root": {
+    "message": "AI Broadcaster로 전송"
+  },
+  "context_menu_send_all": {
+    "message": "전체 서비스로 전송"
+  },
+  "context_menu_send_to": {
+    "message": "$SERVICE$로만 전송",
+    "placeholders": {
+      "service": {
+        "content": "$1"
+      }
+    }
+  },
+  "popup_warn_empty": {
+    "message": "프롬프트를 입력해주세요."
+  },
+  "popup_warn_no_site": {
+    "message": "하나 이상의 서비스를 선택해주세요."
+  },
+  "popup_unknown_error": {
+    "message": "알 수 없는 오류"
+  },
+  "popup_history_search": {
+    "message": "히스토리 검색"
+  },
+  "popup_favorites_search": {
+    "message": "즐겨찾기 검색"
+  },
+  "popup_add_favorite": {
+    "message": "즐겨찾기 추가"
+  },
+  "popup_delete": {
+    "message": "삭제"
+  },
+  "popup_favorite_added": {
+    "message": "즐겨찾기에 추가했습니다."
+  },
+  "popup_favorite_saved": {
+    "message": "즐겨찾기 프롬프트를 저장했습니다."
+  },
+  "popup_history_deleted": {
+    "message": "히스토리에서 삭제했습니다."
+  },
+  "popup_favorite_deleted": {
+    "message": "즐겨찾기에서 삭제했습니다."
+  },
+  "popup_title_placeholder": {
+    "message": "즐겨찾기 제목 입력"
+  },
+  "popup_title_saved": {
+    "message": "즐겨찾기 제목을 저장했습니다."
+  },
+  "popup_settings_title": {
+    "message": "데이터 관리"
+  },
+  "popup_settings_description": {
+    "message": "히스토리 삭제, JSON 내보내기, JSON 가져오기를 수행합니다."
+  },
+  "popup_open_options": {
+    "message": "대시보드 열기"
+  },
+  "popup_clear_history_confirm": {
+    "message": "히스토리를 모두 삭제할까요? 즐겨찾기는 유지됩니다."
+  },
+  "popup_history_cleared": {
+    "message": "히스토리를 모두 삭제했습니다."
+  },
+  "popup_import_success": {
+    "message": "JSON 데이터를 가져왔습니다."
+  },
+  "popup_import_failed": {
+    "message": "JSON 가져오기에 실패했습니다."
+  },
+  "popup_export_success": {
+    "message": "JSON 파일을 생성했습니다."
+  },
+  "popup_empty_action_compose": {
+    "message": "작성 탭으로 이동"
+  },
+  "popup_no_search_results": {
+    "message": "검색 결과가 없습니다."
+  },
+  "popup_imported_load": {
+    "message": "프롬프트를 작성 탭으로 불러왔습니다."
+  },
+  "popup_menu_more": {
+    "message": "더보기"
+  },
+  "popup_favorite_star": {
+    "message": "★"
+  },
+  "popup_template_summary": {
+    "message": "감지된 템플릿 변수 $COUNT$개",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "popup_template_user_kind": {
+    "message": "입력"
+  },
+  "popup_template_system_kind": {
+    "message": "시스템"
+  },
+  "popup_template_modal_title": {
+    "message": "템플릿 변수 입력"
+  },
+  "popup_template_modal_desc": {
+    "message": "전송 전에 변수 값을 입력하고 최종 프롬프트를 확인하세요."
+  },
+  "popup_template_preview_label": {
+    "message": "전송 미리보기"
+  },
+  "popup_template_cancel": {
+    "message": "취소"
+  },
+  "popup_template_confirm": {
+    "message": "치환 후 전송"
+  },
+  "popup_template_system_notice": {
+    "message": "자동 치환 변수"
+  },
+  "popup_template_clipboard_notice": {
+    "message": "클립보드 내용은 전송 직전에 자동으로 읽습니다."
+  },
+  "popup_template_clipboard_error": {
+    "message": "클립보드 내용을 읽지 못했습니다. clipboardRead 권한과 브라우저 권한 상태를 확인한 뒤 다시 시도해주세요."
+  },
+  "popup_template_missing_values": {
+    "message": "모든 템플릿 변수 값을 입력해주세요."
+  },
+  "popup_template_field_placeholder": {
+    "message": "$NAME$ 값을 입력하세요",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      }
+    }
+  },
+  "popup_favorite_modal_title": {
+    "message": "즐겨찾기 저장"
+  },
+  "popup_favorite_modal_desc": {
+    "message": "현재 프롬프트를 즐겨찾기로 저장합니다."
+  },
+  "popup_favorite_modal_cancel": {
+    "message": "취소"
+  },
+  "popup_favorite_modal_confirm": {
+    "message": "저장"
+  },
+  "popup_favorite_title_label": {
+    "message": "즐겨찾기 제목"
+  },
+  "popup_favorite_save_defaults_label": {
+    "message": "현재 변수 기본값도 함께 저장"
+  },
+  "popup_favorite_defaults_label": {
+    "message": "저장할 변수 기본값"
+  },
+  "popup_clear_prompt": {
+    "message": "지우기"
+  },
+  "popup_service_management_title": {
+    "message": "서비스 관리"
+  },
+  "popup_service_management_desc": {
+    "message": "코드 수정 없이 AI 대상 서비스를 추가, 편집, 활성화할 수 있습니다."
+  },
+  "popup_service_add": {
+    "message": "서비스 추가"
+  },
+  "popup_service_reset": {
+    "message": "서비스 기본값 복원"
+  },
+  "popup_service_reset_confirm": {
+    "message": "기본 서비스 설정을 복원하고 사용자 추가 서비스를 모두 삭제할까요?"
+  },
+  "popup_service_builtin_badge": {
+    "message": "기본 제공"
+  },
+  "popup_service_custom_badge": {
+    "message": "사용자 추가"
+  },
+  "popup_service_disabled": {
+    "message": "비활성화"
+  },
+  "popup_service_edit": {
+    "message": "편집"
+  },
+  "popup_service_delete": {
+    "message": "삭제"
+  },
+  "popup_service_test": {
+    "message": "현재 탭에서 테스트"
+  },
+  "popup_service_editor_add_title": {
+    "message": "사용자 서비스 추가"
+  },
+  "popup_service_editor_edit_title": {
+    "message": "서비스 편집"
+  },
+  "popup_service_editor_desc": {
+    "message": "셀렉터, 전송 방식, 스타일, URL을 설정합니다."
+  },
+  "popup_service_field_name": {
+    "message": "서비스 이름"
+  },
+  "popup_service_field_url": {
+    "message": "서비스 URL"
+  },
+  "popup_service_field_input_selector": {
+    "message": "입력 필드 셀렉터"
+  },
+  "popup_service_field_input_type": {
+    "message": "입력 타입"
+  },
+  "popup_service_field_submit_selector": {
+    "message": "전송 버튼 셀렉터"
+  },
+  "popup_service_field_submit_method": {
+    "message": "전송 방법"
+  },
+  "popup_service_field_wait": {
+    "message": "페이지 대기 시간"
+  },
+  "popup_service_field_color": {
+    "message": "서비스 색상"
+  },
+  "popup_service_field_icon": {
+    "message": "아이콘"
+  },
+  "popup_service_field_enabled": {
+    "message": "활성화"
+  },
+  "popup_service_editor_save": {
+    "message": "저장"
+  },
+  "popup_service_editor_cancel": {
+    "message": "취소"
+  },
+  "popup_service_saved": {
+    "message": "서비스 설정을 저장했습니다."
+  },
+  "popup_service_deleted": {
+    "message": "사용자 서비스를 삭제했습니다."
+  },
+  "popup_service_reset_done": {
+    "message": "서비스 설정을 기본값으로 복원했습니다."
+  },
+  "popup_service_permission_denied": {
+    "message": "이 서비스 URL에 대한 호스트 권한이 허용되지 않았습니다."
+  },
+  "popup_service_validation_error": {
+    "message": "서비스 입력 폼을 확인해주세요."
+  },
+  "popup_service_test_no_tab": {
+    "message": "셀렉터 테스트에 사용할 활성 탭이 없습니다."
+  },
+  "popup_service_test_no_selector": {
+    "message": "먼저 셀렉터를 입력해주세요."
+  },
+  "popup_service_test_invalid_tab": {
+    "message": "셀렉터 테스트는 http/https 페이지에서만 동작합니다."
+  },
+  "popup_service_test_success": {
+    "message": "요소를 찾았습니다. ($TYPE$)",
+    "placeholders": {
+      "type": {
+        "content": "$1"
+      }
+    }
+  },
+  "popup_service_test_fail": {
+    "message": "요소를 찾지 못했습니다."
+  },
+  "popup_service_test_error": {
+    "message": "셀렉터 테스트 실패: $MESSAGE$",
+    "placeholders": {
+      "message": {
+        "content": "$1"
+      }
+    }
+  },
+  "popup_service_empty_list": {
+    "message": "표시할 서비스가 없습니다."
+  },
+  "notification_selector_title": {
+    "message": "$SERVICE$ 셀렉터 업데이트 필요",
+    "placeholders": {
+      "service": {
+        "content": "$1"
+      }
+    }
+  },
+  "notification_selector_message": {
+    "message": "$SERVICE$ 셀렉터가 변경되었습니다. config/sites.js 업데이트가 필요합니다.",
+    "placeholders": {
+      "service": {
+        "content": "$1"
+      }
+    }
+  },
+  "notification_broadcast_title_success": {
+    "message": "브로드캐스트 완료"
+  },
+  "notification_broadcast_title_partial": {
+    "message": "브로드캐스트 부분 실패"
+  },
+  "notification_broadcast_message_success": {
+    "message": "$COUNT$개 서비스 전송 완료",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "notification_broadcast_message_partial": {
+    "message": "성공 $SUCCESS$, 실패 $FAILED$",
+    "placeholders": {
+      "success": {
+        "content": "$1"
+      },
+      "failed": {
+        "content": "$2"
+      }
+    }
+  },
+  "options_page_title": {
+    "message": "AI Prompt Broadcaster 대시보드"
+  },
+  "options_brand_subtitle": {
+    "message": "대시보드 및 분석"
+  },
+  "options_nav_dashboard": {
+    "message": "대시보드"
+  },
+  "options_nav_history": {
+    "message": "히스토리"
+  },
+  "options_nav_services": {
+    "message": "서비스 관리"
+  },
+  "options_nav_settings": {
+    "message": "설정"
+  },
+  "options_dashboard_title": {
+    "message": "대시보드"
+  },
+  "options_dashboard_desc": {
+    "message": "전송 이력 기반 통계와 최근 사용 추이를 확인합니다."
+  },
+  "options_history_title": {
+    "message": "히스토리"
+  },
+  "options_history_desc": {
+    "message": "전송 이력, 서비스 결과, 필터 및 CSV 내보내기를 제공합니다."
+  },
+  "options_services_title": {
+    "message": "서비스 관리"
+  },
+  "options_services_desc": {
+    "message": "현재 지원 서비스와 사용량/성공률을 확인합니다."
+  },
+  "options_settings_title": {
+    "message": "설정"
+  },
+  "options_settings_desc": {
+    "message": "보관 정책, 알림, 단축키 안내와 데이터 관리를 설정합니다."
+  },
+  "options_chart_service_usage": {
+    "message": "서비스별 사용 비율"
+  },
+  "options_chart_recent_daily": {
+    "message": "최근 7일 전송 횟수"
+  },
+  "options_chart_no_usage": {
+    "message": "표시할 사용 데이터가 없습니다."
+  },
+  "options_chart_no_daily": {
+    "message": "표시할 최근 7일 데이터가 없습니다."
+  },
+  "options_chart_total_sent": {
+    "message": "총 전송"
+  },
+  "options_chart_donut_aria": {
+    "message": "서비스별 사용 비율 도넛 차트"
+  },
+  "options_chart_bar_aria": {
+    "message": "최근 7일 전송 횟수 막대 차트"
+  },
+  "options_card_total_transmissions": {
+    "message": "총 전송 횟수"
+  },
+  "options_card_most_used_service": {
+    "message": "가장 많이 사용한 AI"
+  },
+  "options_card_week_count": {
+    "message": "이번 주 전송 횟수"
+  },
+  "options_card_average_prompt_length": {
+    "message": "평균 프롬프트 길이"
+  },
+  "options_card_char_suffix": {
+    "message": "자"
+  },
+  "options_history_export_csv": {
+    "message": "CSV 내보내기"
+  },
+  "options_history_empty_filtered": {
+    "message": "조건에 맞는 이력이 없습니다."
+  },
+  "options_history_modal_title": {
+    "message": "프롬프트 상세"
+  },
+  "options_table_date": {
+    "message": "날짜"
+  },
+  "options_table_prompt": {
+    "message": "프롬프트"
+  },
+  "options_table_services": {
+    "message": "전송 서비스"
+  },
+  "options_table_status": {
+    "message": "상태"
+  },
+  "options_filter_all_services": {
+    "message": "전체 서비스"
+  },
+  "options_pagination_prev": {
+    "message": "이전"
+  },
+  "options_pagination_next": {
+    "message": "다음"
+  },
+  "options_page_info": {
+    "message": "$CURRENT$ / $TOTAL$",
+    "placeholders": {
+      "current": {
+        "content": "$1"
+      },
+      "total": {
+        "content": "$2"
+      }
+    }
+  },
+  "options_service_input_type": {
+    "message": "입력 타입"
+  },
+  "options_service_wait_time": {
+    "message": "대기 시간"
+  },
+  "options_service_request_count": {
+    "message": "요청 횟수"
+  },
+  "options_service_success_rate": {
+    "message": "성공률"
+  },
+  "options_service_last_used": {
+    "message": "최근 사용"
+  },
+  "options_service_default_color": {
+    "message": "기본 색상"
+  },
+  "options_value_none": {
+    "message": "없음"
+  },
+  "options_settings_history_limit": {
+    "message": "히스토리 보관 개수"
+  },
+  "options_settings_history_limit_value": {
+    "message": "$COUNT$개까지 보관",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "options_settings_auto_close": {
+    "message": "전송 후 팝업 자동 닫기"
+  },
+  "options_settings_desktop_notifications": {
+    "message": "전송 완료 데스크탑 알림"
+  },
+  "options_settings_shortcuts": {
+    "message": "단축키 설정"
+  },
+  "options_settings_open_shortcuts": {
+    "message": "chrome://extensions/shortcuts 열기"
+  },
+  "options_settings_data_management": {
+    "message": "데이터 관리"
+  },
+  "options_settings_reset_data": {
+    "message": "데이터 초기화"
+  },
+  "options_settings_saved": {
+    "message": "설정을 저장했습니다."
+  },
+  "options_settings_save_failed": {
+    "message": "설정 저장에 실패했습니다."
+  },
+  "options_settings_reset_confirm": {
+    "message": "저장된 히스토리, 즐겨찾기, 템플릿 캐시를 모두 삭제할까요?"
+  },
+  "options_settings_reset_success": {
+    "message": "모든 데이터를 초기화했습니다."
+  },
+  "options_settings_export_success": {
+    "message": "JSON 데이터를 내보냈습니다."
+  },
+  "options_settings_export_failed": {
+    "message": "JSON 내보내기에 실패했습니다."
+  },
+  "options_settings_import_success": {
+    "message": "JSON 데이터를 가져왔습니다."
+  },
+  "options_settings_import_failed": {
+    "message": "JSON 가져오기에 실패했습니다."
+  },
+  "options_settings_reset_failed": {
+    "message": "데이터 초기화에 실패했습니다."
+  },
+  "options_settings_shortcuts_open_failed": {
+    "message": "단축키 페이지를 열지 못했습니다."
+  },
+  "options_status_complete": {
+    "message": "완료"
+  },
+  "options_status_partial": {
+    "message": "부분 실패"
+  },
+  "options_status_failed": {
+    "message": "실패"
+  },
+  "options_status_unknown": {
+    "message": "알 수 없음"
+  },
+  "options_shortcut_open_popup": {
+    "message": "팝업 열기"
+  },
+  "options_shortcut_capture_selected": {
+    "message": "선택 텍스트로 팝업 열기"
+  },
+  "options_shortcut_unassigned": {
+    "message": "미설정"
+  },
+  "options_shortcut_load_failed": {
+    "message": "단축키 정보를 불러오지 못했습니다."
+  },
+  "options_data_refresh_failed": {
+    "message": "데이터 새로고침에 실패했습니다."
+  },
+  "options_init_failed": {
+    "message": "옵션 페이지 초기화에 실패했습니다."
+  },
+  "common_confirm": {
+    "message": "확인"
+  },
+  "popup_selector_warning_tooltip": {
+    "message": "셀렉터가 변경되었을 수 있습니다. 서비스 설정을 확인해주세요."
+  },
+  "popup_broadcast_restored_done": {
+    "message": "마지막 전송: 성공 $SUCCESS$, 실패 $FAILED$",
+    "placeholders": {
+      "success": {
+        "content": "$1"
+      },
+      "failed": {
+        "content": "$2"
+      }
+    }
+  },
+  "popup_broadcast_restored_sending": {
+    "message": "이전 전송이 아직 진행 중입니다."
+  },
+  "toast_history_deleted": {
+    "message": "히스토리 항목을 삭제했습니다."
+  },
+  "toast_settings_saved": {
+    "message": "설정을 저장했습니다."
+  },
+  "toast_send_success": {
+    "message": "$COUNT$개 서비스 전송을 시작했습니다.",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "toast_prompt_empty": {
+    "message": "프롬프트를 입력해주세요."
+  },
+  "toast_no_service": {
+    "message": "최소 1개 서비스를 선택해주세요."
+  },
+  "toast_selector_failed": {
+    "message": "$SERVICE$ 셀렉터를 찾지 못했습니다.",
+    "placeholders": {
+      "service": {
+        "content": "$1"
+      }
+    }
+  },
+  "toast_inject_fallback_copied": {
+    "message": "$SERVICE$ 프롬프트를 클립보드에 복사했습니다. 직접 붙여넣기 후 전송해주세요.",
+    "placeholders": {
+      "service": {
+        "content": "$1"
+      }
+    }
+  },
+  "toast_inject_fallback_manual": {
+    "message": "$SERVICE$ 자동 주입에 실패했습니다. 직접 붙여넣기 후 전송해주세요.",
+    "placeholders": {
+      "service": {
+        "content": "$1"
+      }
+    }
+  },
+  "toast_injection_timeout": {
+    "message": "$SERVICE$ 주입 대기 시간이 초과되었습니다.",
+    "placeholders": {
+      "service": {
+        "content": "$1"
+      }
+    }
+  },
+  "toast_injection_failed": {
+    "message": "$SERVICE$ 자동 전송에 실패했습니다.",
+    "placeholders": {
+      "service": {
+        "content": "$1"
+      }
+    }
+  },
+  "toast_login_required": {
+    "message": "$SERVICE$ 로그인 후 다시 시도해주세요.",
+    "placeholders": {
+      "service": {
+        "content": "$1"
+      }
+    }
+  },
+  "notification_broadcast_title_failed": {
+    "message": "브로드캐스트 실패"
+  },
+  "notification_broadcast_message_failed": {
+    "message": "전송에 실패했습니다. 각 탭을 확인해주세요."
+  },
+  "notification_broadcast_message_partial_named": {
+    "message": "성공 $SUCCESS$, 실패 $FAILED$ ($SERVICES$)",
+    "placeholders": {
+      "success": {
+        "content": "$1"
+      },
+      "failed": {
+        "content": "$2"
+      },
+      "services": {
+        "content": "$3"
+      }
+    }
+  },
+  "notification_broadcast_message_success_named": {
+    "message": "$COUNT$개 서비스에 전송했습니다. ✅",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "options_wait_saved": {
+    "message": "대기 시간을 저장했습니다."
+  }
+}

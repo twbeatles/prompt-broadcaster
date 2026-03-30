@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Prompt Broadcaster Dashboard</title>
+  <link rel="stylesheet" href="options.css" />
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark">APB</span>
+        <div>
+          <h1 data-i18n="ext_name">AI Prompt Broadcaster</h1>
+          <p data-i18n="options_brand_subtitle">Dashboard & analytics</p>
+        </div>
+      </div>
+
+      <nav class="nav-list">
+        <button class="nav-button active" type="button" data-section="dashboard" data-i18n="options_nav_dashboard">Dashboard</button>
+        <button class="nav-button" type="button" data-section="history" data-i18n="options_nav_history">History</button>
+        <button class="nav-button" type="button" data-section="services" data-i18n="options_nav_services">Services</button>
+        <button class="nav-button" type="button" data-section="settings" data-i18n="options_nav_settings">Settings</button>
+      </nav>
+    </aside>
+
+    <main class="content">
+      <div id="page-status" class="status-line" role="status" aria-live="polite"></div>
+      <div id="toast-host" aria-live="polite" aria-atomic="true"></div>
+
+      <section id="section-dashboard" class="page-section active">
+        <div class="section-head">
+          <h2 data-i18n="options_dashboard_title">Dashboard</h2>
+          <p data-i18n="options_dashboard_desc">Review high-level usage metrics and recent prompt activity.</p>
+        </div>
+        <div id="dashboard-cards" class="cards-grid"></div>
+        <div class="charts-grid">
+          <div class="panel chart-box">
+            <div class="section-head">
+              <h2 data-i18n="options_chart_service_usage">Service usage share</h2>
+            </div>
+            <div id="service-donut"></div>
+          </div>
+          <div class="panel chart-box">
+            <div class="section-head">
+              <h2 data-i18n="options_chart_recent_daily">Sends in the last 7 days</h2>
+            </div>
+            <div id="daily-bar-chart"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="section-history" class="page-section">
+        <div class="section-head">
+          <h2 data-i18n="options_history_title">History</h2>
+          <p data-i18n="options_history_desc">Browse transmission history, filter results, and export CSV.</p>
+        </div>
+        <div class="panel">
+          <div class="filter-row">
+            <select id="history-service-filter"></select>
+            <input id="history-date-from" type="date" />
+            <input id="history-date-to" type="date" />
+            <button id="history-export-csv" class="btn" type="button" data-i18n="options_history_export_csv">Export CSV</button>
+          </div>
+        </div>
+        <div class="panel">
+          <div id="history-table-wrap"></div>
+          <div class="pagination">
+            <button id="history-prev-page" class="btn" type="button" data-i18n="options_pagination_prev">Previous</button>
+            <span id="history-page-info" class="helper"></span>
+            <button id="history-next-page" class="btn" type="button" data-i18n="options_pagination_next">Next</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="section-services" class="page-section">
+        <div class="section-head">
+          <h2 data-i18n="options_services_title">Service Management</h2>
+          <p data-i18n="options_services_desc">Inspect supported services, usage volume, and success rate.</p>
+        </div>
+        <div id="services-grid" class="services-grid"></div>
+      </section>
+
+      <section id="section-settings" class="page-section">
+        <div class="section-head">
+          <h2 data-i18n="options_settings_title">Settings</h2>
+          <p data-i18n="options_settings_desc">Configure retention, notifications, shortcuts, and data management.</p>
+        </div>
+        <div class="panel settings-stack">
+          <div class="settings-control">
+            <strong data-i18n="options_settings_history_limit">History retention</strong>
+            <input id="history-limit-slider" type="range" min="10" max="200" step="10" />
+            <span id="history-limit-value" class="helper"></span>
+          </div>
+          <div class="settings-control">
+            <div class="toggle-row">
+              <strong data-i18n="options_settings_auto_close">Auto-close popup after send</strong>
+              <input id="auto-close-toggle" type="checkbox" />
+            </div>
+          </div>
+          <div class="settings-control">
+            <div class="toggle-row">
+              <strong data-i18n="options_settings_desktop_notifications">Desktop notification on completion</strong>
+              <input id="desktop-notification-toggle" type="checkbox" />
+            </div>
+          </div>
+          <div class="settings-control">
+            <strong data-i18n="options_settings_shortcuts">Keyboard shortcuts</strong>
+            <div id="shortcut-list" class="helper"></div>
+            <div class="settings-actions">
+              <button id="open-shortcuts-btn" class="btn" type="button" data-i18n="options_settings_open_shortcuts">Open chrome://extensions/shortcuts</button>
+            </div>
+          </div>
+          <div class="settings-control">
+            <strong data-i18n="options_settings_data_management">Data management</strong>
+            <div class="settings-actions">
+              <button id="settings-reset-data" class="btn danger" type="button" data-i18n="options_settings_reset_data">Reset data</button>
+              <button id="settings-export-json" class="btn" type="button" data-i18n="settings_export">Export as JSON</button>
+              <button id="settings-import-json" class="btn" type="button" data-i18n="settings_import">Import JSON</button>
+            </div>
+            <input id="settings-import-json-input" type="file" accept="application/json" hidden />
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="history-modal" class="modal-overlay" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="history-modal-title">
+      <div class="modal-header">
+        <div>
+          <h2 id="history-modal-title" data-i18n="options_history_modal_title">Prompt details</h2>
+          <p id="history-modal-meta" class="helper"></p>
+        </div>
+        <button id="history-modal-close" class="btn" type="button" data-i18n="common_close">Close</button>
+      </div>
+      <div id="history-modal-services" class="service-badges"></div>
+      <pre id="history-modal-text" class="modal-prompt"></pre>
+    </div>
+  </div>
+
+  <script src="options.js" type="module"></script>
+</body>
+</html>
+

@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title data-i18n="ext_name">AI Prompt Broadcaster</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="brand-row">
+        <span class="brand-mark">APB</span>
+        <div>
+          <h1 id="ext-title" data-i18n="ext_name">AI Prompt Broadcaster</h1>
+          <p id="ext-desc" data-i18n="ext_description">One prompt, many AI tabs.</p>
+        </div>
+      </div>
+      <nav class="tab-bar" aria-label="Popup sections" data-i18n-aria-label="popup_sections_aria">
+        <button class="tab-button active" type="button" data-tab="compose" data-i18n="tab_write"></button>
+        <button class="tab-button" type="button" data-tab="history" data-i18n="tab_history"></button>
+        <button class="tab-button" type="button" data-tab="favorites" data-i18n="tab_favorites"></button>
+        <button class="tab-button" type="button" data-tab="settings" data-i18n="tab_settings"></button>
+      </nav>
+    </header>
+
+    <main class="panel-stack">
+      <section class="tab-panel active" data-panel="compose">
+        <div class="prompt-toolbar">
+          <span id="prompt-counter" class="helper-text">0 / 2000</span>
+          <button id="clear-prompt-btn" class="ghost-button small-button" type="button"></button>
+        </div>
+        <textarea id="prompt-input" maxlength="2000" data-i18n-placeholder="popup_placeholder"></textarea>
+        <div id="template-summary" class="template-summary" hidden>
+          <div class="template-summary-header">
+            <span id="template-summary-label"></span>
+          </div>
+          <div id="template-chip-list" class="template-chip-list"></div>
+        </div>
+
+        <div class="sites-section">
+          <div class="section-row">
+            <span id="sites-label" data-i18n="popup_sites_label"></span>
+            <button id="toggle-all" class="ghost-button" type="button" data-i18n="popup_select_all"></button>
+          </div>
+          <div id="sites-container" class="sites-grid"></div>
+        </div>
+
+        <div class="compose-actions">
+          <button id="save-favorite-btn" class="ghost-button" type="button" data-i18n="popup_save_favorite"></button>
+          <button id="send-btn" class="primary-button" type="button" data-i18n="popup_send"></button>
+        </div>
+      </section>
+
+      <section class="tab-panel" data-panel="history">
+        <div class="panel-toolbar">
+          <input id="history-search" class="search-input" type="search" data-i18n-placeholder="popup_history_search" />
+        </div>
+        <div id="history-list" class="prompt-list"></div>
+      </section>
+
+      <section class="tab-panel" data-panel="favorites">
+        <div class="panel-toolbar">
+          <input id="favorites-search" class="search-input" type="search" data-i18n-placeholder="popup_favorites_search" />
+        </div>
+        <div id="favorites-list" class="prompt-list"></div>
+      </section>
+
+      <section class="tab-panel" data-panel="settings">
+        <div class="settings-group">
+          <h2 id="settings-title" data-i18n="popup_settings_title"></h2>
+          <p id="settings-desc" class="helper-text" data-i18n="popup_settings_description"></p>
+        </div>
+
+        <div class="settings-actions">
+          <button id="open-options-btn" class="ghost-button" type="button" data-i18n="popup_open_options"></button>
+          <button id="clear-history-btn" class="ghost-button danger-button" type="button" data-i18n="settings_reset"></button>
+          <button id="export-json-btn" class="ghost-button" type="button" data-i18n="settings_export"></button>
+          <button id="import-json-btn" class="ghost-button" type="button" data-i18n="settings_import"></button>
+          <input id="import-json-input" type="file" accept="application/json" hidden />
+        </div>
+
+        <div class="settings-group service-settings-group">
+          <div class="section-row section-row-start">
+            <div class="section-copy">
+              <h2 id="service-management-title"></h2>
+              <p id="service-management-desc" class="helper-text"></p>
+            </div>
+            <button id="add-service-btn" class="ghost-button" type="button"></button>
+          </div>
+          <div id="managed-sites-list" class="managed-sites-list"></div>
+          <div class="settings-actions">
+            <button id="reset-sites-btn" class="ghost-button danger-button" type="button"></button>
+          </div>
+        </div>
+
+        <div id="service-editor" class="service-editor" hidden>
+          <div class="section-row section-row-start">
+            <div class="section-copy">
+              <h2 id="service-editor-title"></h2>
+              <p id="service-editor-desc" class="helper-text"></p>
+            </div>
+          </div>
+
+          <div class="modal-fields">
+            <label class="field-stack" for="service-name-input">
+              <span id="service-name-label"></span>
+              <input id="service-name-input" class="search-input" type="text" />
+            </label>
+
+            <label class="field-stack" for="service-url-input">
+              <span id="service-url-label"></span>
+              <input id="service-url-input" class="search-input" type="url" />
+            </label>
+
+            <label class="field-stack" for="service-input-selector-input">
+              <span id="service-input-selector-label"></span>
+              <div class="inline-form-row">
+                <input id="service-input-selector-input" class="search-input" type="text" />
+                <button id="test-selector-btn" class="ghost-button" type="button"></button>
+              </div>
+            </label>
+
+            <div class="field-stack">
+              <span id="service-input-type-label"></span>
+              <div id="service-input-type-options" class="inline-radio-group">
+                <label class="inline-radio-option">
+                  <input type="radio" name="service-input-type" value="textarea" checked />
+                  <span>textarea</span>
+                </label>
+                <label class="inline-radio-option">
+                  <input type="radio" name="service-input-type" value="contenteditable" />
+                  <span>contenteditable</span>
+                </label>
+                <label class="inline-radio-option">
+                  <input type="radio" name="service-input-type" value="input" />
+                  <span>input</span>
+                </label>
+              </div>
+            </div>
+
+            <label class="field-stack" for="service-submit-selector-input">
+              <span id="service-submit-selector-label"></span>
+              <input id="service-submit-selector-input" class="search-input" type="text" />
+            </label>
+
+            <label class="field-stack" for="service-submit-method-select">
+              <span id="service-submit-method-label"></span>
+              <select id="service-submit-method-select" class="search-input">
+                <option value="click">click</option>
+                <option value="enter">enter</option>
+                <option value="shift+enter">shift+enter</option>
+              </select>
+            </label>
+
+            <div class="field-stack">
+              <span id="service-wait-label"></span>
+              <div class="range-row">
+                <input id="service-wait-range" type="range" min="500" max="8000" step="100" value="2000" />
+                <span id="service-wait-value" class="helper-text">2000ms</span>
+              </div>
+            </div>
+
+            <div class="inline-field-grid">
+              <label class="field-stack" for="service-color-input">
+                <span id="service-color-label"></span>
+                <input id="service-color-input" class="color-input" type="color" value="#c24f2e" />
+              </label>
+
+              <label class="field-stack" for="service-icon-input">
+                <span id="service-icon-label"></span>
+                <input id="service-icon-input" class="search-input" type="text" maxlength="4" />
+              </label>
+            </div>
+
+            <label class="checkbox-row" for="service-enabled-input">
+              <input id="service-enabled-input" type="checkbox" checked />
+              <span id="service-enabled-label"></span>
+            </label>
+          </div>
+
+          <div id="service-test-result" class="modal-notice" hidden></div>
+          <div id="service-editor-error" class="modal-error" hidden></div>
+
+          <div class="modal-actions">
+            <button id="service-editor-cancel" class="ghost-button" type="button"></button>
+            <button id="service-editor-save" class="primary-button" type="button"></button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="app-footer">
+      <div id="status-message" role="status" aria-live="polite"></div>
+      <div id="toast-host" aria-live="polite" aria-atomic="true"></div>
+    </footer>
+  </div>
+
+  <div id="template-modal" class="modal-overlay" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="template-modal-title">
+      <div class="modal-header">
+        <div>
+          <h2 id="template-modal-title" data-i18n="popup_template_modal_title"></h2>
+          <p id="template-modal-desc" class="helper-text" data-i18n="popup_template_modal_desc"></p>
+        </div>
+        <button id="template-modal-close" class="icon-button" type="button" aria-label="Close" data-i18n-aria-label="common_close">×</button>
+      </div>
+
+      <div id="template-modal-system-info" class="modal-notice" hidden></div>
+      <div id="template-fields" class="modal-fields"></div>
+
+      <div class="modal-section">
+        <div class="section-row">
+          <strong id="template-preview-label" data-i18n="popup_template_preview_label"></strong>
+        </div>
+        <pre id="template-preview" class="preview-box"></pre>
+      </div>
+
+      <div id="template-modal-error" class="modal-error" hidden></div>
+
+      <div class="modal-actions">
+        <button id="template-modal-cancel" class="ghost-button" type="button" data-i18n="popup_template_cancel"></button>
+        <button id="template-modal-confirm" class="primary-button" type="button" data-i18n="popup_template_confirm"></button>
+      </div>
+    </div>
+  </div>
+
+  <div id="favorite-modal" class="modal-overlay" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="favorite-modal-title">
+      <div class="modal-header">
+        <div>
+          <h2 id="favorite-modal-title" data-i18n="popup_favorite_modal_title"></h2>
+          <p id="favorite-modal-desc" class="helper-text" data-i18n="popup_favorite_modal_desc"></p>
+        </div>
+        <button id="favorite-modal-close" class="icon-button" type="button" aria-label="Close" data-i18n-aria-label="common_close">×</button>
+      </div>
+
+      <div class="modal-fields">
+        <label class="field-stack" for="favorite-title-input">
+          <span id="favorite-title-label" data-i18n="popup_favorite_title_label"></span>
+          <input id="favorite-title-input" class="search-input" type="text" data-i18n-placeholder="popup_title_placeholder" />
+        </label>
+
+        <label id="favorite-save-defaults-row" class="checkbox-row" hidden>
+          <input id="favorite-save-defaults" type="checkbox" />
+          <span id="favorite-save-defaults-label" data-i18n="popup_favorite_save_defaults_label"></span>
+        </label>
+      </div>
+
+      <div id="favorite-default-fields-wrap" class="modal-section" hidden>
+        <div class="section-row">
+          <strong id="favorite-default-fields-label" data-i18n="popup_favorite_defaults_label"></strong>
+        </div>
+        <div id="favorite-default-fields" class="modal-fields"></div>
+      </div>
+
+      <div id="favorite-modal-error" class="modal-error" hidden></div>
+
+      <div class="modal-actions">
+        <button id="favorite-modal-cancel" class="ghost-button" type="button" data-i18n="popup_favorite_modal_cancel"></button>
+        <button id="favorite-modal-confirm" class="primary-button" type="button" data-i18n="popup_favorite_modal_confirm"></button>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js" type="module"></script>
+</body>
+</html>

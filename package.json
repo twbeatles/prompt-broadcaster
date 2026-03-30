@@ -1,0 +1,19 @@
+{
+  "name": "ai-prompt-broadcaster",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "clean": "node ./scripts/build.mjs --clean",
+    "typecheck": "tsc --noEmit",
+    "build": "node ./scripts/build.mjs",
+    "rebuild": "npm run clean && npm run build",
+    "package:win": "powershell -ExecutionPolicy Bypass -File .\\package.ps1",
+    "package:unix": "bash ./package.sh"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.1.24",
+    "esbuild": "^0.25.2",
+    "typescript": "^5.8.3"
+  }
+}
