@@ -3,7 +3,7 @@
     "message": "AI 프롬프트 브로드캐스터"
   },
   "ext_description": {
-    "message": "하나의 프롬프트를 ChatGPT, Gemini, Claude, Grok에 동시에 전송하는 Chrome 확장 프로그램"
+    "message": "하나의 프롬프트를 ChatGPT, Gemini, Claude, Grok, Perplexity에 동시에 전송하는 Chrome 확장 프로그램"
   },
   "command_open_popup": {
     "message": "AI Prompt Broadcaster 팝업 열기"
@@ -410,6 +410,14 @@
   },
   "popup_service_permission_denied": {
     "message": "이 서비스 URL에 대한 호스트 권한이 허용되지 않았습니다."
+  },
+  "toast_service_permission_denied": {
+    "message": "$SERVICE$ 서비스에 필요한 호스트 권한이 없어 전송을 건너뛰었습니다.",
+    "placeholders": {
+      "service": {
+        "content": "$1"
+      }
+    }
   },
   "popup_service_validation_error": {
     "message": "서비스 입력 폼을 확인해주세요."

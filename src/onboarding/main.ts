@@ -1,1 +1,1 @@
-import "./helper";
+import "./app/bootstrap";

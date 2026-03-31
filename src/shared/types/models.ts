@@ -1,5 +1,6 @@
 export type InputType = "textarea" | "contenteditable" | "input";
 export type SubmitMethod = "click" | "enter" | "shift+enter";
+export type SelectorCheckMode = "input-and-submit" | "input-only";
 
 export interface SiteConfig {
   id: string;
@@ -11,6 +12,7 @@ export interface SiteConfig {
   inputType: InputType;
   submitSelector?: string;
   submitMethod: SubmitMethod;
+  selectorCheckMode?: SelectorCheckMode;
   waitMs: number;
   fallbackSelectors?: string[];
   fallback: boolean;

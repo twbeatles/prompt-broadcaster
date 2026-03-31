@@ -5,7 +5,8 @@
 Chrome Manifest V3 extension that injects one prompt into multiple AI chat services.
 No backend and no API keys are required. Prompts are injected directly into each service's DOM via `chrome.scripting.executeScript`.
 
-Source of truth: `src/` (TypeScript). Chrome loads the built output in `dist/`.
+Source of truth: `src/` (TypeScript). Chrome loads the built output in `dist/`, and the root runtime JS files are generated mirrors refreshed by `npm run build`.
+`src/*/main.ts` files stay thin and delegate to runtime-local `app/bootstrap.ts` modules.
 
 ## Essential Commands
 
@@ -41,7 +42,8 @@ To package a release zip:
 ## Key Files
 
 ### Configuration
-- `src/config/sites.ts`: built-in AI service definitions
+- `src/config/sites/builtins.ts`: built-in AI service definitions
+- `src/config/sites.ts`: compatibility export used by existing imports
 - `manifest.json`: extension manifest, permissions, and content script matches
 
 ### UI
@@ -51,12 +53,15 @@ To package a release zip:
 - `options/styles/app.css`: dashboard styling
 
 ### Logic
-- `src/shared/stores/sites-store.ts`: built-in, override, and custom site merging
-- `src/shared/stores/prompt-store.ts`: history, favorites, template cache, and settings
-- `src/shared/stores/runtime-state.ts`: last broadcast, UI toasts, and selector warning state
-- `src/shared/template-utils.ts`: template detection and rendering
-- `src/popup/main.ts`: popup UI, open-tab targeting, settings toggles, and broadcast status
-- `src/background/main.ts`: service worker, broadcast orchestration, notifications, and tab reuse routing
+- `src/shared/sites/`: built-in, override, and custom site merging
+- `src/shared/prompts/`: history, favorites, template cache, import/export, and settings
+- `src/shared/runtime-state/`: last broadcast, UI toasts, and selector warning state
+- `src/shared/template/`: template detection and rendering
+- `src/popup/app/bootstrap.ts`: popup orchestration
+- `src/popup/app/i18n.ts`, `src/popup/app/state.ts`: popup state and copy
+- `src/options/app/bootstrap.ts`: options orchestration
+- `src/background/app/bootstrap.ts`: service worker orchestration
+- `src/content/selector-checker/` and `src/content/selection/`: modular content helpers split by runtime, DOM, and reporting concerns
 
 ### i18n
 - `_locales/en/messages.json`
@@ -66,7 +71,7 @@ To package a release zip:
 
 ### Template variables
 System variables: `{{date}}`, `{{time}}`, `{{weekday}}`, `{{clipboard}}`, plus Korean aliases.
-All aliases normalize to canonical English keys in `template-utils.ts`.
+All aliases normalize to canonical English keys in `src/shared/template/`.
 
 ### Injection flow
 1. Popup sends a broadcast message with one target per selected service.
@@ -96,7 +101,7 @@ Do not duplicate toast styles in `popup/styles/app.css`.
 
 ## Adding a New AI Service
 
-1. Add a definition to `src/config/sites.ts`.
+1. Add a definition to `src/config/sites/builtins.ts`.
 2. Add the domain to `manifest.json` host permissions and content script matches if needed.
 3. Run `npm run build`.
 4. Reload the unpacked extension in Chrome.
@@ -118,6 +123,7 @@ Smoke coverage includes:
 - delayed submit-button activation for async click-submit editors
 - `click`, `enter`, and `shift+enter` submit methods
 - selector checker `ok` and `auth_page` reporting
+- selector checker `input-only` mode for conditional submit UIs
 
 ## Conventions
 

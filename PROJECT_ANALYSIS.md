@@ -30,9 +30,15 @@ Chrome Manifest V3 기반 확장 프로그램. 프롬프트 하나를 ChatGPT, G
 prompt-broadcaster/
 ├── src/                          # TypeScript 소스 (수정은 여기서)
 │   ├── background/
-│   │   └── main.ts               # 서비스 워커 (오케스트레이션 핵심)
+│   │   ├── app/
+│   │   │   ├── bootstrap.ts      # 서비스 워커 오케스트레이션 핵심
+│   │   │   └── constants.ts      # 런타임 상수
+│   │   └── main.ts               # 얇은 엔트리포인트
 │   ├── config/
-│   │   └── sites.ts              # 내장 AI 서비스 정의
+│   │   ├── sites/
+│   │   │   ├── builtins.ts       # 내장 AI 서비스 정의
+│   │   │   └── index.ts          # canonical export
+│   │   └── sites.ts              # 하위 호환 re-export
 │   ├── content/
 │   │   ├── injector/             # DOM 주입 로직
 │   │   │   ├── main.ts           # 주입 오케스트레이션
@@ -42,27 +48,53 @@ prompt-broadcaster/
 │   │   │   ├── strategies.ts     # 텍스트 주입 전략
 │   │   │   └── submit.ts         # 제출 실행
 │   │   ├── selector-checker/     # 셀렉터 유효성 검사 (지원 페이지에서 실행)
+│   │   │   ├── checks.ts         # 체크 시나리오
+│   │   │   ├── dom.ts            # DOM 탐색
+│   │   │   ├── helper.ts         # 얇은 부트스트랩
+│   │   │   ├── report.ts         # 결과 보고
+│   │   │   └── runtime.ts        # 메시지 래퍼
 │   │   └── selection/            # 사용자 선택 텍스트 캡처
+│   │       ├── helper.ts         # 얇은 부트스트랩
+│   │       ├── messages.ts       # 런타임 메시지
+│   │       ├── reader.ts         # 선택 텍스트 읽기
+│   │       └── tracker.ts        # 이벤트 추적
 │   ├── onboarding/
-│   │   └── main.ts               # 최초 실행 온보딩
+│   │   ├── app/
+│   │   │   ├── bootstrap.ts
+│   │   │   ├── copy.ts
+│   │   │   ├── navigation.ts
+│   │   │   └── render.ts
+│   │   └── main.ts               # 얇은 엔트리포인트
 │   ├── options/
-│   │   ├── main.ts               # 대시보드 & 설정 페이지
+│   │   ├── app/
+│   │   │   ├── bootstrap.ts      # 대시보드 & 설정 페이지 조립
+│   │   │   ├── i18n.ts
+│   │   │   └── state.ts
+│   │   ├── main.ts               # 얇은 엔트리포인트
 │   │   └── ui/
 │   │       └── charts.ts         # 차트 렌더링
 │   ├── popup/
-│   │   ├── main.ts               # 팝업 UI (메인 인터페이스)
+│   │   ├── app/
+│   │   │   ├── bootstrap.ts      # 팝업 UI 조립
+│   │   │   ├── i18n.ts
+│   │   │   └── state.ts
+│   │   ├── main.ts               # 얇은 엔트리포인트
 │   │   └── ui/
 │   │       └── toast.ts          # 토스트 알림
 │   └── shared/
 │       ├── chrome/               # Chrome API 래퍼
 │       ├── i18n/
 │       │   └── messages.ts       # i18n 헬퍼
+│       ├── prompts/              # 히스토리·즐겨찾기·설정·import/export
+│       ├── runtime-state/        # lastBroadcast, 토스트, 셀렉터 경고
+│       ├── sites/                # 내장/오버라이드/커스텀 사이트 병합
 │       ├── stores/
-│       │   ├── sites-store.ts    # 사이트 레지스트리 (내장+커스텀 병합)
-│       │   ├── prompt-store.ts   # 히스토리·즐겨찾기·설정 영속화
-│       │   └── runtime-state.ts  # 세션 상태 (방송 상태, 토스트)
+│       │   ├── sites-store.ts    # compatibility barrel
+│       │   ├── prompt-store.ts   # compatibility barrel
+│       │   └── runtime-state.ts  # compatibility barrel
 │       ├── security.ts           # URL 검증
-│       ├── template-utils.ts     # 템플릿 변수 감지·렌더링
+│       ├── template/             # 템플릿 변수 감지·렌더링
+│       ├── template-utils.ts     # compatibility barrel
 │       └── types/
 │           ├── models.ts         # 핵심 TypeScript 인터페이스
 │           └── messages.ts       # 런타임 메시지 타입
@@ -115,13 +147,15 @@ prompt-broadcaster/
 | `popup/styles/app.css` | `dist/popup/styles/app.css` |
 | `options/styles/app.css` | `dist/options/styles/app.css` |
 
+`src/*/main.ts`는 빌드 엔트리로 유지되지만, 실제 오케스트레이션은 각 런타임의 `app/bootstrap.ts`에 있다.
+
 ---
 
 ## 4. 핵심 모듈 상세
 
-### 4.1 사이트 설정 (`src/config/sites.ts`)
+### 4.1 사이트 설정 (`src/config/sites/builtins.ts`)
 
-내장 4개 서비스 정의 (셀렉터 검증: 2026-03 기준):
+내장 5개 서비스 정의 (셀렉터 검증: 2026-03 기준):
 
 | 서비스 | URL | 입력 타입 | 대기시간 |
 |---|---|---|---|
@@ -129,6 +163,7 @@ prompt-broadcaster/
 | Gemini | `gemini.google.com` | contenteditable | 2500ms |
 | Claude | `claude.ai` | contenteditable | 1500ms |
 | Grok | `grok.com` | contenteditable | 2000ms |
+| Perplexity | `www.perplexity.ai` | contenteditable | 2000ms |
 
 각 서비스 구조:
 ```typescript
@@ -143,7 +178,7 @@ prompt-broadcaster/
 }
 ```
 
-### 4.2 사이트 스토어 (`src/shared/stores/sites-store.ts`)
+### 4.2 사이트 스토어 (`src/shared/sites/`)
 
 3계층 병합으로 런타임 사이트 목록 생성:
 1. **내장 사이트** (불변 기본값)
@@ -156,7 +191,7 @@ prompt-broadcaster/
 - `isBuiltIn`, `isCustom`, `deletable`, `editable` — 관리 플래그
 - `permissionPattern` — 선택적 호스트 권한 요청용
 
-### 4.3 프롬프트 스토어 (`src/shared/stores/prompt-store.ts`)
+### 4.3 프롬프트 스토어 (`src/shared/prompts/`)
 
 | 데이터 | 스토리지 키 | 구조 |
 |---|---|---|
@@ -190,22 +225,29 @@ prompt-broadcaster/
 }
 ```
 
-### 4.4 런타임 상태 (`src/shared/stores/runtime-state.ts`)
+### 4.4 런타임 상태 (`src/shared/runtime-state/`)
 
 `chrome.storage.session`에 저장 (세션 범위):
 - `lastBroadcast` — 현재/최근 방송 진행 상황
 - `pendingUiToasts` — 표시 대기 중인 알림 큐
 - `failedSelectors` — 서비스별 셀렉터 실패 기록
 
-### 4.5 템플릿 유틸 (`src/shared/template-utils.ts`)
+### 4.5 템플릿 유틸 (`src/shared/template/`)
 
 **시스템 변수** (자동 치환):
 - `{{date}}` / `{{날짜}}` → YYYY-MM-DD
 - `{{time}}` / `{{시간}}` → HH:MM
 - `{{weekday}}` / `{{요일}}` → 요일명
 - `{{clipboard}}` / `{{클립보드}}` → 클립보드 내용
+- `{{url}}` / `{{주소}}` → 활성 일반 브라우저 탭 URL
+- `{{title}}` / `{{제목}}` → 활성 일반 브라우저 탭 제목
+- `{{selection}}` / `{{선택}}` → 활성 일반 브라우저 탭 선택 텍스트
+- `{{counter}}` / `{{카운터}}` → 누적 방송 카운트
+- `{{random}}` / `{{랜덤}}` → 1~1000 랜덤 값
 
 **사용자 변수** — `{{임의이름}}` 형태면 팝업에서 입력 모달 표시
+
+`src/shared/template-utils.ts`는 현재 `src/shared/template/`를 재-export하는 compatibility barrel이다.
 
 ---
 
@@ -320,7 +362,7 @@ background: lastBroadcast 업데이트
 - `activeTab`, `tabs`, `scripting`, `storage`
 - `notifications`, `contextMenus`, `alarms`
 - `clipboardWrite` (기본), `clipboardRead` (선택적)
-- 호스트 권한: chatgpt.com, gemini.google.com, claude.ai, grok.com
+- 호스트 권한: chatgpt.com, gemini.google.com, claude.ai, grok.com, www.perplexity.ai, perplexity.ai
 
 **보안 조치:**
 - `src/shared/security.ts` — URL 검증 (http/https만 허용)
@@ -441,21 +483,21 @@ bash ./package.sh                    # 릴리즈 zip (macOS/Linux)
 
 | 목적 | 수정 파일 |
 |---|---|
-| 새 AI 서비스 추가 | `src/config/sites.ts` + `manifest.json` |
-| 팝업 UI 변경 | `src/popup/main.ts` + `popup/popup.html` + `popup/styles/app.css` |
-| 옵션 페이지 변경 | `src/options/main.ts` + `options/options.html` |
+| 새 AI 서비스 추가 | `src/config/sites/builtins.ts` + `manifest.json` |
+| 팝업 UI 변경 | `src/popup/app/bootstrap.ts` + `popup/popup.html` + `popup/styles/app.css` |
+| 옵션 페이지 변경 | `src/options/app/bootstrap.ts` + `options/options.html` |
 | 주입 로직 변경 | `src/content/injector/` 하위 파일 |
-| 템플릿 변수 추가 | `src/shared/template-utils.ts` |
-| 설정 항목 추가 | `src/shared/stores/prompt-store.ts` |
+| 템플릿 변수 추가 | `src/shared/template/` |
+| 설정 항목 추가 | `src/shared/prompts/` |
 | 새 문자열 추가 | `_locales/en/messages.json` + `_locales/ko/messages.json` |
 | 타입 정의 변경 | `src/shared/types/models.ts` |
-| 백그라운드 로직 | `src/background/main.ts` |
+| 백그라운드 로직 | `src/background/app/bootstrap.ts` |
 
 ---
 
 ## 15. 현재 구현된 기능 목록
 
-- [x] 다중 AI 서비스 동시 방송 (ChatGPT, Gemini, Claude, Grok)
+- [x] 다중 AI 서비스 동시 방송 (ChatGPT, Gemini, Claude, Grok, Perplexity)
 - [x] 탭 재사용 / 새 탭 / 특정 탭 지정
 - [x] 템플릿 변수 (시스템 + 사용자 정의)
 - [x] 한국어/영어 이중 언어

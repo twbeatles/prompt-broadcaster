@@ -20,6 +20,16 @@ const iifeEntries = [
   { entry: "src/content/selection/main.ts", out: "content/selection.js", globalName: "AIPromptBroadcasterSelectionBundle" },
 ];
 
+const generatedMirrorTargets = [
+  "background/service_worker.js",
+  "content/injector.js",
+  "content/selector_checker.js",
+  "content/selection.js",
+  "popup/popup.js",
+  "options/options.js",
+  "onboarding/onboarding.js",
+];
+
 const staticTargets = [
   "manifest.json",
   "_locales",
@@ -53,6 +63,17 @@ async function copyStaticTarget(relativePath) {
   const destination = path.join(distDir, relativePath);
   await mkdir(path.dirname(destination), { recursive: true });
   await cp(source, destination, { recursive: true, force: true });
+}
+
+async function mirrorGeneratedTarget(relativePath) {
+  const source = path.join(distDir, relativePath);
+  if (!(await pathExists(source))) {
+    return;
+  }
+
+  const destination = path.join(rootDir, relativePath);
+  await mkdir(path.dirname(destination), { recursive: true });
+  await cp(source, destination, { force: true });
 }
 
 async function buildEsmEntry(item) {
@@ -99,6 +120,8 @@ async function main() {
   for (const item of iifeEntries) {
     await buildIifeEntry(item);
   }
+
+  await Promise.all(generatedMirrorTargets.map((target) => mirrorGeneratedTarget(target)));
 }
 
 main().catch((error) => {

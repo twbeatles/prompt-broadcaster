@@ -110,6 +110,37 @@ export const AI_SITES = Object.freeze([
       "input[autocomplete='username']",
     ],
   },
+  {
+    id: "perplexity",
+    name: "Perplexity",
+    url: "https://www.perplexity.ai/",
+    hostname: "www.perplexity.ai",
+    hostnameAliases: ["perplexity.ai"],
+    inputSelector:
+      "div#ask-input[contenteditable='true'][role='textbox'], #ask-input[contenteditable='true'], div[contenteditable='true'][role='textbox']",
+    fallbackSelectors: [
+      "div#ask-input[contenteditable='true'][role='textbox']",
+      "#ask-input[contenteditable='true']",
+      "div[contenteditable='true'][role='textbox']",
+      "textarea[placeholder*='Ask'][data-testid='search-input']",
+      "textarea[placeholder*='Ask']",
+      "textarea[placeholder*='질문']",
+      "textarea",
+    ],
+    inputType: "contenteditable",
+    submitSelector:
+      "button[aria-label*='Submit'][type='submit'], button[type='submit'][aria-label*='검색'], button[aria-label*='submit' i], button[aria-label*='제출' i]",
+    submitMethod: "click",
+    waitMs: 2000,
+    fallback: true,
+    lastVerified: "2026-03",
+    verifiedVersion: "perplexity-web-mar-2026",
+    authSelectors: [
+      "input[type='email']",
+      "input[type='password']",
+      "button[data-testid='login-button']",
+    ],
+  },
 ]);
 
 export default AI_SITES;

@@ -3,6 +3,7 @@ import { access } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
+import { build as esbuild } from "esbuild";
 import { chromium } from "playwright";
 
 const rootDir = process.cwd();
@@ -17,6 +18,78 @@ async function ensureFileExists(targetPath) {
   } catch (error) {
     throw new Error(`Required file is missing: ${targetPath}`);
   }
+}
+
+function createChromeMock({ grantedOrigins = [], requestGrantsMissingOrigins = true } = {}) {
+  const storage = {};
+  const granted = new Set(grantedOrigins);
+
+  return {
+    storage: {
+      local: {
+        async get(key) {
+          if (typeof key === "string") {
+            return { [key]: storage[key] };
+          }
+
+          if (Array.isArray(key)) {
+            return Object.fromEntries(key.map((entry) => [entry, storage[entry]]));
+          }
+
+          if (key && typeof key === "object") {
+            return Object.fromEntries(
+              Object.entries(key).map(([entryKey, fallbackValue]) => [
+                entryKey,
+                storage[entryKey] ?? fallbackValue,
+              ])
+            );
+          }
+
+          return { ...storage };
+        },
+        async set(nextValue) {
+          Object.assign(storage, nextValue ?? {});
+        },
+      },
+    },
+    permissions: {
+      async contains(permission) {
+        const origins = Array.isArray(permission?.origins) ? permission.origins : [];
+        return origins.every((origin) => granted.has(origin));
+      },
+      async request(permission) {
+        const origins = Array.isArray(permission?.origins) ? permission.origins : [];
+        if (!requestGrantsMissingOrigins) {
+          return false;
+        }
+
+        origins.forEach((origin) => granted.add(origin));
+        return true;
+      },
+    },
+    i18n: {
+      getMessage() {
+        return "";
+      },
+    },
+  };
+}
+
+async function loadBundledModule(relativeEntryPath, chromeMock) {
+  const result = await esbuild({
+    entryPoints: [path.join(rootDir, relativeEntryPath)],
+    bundle: true,
+    format: "esm",
+    platform: "browser",
+    target: "chrome120",
+    write: false,
+    legalComments: "none",
+    charset: "utf8",
+  });
+
+  globalThis.chrome = chromeMock;
+  const code = result.outputFiles[0]?.text ?? "";
+  return import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`);
 }
 
 function createFixtureUrl(relativePath) {
@@ -439,7 +512,117 @@ async function main() {
     assert.equal(report.siteId, "selector-auth");
   });
 
+  await runStep("selector checker ignores conditional submit when input-only mode is used", async () => {
+    await openFixture(page, "selector-check-conditional-submit.html");
+    await configureSelectorChecker(page, {
+      id: "selector-input-only",
+      name: "Conditional Submit Fixture",
+      inputSelector: "#editor",
+      inputType: "contenteditable",
+      submitSelector: "#send-btn",
+      submitMethod: "click",
+      selectorCheckMode: "input-only",
+      waitMs: 0,
+      authSelectors: [],
+    });
+    await runSelectorChecker(page);
+
+    const report = await waitForRuntimeMessage(
+      page,
+      (message) => message?.action === "selector-check:report",
+    );
+
+    assert.equal(report.status, "ok");
+    assert.equal(report.siteId, "selector-input-only");
+  });
+
   await browser.close();
+
+  await runStep("import repair keeps valid sites and rejects invalid or unauthorized ones", async () => {
+    const chromeMock = createChromeMock({
+      grantedOrigins: [
+        "https://allowed.example.com/*",
+        "https://mirror.example.com/*",
+        "https://second.example.com/*",
+      ],
+      requestGrantsMissingOrigins: false,
+    });
+    const module = await loadBundledModule("src/shared/stores/prompt-store.ts", chromeMock);
+    const result = await module.importPromptData(JSON.stringify({
+      settings: { historyLimit: 55 },
+      customSites: [
+        {
+          id: "chatgpt",
+          name: "Mirror",
+          url: "https://mirror.example.com/",
+          inputSelector: "#mirror-input",
+          inputType: "textarea",
+          submitMethod: "enter",
+        },
+        {
+          id: "my-ai",
+          name: "My AI",
+          url: "https://allowed.example.com/",
+          inputSelector: "#prompt",
+          inputType: "textarea",
+          submitMethod: "enter",
+        },
+        {
+          id: "my-ai",
+          name: "Duplicate AI",
+          url: "https://second.example.com/",
+          inputSelector: "#prompt",
+          inputType: "textarea",
+          submitMethod: "enter",
+        },
+        {
+          id: "bad-url",
+          name: "Broken",
+          url: "notaurl",
+          inputSelector: "#broken",
+          inputType: "textarea",
+          submitMethod: "enter",
+        },
+        {
+          id: "needs-permission",
+          name: "Denied AI",
+          url: "https://denied.example.com/",
+          inputSelector: "#prompt",
+          inputType: "textarea",
+          submitMethod: "enter",
+        },
+      ],
+      builtInSiteStates: {
+        chatgpt: { enabled: false },
+        unknown: { enabled: false },
+      },
+      builtInSiteOverrides: {
+        chatgpt: {
+          inputSelector: "#override",
+          inputType: "invalid",
+          selectorCheckMode: "bad-mode",
+        },
+        unknown: {
+          inputSelector: "#ignored",
+        },
+      },
+    }));
+
+    assert.equal(result.customSites.length, 3);
+    assert.deepEqual(result.customSites.map((site) => site.id), [
+      "custom-chatgpt",
+      "my-ai",
+      "my-ai-2",
+    ]);
+    assert.equal(result.importSummary.customSites.rejected.length, 2);
+    assert.equal(result.importSummary.customSites.deniedOrigins.length, 1);
+    assert.equal(result.importSummary.customSites.rewrittenIds.length, 2);
+    assert.deepEqual(Object.keys(result.builtInSiteStates), ["chatgpt"]);
+    assert.deepEqual(Object.keys(result.builtInSiteOverrides), ["chatgpt"]);
+    assert.equal(result.builtInSiteOverrides.chatgpt.inputSelector, "#override");
+    assert.equal(result.builtInSiteOverrides.chatgpt.inputType, "contenteditable");
+    assert.equal(result.builtInSiteOverrides.chatgpt.selectorCheckMode, "input-and-submit");
+  });
 
   const failed = results.filter((result) => !result.ok);
   if (failed.length > 0) {

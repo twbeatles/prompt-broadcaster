@@ -25,6 +25,12 @@ export interface SelectorCheckReportMessage {
   missing?: Array<{ field: string; selector: string }>;
 }
 
+export interface ServiceTestRunMessage {
+  action: "service-test:run";
+  draft: Record<string, unknown>;
+  isBuiltIn?: boolean;
+}
+
 export interface SelectorFailedMessage {
   action: "selectorFailed";
   serviceId: string;
@@ -68,6 +74,7 @@ export type RuntimeMessage =
   | BroadcastMessage
   | SelectorCheckInitMessage
   | SelectorCheckReportMessage
+  | ServiceTestRunMessage
   | SelectorFailedMessage
   | InjectSuccessMessage
   | InjectFallbackMessage

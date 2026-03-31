@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Selector Checker Conditional Submit Fixture</title>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      margin: 24px;
+    }
+
+    main {
+      display: grid;
+      gap: 12px;
+      max-width: 720px;
+    }
+
+    [contenteditable="true"] {
+      min-height: 140px;
+      border: 1px solid #c9d4de;
+      border-radius: 12px;
+      padding: 12px;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Conditional Submit Fixture</h1>
+    <div id="editor" contenteditable="true" role="textbox" aria-label="Prompt editor"></div>
+    <div id="button-host"></div>
+  </main>
+
+  <script>
+    const editor = document.getElementById("editor");
+    const buttonHost = document.getElementById("button-host");
+
+    function ensureButton() {
+      if (buttonHost.querySelector("#send-btn")) {
+        return;
+      }
+
+      const button = document.createElement("button");
+      button.id = "send-btn";
+      button.type = "button";
+      button.textContent = "Send";
+      buttonHost.appendChild(button);
+    }
+
+    editor.addEventListener("input", () => {
+      const value = (editor.textContent || "").trim();
+      if (!value) {
+        buttonHost.innerHTML = "";
+        return;
+      }
+
+      window.setTimeout(() => {
+        ensureButton();
+      }, 250);
+    });
+  </script>
+</body>
+</html>

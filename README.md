@@ -18,16 +18,16 @@
 ## 한국어
 
 ### 소개
-`AI Prompt Broadcaster`는 팝업에서 한 번 입력한 프롬프트를 ChatGPT, Gemini, Claude, Grok으로 동시에 전송하는 Chrome Manifest V3 확장 프로그램입니다.
+`AI Prompt Broadcaster`는 팝업에서 한 번 입력한 프롬프트를 ChatGPT, Gemini, Claude, Grok, Perplexity로 동시에 전송하는 Chrome Manifest V3 확장 프로그램입니다.
 
 백엔드나 API 키 없이, 사용자가 이미 로그인한 각 AI 웹앱의 DOM 입력창에 직접 프롬프트를 주입하는 방식으로 동작합니다.
 
-현재 소스 코드는 `src/` 아래 TypeScript 모듈로 관리되며, Chrome에는 `dist/` 산출물을 로드합니다.
+현재 소스 코드는 `src/` 아래 TypeScript 모듈로 관리됩니다. Chrome에는 `dist/` 산출물을 기본으로 로드하고, 루트 런타임 JS는 `npm run build`가 함께 동기화하는 generated mirror입니다. `src/*/main.ts`는 얇은 composition root이고, 실제 런타임 로직은 `app/`, `shared/prompts/`, `shared/sites/`, `shared/template/`, `shared/runtime-state/` 같은 기능 폴더로 나뉘어 있습니다.
 
 빌드 및 패키징 절차는 [docs/build-guide.md](docs/build-guide.md), 현재 구조 설명은 [docs/extension-architecture.md](docs/extension-architecture.md)를 참고하세요.
 
 ### 주요 기능
-- 하나의 프롬프트를 여러 AI 서비스에 병렬 전송
+- 하나의 프롬프트를 여러 AI 서비스로 한 번에 방송
 - 전송 성공 프롬프트 히스토리 자동 저장
 - 즐겨찾기 저장, 제목 편집, 검색
 - **즐겨찾기 태그·폴더·핀 시스템** – 태그와 폴더로 즐겨찾기를 분류하고, 중요 항목을 상단 고정
@@ -36,7 +36,7 @@
 - **확장 템플릿 변수** – `{{url}}`, `{{title}}`, `{{selection}}`, `{{counter}}`, `{{random}}` 등 9개 이상의 시스템 변수 지원
 - Chrome MV3 기반, 백엔드 없음
 - `chrome.scripting.executeScript` 기반 동적 주입
-- 사이트별 셀렉터와 전략을 `src/config/sites.ts`에서 중앙 관리
+- 사이트별 셀렉터와 전략을 `src/config/sites/builtins.ts`에서 중앙 관리
 - 입력 실패 시 클립보드 복사 + 비차단 폴백 배너 제공
 - 셀렉터가 깨졌을 때 자동 진단 및 알림, **GitHub 이슈 신고 버튼** 제공
 - 개발자용 셀렉터 탐지 스크립트 제공
@@ -50,7 +50,7 @@
 | Gemini | `https://gemini.google.com/app` | `contenteditable` + 버튼 클릭 | 지원, Best effort |
 | Claude | `https://claude.ai/new` | `contenteditable` + 버튼 클릭 | 지원, Best effort |
 | Grok | `https://grok.com/` | `contenteditable` + 버튼 클릭 | 지원, Best effort |
-| Perplexity | `https://www.perplexity.ai/` | `textarea` + 버튼 클릭 | 지원, Best effort |
+| Perplexity | `https://www.perplexity.ai/` | `contenteditable` + 버튼 클릭 | 지원, Best effort |
 
 `Best effort`는 대상 사이트의 DOM 구조 변경, 로그인 상태, 반자동화 정책에 따라 주입 성공률이 달라질 수 있음을 의미합니다.
 
@@ -131,13 +131,13 @@ GIF 자리표시자: `docs/assets/usage-demo.gif`
 서비스 카드에서 **Custom prompt for this service** 토글을 켜면 해당 서비스에만 전송할 별도 프롬프트를 입력할 수 있습니다. 비워두면 메인 프롬프트가 사용됩니다.
 
 ### 셀렉터 오류 신고
-셀렉터 경고(⚠)가 표시된 서비스 카드에는 **Report issue** 링크가 표시됩니다. 클릭하면 해당 서비스의 GitHub 이슈 검색 페이지가 열립니다.
+셀렉터 경고(⚠)가 표시된 서비스는 설정 탭의 서비스 관리 카드에 **Report issue** 링크가 표시됩니다. 클릭하면 해당 서비스의 GitHub 이슈 검색 페이지가 열립니다.
 
 ### 전송 결과 비교 뷰
 옵션 페이지(`chrome://extensions` → AI Prompt Broadcaster → 세부정보 → 확장 옵션) 히스토리 탭에서 특정 전송 기록을 클릭하면 모달 하단에 서비스별 전송 결과(✅ 성공 / ❌ 실패 / ⏳ 요청만)가 카드 형태로 나열됩니다.
 
 ### 새 AI 서비스 추가 방법
-기본 작업은 `src/config/sites.ts`에 새 항목을 추가하는 것입니다.
+기본 내장 서비스 추가는 `src/config/sites/builtins.ts`에 새 항목을 추가하는 것입니다. `src/config/sites.ts`는 하위 호환용 re-export만 담당합니다.
 
 예시:
 
@@ -171,17 +171,17 @@ GIF 자리표시자: `docs/assets/usage-demo.gif`
 2. DevTools를 엽니다.
 3. [tools/find_selector.js](tools/find_selector.js) 내용을 콘솔에 붙여넣고 실행합니다.
 4. 콘솔에 출력된 후보 셀렉터와 추천 스니펫을 확인합니다.
-5. [sites.ts](src/config/sites.ts)에서 해당 서비스의 `inputSelector`, `submitSelector`, `inputType`을 수정합니다.
+5. [builtins.ts](src/config/sites/builtins.ts)에서 해당 서비스의 `inputSelector`, `submitSelector`, `inputType`을 수정합니다.
 6. `npm run build`를 실행한 뒤 `chrome://extensions`에서 `dist` 확장 프로그램을 새로고침합니다.
 
 참고:
-- [helper.ts](src/content/selector-checker/helper.ts)가 셀렉터 미검출 시 알림을 띄웁니다.
+- [`src/content/selector-checker/`](src/content/selector-checker) 모듈이 셀렉터 미검출과 인증 페이지 상태를 백그라운드로 보고합니다.
 - 로그인 페이지로 리다이렉트된 경우에는 셀렉터가 정상이어도 자동 주입이 동작하지 않습니다.
 
 ### 기여 가이드라인
 - 이슈를 열 때는 대상 서비스, URL, 로그인 상태, 실패 증상을 함께 적어주세요.
 - 셀렉터 수정 PR에는 가능한 경우 DOM 스냅샷이나 DevTools 캡처를 포함해주세요.
-- 새 서비스 추가 시 `src/config/sites.ts`, `manifest.json`, README의 서비스 표를 함께 업데이트해주세요.
+- 새 서비스 추가 시 `src/config/sites/builtins.ts`, `manifest.json`, README의 서비스 표를 함께 업데이트해주세요.
 - 사이트별 하드코딩보다 설정 기반 수정이 우선입니다.
 - PR 설명에는 재현 방법과 확인 결과를 포함해주세요.
 
@@ -193,16 +193,16 @@ MIT
 ## English
 
 ### Overview
-`AI Prompt Broadcaster` is a Chrome Manifest V3 extension that sends a single prompt to ChatGPT, Gemini, Claude, and Grok from one popup UI.
+`AI Prompt Broadcaster` is a Chrome Manifest V3 extension that sends a single prompt to ChatGPT, Gemini, Claude, Grok, and Perplexity from one popup UI.
 
 It works without a backend or API keys by injecting prompts directly into each AI web app's input surface after the target tab loads.
 
-The source of truth lives in `src/` as TypeScript modules, and Chrome should load the built `dist/` output.
+The source of truth lives in `src/` as TypeScript modules. Chrome should load the built `dist/` output, and the root runtime JS files are generated mirrors refreshed by `npm run build`. The runtime entrypoints in `src/*/main.ts` stay intentionally thin, while shared logic is split into `shared/prompts/`, `shared/sites/`, `shared/template/`, and `shared/runtime-state/`.
 
 For build and packaging steps, see [docs/build-guide.md](docs/build-guide.md). For the current architecture, see [docs/extension-architecture.md](docs/extension-architecture.md).
 
 ### Key Features
-- Send one prompt to multiple AI services in parallel
+- Broadcast one prompt to multiple AI services from one popup
 - Discover already-open AI tabs in the current window and reuse them by default
 - Choose a specific open tab, force a new tab, or keep the default routing per service from the popup
 - Automatic prompt history for successful broadcasts
@@ -215,10 +215,10 @@ For build and packaging steps, see [docs/build-guide.md](docs/build-guide.md). F
 - Custom services can store fallback selectors, auth selectors, hostname aliases, and verification metadata
 - Pure MV3 extension, no backend required
 - Dynamic prompt injection using `chrome.scripting.executeScript`
-- Central site configuration in `src/config/sites.ts`
+- Central site configuration in `src/config/sites/builtins.ts`
 - Click-submit flows wait for the submit button to become enabled so async React editors can finish state updates before submission
 - Clipboard copy fallback and non-blocking banner on injection failure
-- Selector self-diagnostics with Chrome notifications; **Report issue button** opens a pre-filled GitHub search for the affected service
+- Selector self-diagnostics with Chrome notifications; **Report issue button** appears in service management for affected services
 - **Broadcast result comparison view** in the options page history detail modal
 - Popup-open requests can fall back to a standalone extension window when Chrome cannot open the toolbar action popup from the background worker
 - Developer helper script for finding replacement selectors
@@ -231,7 +231,7 @@ For build and packaging steps, see [docs/build-guide.md](docs/build-guide.md). F
 | Gemini | `https://gemini.google.com/app` | `contenteditable` + click submit | Supported, Best effort |
 | Claude | `https://claude.ai/new` | `contenteditable` + click submit | Supported, Best effort |
 | Grok | `https://grok.com/` | `contenteditable` + click submit | Supported, Best effort |
-| Perplexity | `https://www.perplexity.ai/` | `textarea` + click submit | Supported, Best effort |
+| Perplexity | `https://www.perplexity.ai/` | `contenteditable` + click submit | Supported, Best effort |
 
 `Best effort` means injection can break when a target site changes its DOM, redirects to login, or blocks synthetic input events.
 
@@ -313,7 +313,7 @@ Template prompts support both user-defined variables and built-in system variabl
 Expand a service card in the compose view and enable the **Custom prompt for this service** toggle to enter a prompt that will be used exclusively for that service. The main prompt is used when the override is left blank or the toggle is off.
 
 ### Selector Error Reporting
-When the selector checker detects a stale or missing selector (⚠), a **Report issue** link appears below the service card. Clicking it opens a GitHub issue search scoped to that service so you can check existing reports or file a new one.
+When the selector checker detects a stale or missing selector (⚠), a **Report issue** link appears in the settings tab's service management card for that service. Clicking it opens a GitHub issue search scoped to that service so you can check existing reports or file a new one.
 
 ### Broadcast Result Comparison View
 The options page history detail modal now includes a **Broadcast results** section listing every requested service with its outcome: ✅ succeeded, ❌ failed, or ⏳ requested but no result recorded. Successful rows include an **Open** link pointing to the service URL.
@@ -348,7 +348,7 @@ If `submitMethod` is `click`, `submitSelector` is required and validation blocks
 - No API keys are required, and prompts are not relayed through a separate server.
 
 ### Adding a New AI Service
-The primary change goes into `src/config/sites.ts`.
+The primary change goes into `src/config/sites/builtins.ts`.
 
 Example:
 
@@ -384,7 +384,7 @@ Additional notes:
 - If the service uses a new domain, also update `host_permissions` and `content_scripts.matches` in [manifest.json](manifest.json).
 - Prefer stable selectors using `id`, `data-testid`, or `aria-label`.
 - Set `waitMs` conservatively to account for hydration and delayed editors.
-- Run `npm run build` again after any source change so `dist/` stays current.
+- Run `npm run build` again after any source change so both `dist/` and the generated root runtime mirrors stay current.
 
 ### Local Smoke QA
 The repository includes Playwright-based local fixtures under `qa/fixtures/`.
@@ -417,17 +417,17 @@ npx playwright install chromium
 2. Open DevTools.
 3. Paste [tools/find_selector.js](tools/find_selector.js) into the console and run it.
 4. Review the candidate selectors and the generated config snippet.
-5. Update the matching service entry in [sites.ts](src/config/sites.ts).
+5. Update the matching service entry in [builtins.ts](src/config/sites/builtins.ts).
 6. Run `npm run build`, then reload the `dist` extension in `chrome://extensions` and test again.
 
 Related:
-- [helper.ts](src/content/selector-checker/helper.ts) warns when configured selectors no longer match the page.
+- The [`src/content/selector-checker/`](src/content/selector-checker) module reports stale selectors and auth-page states back to the background worker.
 - If the tab redirects to a login screen, injection is expected to stop.
 
 ### Contributing
 - Open an issue with the target service, URL, login state, and failure symptoms.
 - Include DOM snapshots or DevTools screenshots when reporting selector breakage.
-- When adding a new service, update `src/config/sites.ts`, `manifest.json`, and the README support table together.
+- When adding a new service, update `src/config/sites/builtins.ts`, `manifest.json`, and the README support table together.
 - Prefer config-driven fixes over site-specific hardcoded logic.
 - Include reproduction steps and validation notes in every PR.
 

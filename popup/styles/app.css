@@ -1203,6 +1203,7 @@ select {
   color: var(--text);
   font-size: 12px;
   line-height: 1.5;
+  white-space: pre-wrap;
 }
 
 .preview-box {
@@ -1427,8 +1428,8 @@ select {
 /* ── Selector: report row ── */
 .selector-report-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-wrap: wrap;
+  align-items: flex-start;
   gap: 8px;
   padding: 6px 8px;
   border-radius: 8px;
@@ -1460,6 +1461,7 @@ select {
   white-space: nowrap;
   transition: background var(--transition);
   flex-shrink: 0;
+  margin-left: auto;
 }
 
 .selector-report-link:hover {

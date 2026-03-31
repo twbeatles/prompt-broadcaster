@@ -53,8 +53,8 @@
 | `{{random}}` | `{{랜덤}}` | 랜덤 숫자 (1~1000) | `Math.random()` |
 
 **수정 파일**
-- `src/shared/template-utils.ts` — 변수 정의 및 별칭 추가
-- `src/background/main.ts` — URL/title 조회 후 값 주입
+- `src/shared/template/` — 변수 정의 및 별칭 추가
+- `src/background/app/bootstrap.ts` — URL/title 조회 후 값 주입
 - `_locales/en/messages.json`, `_locales/ko/messages.json` — 변수 설명 문자열
 
 **구현 포인트**
@@ -78,20 +78,20 @@ export const SYSTEM_TEMPLATE_VARIABLES = Object.freeze({
 ### ⑫ 신규 내장 AI 서비스 추가
 
 **현재 상태**
-ChatGPT, Gemini, Claude, Grok 4개만 내장
+ChatGPT, Gemini, Claude, Grok, Perplexity 5개 내장
 
-**제안 서비스 목록**
+Perplexity는 2026-03-31 기준 기본 내장 서비스로 반영 완료
+**추가 검토 서비스 목록**
 
 | 서비스 | 도메인 | 비고 |
 |---|---|---|
-| Perplexity | `perplexity.ai` | 검색형 AI, 높은 수요 |
 | Microsoft Copilot | `copilot.microsoft.com` | MS 생태계 사용자 |
 | Mistral Le Chat | `chat.mistral.ai` | 유럽 AI |
 | DeepSeek | `chat.deepseek.com` | 아시아권 인기 |
 | HuggingChat | `huggingface.co/chat` | 오픈소스 사용자 |
 
 **수정 파일**
-- `src/config/sites.ts` — 서비스 정의 추가 (inputSelector, submitSelector 셀렉터 직접 검증 필요)
+- `src/config/sites/builtins.ts` — 서비스 정의 추가 (inputSelector, submitSelector 셀렉터 직접 검증 필요)
 - `manifest.json` — `host_permissions` 및 `content_scripts.matches` 도메인 추가
 
 **추가 시 체크리스트**
@@ -140,8 +140,8 @@ interface FavoritePrompt {
 - 즐겨찾기 편집 모달: 태그 입력 (쉼표 구분), 폴더 선택 드롭다운
 
 **수정 파일**
-- `src/shared/stores/prompt-store.ts` — `buildFavoriteEntry` 필드 추가, 마이그레이션 처리
-- `src/popup/main.ts` — 필터 UI 로직
+- `src/shared/prompts/` — `buildFavoriteEntry` 필드 추가, 마이그레이션 처리
+- `src/popup/app/bootstrap.ts` — 필터 UI 로직
 - `popup/popup.html` — 태그 필터 마크업
 - `popup/styles/app.css` — 태그 칩 스타일
 - `_locales/` — 태그/폴더 관련 문자열
@@ -176,8 +176,8 @@ interface BroadcastTarget {
 - 토글 시 해당 서비스 전용 텍스트 영역 확장
 
 **수정 파일**
-- `src/popup/main.ts` — 오버라이드 입력 UI
-- `src/background/main.ts` — 타겟별 프롬프트 분기 처리
+- `src/popup/app/bootstrap.ts` — 오버라이드 입력 UI
+- `src/background/app/bootstrap.ts` — 타겟별 프롬프트 분기 처리
 - `src/shared/types/messages.ts` — `BroadcastTarget` 타입 수정
 
 ---
@@ -193,7 +193,7 @@ interface BroadcastTarget {
 - 팝업에서 인라인으로 셀렉터 직접 수정 (설정 모달 진입 없이)
 
 **수정 파일**
-- `src/popup/main.ts` — 경고 배지 클릭 핸들러 확장
+- `src/popup/app/bootstrap.ts` — 경고 배지 클릭 핸들러 확장
 - `popup/popup.html` — 인라인 수정 UI 마크업
 - `popup/styles/app.css` — 경고 UI 스타일
 
@@ -237,9 +237,9 @@ repeat이면 다음 알람 재등록
 ```
 
 **수정 파일**
-- `src/background/main.ts` — `onAlarm` 핸들러 추가, 예약 실행 로직
-- `src/shared/stores/prompt-store.ts` — 예약 필드 추가
-- `src/popup/main.ts` / `src/options/main.ts` — 예약 설정 UI
+- `src/background/app/bootstrap.ts` — `onAlarm` 핸들러 추가, 예약 실행 로직
+- `src/shared/prompts/` — 예약 필드 추가
+- `src/popup/app/bootstrap.ts` / `src/options/app/bootstrap.ts` — 예약 설정 UI
 - `_locales/` — 예약 관련 문자열
 
 **주의사항**
@@ -267,10 +267,10 @@ interface AppSettings {
 ```
 
 **수정 파일**
-- `src/shared/stores/prompt-store.ts` — 설정 필드 추가
-- `src/background/main.ts` — `waitMs` 계산 시 배율 적용
-- `src/options/main.ts` — 딜레이 슬라이더 UI
-- `src/popup/main.ts` — 순서 드래그 UI (또는 화살표 버튼)
+- `src/shared/prompts/` — 설정 필드 추가
+- `src/background/app/bootstrap.ts` — `waitMs` 계산 시 배율 적용
+- `src/options/app/bootstrap.ts` — 딜레이 슬라이더 UI
+- `src/popup/app/bootstrap.ts` — 순서 드래그 UI (또는 화살표 버튼)
 
 ---
 
@@ -289,7 +289,7 @@ interface AppSettings {
 | 자주 쓰는 키워드 Top 10 | 히스토리 텍스트 빈도 분석 | 단어 토크나이징 후 카운트 |
 
 **수정 파일**
-- `src/options/main.ts` — 새 차트 섹션 추가
+- `src/options/app/bootstrap.ts` — 새 차트 섹션 추가
 - `src/options/ui/charts.ts` — 히트맵, 트렌드 차트 함수 추가
 - `options/options.html` — 차트 컨테이너 마크업
 
@@ -332,9 +332,9 @@ interface FavoritePrompt {
 ```
 
 **수정 파일**
-- `src/background/main.ts` — 체인 실행 오케스트레이션 로직
-- `src/shared/stores/prompt-store.ts` — 체인 필드 추가
-- `src/popup/main.ts` — 체인 전용 UI (단계 목록, 딜레이 설정)
+- `src/background/app/bootstrap.ts` — 체인 실행 오케스트레이션 로직
+- `src/shared/prompts/` — 체인 필드 추가
+- `src/popup/app/bootstrap.ts` — 체인 전용 UI (단계 목록, 딜레이 설정)
 
 ---
 
@@ -358,7 +358,7 @@ Enter / 방향키 선택 → 즉시 방송 실행
 
 **수정 파일**
 - `manifest.json` — `commands`에 `quick-palette` 단축키 추가
-- `src/background/main.ts` — 단축키 수신 → content script에 팔레트 열기 메시지
+- `src/background/app/bootstrap.ts` — 단축키 수신 → content script에 팔레트 열기 메시지
 - 새 파일 `src/content/palette/main.ts` — 오버레이 UI + 즐겨찾기 검색 로직
 - `manifest.json` — 새 content script 등록
 
@@ -390,8 +390,8 @@ chrome.storage.local에 broadcastId 키로 저장
 ```
 
 **수정 파일**
-- `src/background/main.ts` — 캡처 로직 추가
-- `src/options/main.ts` — 비교 뷰 UI
+- `src/background/app/bootstrap.ts` — 캡처 로직 추가
+- `src/options/app/bootstrap.ts` — 비교 뷰 UI
 - `manifest.json` — `tabCapture` 권한 추가
 
 ---
@@ -406,7 +406,7 @@ chrome.storage.local에 broadcastId 키로 저장
 `_locales/ja/`, `_locales/zh_CN/` 추가 + 템플릿 변수 별칭 확장
 
 ```typescript
-// template-utils.ts 별칭 추가
+// shared/template/constants.ts 별칭 추가
 aliases: ["date", "날짜", "日付", "日期"]
 aliases: ["clipboard", "클립보드", "クリップボード", "剪贴板"]
 ```
@@ -414,7 +414,7 @@ aliases: ["clipboard", "클립보드", "クリップボード", "剪贴板"]
 **수정 파일**
 - `_locales/ja/messages.json` (신규)
 - `_locales/zh_CN/messages.json` (신규)
-- `src/shared/template-utils.ts` — 별칭 배열 확장
+- `src/shared/template/` — 별칭 배열 확장
 
 **비고**: 번역 품질 확보가 관건. 커뮤니티 기여 방식 고려.
 

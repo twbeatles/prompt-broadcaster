@@ -4,8 +4,8 @@
 # Dependencies
 /node_modules
 
-# Documentation (managed separately)
-/docs
+# Documentation assets
+/docs/assets/
 
 # Extension dev profile directory (Chrome extension ID folder)
 /ddebobakhbknpcmiobbpkgbhhccmdmop/
@@ -18,6 +18,10 @@
 
 # Claude Code session files
 .claude/
+
+# Test artifacts
+/playwright-report/
+/test-results/
 
 # OS files
 .DS_Store
