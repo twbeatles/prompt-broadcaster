@@ -51,6 +51,9 @@ export interface FavoritePrompt {
   createdAt: string;
   favoritedAt: string;
   templateDefaults: Record<string, string>;
+  tags: string[];
+  folder: string;
+  pinned: boolean;
 }
 
 export interface FailedSelectorRecord {

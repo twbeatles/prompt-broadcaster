@@ -30,13 +30,17 @@
 - 하나의 프롬프트를 여러 AI 서비스에 병렬 전송
 - 전송 성공 프롬프트 히스토리 자동 저장
 - 즐겨찾기 저장, 제목 편집, 검색
+- **즐겨찾기 태그·폴더·핀 시스템** – 태그와 폴더로 즐겨찾기를 분류하고, 중요 항목을 상단 고정
+- **서비스별 프롬프트 오버라이드** – 서비스 카드마다 메인 프롬프트와 다른 별도 프롬프트를 지정 가능
 - 히스토리/즐겨찾기 JSON 내보내기 및 가져오기
+- **확장 템플릿 변수** – `{{url}}`, `{{title}}`, `{{selection}}`, `{{counter}}`, `{{random}}` 등 9개 이상의 시스템 변수 지원
 - Chrome MV3 기반, 백엔드 없음
 - `chrome.scripting.executeScript` 기반 동적 주입
 - 사이트별 셀렉터와 전략을 `src/config/sites.ts`에서 중앙 관리
 - 입력 실패 시 클립보드 복사 + 비차단 폴백 배너 제공
-- 셀렉터가 깨졌을 때 자동 진단 및 알림
+- 셀렉터가 깨졌을 때 자동 진단 및 알림, **GitHub 이슈 신고 버튼** 제공
 - 개발자용 셀렉터 탐지 스크립트 제공
+- **옵션 페이지 히스토리 상세에서 서비스별 전송 결과 비교 뷰** 제공
 
 ### 지원 AI 서비스
 
@@ -46,6 +50,7 @@
 | Gemini | `https://gemini.google.com/app` | `contenteditable` + 버튼 클릭 | 지원, Best effort |
 | Claude | `https://claude.ai/new` | `contenteditable` + 버튼 클릭 | 지원, Best effort |
 | Grok | `https://grok.com/` | `contenteditable` + 버튼 클릭 | 지원, Best effort |
+| Perplexity | `https://www.perplexity.ai/` | `textarea` + 버튼 클릭 | 지원, Best effort |
 
 `Best effort`는 대상 사이트의 DOM 구조 변경, 로그인 상태, 반자동화 정책에 따라 주입 성공률이 달라질 수 있음을 의미합니다.
 
@@ -77,11 +82,12 @@ npm run build
 
 ### 사용 방법
 1. Chrome 툴바에서 `AI Prompt Broadcaster` 아이콘을 클릭합니다.
-2. 프롬프트를 입력합니다.
-3. 전송할 AI 서비스를 선택합니다.
+2. 프롬프트를 입력합니다. `{{url}}`, `{{date}}` 같은 템플릿 변수를 사용할 수 있습니다.
+3. 전송할 AI 서비스를 선택합니다. 서비스 카드에서 ▸ 아이콘을 클릭하면 해당 서비스에만 적용할 별도 프롬프트를 지정할 수 있습니다.
 4. `Send` 버튼을 누릅니다.
 5. 선택한 서비스별 새 탭이 열리고, 각 사이트에서 자동 주입과 전송을 시도합니다.
 6. 실패한 경우 클립보드 복사 및 수동 전송 안내 배너가 표시됩니다.
+7. 옵션 페이지 히스토리에서 각 전송 항목을 클릭하면 서비스별 성공/실패 결과를 한눈에 확인할 수 있습니다.
 
 GIF 자리표시자: `docs/assets/usage-demo.gif`
 
@@ -96,6 +102,39 @@ GIF 자리표시자: `docs/assets/usage-demo.gif`
 - 프롬프트 전송은 사용자의 브라우저에서 직접 대상 AI 서비스 탭으로 수행됩니다.
 - 히스토리와 즐겨찾기 데이터는 브라우저 로컬 저장소에 보관됩니다.
 - API 키를 요구하지 않으며, 별도 서버를 통해 프롬프트를 중계하지 않습니다.
+
+### 템플릿 변수
+프롬프트에 `{{변수명}}` 형태로 값을 자동 치환할 수 있습니다.
+
+**시스템 변수 (자동 채워짐)**
+
+| 변수 | 한국어 별칭 | 설명 |
+|---|---|---|
+| `{{date}}` | `{{날짜}}` | 오늘 날짜 |
+| `{{time}}` | `{{시간}}` | 현재 시각 |
+| `{{weekday}}` | `{{요일}}` | 요일 |
+| `{{clipboard}}` | `{{클립보드}}` | 클립보드 텍스트 |
+| `{{url}}` | `{{주소}}` | 현재 탭 URL |
+| `{{title}}` | `{{제목}}` | 현재 탭 제목 |
+| `{{selection}}` | `{{선택}}` | 현재 탭에서 선택한 텍스트 |
+| `{{counter}}` | `{{카운터}}` | 누적 전송 횟수 |
+| `{{random}}` | `{{랜덤}}` | 1–1000 랜덤 숫자 |
+
+**사용자 변수** – `{{topic}}`처럼 임의 이름을 사용하면 팝업에서 값을 입력하는 모달이 열립니다.
+
+### 즐겨찾기 태그·폴더·핀
+- 즐겨찾기 항목의 `···` 메뉴 → **태그 및 폴더 편집**으로 쉼표 구분 태그와 폴더명을 입력합니다.
+- 같은 메뉴에서 **상단 고정** / **고정 해제**로 중요 항목을 목록 최상단에 고정합니다.
+- 즐겨찾기 패널 상단의 태그·폴더 칩을 클릭하면 해당 항목만 필터링됩니다.
+
+### 서비스별 프롬프트 오버라이드
+서비스 카드에서 **Custom prompt for this service** 토글을 켜면 해당 서비스에만 전송할 별도 프롬프트를 입력할 수 있습니다. 비워두면 메인 프롬프트가 사용됩니다.
+
+### 셀렉터 오류 신고
+셀렉터 경고(⚠)가 표시된 서비스 카드에는 **Report issue** 링크가 표시됩니다. 클릭하면 해당 서비스의 GitHub 이슈 검색 페이지가 열립니다.
+
+### 전송 결과 비교 뷰
+옵션 페이지(`chrome://extensions` → AI Prompt Broadcaster → 세부정보 → 확장 옵션) 히스토리 탭에서 특정 전송 기록을 클릭하면 모달 하단에 서비스별 전송 결과(✅ 성공 / ❌ 실패 / ⏳ 요청만)가 카드 형태로 나열됩니다.
 
 ### 새 AI 서비스 추가 방법
 기본 작업은 `src/config/sites.ts`에 새 항목을 추가하는 것입니다.
@@ -168,16 +207,19 @@ For build and packaging steps, see [docs/build-guide.md](docs/build-guide.md). F
 - Choose a specific open tab, force a new tab, or keep the default routing per service from the popup
 - Automatic prompt history for successful broadcasts
 - Favorites with editable titles and live search
+- **Favorites tag, folder, and pin system** — categorize saved prompts with tags and folders; pin important ones to the top
+- **Per-service prompt overrides** — assign a different prompt to individual service cards without changing the main prompt
 - JSON export/import for history and favorites
 - History keeps requested, submitted, and failed service ids so partial broadcasts can be replayed accurately
-- Template variables support both Korean and English system aliases such as `{{날짜}}` and `{{date}}`
+- **Extended template variables** — 9+ system variables including `{{url}}`, `{{title}}`, `{{selection}}`, `{{counter}}`, and `{{random}}`
 - Custom services can store fallback selectors, auth selectors, hostname aliases, and verification metadata
 - Pure MV3 extension, no backend required
 - Dynamic prompt injection using `chrome.scripting.executeScript`
 - Central site configuration in `src/config/sites.ts`
 - Click-submit flows wait for the submit button to become enabled so async React editors can finish state updates before submission
 - Clipboard copy fallback and non-blocking banner on injection failure
-- Selector self-diagnostics with Chrome notifications
+- Selector self-diagnostics with Chrome notifications; **Report issue button** opens a pre-filled GitHub search for the affected service
+- **Broadcast result comparison view** in the options page history detail modal
 - Popup-open requests can fall back to a standalone extension window when Chrome cannot open the toolbar action popup from the background worker
 - Developer helper script for finding replacement selectors
 
@@ -189,6 +231,7 @@ For build and packaging steps, see [docs/build-guide.md](docs/build-guide.md). F
 | Gemini | `https://gemini.google.com/app` | `contenteditable` + click submit | Supported, Best effort |
 | Claude | `https://claude.ai/new` | `contenteditable` + click submit | Supported, Best effort |
 | Grok | `https://grok.com/` | `contenteditable` + click submit | Supported, Best effort |
+| Perplexity | `https://www.perplexity.ai/` | `textarea` + click submit | Supported, Best effort |
 
 `Best effort` means injection can break when a target site changes its DOM, redirects to login, or blocks synthetic input events.
 
@@ -220,13 +263,15 @@ npm run build
 
 ### Usage
 1. Click the `AI Prompt Broadcaster` icon in the Chrome toolbar.
-2. Enter a prompt.
+2. Enter a prompt. System template variables like `{{url}}` or `{{date}}` are replaced automatically at send time.
 3. Select one or more target AI services.
-4. Optionally choose `default behavior`, `always open a new tab`, or a specific already-open AI tab for each selected service.
-5. Click `Send`.
-6. The extension reuses matching tabs in the current window when that setting is enabled, otherwise it opens fresh tabs.
-7. Tabs are focused and processed in sequence so prompt injection can run against focus-sensitive editors more reliably.
-8. If automatic injection fails, a fallback banner appears and the prompt is copied to the clipboard when possible.
+4. Optionally expand a service card to set a **per-service prompt override** that replaces the main prompt for that service only.
+5. Optionally choose `default behavior`, `always open a new tab`, or a specific already-open AI tab for each selected service.
+6. Click `Send`.
+7. The extension reuses matching tabs in the current window when that setting is enabled, otherwise it opens fresh tabs.
+8. Tabs are focused and processed in sequence so prompt injection can run against focus-sensitive editors more reliably.
+9. If automatic injection fails, a fallback banner appears and the prompt is copied to the clipboard when possible.
+10. Open the options page and click any history entry to see a per-service result comparison (✅ / ❌ / ⏳) in the detail modal.
 
 If a keyboard shortcut or notification tries to reopen the UI while Chrome has no active browser window, the extension stores the prompt first and falls back to a standalone popup window when needed.
 
@@ -241,16 +286,37 @@ GIF placeholder: `docs/assets/usage-demo.gif`
 ### Template Variables
 Template prompts support both user-defined variables and built-in system variables.
 
-Supported system aliases:
+**System variables (auto-filled)**
 
-- `{{date}}` or `{{날짜}}`
-- `{{time}}` or `{{시간}}`
-- `{{weekday}}` or `{{요일}}`
-- `{{clipboard}}` or `{{클립보드}}`
+| Variable | Korean alias | Description |
+|---|---|---|
+| `{{date}}` | `{{날짜}}` | Today's date |
+| `{{time}}` | `{{시간}}` | Current time |
+| `{{weekday}}` | `{{요일}}` | Day of the week |
+| `{{clipboard}}` | `{{클립보드}}` | Clipboard text |
+| `{{url}}` | `{{주소}}` | Active tab URL |
+| `{{title}}` | `{{제목}}` | Active tab page title |
+| `{{selection}}` | `{{선택}}` | Text selected on the active tab |
+| `{{counter}}` | `{{카운터}}` | Cumulative broadcast count |
+| `{{random}}` | `{{랜덤}}` | Random number between 1 and 1000 |
 
-User variables can use any name, for example `{{topic}}` or `{{audience}}`.
+`url`, `title`, and `selection` are read from the active browser tab via the background service worker at send time.
 
-When a prompt contains template variables, the popup opens a confirmation modal, fills system values automatically, and caches user-provided values for reuse.
+**User variables** — any other `{{name}}` is treated as a user variable. The popup opens a fill-in modal and caches the entered values for reuse.
+
+### Favorites Tag, Folder, and Pin System
+- Open the `···` menu on any favorite entry and choose **Edit tags & folder** to assign comma-separated tags and a folder name (up to 50 characters).
+- Use **Pin to top** / **Unpin** from the same menu to keep important favorites at the top of the list.
+- A filter bar above the favorites list shows tag and folder chips for one-click filtering.
+
+### Per-Service Prompt Overrides
+Expand a service card in the compose view and enable the **Custom prompt for this service** toggle to enter a prompt that will be used exclusively for that service. The main prompt is used when the override is left blank or the toggle is off.
+
+### Selector Error Reporting
+When the selector checker detects a stale or missing selector (⚠), a **Report issue** link appears below the service card. Clicking it opens a GitHub issue search scoped to that service so you can check existing reports or file a new one.
+
+### Broadcast Result Comparison View
+The options page history detail modal now includes a **Broadcast results** section listing every requested service with its outcome: ✅ succeeded, ❌ failed, or ⏳ requested but no result recorded. Successful rows include an **Open** link pointing to the service URL.
 
 ### History and Favorites Semantics
 - History entries now store `requestedSiteIds`, `submittedSiteIds`, and `failedSiteIds`.

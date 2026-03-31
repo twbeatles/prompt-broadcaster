@@ -16,6 +16,7 @@ const BUILT_IN_SITE_STYLE_MAP = Object.freeze({
   gemini: { color: "#4285f4", icon: "Gem" },
   claude: { color: "#d97706", icon: "Cl" },
   grok: { color: "#000000", icon: "Gk" },
+  perplexity: { color: "#20808d", icon: "Px" },
 });
 
 function safeText(value) {

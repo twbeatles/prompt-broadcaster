@@ -845,5 +845,79 @@
   },
   "options_wait_saved": {
     "message": "대기 시간을 저장했습니다."
+  },
+  "popup_favorite_edit_tags": {
+    "message": "태그 및 폴더 편집"
+  },
+  "popup_favorite_pin": {
+    "message": "상단 고정"
+  },
+  "popup_favorite_unpin": {
+    "message": "고정 해제"
+  },
+  "popup_favorite_pinned": {
+    "message": "고정됨"
+  },
+  "popup_favorite_tags_label": {
+    "message": "태그 (쉼표로 구분)"
+  },
+  "popup_favorite_tags_placeholder": {
+    "message": "예: 업무, 창작, 일상"
+  },
+  "popup_favorite_folder_label": {
+    "message": "폴더"
+  },
+  "popup_favorite_folder_placeholder": {
+    "message": "예: 업무, 개인"
+  },
+  "popup_favorite_filter_all": {
+    "message": "전체"
+  },
+  "popup_selector_days_since": {
+    "message": "$DAYS$일 전에 마지막으로 검증됨",
+    "placeholders": {
+      "days": {
+        "content": "$1"
+      }
+    }
+  },
+  "popup_selector_warning_desc": {
+    "message": "셀렉터가 만료되었을 수 있습니다."
+  },
+  "popup_selector_report_btn": {
+    "message": "문제 신고"
+  },
+  "popup_selector_report_tooltip": {
+    "message": "이 서비스의 셀렉터에 대해 GitHub 이슈 열기"
+  },
+  "popup_override_prompt_label": {
+    "message": "이 서비스 전용 프롬프트"
+  },
+  "popup_override_active": {
+    "message": "오버라이드 활성"
+  },
+  "popup_override_prompt_placeholder": {
+    "message": "비워두면 기본 프롬프트를 사용합니다"
+  },
+  "options_result_comparison_title": {
+    "message": "전송 결과"
+  },
+  "options_result_open_tab": {
+    "message": "열기"
+  },
+  "template_var_url_label": {
+    "message": "현재 페이지 URL"
+  },
+  "template_var_title_label": {
+    "message": "현재 페이지 제목"
+  },
+  "template_var_selection_label": {
+    "message": "페이지에서 선택한 텍스트"
+  },
+  "template_var_counter_label": {
+    "message": "전송 횟수"
+  },
+  "template_var_random_label": {
+    "message": "랜덤 숫자 (1–1000)"
   }
 }

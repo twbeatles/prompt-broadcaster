@@ -1,11 +1,29 @@
+# Build output
 /dist
+
+# Dependencies
 /node_modules
+
+# Documentation (managed separately)
+/docs
+
+# Extension dev profile directory (Chrome extension ID folder)
 /ddebobakhbknpcmiobbpkgbhhccmdmop/
+
+# Release packages — any zip at root level
 /prompt-broadcaster-v*.zip
 /prompt-broadcaster-v*/
+*.zip
 .package-temp/
+
+# Claude Code session files
+.claude/
+
+# OS files
 .DS_Store
 Thumbs.db
+
+# Logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

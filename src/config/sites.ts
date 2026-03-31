@@ -117,6 +117,35 @@ export const AI_SITES = Object.freeze([
       "input[type='password']",
     ],
   },
+  {
+    id: "perplexity",
+    name: "Perplexity",
+    url: "https://www.perplexity.ai/",
+    hostname: "www.perplexity.ai",
+    hostnameAliases: ["perplexity.ai"],
+    inputSelector:
+      "textarea[placeholder*='Ask'][data-testid='search-input'], textarea[placeholder*='Ask'], div[contenteditable='true'][role='textbox']",
+    fallbackSelectors: [
+      "textarea[placeholder*='Ask'][data-testid='search-input']",
+      "textarea[placeholder*='Ask']",
+      "textarea[placeholder*='질문']",
+      "div[contenteditable='true'][role='textbox']",
+      "textarea",
+    ],
+    inputType: "textarea",
+    submitSelector:
+      "button[aria-label*='Submit'][type='submit'], button[type='submit'][aria-label*='검색'], button[aria-label*='submit' i]",
+    submitMethod: "click",
+    waitMs: 2000,
+    fallback: true,
+    lastVerified: "2026-03",
+    verifiedVersion: "perplexity-web-mar-2026",
+    authSelectors: [
+      "input[type='email']",
+      "input[type='password']",
+      "button[data-testid='login-button']",
+    ],
+  },
 ]);
 
 export default AI_SITES;

@@ -845,5 +845,79 @@
   },
   "options_wait_saved": {
     "message": "Wait time saved."
+  },
+  "popup_favorite_edit_tags": {
+    "message": "Edit tags & folder"
+  },
+  "popup_favorite_pin": {
+    "message": "Pin to top"
+  },
+  "popup_favorite_unpin": {
+    "message": "Unpin"
+  },
+  "popup_favorite_pinned": {
+    "message": "Pinned"
+  },
+  "popup_favorite_tags_label": {
+    "message": "Tags (comma-separated)"
+  },
+  "popup_favorite_tags_placeholder": {
+    "message": "e.g. work, creative, daily"
+  },
+  "popup_favorite_folder_label": {
+    "message": "Folder"
+  },
+  "popup_favorite_folder_placeholder": {
+    "message": "e.g. Work, Personal"
+  },
+  "popup_favorite_filter_all": {
+    "message": "All"
+  },
+  "popup_selector_days_since": {
+    "message": "Last verified $DAYS$ days ago",
+    "placeholders": {
+      "days": {
+        "content": "$1"
+      }
+    }
+  },
+  "popup_selector_warning_desc": {
+    "message": "Selector may be outdated."
+  },
+  "popup_selector_report_btn": {
+    "message": "Report issue"
+  },
+  "popup_selector_report_tooltip": {
+    "message": "Open a GitHub issue for this service's selector"
+  },
+  "popup_override_prompt_label": {
+    "message": "Custom prompt for this service"
+  },
+  "popup_override_active": {
+    "message": "Override active"
+  },
+  "popup_override_prompt_placeholder": {
+    "message": "Leave blank to use the main prompt"
+  },
+  "options_result_comparison_title": {
+    "message": "Broadcast results"
+  },
+  "options_result_open_tab": {
+    "message": "Open"
+  },
+  "template_var_url_label": {
+    "message": "Current page URL"
+  },
+  "template_var_title_label": {
+    "message": "Current page title"
+  },
+  "template_var_selection_label": {
+    "message": "Selected text on page"
+  },
+  "template_var_counter_label": {
+    "message": "Broadcast count"
+  },
+  "template_var_random_label": {
+    "message": "Random number (1–1000)"
   }
 }

@@ -1,7 +1,14 @@
 export interface BroadcastMessage {
   action: "broadcast";
   prompt: string;
-  sites: Array<string | { id?: string; tabId?: number; reuseExistingTab?: boolean; openInNewTab?: boolean; target?: string }>;
+  sites: Array<string | {
+    id?: string;
+    tabId?: number;
+    reuseExistingTab?: boolean;
+    openInNewTab?: boolean;
+    target?: string;
+    promptOverride?: string;
+  }>;
 }
 
 export interface SelectorCheckInitMessage {

@@ -364,6 +364,7 @@ async function resolveSelectedTargets(siteRefs) {
     let resolvedSite = null;
     let targetTabId = null;
     let forceNewTab = false;
+    let promptOverride = null;
 
     if (typeof siteRef === "string") {
       resolvedSite = runtimeSites.find((site) => site.id === siteRef) ?? null;
@@ -379,6 +380,10 @@ async function resolveSelectedTargets(siteRefs) {
         siteRef.reuseExistingTab === false ||
         siteRef.openInNewTab === true ||
         siteRef.target === "new";
+      promptOverride =
+        typeof siteRef.promptOverride === "string" && siteRef.promptOverride.trim()
+          ? siteRef.promptOverride.trim()
+          : null;
     }
 
     if (!resolvedSite || !resolvedSite.id || seenIds.has(resolvedSite.id)) {
@@ -390,6 +395,7 @@ async function resolveSelectedTargets(siteRefs) {
       site: buildInjectionConfig(resolvedSite),
       targetTabId,
       forceNewTab,
+      promptOverride,
     });
   }
 
@@ -1507,7 +1513,7 @@ async function handleBroadcastMessage(message) {
       await addPendingInjection(targetTab.id, {
         broadcastId: broadcast.id,
         siteId: site.id,
-        prompt,
+        prompt: target.promptOverride ?? prompt,
         site,
         injected: false,
         status: "pending",
@@ -1668,6 +1674,48 @@ async function handleCancelBroadcastMessage(message) {
   };
 }
 
+async function handleGetActiveTabContext() {
+  try {
+    const [activeTab] = await chrome.tabs.query({
+      active: true,
+      lastFocusedWindow: true,
+    });
+
+    const url = typeof activeTab?.url === "string" ? activeTab.url : "";
+    const title = typeof activeTab?.title === "string" ? activeTab.title : "";
+    let selection = "";
+
+    if (activeTab?.id && isInjectableTabUrl(url)) {
+      selection = await getSelectedTextFromTab(activeTab.id).catch(() => "");
+    }
+
+    return { ok: true, url, title, selection };
+  } catch (error) {
+    console.error("[AI Prompt Broadcaster] Failed to read active tab context.", error);
+    return { ok: false, url: "", title: "", selection: "" };
+  }
+}
+
+async function getBroadcastCounter() {
+  try {
+    const result = await chrome.storage.local.get("broadcastCounter");
+    return Number.isFinite(Number(result.broadcastCounter)) ? Number(result.broadcastCounter) : 0;
+  } catch (_error) {
+    return 0;
+  }
+}
+
+async function incrementBroadcastCounter() {
+  try {
+    const current = await getBroadcastCounter();
+    const next = current + 1;
+    await chrome.storage.local.set({ broadcastCounter: next });
+    return next;
+  } catch (_error) {
+    return 0;
+  }
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message?.action) {
     case "broadcast":
@@ -1750,6 +1798,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         .then((result) => sendResponse(result))
         .catch((error) => {
           sendResponse({ ok: false, error: error?.message ?? String(error) });
+        });
+      return true;
+    case "getActiveTabContext":
+      void handleGetActiveTabContext()
+        .then((result) => sendResponse(result))
+        .catch((error) => {
+          sendResponse({ ok: false, url: "", title: "", selection: "", error: error?.message ?? String(error) });
+        });
+      return true;
+    case "getBroadcastCounter":
+      void getBroadcastCounter()
+        .then((counter) => sendResponse({ ok: true, counter }))
+        .catch((error) => {
+          sendResponse({ ok: false, counter: 0, error: error?.message ?? String(error) });
+        });
+      return true;
+    case "incrementBroadcastCounter":
+      void incrementBroadcastCounter()
+        .then((counter) => sendResponse({ ok: true, counter }))
+        .catch((error) => {
+          sendResponse({ ok: false, counter: 0, error: error?.message ?? String(error) });
         });
       return true;
     case "selection:update":

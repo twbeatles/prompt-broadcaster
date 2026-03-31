@@ -38,6 +38,10 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 
+[hidden] {
+  display: none !important;
+}
+
 /* Custom scrollbars */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -595,4 +599,103 @@ tr:last-child td {
 @media (max-width: 600px) {
   .content { padding: 16px; }
   .cards-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ── History modal: broadcast result comparison ── */
+.result-comparison {
+  display: grid;
+  gap: 8px;
+}
+
+.result-comparison-title {
+  margin: 0 0 2px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+.result-compare-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.32);
+  transition: background var(--transition);
+}
+
+.result-compare-row:hover {
+  background: rgba(255, 255, 255, 0.52);
+}
+
+@media (prefers-color-scheme: dark) {
+  .result-compare-row {
+    background: rgba(255, 255, 255, 0.04);
+  }
+  .result-compare-row:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+}
+
+.result-compare-icon {
+  font-size: 16px;
+  line-height: 1;
+  flex-shrink: 0;
+  width: 22px;
+  text-align: center;
+}
+
+.result-compare-body {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.result-compare-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.result-compare-status {
+  font-size: 11.5px;
+  color: var(--text-soft);
+}
+
+.result-compare-row.status-ok .result-compare-status  { color: var(--success); }
+.result-compare-row.status-failed .result-compare-status { color: var(--danger); }
+
+.result-compare-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel-strong);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: all var(--transition);
+  flex-shrink: 0;
+}
+
+.result-compare-link:hover {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: color-mix(in srgb, var(--text-soft) 35%, transparent);
+  box-shadow: var(--shadow-sm);
+}
+
+@media (prefers-color-scheme: dark) {
+  .result-compare-link:hover {
+    background: rgba(255, 255, 255, 0.12);
+  }
 }

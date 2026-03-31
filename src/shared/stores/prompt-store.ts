@@ -193,6 +193,19 @@ export function buildHistoryEntry(entry) {
   };
 }
 
+function normalizeTags(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return Array.from(
+    new Set(
+      value
+        .map((tag) => safeText(tag).trim())
+        .filter((tag) => tag.length > 0 && tag.length <= 30)
+    )
+  ).slice(0, 10);
+}
+
 export function buildFavoriteEntry(entry) {
   const createdAt = normalizeIsoDate(entry?.createdAt);
   const favoritedAt = normalizeIsoDate(entry?.favoritedAt, createdAt);
@@ -212,7 +225,25 @@ export function buildFavoriteEntry(entry) {
     createdAt,
     favoritedAt,
     templateDefaults: normalizeTemplateDefaults(entry?.templateDefaults),
+    tags: normalizeTags(entry?.tags),
+    folder: safeText(entry?.folder).slice(0, 50),
+    pinned: normalizeBoolean(entry?.pinned, false),
   };
+}
+
+export async function updateFavoriteMeta(favoriteId, { tags, folder, pinned } = {}) {
+  const favorites = await getPromptFavorites();
+  const nextFavorites = favorites.map((item) => {
+    if (String(item.id) !== String(favoriteId)) return item;
+    return {
+      ...item,
+      tags: Array.isArray(tags) ? normalizeTags(tags) : item.tags,
+      folder: typeof folder === "string" ? safeText(folder).slice(0, 50) : item.folder,
+      pinned: typeof pinned === "boolean" ? pinned : item.pinned,
+    };
+  });
+  await setPromptFavorites(nextFavorites);
+  return nextFavorites.find((item) => String(item.id) === String(favoriteId)) ?? null;
 }
 
 export async function getAppSettings() {

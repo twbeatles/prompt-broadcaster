@@ -6,6 +6,11 @@ export const SYSTEM_TEMPLATE_VARIABLES = Object.freeze({
   time: "time",
   weekday: "weekday",
   clipboard: "clipboard",
+  url: "url",
+  title: "title",
+  selection: "selection",
+  counter: "counter",
+  random: "random",
 });
 
 const SYSTEM_TEMPLATE_DEFINITIONS = Object.freeze({
@@ -24,6 +29,26 @@ const SYSTEM_TEMPLATE_DEFINITIONS = Object.freeze({
   [SYSTEM_TEMPLATE_VARIABLES.clipboard]: {
     aliases: ["clipboard", "클립보드"],
     labels: { ko: "클립보드", en: "clipboard" },
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.url]: {
+    aliases: ["url", "주소"],
+    labels: { ko: "현재 탭 URL", en: "current tab URL" },
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.title]: {
+    aliases: ["title", "제목"],
+    labels: { ko: "현재 탭 제목", en: "current tab title" },
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.selection]: {
+    aliases: ["selection", "선택"],
+    labels: { ko: "선택한 텍스트", en: "selected text" },
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.counter]: {
+    aliases: ["counter", "카운터"],
+    labels: { ko: "카운터", en: "counter" },
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.random]: {
+    aliases: ["random", "랜덤"],
+    labels: { ko: "랜덤 숫자", en: "random number" },
   },
 });
 
@@ -121,7 +146,7 @@ export function buildSystemTemplateValues(now = new Date(), options = {}) {
   const date = now instanceof Date ? now : new Date();
   const locale = normalizeLocale(options?.locale);
 
-  return {
+  const values = {
     [SYSTEM_TEMPLATE_VARIABLES.date]: [
       date.getFullYear(),
       pad2(date.getMonth() + 1),
@@ -131,7 +156,39 @@ export function buildSystemTemplateValues(now = new Date(), options = {}) {
     [SYSTEM_TEMPLATE_VARIABLES.weekday]: new Intl.DateTimeFormat(WEEKDAY_LOCALES[locale], {
       weekday: locale === "ko" ? "short" : "long",
     }).format(date),
+    [SYSTEM_TEMPLATE_VARIABLES.random]: String(Math.floor(Math.random() * 1000) + 1),
   };
+
+  // url, title, selection, counter are injected externally via options.extra
+  if (options?.extra && typeof options.extra === "object") {
+    if (typeof options.extra.url === "string") {
+      values[SYSTEM_TEMPLATE_VARIABLES.url] = options.extra.url;
+    }
+    if (typeof options.extra.title === "string") {
+      values[SYSTEM_TEMPLATE_VARIABLES.title] = options.extra.title;
+    }
+    if (typeof options.extra.selection === "string") {
+      values[SYSTEM_TEMPLATE_VARIABLES.selection] = options.extra.selection;
+    }
+    if (typeof options.extra.counter === "string" || typeof options.extra.counter === "number") {
+      values[SYSTEM_TEMPLATE_VARIABLES.counter] = String(options.extra.counter);
+    }
+  }
+
+  return values;
+}
+
+/**
+ * Returns the set of system variable names that require async resolution
+ * (url, title, selection, counter) so callers know to fetch them separately.
+ */
+export function getAsyncSystemVariableNames() {
+  return new Set([
+    SYSTEM_TEMPLATE_VARIABLES.url,
+    SYSTEM_TEMPLATE_VARIABLES.title,
+    SYSTEM_TEMPLATE_VARIABLES.selection,
+    SYSTEM_TEMPLATE_VARIABLES.counter,
+  ]);
 }
 
 export function renderTemplatePrompt(template, values = {}) {

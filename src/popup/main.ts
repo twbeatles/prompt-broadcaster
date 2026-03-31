@@ -21,6 +21,7 @@ import {
   getTemplateVariableCache,
   importPromptData,
   updateFavoriteTitle,
+  updateFavoriteMeta,
   updateAppSettings,
   updateTemplateVariableCache,
 } from "../shared/stores/prompt-store";
@@ -246,6 +247,8 @@ const state = {
   favorites: [],
   historySearch: "",
   favoritesSearch: "",
+  favoritesTagFilter: "",      // 태그 필터 (빈 문자열 = 전체)
+  favoritesFolderFilter: "",   // 폴더 필터 (빈 문자열 = 전체)
   openMenuKey: null,
   favoriteSaveTimers: new Map(),
   loadedTemplateDefaults: {},
@@ -263,6 +266,7 @@ const state = {
   settings: { ...DEFAULT_SETTINGS },
   openSiteTabs: [],
   siteTargetSelections: {},
+  sitePromptOverrides: {},    // siteId -> override prompt string
   openTabsWindowId: null,
   openTabsRefreshTimer: null,
 };
@@ -688,12 +692,28 @@ function buildHistoryItemMarkup(item) {
   `;
 }
 
+function buildFavoriteTagsMarkup(item) {
+  const tags = Array.isArray(item.tags) ? item.tags : [];
+  const folder = typeof item.folder === "string" && item.folder.trim() ? item.folder.trim() : "";
+  const pinIcon = item.pinned ? `<span class="fav-pin-icon" title="${escapeHtml(msg("popup_favorite_pinned") || "Pinned")}">📌</span>` : "";
+  const folderBadge = folder ? `<span class="fav-folder-badge" data-filter-folder="${escapeAttribute(folder)}">📁 ${escapeHtml(folder)}</span>` : "";
+  const tagChips = tags.map(
+    (tag) => `<span class="fav-tag-chip" data-filter-tag="${escapeAttribute(tag)}">#${escapeHtml(tag)}</span>`
+  ).join("");
+
+  if (!pinIcon && !folderBadge && !tagChips) return "";
+  return `<div class="fav-meta-row">${pinIcon}${folderBadge}${tagChips}</div>`;
+}
+
 function buildFavoriteItemMarkup(item) {
   const menuKey = `favorite:${item.id}`;
   const safeFavoriteId = escapeAttribute(item.id);
+  const pinLabel = item.pinned
+    ? (msg("popup_favorite_unpin") || "Unpin")
+    : (msg("popup_favorite_pin") || "Pin");
 
   return `
-    <article class="prompt-item" data-favorite-id="${safeFavoriteId}">
+    <article class="prompt-item${item.pinned ? " pinned-item" : ""}" data-favorite-id="${safeFavoriteId}">
       <div class="favorite-title-row">
         <span class="favorite-star">${escapeHtml(t.favoriteStar)}</span>
         <input
@@ -704,6 +724,7 @@ function buildFavoriteItemMarkup(item) {
           placeholder="${escapeAttribute(t.titlePlaceholder)}"
         />
       </div>
+      ${buildFavoriteTagsMarkup(item)}
       <button class="prompt-main" type="button" data-load-favorite="${safeFavoriteId}">
         <div class="prompt-preview">${escapeHtml(previewText(item.text))}</div>
         <div class="prompt-meta">
@@ -714,6 +735,8 @@ function buildFavoriteItemMarkup(item) {
       <div class="prompt-actions">
         <button class="menu-button" type="button" aria-label="${escapeAttribute(t.menuMore)}" data-toggle-menu="${escapeAttribute(menuKey)}">...</button>
         <div class="item-menu ${state.openMenuKey === menuKey ? "open" : ""}">
+          <button class="menu-item" type="button" data-action="edit-favorite-tags" data-favorite-id="${safeFavoriteId}">${escapeHtml(msg("popup_favorite_edit_tags") || "Edit tags & folder")}</button>
+          <button class="menu-item" type="button" data-action="toggle-pin-favorite" data-favorite-id="${safeFavoriteId}">${escapeHtml(pinLabel)}</button>
           <button class="menu-item danger" type="button" data-action="delete-favorite" data-favorite-id="${safeFavoriteId}">${escapeHtml(t.delete)}</button>
         </div>
       </div>
@@ -734,12 +757,78 @@ function renderHistoryList() {
   historyList.innerHTML = items.map((item) => buildHistoryItemMarkup(item)).join("");
 }
 
+function getUniqueFavoriteTags() {
+  const tagSet = new Set();
+  state.favorites.forEach((item) => {
+    (item.tags ?? []).forEach((tag) => tagSet.add(tag));
+  });
+  return [...tagSet].sort();
+}
+
+function getUniqueFavoriteFolders() {
+  const folderSet = new Set();
+  state.favorites.forEach((item) => {
+    if (item.folder && item.folder.trim()) folderSet.add(item.folder.trim());
+  });
+  return [...folderSet].sort();
+}
+
+function renderFavoritesFilterBar() {
+  const tags = getUniqueFavoriteTags();
+  const folders = getUniqueFavoriteFolders();
+
+  if (tags.length === 0 && folders.length === 0) {
+    const existing = document.getElementById("favorites-filter-bar");
+    if (existing) existing.remove();
+    return;
+  }
+
+  let bar = document.getElementById("favorites-filter-bar");
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.id = "favorites-filter-bar";
+    bar.className = "favorites-filter-bar";
+    favoritesList.parentElement?.insertBefore(bar, favoritesList);
+  }
+
+  const allLabel = msg("popup_favorite_filter_all") || "All";
+  const activeTag = state.favoritesTagFilter;
+  const activeFolder = state.favoritesFolderFilter;
+
+  bar.innerHTML = `
+    <div class="filter-chips">
+      <button class="filter-chip${!activeTag && !activeFolder ? " active" : ""}" data-filter-all="favorites">${escapeHtml(allLabel)}</button>
+      ${folders.map((f) => `<button class="filter-chip folder-chip${activeFolder === f ? " active" : ""}" data-filter-folder="${escapeAttribute(f)}">📁 ${escapeHtml(f)}</button>`).join("")}
+      ${tags.map((tag) => `<button class="filter-chip tag-chip${activeTag === tag ? " active" : ""}" data-filter-tag="${escapeAttribute(tag)}">#${escapeHtml(tag)}</button>`).join("")}
+    </div>
+  `;
+}
+
+function filterFavoriteItems(items) {
+  let filtered = filterItems(items, state.favoritesSearch);
+  if (state.favoritesTagFilter) {
+    filtered = filtered.filter((item) => (item.tags ?? []).includes(state.favoritesTagFilter));
+  }
+  if (state.favoritesFolderFilter) {
+    filtered = filtered.filter((item) => (item.folder ?? "").trim() === state.favoritesFolderFilter);
+  }
+  // Pinned items first
+  return [...filtered].sort((a, b) => {
+    if (a.pinned && !b.pinned) return -1;
+    if (!a.pinned && b.pinned) return 1;
+    return 0;
+  });
+}
+
 function renderFavoritesList() {
-  const items = filterItems(state.favorites, state.favoritesSearch);
+  renderFavoritesFilterBar();
+  const items = filterFavoriteItems(state.favorites);
 
   if (items.length === 0) {
     favoritesList.innerHTML = buildEmptyState(
-      state.favoritesSearch ? t.noSearchResults : t.favoritesEmpty
+      state.favoritesSearch || state.favoritesTagFilter || state.favoritesFolderFilter
+        ? t.noSearchResults
+        : t.favoritesEmpty
     );
     return;
   }
@@ -859,23 +948,21 @@ function applySettingsToControls() {
 function buildBroadcastTargets(siteIds = []) {
   return normalizeSiteIdList(siteIds).map((siteId) => {
     const targetSelection = state.siteTargetSelections?.[siteId];
+    const promptOverride =
+      typeof state.sitePromptOverrides?.[siteId] === "string" &&
+      state.sitePromptOverrides[siteId].trim()
+        ? state.sitePromptOverrides[siteId].trim()
+        : undefined;
 
     if (typeof targetSelection === "number") {
-      return {
-        id: siteId,
-        tabId: targetSelection,
-      };
+      return { id: siteId, tabId: targetSelection, ...(promptOverride ? { promptOverride } : {}) };
     }
 
     if (targetSelection === "new") {
-      return {
-        id: siteId,
-        reuseExistingTab: false,
-        target: "new",
-      };
+      return { id: siteId, reuseExistingTab: false, target: "new", ...(promptOverride ? { promptOverride } : {}) };
     }
 
-    return { id: siteId };
+    return { id: siteId, ...(promptOverride ? { promptOverride } : {}) };
   });
 }
 
@@ -1181,6 +1268,9 @@ async function sendResolvedPrompt(finalPrompt, sites) {
     await chrome.storage.local.set({ lastPrompt: promptInput.value });
     clearAllToasts();
 
+    // Increment counter on each actual broadcast send
+    void chrome.runtime.sendMessage({ action: "incrementBroadcastCounter" }).catch(() => {});
+
     const response = await chrome.runtime.sendMessage({
       action: "broadcast",
       prompt: finalPrompt,
@@ -1280,6 +1370,42 @@ async function ensureClipboardReadPermission() {
     console.error("[AI Prompt Broadcaster] Failed to request clipboardRead permission.", error);
     return false;
   }
+}
+
+async function resolveAsyncTemplateVariables(variables) {
+  const needsTabContext = variables.some(
+    (v) =>
+      v.name === SYSTEM_TEMPLATE_VARIABLES.url ||
+      v.name === SYSTEM_TEMPLATE_VARIABLES.title ||
+      v.name === SYSTEM_TEMPLATE_VARIABLES.selection
+  );
+  const needsCounter = variables.some((v) => v.name === SYSTEM_TEMPLATE_VARIABLES.counter);
+
+  const extra = {};
+
+  if (needsTabContext) {
+    try {
+      const response = await chrome.runtime.sendMessage({ action: "getActiveTabContext" }).catch(() => null);
+      if (response?.ok) {
+        extra.url = response.url ?? "";
+        extra.title = response.title ?? "";
+        extra.selection = response.selection ?? "";
+      }
+    } catch (_error) {
+      // fall through with empty values
+    }
+  }
+
+  if (needsCounter) {
+    try {
+      const response = await chrome.runtime.sendMessage({ action: "getBroadcastCounter" }).catch(() => null);
+      extra.counter = response?.counter != null ? String(Number(response.counter) + 1) : "1";
+    } catch (_error) {
+      extra.counter = "1";
+    }
+  }
+
+  return extra;
 }
 
 async function readClipboardTemplateValue() {
@@ -1556,8 +1682,12 @@ async function openTemplateModalV2(prompt, sites) {
       .map((variable) => [variable.name, baseDefaults[variable.name] ?? ""])
   );
 
+  // Resolve async system variables (url, title, selection, counter)
+  const asyncExtra = await resolveAsyncTemplateVariables(variables);
+
   const systemValues = buildSystemTemplateValues(new Date(), {
     locale: isKorean ? "ko" : "en",
+    extra: asyncExtra,
   });
 
   if (variables.some((variable) => variable.name === SYSTEM_TEMPLATE_VARIABLES.clipboard)) {
@@ -1858,6 +1988,37 @@ function renderSiteCheckboxesPanel() {
     card.classList.toggle("checked", checkbox.checked);
     card.appendChild(mainRow);
 
+    // Selector report row (shown when warning is present)
+    if (selectorWarning) {
+      const lastVerified = site.lastVerified ? String(site.lastVerified) : "";
+      const daysSince = lastVerified
+        ? Math.floor((Date.now() - Date.parse(`${lastVerified}-01`)) / 86400000)
+        : null;
+      const daysText = daysSince != null && daysSince > 0
+        ? (msg("popup_selector_days_since") || `~${daysSince}d since last verified`)
+            .replace("$DAYS$", String(daysSince))
+        : "";
+
+      const reportRow = document.createElement("div");
+      reportRow.className = "selector-report-row";
+
+      const daysSpan = document.createElement("span");
+      daysSpan.className = "selector-days-since";
+      daysSpan.textContent = daysText || (msg("popup_selector_warning_desc") || "Selector may have changed.");
+
+      const reportLink = document.createElement("a");
+      reportLink.className = "ghost-button small-button selector-report-link";
+      const issueUrl = `https://github.com/search?q=repo:twbeatles/prompt-broadcaster+${encodeURIComponent(site.name)}+selector&type=issues`;
+      reportLink.href = issueUrl;
+      reportLink.target = "_blank";
+      reportLink.rel = "noopener noreferrer";
+      reportLink.textContent = msg("popup_selector_report_btn") || "Report";
+      reportLink.title = msg("popup_selector_report_tooltip") || "Open GitHub Issues";
+
+      reportRow.append(daysSpan, reportLink);
+      card.appendChild(reportRow);
+    }
+
     const openTabs = getOpenSiteTabs(site.id);
     const selectedTarget = state.siteTargetSelections?.[site.id] ?? getDefaultSiteTargetSelection();
 
@@ -1950,6 +2111,47 @@ function renderSiteCheckboxesPanel() {
       tabsWrap.append(tabsHead, tabsList);
       card.appendChild(tabsWrap);
     }
+
+    // Per-service prompt override toggle
+    const overrideToggleRow = document.createElement("div");
+    overrideToggleRow.className = "site-override-toggle-row";
+
+    const overrideToggle = document.createElement("button");
+    const hasOverride = Boolean(state.sitePromptOverrides?.[site.id]?.trim());
+    overrideToggle.className = `ghost-button small-button site-override-toggle${hasOverride ? " active" : ""}`;
+    overrideToggle.type = "button";
+    overrideToggle.dataset.siteOverrideToggle = site.id;
+    overrideToggle.title = msg("popup_override_prompt_label") || "Custom prompt for this service";
+    overrideToggle.textContent = hasOverride ? "✎ " + (msg("popup_override_active") || "Custom") : "✎";
+
+    const overrideWrap = document.createElement("div");
+    overrideWrap.className = "site-override-wrap";
+    overrideWrap.hidden = !hasOverride;
+
+    const overrideTextarea = document.createElement("textarea");
+    overrideTextarea.className = "site-override-textarea";
+    overrideTextarea.rows = 3;
+    overrideTextarea.placeholder = msg("popup_override_prompt_placeholder") || "Override prompt for this service only…";
+    overrideTextarea.value = state.sitePromptOverrides?.[site.id] ?? "";
+    overrideTextarea.dataset.siteOverrideInput = site.id;
+
+    overrideTextarea.addEventListener("input", () => {
+      state.sitePromptOverrides[site.id] = overrideTextarea.value;
+      const nowActive = Boolean(overrideTextarea.value.trim());
+      overrideToggle.classList.toggle("active", nowActive);
+      overrideToggle.textContent = nowActive ? "✎ " + (msg("popup_override_active") || "Custom") : "✎";
+    });
+
+    overrideToggle.addEventListener("click", () => {
+      overrideWrap.hidden = !overrideWrap.hidden;
+      if (!overrideWrap.hidden) {
+        overrideTextarea.focus();
+      }
+    });
+
+    overrideWrap.appendChild(overrideTextarea);
+    overrideToggleRow.append(overrideToggle);
+    card.append(overrideToggleRow, overrideWrap);
 
     sitesContainer.appendChild(card);
   });
@@ -2340,16 +2542,85 @@ async function handleHistoryAction(action, historyId) {
 }
 
 async function handleFavoriteAction(action, favoriteId) {
-  if (action !== "delete-favorite") {
+  if (action === "delete-favorite") {
+    await deleteFavoriteItem(favoriteId);
+    state.favorites = await getPromptFavorites();
+    state.openMenuKey = null;
+    renderFavoritesList();
+    setStatus(t.favoriteDeleted, "success");
+    showAppToast(t.favoriteDeleted, "info", 2200);
     return;
   }
 
-  await deleteFavoriteItem(favoriteId);
-  state.favorites = await getPromptFavorites();
-  state.openMenuKey = null;
-  renderFavoritesList();
-  setStatus(t.favoriteDeleted, "success");
-  showAppToast(t.favoriteDeleted, "info", 2200);
+  if (action === "toggle-pin-favorite") {
+    const item = state.favorites.find((f) => f.id === favoriteId);
+    if (item) {
+      await updateFavoriteMeta(favoriteId, { pinned: !item.pinned });
+      state.favorites = await getPromptFavorites();
+      state.openMenuKey = null;
+      renderFavoritesList();
+    }
+    return;
+  }
+
+  if (action === "edit-favorite-tags") {
+    const item = state.favorites.find((f) => f.id === favoriteId);
+    if (!item) return;
+    state.openMenuKey = null;
+    openFavoriteTagsModal(item);
+    return;
+  }
+}
+
+function openFavoriteTagsModal(item) {
+  let modal = document.getElementById("favorite-tags-modal");
+  if (!modal) {
+    modal = document.createElement("div");
+    modal.id = "favorite-tags-modal";
+    modal.className = "modal-overlay";
+    modal.innerHTML = `
+      <div class="modal-card" role="dialog" aria-modal="true">
+        <div class="modal-header">
+          <h2>${escapeHtml(msg("popup_favorite_edit_tags") || "Edit tags & folder")}</h2>
+          <button class="icon-button" type="button" id="fav-tags-modal-close">×</button>
+        </div>
+        <div class="modal-fields">
+          <label class="field-stack">
+            <span>${escapeHtml(msg("popup_favorite_tags_label") || "Tags (comma-separated)")}</span>
+            <input id="fav-tags-input" class="search-input" type="text" placeholder="${escapeHtml(msg("popup_favorite_tags_placeholder") || "coding, translation, summary")}" />
+          </label>
+          <label class="field-stack">
+            <span>${escapeHtml(msg("popup_favorite_folder_label") || "Folder")}</span>
+            <input id="fav-folder-input" class="search-input" type="text" placeholder="${escapeHtml(msg("popup_favorite_folder_placeholder") || "Work / Development")}" />
+          </label>
+        </div>
+        <div class="modal-actions">
+          <button class="ghost-button" type="button" id="fav-tags-modal-cancel">${escapeHtml(msg("popup_template_cancel") || "Cancel")}</button>
+          <button class="primary-button" type="button" id="fav-tags-modal-save">${escapeHtml(msg("popup_favorite_modal_confirm") || "Save")}</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    const closeModal = () => { modal.hidden = true; };
+    document.getElementById("fav-tags-modal-close").addEventListener("click", closeModal);
+    document.getElementById("fav-tags-modal-cancel").addEventListener("click", closeModal);
+    document.getElementById("fav-tags-modal-save").addEventListener("click", async () => {
+      const rawTags = document.getElementById("fav-tags-input").value;
+      const folder = document.getElementById("fav-folder-input").value.trim();
+      const tags = rawTags.split(",").map((t) => t.trim()).filter(Boolean);
+      const favoriteId = modal.dataset.favoriteId;
+      await updateFavoriteMeta(favoriteId, { tags, folder });
+      state.favorites = await getPromptFavorites();
+      renderFavoritesList();
+      closeModal();
+    });
+  }
+
+  modal.dataset.favoriteId = item.id;
+  document.getElementById("fav-tags-input").value = (item.tags ?? []).join(", ");
+  document.getElementById("fav-folder-input").value = item.folder ?? "";
+  modal.hidden = false;
 }
 
 async function handleSend() {
@@ -2465,6 +2736,23 @@ function bindGlobalEvents() {
 
   favoritesSearchInput.addEventListener("input", (event) => {
     state.favoritesSearch = event.target.value;
+    renderFavoritesList();
+  });
+
+  // Favorites filter bar — tag/folder chip clicks (event delegation via parent panel)
+  document.querySelector("[data-panel='favorites']")?.addEventListener("click", (event) => {
+    const chip = event.target.closest("[data-filter-tag],[data-filter-folder],[data-filter-all]");
+    if (!chip) return;
+    if (chip.dataset.filterAll === "favorites") {
+      state.favoritesTagFilter = "";
+      state.favoritesFolderFilter = "";
+    } else if (chip.dataset.filterTag !== undefined) {
+      state.favoritesTagFilter = state.favoritesTagFilter === chip.dataset.filterTag ? "" : chip.dataset.filterTag;
+      state.favoritesFolderFilter = "";
+    } else if (chip.dataset.filterFolder !== undefined) {
+      state.favoritesFolderFilter = state.favoritesFolderFilter === chip.dataset.filterFolder ? "" : chip.dataset.filterFolder;
+      state.favoritesTagFilter = "";
+    }
     renderFavoritesList();
   });
 
