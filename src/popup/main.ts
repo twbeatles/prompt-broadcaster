@@ -1235,7 +1235,21 @@ function hideFavoriteModal() {
   favoriteModalError.hidden = true;
   favoriteModalError.textContent = "";
   favoriteTitleInput.value = "";
+  favoriteSaveDefaults.checked = false;
+  favoriteSaveDefaultsRow.hidden = true;
+  favoriteDefaultFieldsWrap.hidden = true;
   favoriteDefaultFields.innerHTML = "";
+}
+
+function dismissFavoriteModal(event) {
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+  hideFavoriteModal();
+}
+
+function resetTransientModals() {
+  hideTemplateModal();
+  hideFavoriteModal();
 }
 
 function setTemplateModalError(message = "") {
@@ -1649,6 +1663,10 @@ async function openFavoriteModal() {
   setFavoriteModalError("");
   renderFavoriteModal();
   favoriteModal.hidden = false;
+  window.requestAnimationFrame(() => {
+    favoriteTitleInput.focus();
+    favoriteTitleInput.select();
+  });
 }
 
 async function confirmFavoriteSave() {
@@ -2756,11 +2774,18 @@ function bindGlobalEvents() {
     });
   });
 
-  favoriteModalClose.addEventListener("click", hideFavoriteModal);
-  favoriteModalCancel.addEventListener("click", hideFavoriteModal);
+  favoriteModalClose.addEventListener("click", dismissFavoriteModal);
+  favoriteModalCancel.addEventListener("click", dismissFavoriteModal);
   favoriteModal.addEventListener("click", (event) => {
-    if (event.target === favoriteModal) {
-      hideFavoriteModal();
+    const target = event.target instanceof Element ? event.target : null;
+    const dismissButton = target?.closest("[data-dismiss-favorite-modal]");
+    if (dismissButton || target === favoriteModal) {
+      dismissFavoriteModal(event);
+    }
+  });
+  favoriteModal.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !favoriteModal.hidden) {
+      dismissFavoriteModal(event);
     }
   });
   favoriteSaveDefaults.addEventListener("change", () => {
@@ -2843,6 +2868,7 @@ async function init() {
   try {
     applyI18n();
     document.documentElement.lang = isKorean ? "ko" : "en";
+    resetTransientModals();
     initToastRoot(toastHost);
     renderTabLabels();
     bindGlobalEvents();
@@ -2851,6 +2877,7 @@ async function init() {
     await chrome.runtime.sendMessage({ action: "popupOpened" }).catch(() => null);
     applyLastBroadcastState(await getLastBroadcast(), { silentToast: false });
     await flushPendingSessionToasts();
+    promptInput.focus();
   } catch (error) {
     console.error("[AI Prompt Broadcaster] Failed to initialize popup.", error);
     setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");

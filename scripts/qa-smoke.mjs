@@ -276,6 +276,30 @@ async function main() {
     assert.ok(messages.some((message) => message?.action === "injectSuccess"));
   });
 
+  await runStep("contenteditable nearest click target preference", async () => {
+    await openFixture(page, "contenteditable-nearest-click.html");
+    await loadInjector(page);
+
+    const prompt = "Nearest editor prompt";
+    const result = await runInjector(page, prompt, {
+      id: "fixture-editor-nearest-click",
+      name: "Nearest Click Fixture",
+      inputSelector: "#editor",
+      inputType: "contenteditable",
+      submitSelector: "button[aria-label*='send' i]",
+      submitMethod: "click",
+      waitMs: 0,
+      fallback: true,
+    });
+    const state = await getFixtureState(page);
+
+    assert.equal(result.status, "submitted");
+    assert.equal(state.submittedBy, "click");
+    assert.equal(state.clickedButtonId, "real-send-btn");
+    assert.equal(state.promptValue, prompt);
+    assert.equal(state.submitCount, 1);
+  });
+
   await runStep("contenteditable delayed submit activation", async () => {
     await openFixture(page, "contenteditable-delayed-submit.html");
     await loadInjector(page);

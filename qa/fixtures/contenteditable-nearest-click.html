@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Contenteditable Nearest Click Fixture</title>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      margin: 24px;
+    }
+
+    main {
+      display: grid;
+      gap: 16px;
+      max-width: 720px;
+    }
+
+    .decoy-bar {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 120px;
+    }
+
+    [contenteditable="true"] {
+      min-height: 140px;
+      border: 1px solid #c9d4de;
+      border-radius: 12px;
+      padding: 12px;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <div class="decoy-bar">
+    <button id="decoy-send-btn" type="button" aria-label="Send feedback">Send feedback</button>
+  </div>
+
+  <main>
+    <h1>Contenteditable Nearest Click Fixture</h1>
+    <div id="editor" contenteditable="true" role="textbox" aria-label="Prompt editor"></div>
+    <button id="real-send-btn" type="button" aria-label="Send prompt">Send</button>
+  </main>
+
+  <script>
+    window.fixtureState = {
+      submittedBy: "",
+      promptValue: "",
+      clickedButtonId: "",
+      submitCount: 0,
+    };
+
+    const editor = document.getElementById("editor");
+    const decoyButton = document.getElementById("decoy-send-btn");
+    const realButton = document.getElementById("real-send-btn");
+
+    editor.addEventListener("paste", (event) => {
+      event.preventDefault();
+      editor.textContent = event.clipboardData.getData("text/plain");
+    });
+
+    decoyButton.addEventListener("click", () => {
+      window.fixtureState.clickedButtonId = "decoy-send-btn";
+      window.fixtureState.submitCount += 1;
+    });
+
+    realButton.addEventListener("click", () => {
+      window.fixtureState.submittedBy = "click";
+      window.fixtureState.promptValue = editor.textContent;
+      window.fixtureState.clickedButtonId = "real-send-btn";
+      window.fixtureState.submitCount += 1;
+    });
+  </script>
+</body>
+</html>

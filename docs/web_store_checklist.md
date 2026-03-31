@@ -81,7 +81,10 @@
 npm install
 npm run typecheck
 npm run build
+npm run qa:smoke
 ```
+
+`qa:smoke`는 `dist/` 기준 주입/전송 경로를 로컬 fixture로 검증합니다. 다만 실제 Chrome 툴바 팝업 동작, 열린 탭 재사용, 실서비스 Claude 전송 성공 여부는 수동 검수가 필요합니다.
 
 ### 로컬 테스트
 
@@ -106,6 +109,8 @@ bash ./package.sh
 
 생성되는 ZIP은 `dist/` 산출물만 포함합니다.
 
+스토어 업로드 파일은 루트의 `prompt-broadcaster-v<version>.zip` 하나로 정리하는 것을 권장합니다.
+
 ## 6. 그래픽 에셋
 
 - 스토어 아이콘: `128x128`
@@ -120,8 +125,12 @@ bash ./package.sh
 
 - `npm run build` 후 `dist/manifest.json`이 최신 상태인지 확인
 - `dist/`를 로드했을 때 manifest 오류가 없는지 확인
+- 팝업을 처음 열었을 때 즐겨찾기 저장 모달이 자동으로 뜨지 않는지 확인
+- 즐겨찾기 저장 모달에서 `닫기`/`취소`/`저장` 버튼이 모두 정상 동작하는지 확인
 - 히스토리/즐겨찾기/템플릿/대시보드/옵션 페이지가 정상 동작하는지 확인
 - 단축키와 컨텍스트 메뉴 동작을 확인
+- ChatGPT, Gemini, Claude, Grok에 각각 한 번씩 실제 전송을 시도하고 특히 Claude의 전송 버튼 경로를 확인
+- 현재 창의 열린 AI 탭 재사용 설정과 서비스별 특정 탭 선택 UI를 확인
 - 알림 권한, optional clipboard permission 요청 흐름을 확인
 - 공개된 개인정보처리방침 URL을 준비했는지 확인
 - 업로드 ZIP이 `dist/` 기준으로 생성되었는지 확인

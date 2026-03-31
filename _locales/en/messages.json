@@ -254,6 +254,55 @@
   "popup_clear_prompt": {
     "message": "Clear"
   },
+  "popup_reuse_tabs_label": {
+    "message": "Reuse open AI tabs in the current window by default"
+  },
+  "popup_reuse_tabs_desc_enabled": {
+    "message": "When no tab is chosen explicitly, the broadcaster reuses a matching open AI tab before opening a new one."
+  },
+  "popup_reuse_tabs_desc_disabled": {
+    "message": "When no tab is chosen explicitly, the broadcaster always opens a fresh tab."
+  },
+  "popup_open_tabs_title": {
+    "message": "Open tabs ($COUNT$)",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "popup_open_tabs_use_default": {
+    "message": "Use default behavior"
+  },
+  "popup_open_tabs_use_default_detail": {
+    "message": "Current setting: $MODE$",
+    "placeholders": {
+      "mode": {
+        "content": "$1"
+      }
+    }
+  },
+  "popup_open_tabs_default_reuse": {
+    "message": "reuse a matching tab"
+  },
+  "popup_open_tabs_default_new": {
+    "message": "open a new tab"
+  },
+  "popup_open_tabs_always_new": {
+    "message": "Always open a new tab"
+  },
+  "popup_open_tabs_always_new_detail": {
+    "message": "Ignore matching open tabs for this service only."
+  },
+  "popup_open_tabs_active": {
+    "message": "Active"
+  },
+  "popup_open_tabs_ready": {
+    "message": "Ready"
+  },
+  "popup_open_tabs_loading": {
+    "message": "Loading"
+  },
   "popup_service_management_title": {
     "message": "Service management"
   },
@@ -313,6 +362,24 @@
   },
   "popup_service_field_submit_method": {
     "message": "Submit method"
+  },
+  "popup_service_field_advanced": {
+    "message": "Advanced settings"
+  },
+  "popup_service_field_fallback_selectors": {
+    "message": "Fallback selectors"
+  },
+  "popup_service_field_auth_selectors": {
+    "message": "Authentication selectors"
+  },
+  "popup_service_field_hostname_aliases": {
+    "message": "Hostname aliases"
+  },
+  "popup_service_field_last_verified": {
+    "message": "Last verified"
+  },
+  "popup_service_field_verified_version": {
+    "message": "Verified version"
   },
   "popup_service_field_wait": {
     "message": "Page wait time"
@@ -460,6 +527,12 @@
   },
   "options_settings_desc": {
     "message": "Configure retention, notifications, shortcuts, and data management."
+  },
+  "options_settings_reuse_tabs_title": {
+    "message": "Reuse current-window AI tabs"
+  },
+  "options_settings_reuse_tabs_desc": {
+    "message": "When enabled, matching open AI tabs are reused before opening a new one."
   },
   "options_chart_service_usage": {
     "message": "Service usage share"

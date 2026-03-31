@@ -76,7 +76,7 @@ export const AI_SITES = Object.freeze([
     ],
     inputType: "contenteditable",
     submitSelector:
-      "button[aria-label='Send message'], button[aria-label*='send' i]",
+      "button[aria-label='Send message'], button[aria-label*='send' i], button[aria-label*='submit' i], button[aria-label*='보내' i], button[aria-label*='전송' i]",
     submitMethod: "click",
     waitMs: 1500,
     fallback: true,

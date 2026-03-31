@@ -1,4 +1,4 @@
-import { findElementDeep, logError, sleep } from "./dom";
+import { findElementsDeep, logError, sleep } from "./dom";
 
 export interface SubmitConfigLike {
   submitMethod?: string;
@@ -8,15 +8,48 @@ export interface SubmitConfigLike {
 const SUBMIT_BUTTON_WAIT_TIMEOUT_MS = 5000;
 const SUBMIT_BUTTON_POLL_INTERVAL_MS = 100;
 
-export async function submitByClick(selector: string): Promise<boolean> {
+function getElementCenter(element: Element): { x: number; y: number } {
+  const rect = element.getBoundingClientRect();
+  return {
+    x: rect.left + rect.width / 2,
+    y: rect.top + rect.height / 2,
+  };
+}
+
+function getDistanceScore(left: Element, right: Element): number {
+  const leftCenter = getElementCenter(left);
+  const rightCenter = getElementCenter(right);
+  const deltaX = leftCenter.x - rightCenter.x;
+  const deltaY = leftCenter.y - rightCenter.y;
+  return (deltaX * deltaX) + (deltaY * deltaY);
+}
+
+function pickSubmitButtonCandidate(candidates: Element[], referenceElement?: Element | null): Element | null {
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  if (!referenceElement || candidates.length === 1) {
+    return candidates[0] ?? null;
+  }
+
+  return [...candidates].sort((left, right) => {
+    const leftScore = getDistanceScore(left, referenceElement);
+    const rightScore = getDistanceScore(right, referenceElement);
+    return leftScore - rightScore;
+  })[0] ?? null;
+}
+
+export async function submitByClick(selector: string, referenceElement?: Element | null): Promise<boolean> {
   try {
     const deadline = performance.now() + SUBMIT_BUTTON_WAIT_TIMEOUT_MS;
 
     while (true) {
-      const button = findElementDeep(selector, document, {
+      const candidates = findElementsDeep(selector, document, {
         visibleOnly: true,
         enabledOnly: true,
       });
+      const button = pickSubmitButtonCandidate(candidates, referenceElement);
       if (button) {
         (button as HTMLElement).click();
         return true;
@@ -63,7 +96,7 @@ export async function submitPrompt(
   config: SubmitConfigLike | null | undefined,
 ): Promise<boolean> {
   if (config?.submitMethod === "click") {
-    return config?.submitSelector ? submitByClick(config.submitSelector) : submitByEnter(element, false);
+    return config?.submitSelector ? submitByClick(config.submitSelector, element) : submitByEnter(element, false);
   }
 
   if (config?.submitMethod === "shift+enter") {

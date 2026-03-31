@@ -1,6 +1,6 @@
 # Chrome Web Store Copy Pack
 
-Last updated: 2026-03-30
+Last updated: 2026-03-31
 
 ## Korean
 
@@ -15,6 +15,8 @@ AI Prompt Broadcaster는 반복 복붙 없이 하나의 프롬프트를 여러 A
 주요 기능:
 
 - ChatGPT, Gemini, Claude, Grok 동시 전송
+- 현재 Chrome 창에서 이미 열려 있는 AI 탭 재사용
+- 서비스별로 특정 열린 탭 선택 또는 새 탭 강제 열기
 - 선택한 텍스트를 우클릭 메뉴나 단축키로 바로 프롬프트로 사용
 - 프롬프트 히스토리, 즐겨찾기, 템플릿 변수 지원
 - 로컬 브라우저 저장소 기반 데이터 보관

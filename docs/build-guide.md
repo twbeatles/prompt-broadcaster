@@ -135,10 +135,35 @@ The generated ZIP contains the built extension from `dist/` only.
 3. `npm run build`
 4. `npm run qa:smoke`
 5. Load `dist/` in Chrome and verify the extension
-6. In the popup, verify that currently open AI tabs appear under the matching service cards and that `Reuse open AI tabs` behaves as expected
-7. Confirm that cancelling a broadcast leaves reused tabs open and closes only newly opened tabs
-8. Run the packaging script for your platform
-9. Upload the generated ZIP to Chrome Web Store or attach it to a GitHub release
+6. Open the toolbar popup and confirm no modal is shown on initial load
+7. Open and close the favorites-save modal from the popup and confirm both `닫기` and `취소` work
+8. In the popup, verify that currently open AI tabs appear under the matching service cards and that `Reuse open AI tabs` behaves as expected
+9. Verify prompt submission on all built-in services, with a dedicated check for Claude click-submit behavior
+10. Confirm that cancelling a broadcast leaves reused tabs open and closes only newly opened tabs
+11. Run the packaging script for your platform
+12. Upload the generated ZIP to Chrome Web Store or attach it to a GitHub release
+
+## Chrome Web Store Release Checklist
+
+Use this short sequence when producing a store-ready build:
+
+1. `npm install`
+2. `npm run typecheck`
+3. `npm run build`
+4. `npm run qa:smoke`
+5. `powershell -ExecutionPolicy Bypass -File .\\package.ps1` on Windows or `bash ./package.sh` on macOS/Linux
+6. Confirm that `prompt-broadcaster-v<version>.zip` exists in the repository root
+7. Confirm that the ZIP was generated from `dist/` only
+8. Upload that ZIP to Chrome Web Store
+
+Before uploading, run these manual checks in a real Chrome window:
+
+- popup opens without showing a stale modal overlay
+- favorites-save modal opens and closes normally
+- ChatGPT, Gemini, Claude, and Grok all inject and submit from the built `dist/` extension
+- Claude specifically reaches a real prompt submit path rather than clicking a decoy action button
+- options page, history, favorites, and service editor text render correctly in Korean
+- standalone popup fallback still opens when Chrome cannot surface the toolbar action popup
 
 ## Troubleshooting
 
