@@ -1251,6 +1251,11 @@ function createContextMenus() {
     .catch(() => undefined)
     .then(() => rebuildContextMenus())
     .catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("No SW")) {
+        return;
+      }
+
       console.error("[AI Prompt Broadcaster] Failed to create context menus.", error);
     });
 
@@ -1632,6 +1637,337 @@ async function reconcilePendingBroadcasts() {
 async function injectIntoTab(tabId, prompt, site) {
   const config = buildInjectionConfig(site);
 
+  if (site?.id === "perplexity") {
+    const [executionResult] = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: async (injectedPrompt, injectedConfig) => {
+        const sleep = (ms) => new Promise((resolve) => window.setTimeout(resolve, Math.max(Number(ms) || 0, 0)));
+
+        const splitSelectorList = (selectorGroup) => {
+          const source = typeof selectorGroup === "string" ? selectorGroup.trim() : "";
+          if (!source) {
+            return [];
+          }
+
+          const parts = [];
+          let current = "";
+          let bracketDepth = 0;
+          let parenDepth = 0;
+          let quote = null;
+          let escaping = false;
+
+          for (const character of source) {
+            current += character;
+
+            if (escaping) {
+              escaping = false;
+              continue;
+            }
+
+            if (character === "\\") {
+              escaping = true;
+              continue;
+            }
+
+            if (quote) {
+              if (character === quote) {
+                quote = null;
+              }
+              continue;
+            }
+
+            if (character === "'" || character === "\"") {
+              quote = character;
+              continue;
+            }
+
+            if (character === "[") {
+              bracketDepth += 1;
+              continue;
+            }
+
+            if (character === "]") {
+              bracketDepth = Math.max(0, bracketDepth - 1);
+              continue;
+            }
+
+            if (character === "(") {
+              parenDepth += 1;
+              continue;
+            }
+
+            if (character === ")") {
+              parenDepth = Math.max(0, parenDepth - 1);
+              continue;
+            }
+
+            if (character === "," && bracketDepth === 0 && parenDepth === 0) {
+              current = current.slice(0, -1);
+              const normalized = current.trim();
+              if (normalized) {
+                parts.push(normalized);
+              }
+              current = "";
+            }
+          }
+
+          const trailing = current.trim();
+          if (trailing) {
+            parts.push(trailing);
+          }
+
+          return parts;
+        };
+
+        const normalizeSelectorEntries = (selectors) =>
+          (Array.isArray(selectors) ? selectors : [])
+            .filter((selector) => typeof selector === "string" && selector.trim())
+            .flatMap((selector) => splitSelectorList(selector))
+            .filter((selector, index, list) => list.indexOf(selector) === index);
+
+        const normalizeText = (value) =>
+          String(value ?? "")
+            .replace(/\u00A0/g, " ")
+            .replace(/[\u200B-\u200D\uFEFF]/g, "")
+            .replace(/\r\n?/g, "\n")
+            .trim();
+
+        const isVisible = (element) => {
+          if (!(element instanceof HTMLElement) && !(element instanceof SVGElement)) {
+            return true;
+          }
+
+          const style = window.getComputedStyle(element);
+          if (
+            element.hidden ||
+            element.getAttribute("hidden") !== null ||
+            element.getAttribute("aria-hidden") === "true" ||
+            style.display === "none" ||
+            style.visibility === "hidden" ||
+            style.visibility === "collapse"
+          ) {
+            return false;
+          }
+
+          return element.getClientRects().length > 0;
+        };
+
+        const isEditable = (element) => {
+          if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+            return !element.readOnly;
+          }
+
+          return element instanceof HTMLElement ? element.isContentEditable : false;
+        };
+
+        const findPromptMatch = () => {
+          const selectors = normalizeSelectorEntries([
+            injectedConfig?.inputSelector,
+            ...(Array.isArray(injectedConfig?.fallbackSelectors) ? injectedConfig.fallbackSelectors : []),
+          ]);
+
+          for (const selector of selectors) {
+            const candidates = Array.from(document.querySelectorAll(selector));
+            const element = candidates.find((candidate) => isVisible(candidate) && isEditable(candidate));
+            if (element) {
+              return { element, selector };
+            }
+          }
+
+          return null;
+        };
+
+        const waitForPromptMatch = async (timeoutMs) => {
+          const deadline = performance.now() + Math.max(Number(timeoutMs) || 0, 0);
+
+          while (performance.now() <= deadline) {
+            const match = findPromptMatch();
+            if (match) {
+              return match;
+            }
+
+            await sleep(150);
+          }
+
+          return null;
+        };
+
+        const placeCaretAtEnd = (element) => {
+          if (!(element instanceof HTMLElement)) {
+            return;
+          }
+
+          const selection = window.getSelection();
+          if (!selection) {
+            return;
+          }
+
+          const range = document.createRange();
+          range.selectNodeContents(element);
+          range.collapse(false);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        };
+
+        const selectAllEditableContents = (element) => {
+          if (!(element instanceof HTMLElement)) {
+            return;
+          }
+
+          element.focus();
+          const selection = window.getSelection();
+          if (!selection) {
+            document.execCommand("selectAll", false);
+            return;
+          }
+
+          const range = document.createRange();
+          range.selectNodeContents(element);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        };
+
+        const buildParagraphNode = (text) => ({
+          children: text
+            ? [
+                {
+                  detail: 0,
+                  format: 0,
+                  mode: "normal",
+                  style: "",
+                  text,
+                  type: "text",
+                  version: 1,
+                },
+              ]
+            : [],
+          direction: null,
+          format: "",
+          indent: 0,
+          type: "paragraph",
+          version: 1,
+          textFormat: 0,
+          textStyle: "",
+        });
+
+        const setLexicalText = (element, nextPrompt) => {
+          if (!(element instanceof HTMLElement)) {
+            return false;
+          }
+
+          const editor = element.__lexicalEditor;
+          if (
+            !editor ||
+            typeof editor.parseEditorState !== "function" ||
+            typeof editor.setEditorState !== "function"
+          ) {
+            return false;
+          }
+
+          const paragraphs = String(nextPrompt ?? "").split(/\n/g).map((line) => buildParagraphNode(line));
+          const editorStateJson = {
+            root: {
+              children: paragraphs.length > 0 ? paragraphs : [buildParagraphNode("")],
+              direction: null,
+              format: "",
+              indent: 0,
+              type: "root",
+              version: 1,
+            },
+          };
+
+          const nextState = editor.parseEditorState(JSON.stringify(editorStateJson));
+          editor.setEditorState(nextState);
+          if (typeof editor.focus === "function") {
+            editor.focus();
+          } else {
+            element.focus();
+          }
+          placeCaretAtEnd(element);
+          return normalizeText(element.innerText ?? element.textContent ?? "") === normalizeText(nextPrompt);
+        };
+
+        if ((Number(injectedConfig?.waitMs) || 0) > 0) {
+          await sleep(injectedConfig.waitMs);
+        }
+
+        const startedAt = performance.now();
+        const match = await waitForPromptMatch(Math.max((Number(injectedConfig?.waitMs) || 0) + 6000, 8000));
+        if (!match?.element) {
+          return { status: "selector_failed" };
+        }
+
+        const { element, selector } = match;
+        let strategy = "mainWorldExecCommand";
+        let injected = false;
+
+        if (element instanceof HTMLElement && element.dataset.lexicalEditor === "true") {
+          injected = setLexicalText(element, injectedPrompt);
+          strategy = "mainWorldLexical";
+        }
+
+        if (!injected && element instanceof HTMLElement) {
+          element.focus();
+          selectAllEditableContents(element);
+          const inserted = document.execCommand("insertText", false, injectedPrompt);
+          injected =
+            Boolean(inserted) ||
+            normalizeText(element.innerText ?? element.textContent ?? "") === normalizeText(injectedPrompt);
+        }
+
+        if (!injected) {
+          return { status: "failed", selector, strategy };
+        }
+
+        return {
+          status: "injected",
+          selector,
+          strategy,
+          inputType: "contenteditable",
+          elapsedMs: Math.round(performance.now() - startedAt),
+        };
+      },
+      args: [prompt, config],
+    });
+
+    const injectionResult = executionResult?.result ?? null;
+    if (!injectionResult || injectionResult.status !== "injected") {
+      return injectionResult;
+    }
+
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: [INJECTOR_SCRIPT_PATH],
+    });
+
+    const [submitExecutionResult] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: async (injectedConfig) => {
+        const submitter = globalThis.__aiPromptBroadcasterSubmitPrompt;
+        if (typeof submitter !== "function") {
+          throw new Error("submitPrompt entry point is not available in the tab context.");
+        }
+
+        return submitter(injectedConfig);
+      },
+      args: [config],
+    });
+
+    const submitResult = submitExecutionResult?.result ?? null;
+    if (submitResult?.status === "submitted") {
+      return {
+        ...submitResult,
+        selector: injectionResult.selector ?? submitResult.selector,
+        strategy: injectionResult.strategy ?? submitResult.strategy,
+        inputType: injectionResult.inputType ?? submitResult.inputType,
+        elapsedMs: injectionResult.elapsedMs ?? submitResult.elapsedMs,
+      };
+    }
+
+    return submitResult ?? injectionResult;
+  }
+
   await chrome.scripting.executeScript({
     target: { tabId },
     files: [INJECTOR_SCRIPT_PATH],
@@ -1832,7 +2168,6 @@ async function ensureReconcileAlarm() {
 }
 
 async function initializeServiceWorker() {
-  await createContextMenus();
   await ensureReconcileAlarm();
   await reconcilePendingInjections();
   await reconcilePendingBroadcasts();

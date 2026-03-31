@@ -279,6 +279,11 @@ background: lastBroadcast 업데이트
 히스토리 항목 저장
 ```
 
+Perplexity 예외:
+- `#ask-input[data-lexical-editor='true']`를 최우선 selector로 강제
+- page-owned Lexical editor에 맞추기 위해 background가 `MAIN` world에서 텍스트만 주입
+- 발신은 기존 `content/injector.js`의 submit 경로를 그대로 사용
+
 ### 메시지 프로토콜
 
 **팝업 → 백그라운드:**
@@ -330,15 +335,18 @@ background: lastBroadcast 업데이트
        ↓
 2. 셀렉터 탐색
    주 셀렉터 → 폴백 셀렉터 1 → 폴백 셀렉터 2 → ...
+   쉼표로 연결된 selector 문자열도 우선순위 배열로 분해해 순서대로 검사
    (숨겨진 요소보다 보이는 요소 우선)
        ↓
 3. 텍스트 주입 전략 시도 (순서대로)
    contenteditable: execCommand → DOM 조작 → paste 이벤트
    textarea/input: native setter → paste 이벤트
+   Perplexity: `MAIN` world Lexical state 갱신 우선
        ↓
 4. 제출 실행
    click: 버튼 활성화될 때까지 폴링 → 클릭
    keyboard: 포커스 → 키 이벤트 dispatch
+   Perplexity는 입력만 예외 경로를 타고 제출은 기존 submit 로직 유지
        ↓
 5. 결과 보고 → 백그라운드
 ```

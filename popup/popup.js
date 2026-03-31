@@ -603,8 +603,9 @@ var AI_SITES = Object.freeze([
     url: "https://www.perplexity.ai/",
     hostname: "www.perplexity.ai",
     hostnameAliases: ["perplexity.ai"],
-    inputSelector: "div#ask-input[contenteditable='true'][role='textbox'], #ask-input[contenteditable='true'], div[contenteditable='true'][role='textbox']",
+    inputSelector: "#ask-input[data-lexical-editor='true'][role='textbox']",
     fallbackSelectors: [
+      "div#ask-input[data-lexical-editor='true'][role='textbox']",
       "div#ask-input[contenteditable='true'][role='textbox']",
       "#ask-input[contenteditable='true']",
       "div[contenteditable='true'][role='textbox']",
@@ -758,23 +759,57 @@ function stringifyComparable(value) {
     return "";
   }
 }
+var PERPLEXITY_PRIMARY_INPUT_SELECTOR = "#ask-input[data-lexical-editor='true'][role='textbox']";
+var PERPLEXITY_SELECTOR_FALLBACKS = [
+  "div#ask-input[data-lexical-editor='true'][role='textbox']",
+  "div#ask-input[contenteditable='true'][role='textbox']",
+  "#ask-input[contenteditable='true']",
+  "div[contenteditable='true'][role='textbox']"
+];
+function normalizeSelectorArray(value) {
+  return Array.isArray(value) ? value.filter((entry) => typeof entry === "string" && entry.trim()).map((entry) => entry.trim()) : [];
+}
+function normalizePerplexitySelectors(site = {}) {
+  if (safeText2(site?.id) !== "perplexity") {
+    return {
+      inputSelector: safeText2(site?.inputSelector),
+      fallbackSelectors: normalizeSelectorArray(site?.fallbackSelectors)
+    };
+  }
+  const overrideInputSelector = safeText2(site?.inputSelector);
+  const fallbackSelectors = normalizeSelectorArray(site?.fallbackSelectors);
+  const mergedFallbackSelectors = Array.from(
+    new Set(
+      [
+        overrideInputSelector && overrideInputSelector !== PERPLEXITY_PRIMARY_INPUT_SELECTOR ? overrideInputSelector : "",
+        ...fallbackSelectors,
+        ...PERPLEXITY_SELECTOR_FALLBACKS
+      ].filter(Boolean)
+    )
+  );
+  return {
+    inputSelector: PERPLEXITY_PRIMARY_INPUT_SELECTOR,
+    fallbackSelectors: mergedFallbackSelectors
+  };
+}
 function buildBaseSiteRecord(site, builtInMeta = {}) {
   const style = BUILT_IN_SITE_STYLE_MAP[site.id] ?? {};
   const url = safeText2(site.url);
   const hostname = normalizeHostname(site.hostname || deriveHostname(url));
+  const normalizedSelectors = normalizePerplexitySelectors(site);
   return {
     id: safeText2(site.id),
     name: safeText2(site.name) || "AI Service",
     url,
     hostname,
     hostnameAliases: normalizeHostnameAliases(site.hostnameAliases, hostname),
-    inputSelector: safeText2(site.inputSelector),
+    inputSelector: normalizedSelectors.inputSelector,
     inputType: normalizeInputType(site.inputType, "textarea"),
     submitSelector: safeText2(site.submitSelector),
     submitMethod: normalizeSubmitMethod(site.submitMethod, "click"),
     selectorCheckMode: normalizeSelectorCheckMode(site.selectorCheckMode, "input-and-submit"),
     waitMs: normalizeWaitMs(site.waitMs, 2e3),
-    fallbackSelectors: Array.isArray(site.fallbackSelectors) ? site.fallbackSelectors.filter((entry) => typeof entry === "string" && entry.trim()) : [],
+    fallbackSelectors: normalizedSelectors.fallbackSelectors,
     fallback: normalizeBoolean2(site.fallback, true),
     authSelectors: Array.isArray(site.authSelectors) ? site.authSelectors.filter((entry) => typeof entry === "string" && entry.trim()) : [],
     lastVerified: safeText2(site.lastVerified),

@@ -416,7 +416,7 @@ async function main() {
     const state = await getFixtureState(page);
 
     assert.equal(result.status, "submitted");
-    assert.equal(result.selector, "textarea[aria-label='Prompt composer'], div[aria-label='Prompt composer']");
+    assert.equal(result.selector, "div[aria-label='Prompt composer']");
     assert.equal(state.submittedBy, "click");
     assert.equal(state.promptValue, prompt);
   });

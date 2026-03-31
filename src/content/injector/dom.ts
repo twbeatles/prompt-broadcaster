@@ -210,6 +210,104 @@ export function getElementValueSnapshot(element: Element): string {
   return "";
 }
 
+export function normalizeComparableText(value: string): string {
+  return String(value ?? "")
+    .replace(/\u00A0/g, " ")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/\r\n?/g, "\n")
+    .trim();
+}
+
+export function elementValueMatchesPrompt(element: Element, prompt: string): boolean {
+  return normalizeComparableText(getElementValueSnapshot(element)) === normalizeComparableText(prompt);
+}
+
+interface LexicalLikeEditor {
+  parseEditorState(serializedEditorState: string): unknown;
+  setEditorState(nextEditorState: unknown): void;
+  focus(): void;
+}
+
+interface LexicalEditorElement extends HTMLElement {
+  __lexicalEditor?: LexicalLikeEditor;
+}
+
+function buildLexicalParagraphNode(text: string) {
+  return {
+    children: text
+      ? [
+          {
+            detail: 0,
+            format: 0,
+            mode: "normal",
+            style: "",
+            text,
+            type: "text",
+            version: 1,
+          },
+        ]
+      : [],
+    direction: null,
+    format: "",
+    indent: 0,
+    type: "paragraph",
+    version: 1,
+    textFormat: 0,
+    textStyle: "",
+  };
+}
+
+export function isLexicalEditorElement(element: Element): boolean {
+  if (!(element instanceof HTMLElement)) {
+    return false;
+  }
+
+  const lexicalElement = element as LexicalEditorElement;
+  return (
+    element.dataset.lexicalEditor === "true" ||
+    typeof lexicalElement.__lexicalEditor?.parseEditorState === "function"
+  );
+}
+
+export function setLexicalEditorText(element: Element, prompt: string): boolean {
+  if (!(element instanceof HTMLElement)) {
+    return false;
+  }
+
+  const lexicalElement = element as LexicalEditorElement;
+  const editor = lexicalElement.__lexicalEditor;
+  if (
+    !editor ||
+    typeof editor.parseEditorState !== "function" ||
+    typeof editor.setEditorState !== "function"
+  ) {
+    return false;
+  }
+
+  try {
+    const paragraphs = String(prompt ?? "").split(/\n/g).map((line) => buildLexicalParagraphNode(line));
+    const editorStateJson = {
+      root: {
+        children: paragraphs.length > 0 ? paragraphs : [buildLexicalParagraphNode("")],
+        direction: null,
+        format: "",
+        indent: 0,
+        type: "root",
+        version: 1,
+      },
+    };
+
+    const nextState = editor.parseEditorState(JSON.stringify(editorStateJson));
+    editor.setEditorState(nextState);
+    editor.focus();
+    placeCaretAtEnd(element);
+    return elementValueMatchesPrompt(element, prompt);
+  } catch (error) {
+    logError("Lexical editor update failed", error);
+    return false;
+  }
+}
+
 export function selectAllEditableContents(element: HTMLElement): void {
   element.focus();
   const selection = window.getSelection();
@@ -295,4 +393,8 @@ export function replaceContentEditableText(element: HTMLElement, prompt: string)
     logError("Direct contenteditable replacement failed", error);
     return false;
   }
+}
+
+export function clearContentEditableText(element: HTMLElement): boolean {
+  return replaceContentEditableText(element, "");
 }

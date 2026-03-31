@@ -37,6 +37,7 @@
 - Chrome MV3 기반, 백엔드 없음
 - `chrome.scripting.executeScript` 기반 동적 주입
 - 사이트별 셀렉터와 전략을 `src/config/sites/builtins.ts`에서 중앙 관리
+- Perplexity는 `#ask-input[data-lexical-editor='true']`를 최우선으로 잡고, `MAIN` world에서 Lexical 상태를 갱신한 뒤 기존 submit 경로로 전송
 - 입력 실패 시 클립보드 복사 + 비차단 폴백 배너 제공
 - 셀렉터가 깨졌을 때 자동 진단 및 알림, **GitHub 이슈 신고 버튼** 제공
 - 개발자용 셀렉터 탐지 스크립트 제공
@@ -53,6 +54,10 @@
 | Perplexity | `https://www.perplexity.ai/` | `contenteditable` + 버튼 클릭 | 지원, Best effort |
 
 `Best effort`는 대상 사이트의 DOM 구조 변경, 로그인 상태, 반자동화 정책에 따라 주입 성공률이 달라질 수 있음을 의미합니다.
+
+Perplexity 참고:
+- 일반 `contenteditable`처럼 보이지만 실제로는 Lexical editor이므로, broad selector 대신 `#ask-input[data-lexical-editor='true']`를 우선 사용합니다.
+- 입력은 page-owned editor state와 맞추기 위해 `MAIN` world에서 처리하고, 발신은 기존 click-submit 경로를 유지합니다.
 
 ### 이런 분께 좋아요
 - 같은 프롬프트를 여러 AI에 동시에 보내고 답변을 비교하고 싶은 사용자
@@ -216,6 +221,7 @@ For build and packaging steps, see [docs/build-guide.md](docs/build-guide.md). F
 - Pure MV3 extension, no backend required
 - Dynamic prompt injection using `chrome.scripting.executeScript`
 - Central site configuration in `src/config/sites/builtins.ts`
+- Perplexity prefers `#ask-input[data-lexical-editor='true']`, updates Lexical state from the page's `MAIN` world, and keeps the legacy submit path for dispatch
 - Click-submit flows wait for the submit button to become enabled so async React editors can finish state updates before submission
 - Clipboard copy fallback and non-blocking banner on injection failure
 - Selector self-diagnostics with Chrome notifications; **Report issue button** appears in service management for affected services
@@ -234,6 +240,10 @@ For build and packaging steps, see [docs/build-guide.md](docs/build-guide.md). F
 | Perplexity | `https://www.perplexity.ai/` | `contenteditable` + click submit | Supported, Best effort |
 
 `Best effort` means injection can break when a target site changes its DOM, redirects to login, or blocks synthetic input events.
+
+Perplexity note:
+- The visible composer is backed by a Lexical editor, so the extension prioritizes `#ask-input[data-lexical-editor='true']` over broader textbox selectors.
+- Text injection runs in the page `MAIN` world to stay in sync with Lexical state, while submission still uses the standard click-submit flow.
 
 ### Who This Is For
 - People who want to send the same prompt to multiple AI services and compare responses

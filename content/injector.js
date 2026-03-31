@@ -149,6 +149,72 @@ var AIPromptBroadcasterInjectorBundle = (() => {
     }
     return "";
   }
+  function normalizeComparableText(value) {
+    return String(value ?? "").replace(/\u00A0/g, " ").replace(/[\u200B-\u200D\uFEFF]/g, "").replace(/\r\n?/g, "\n").trim();
+  }
+  function elementValueMatchesPrompt(element, prompt) {
+    return normalizeComparableText(getElementValueSnapshot(element)) === normalizeComparableText(prompt);
+  }
+  function buildLexicalParagraphNode(text) {
+    return {
+      children: text ? [
+        {
+          detail: 0,
+          format: 0,
+          mode: "normal",
+          style: "",
+          text,
+          type: "text",
+          version: 1
+        }
+      ] : [],
+      direction: null,
+      format: "",
+      indent: 0,
+      type: "paragraph",
+      version: 1,
+      textFormat: 0,
+      textStyle: ""
+    };
+  }
+  function isLexicalEditorElement(element) {
+    if (!(element instanceof HTMLElement)) {
+      return false;
+    }
+    const lexicalElement = element;
+    return element.dataset.lexicalEditor === "true" || typeof lexicalElement.__lexicalEditor?.parseEditorState === "function";
+  }
+  function setLexicalEditorText(element, prompt) {
+    if (!(element instanceof HTMLElement)) {
+      return false;
+    }
+    const lexicalElement = element;
+    const editor = lexicalElement.__lexicalEditor;
+    if (!editor || typeof editor.parseEditorState !== "function" || typeof editor.setEditorState !== "function") {
+      return false;
+    }
+    try {
+      const paragraphs = String(prompt ?? "").split(/\n/g).map((line) => buildLexicalParagraphNode(line));
+      const editorStateJson = {
+        root: {
+          children: paragraphs.length > 0 ? paragraphs : [buildLexicalParagraphNode("")],
+          direction: null,
+          format: "",
+          indent: 0,
+          type: "root",
+          version: 1
+        }
+      };
+      const nextState = editor.parseEditorState(JSON.stringify(editorStateJson));
+      editor.setEditorState(nextState);
+      editor.focus();
+      placeCaretAtEnd(element);
+      return elementValueMatchesPrompt(element, prompt);
+    } catch (error) {
+      logError("Lexical editor update failed", error);
+      return false;
+    }
+  }
   function selectAllEditableContents(element) {
     element.focus();
     const selection = window.getSelection();
@@ -217,6 +283,9 @@ var AIPromptBroadcasterInjectorBundle = (() => {
       return false;
     }
   }
+  function clearContentEditableText(element) {
+    return replaceContentEditableText(element, "");
+  }
 
   // src/content/injector/fallback.ts
   async function sendRuntimeMessage(message) {
@@ -260,11 +329,73 @@ var AIPromptBroadcasterInjectorBundle = (() => {
   }
 
   // src/content/injector/selectors.ts
+  function splitSelectorList(selectorGroup) {
+    const source = typeof selectorGroup === "string" ? selectorGroup.trim() : "";
+    if (!source) {
+      return [];
+    }
+    const parts = [];
+    let current = "";
+    let bracketDepth = 0;
+    let parenDepth = 0;
+    let quote = null;
+    let escaping = false;
+    for (const character of source) {
+      current += character;
+      if (escaping) {
+        escaping = false;
+        continue;
+      }
+      if (character === "\\") {
+        escaping = true;
+        continue;
+      }
+      if (quote) {
+        if (character === quote) {
+          quote = null;
+        }
+        continue;
+      }
+      if (character === "'" || character === '"') {
+        quote = character;
+        continue;
+      }
+      if (character === "[") {
+        bracketDepth += 1;
+        continue;
+      }
+      if (character === "]") {
+        bracketDepth = Math.max(0, bracketDepth - 1);
+        continue;
+      }
+      if (character === "(") {
+        parenDepth += 1;
+        continue;
+      }
+      if (character === ")") {
+        parenDepth = Math.max(0, parenDepth - 1);
+        continue;
+      }
+      if (character === "," && bracketDepth === 0 && parenDepth === 0) {
+        current = current.slice(0, -1);
+        const normalized = current.trim();
+        if (normalized) {
+          parts.push(normalized);
+        }
+        current = "";
+      }
+    }
+    const trailing = current.trim();
+    if (trailing) {
+      parts.push(trailing);
+    }
+    return parts;
+  }
   function normalizeSelectors(config) {
     return [
       config?.inputSelector,
       ...Array.isArray(config?.fallbackSelectors) ? config.fallbackSelectors : []
-    ].filter((selector) => typeof selector === "string" && Boolean(selector.trim())).map((selector) => selector.trim()).filter((selector, index, list) => list.indexOf(selector) === index);
+    ].filter((selector) => typeof selector === "string" && Boolean(selector.trim())).flatMap((selector) => splitSelectorList(selector)).filter((selector, index, list) => list.indexOf(selector) === index);
   }
   function isLikelyAuthPage(config) {
     try {
@@ -349,7 +480,7 @@ var AIPromptBroadcasterInjectorBundle = (() => {
   function strategyNativeSetter(element, prompt) {
     try {
       const setter = getNativeValueSetter(element);
-      const previousValue = getElementValueSnapshot(element);
+      const previousValue = "value" in element ? String(element.value ?? "") : "";
       element.focus();
       if (typeof setter === "function") {
         setter.call(element, prompt);
@@ -361,7 +492,7 @@ var AIPromptBroadcasterInjectorBundle = (() => {
       syncReactValueTracker(element, previousValue);
       setTextInputSelectionToEnd(element);
       dispatchInputEvents(element, prompt);
-      return getElementValueSnapshot(element).trim() === prompt.trim();
+      return elementValueMatchesPrompt(element, prompt);
     } catch (error) {
       logError("Native setter strategy failed", error);
       return false;
@@ -373,9 +504,20 @@ var AIPromptBroadcasterInjectorBundle = (() => {
       selectAllEditableContents(element);
       const inserted = document.execCommand("insertText", false, prompt);
       dispatchInputEvents(element, prompt);
-      return Boolean(inserted) || getElementValueSnapshot(element).trim() === prompt.trim();
+      return Boolean(inserted) || elementValueMatchesPrompt(element, prompt);
     } catch (error) {
       logError("execCommand strategy failed", error);
+      return false;
+    }
+  }
+  function strategyLexicalEditorState(element, prompt) {
+    try {
+      if (!isLexicalEditorElement(element)) {
+        return false;
+      }
+      return setLexicalEditorText(element, prompt);
+    } catch (error) {
+      logError("Lexical editor strategy failed", error);
       return false;
     }
   }
@@ -389,7 +531,7 @@ var AIPromptBroadcasterInjectorBundle = (() => {
         return false;
       }
       dispatchInputEvents(element, prompt);
-      return getElementValueSnapshot(element).trim() === prompt.trim();
+      return elementValueMatchesPrompt(element, prompt);
     } catch (error) {
       logError("Direct contenteditable strategy failed", error);
       return false;
@@ -407,7 +549,7 @@ var AIPromptBroadcasterInjectorBundle = (() => {
       });
       element.dispatchEvent(event);
       dispatchInputEvents(element, prompt, "insertFromPaste");
-      return getElementValueSnapshot(element).trim() === prompt.trim();
+      return elementValueMatchesPrompt(element, prompt);
     } catch (error) {
       logError("Paste event strategy failed", error);
       return false;
@@ -500,7 +642,15 @@ var AIPromptBroadcasterInjectorBundle = (() => {
   }
 
   // src/content/injector/main.ts
-  async function injectPrompt(prompt, config) {
+  var RECENT_INJECTION_DEDUPE_MS = 1500;
+  function buildInjectionKey(prompt, config) {
+    return [
+      window.location.href,
+      config?.id ?? "",
+      prompt
+    ].join("\n");
+  }
+  async function performInjectPrompt(prompt, config) {
     try {
       const serviceName = config?.name ?? "AI service";
       if (isLikelyAuthPage(config)) {
@@ -527,7 +677,11 @@ var AIPromptBroadcasterInjectorBundle = (() => {
       }
       const { element, selector, elapsedMs } = match;
       const resolvedInputType = element instanceof HTMLTextAreaElement ? "textarea" : element instanceof HTMLInputElement ? "input" : element.isContentEditable ? "contenteditable" : config?.inputType === "input" ? "input" : config?.inputType === "contenteditable" ? "contenteditable" : "textarea";
-      const strategies = resolvedInputType === "contenteditable" ? [
+      const lexicalEditor = resolvedInputType === "contenteditable" && isLexicalEditorElement(element);
+      const strategies = resolvedInputType === "contenteditable" ? lexicalEditor ? [
+        { name: "lexicalEditorState", run: () => strategyLexicalEditorState(element, prompt) },
+        { name: "execCommand", run: () => strategyExecCommand(element, prompt) }
+      ] : [
         { name: "execCommand", run: () => strategyExecCommand(element, prompt) },
         { name: "directContenteditable", run: () => strategyDirectContenteditable(element, prompt) },
         { name: "paste", run: () => strategyPasteEvent(element, prompt) }
@@ -537,7 +691,10 @@ var AIPromptBroadcasterInjectorBundle = (() => {
       ];
       let usedStrategy = "";
       let injected = false;
-      for (const strategy of strategies) {
+      for (const [index, strategy] of strategies.entries()) {
+        if (resolvedInputType === "contenteditable" && index > 0 && !lexicalEditor) {
+          clearContentEditableText(element);
+        }
         const success = strategy.run();
         log(`${serviceName} strategy ${strategy.name} ${success ? "succeeded" : "failed"}`);
         if (success) {
@@ -588,7 +745,68 @@ var AIPromptBroadcasterInjectorBundle = (() => {
       };
     }
   }
+  async function submitOnlyPrompt(config) {
+    try {
+      if (isLikelyAuthPage(config)) {
+        return { status: "login_required" };
+      }
+      if ((config?.waitMs ?? 0) > 0) {
+        await sleep(config.waitMs);
+      }
+      const selectorCandidates = normalizeSelectors(config);
+      const match = await waitForElement(selectorCandidates, Math.max((config?.waitMs ?? 0) + 6e3, 8e3));
+      if (!match?.element) {
+        return { status: "selector_failed" };
+      }
+      const { element, selector, elapsedMs } = match;
+      if (!await submitPrompt(element, config)) {
+        return { status: "submit_failed", selector, elapsedMs };
+      }
+      return {
+        status: "submitted",
+        selector,
+        strategy: "submitOnly",
+        elapsedMs
+      };
+    } catch (error) {
+      logError("submitOnlyPrompt failed", error);
+      return {
+        status: "failed",
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+  async function injectPrompt(prompt, config) {
+    const key = buildInjectionKey(prompt, config);
+    const activeInjection = window.__aiPromptBroadcasterActiveInjection;
+    if (activeInjection?.key === key) {
+      return activeInjection.promise;
+    }
+    const recentInjection = window.__aiPromptBroadcasterRecentInjection;
+    if (recentInjection?.key === key && recentInjection.result?.status === "submitted" && Date.now() - recentInjection.finishedAt <= RECENT_INJECTION_DEDUPE_MS) {
+      return recentInjection.result;
+    }
+    const promise = performInjectPrompt(prompt, config).then((result) => {
+      if (result.status === "submitted") {
+        window.__aiPromptBroadcasterRecentInjection = {
+          key,
+          finishedAt: Date.now(),
+          result
+        };
+      }
+      return result;
+    }).finally(() => {
+      if (window.__aiPromptBroadcasterActiveInjection?.key === key) {
+        delete window.__aiPromptBroadcasterActiveInjection;
+      }
+    });
+    window.__aiPromptBroadcasterActiveInjection = { key, promise };
+    return promise;
+  }
   if (typeof window.__aiPromptBroadcasterInjectPrompt !== "function") {
     window.__aiPromptBroadcasterInjectPrompt = injectPrompt;
+  }
+  if (typeof window.__aiPromptBroadcasterSubmitPrompt !== "function") {
+    window.__aiPromptBroadcasterSubmitPrompt = submitOnlyPrompt;
   }
 })();

@@ -1,10 +1,12 @@
 import {
   dispatchInputEvents,
-  getElementValueSnapshot,
+  elementValueMatchesPrompt,
   getNativeValueSetter,
+  isLexicalEditorElement,
   logError,
   replaceContentEditableText,
   selectAllEditableContents,
+  setLexicalEditorText,
   setTextInputSelectionToEnd,
   syncReactValueTracker,
 } from "./dom";
@@ -12,7 +14,7 @@ import {
 export function strategyNativeSetter(element: Element, prompt: string): boolean {
   try {
     const setter = getNativeValueSetter(element);
-    const previousValue = getElementValueSnapshot(element);
+    const previousValue = "value" in element ? String((element as HTMLInputElement | HTMLTextAreaElement).value ?? "") : "";
     (element as HTMLElement).focus();
 
     if (typeof setter === "function") {
@@ -26,7 +28,7 @@ export function strategyNativeSetter(element: Element, prompt: string): boolean 
     syncReactValueTracker(element, previousValue);
     setTextInputSelectionToEnd(element);
     dispatchInputEvents(element, prompt);
-    return getElementValueSnapshot(element).trim() === prompt.trim();
+    return elementValueMatchesPrompt(element, prompt);
   } catch (error) {
     logError("Native setter strategy failed", error);
     return false;
@@ -39,9 +41,22 @@ export function strategyExecCommand(element: Element, prompt: string): boolean {
     selectAllEditableContents(element as HTMLElement);
     const inserted = document.execCommand("insertText", false, prompt);
     dispatchInputEvents(element, prompt);
-    return Boolean(inserted) || getElementValueSnapshot(element).trim() === prompt.trim();
+    return Boolean(inserted) || elementValueMatchesPrompt(element, prompt);
   } catch (error) {
     logError("execCommand strategy failed", error);
+    return false;
+  }
+}
+
+export function strategyLexicalEditorState(element: Element, prompt: string): boolean {
+  try {
+    if (!isLexicalEditorElement(element)) {
+      return false;
+    }
+
+    return setLexicalEditorText(element, prompt);
+  } catch (error) {
+    logError("Lexical editor strategy failed", error);
     return false;
   }
 }
@@ -58,7 +73,7 @@ export function strategyDirectContenteditable(element: Element, prompt: string):
     }
 
     dispatchInputEvents(element, prompt);
-    return getElementValueSnapshot(element).trim() === prompt.trim();
+    return elementValueMatchesPrompt(element, prompt);
   } catch (error) {
     logError("Direct contenteditable strategy failed", error);
     return false;
@@ -79,7 +94,7 @@ export function strategyPasteEvent(element: Element, prompt: string): boolean {
 
     element.dispatchEvent(event);
     dispatchInputEvents(element, prompt, "insertFromPaste");
-    return getElementValueSnapshot(element).trim() === prompt.trim();
+    return elementValueMatchesPrompt(element, prompt);
   } catch (error) {
     logError("Paste event strategy failed", error);
     return false;

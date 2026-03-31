@@ -183,10 +183,13 @@ Source: `src/content/injector/`
 Responsibilities:
 
 - deep selector lookup with fallback selectors
+- comma-delimited selector groups are split into ordered candidates before lookup so exact selectors can win over broad textbox matches
 - visible and enabled element preference so hidden fallbacks do not win
 - synthetic input strategies for `textarea`, `input`, and `contenteditable`
+- Perplexity can bypass isolated-world editor limitations by writing Lexical state from the page `MAIN` world first
 - submit handling by click or keyboard
 - polling of click-submit buttons until they become enabled after async editor state updates
+- Perplexity keeps a submit-only entry point in the standard injector so the original click-submit behavior stays intact after MAIN-world text injection
 - clipboard fallback when automatic injection fails
 
 ### Selector Checker
@@ -237,6 +240,8 @@ Responsibilities:
 - custom user-added sites
 
 This merged view is used by popup, options, and background flows.
+
+Perplexity is normalized specially inside runtime site storage so `#ask-input[data-lexical-editor='true']` stays the first selector even when older built-in overrides exist in local storage.
 
 Runtime site records can include:
 
@@ -291,8 +296,9 @@ Popup and options flows should read `requestedSiteIds` first when reconstructing
 4. Each pending injection is recorded in `chrome.storage.session`.
 5. When a target tab is ready, the background worker focuses it, injects `content/injector.js`, and waits for the injection result before moving on to the next queued tab.
 6. The injector locates the input field, applies the prompt, and waits for click-submit buttons to become enabled when async editors defer their internal state updates.
-7. Success or failure is written back into session/local state.
-8. Popup, options, badge state, and notifications reflect the latest result.
+7. Perplexity is a special case: the background worker first writes the prompt from the page `MAIN` world so Lexical state stays consistent, then hands submission back to the standard injector submit path.
+8. Success or failure is written back into session/local state.
+9. Popup, options, badge state, and notifications reflect the latest result.
 
 If a broadcast is cancelled, the worker closes only tabs that were opened for that broadcast. Reused tabs are left open.
 

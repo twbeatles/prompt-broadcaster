@@ -116,9 +116,9 @@ export const AI_SITES = Object.freeze([
     url: "https://www.perplexity.ai/",
     hostname: "www.perplexity.ai",
     hostnameAliases: ["perplexity.ai"],
-    inputSelector:
-      "div#ask-input[contenteditable='true'][role='textbox'], #ask-input[contenteditable='true'], div[contenteditable='true'][role='textbox']",
+    inputSelector: "#ask-input[data-lexical-editor='true'][role='textbox']",
     fallbackSelectors: [
+      "div#ask-input[data-lexical-editor='true'][role='textbox']",
       "div#ask-input[contenteditable='true'][role='textbox']",
       "#ask-input[contenteditable='true']",
       "div[contenteditable='true'][role='textbox']",

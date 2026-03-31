@@ -81,6 +81,7 @@ export const SYSTEM_TEMPLATE_VARIABLES = Object.freeze({
 ChatGPT, Gemini, Claude, Grok, Perplexity 5개 내장
 
 Perplexity는 2026-03-31 기준 기본 내장 서비스로 반영 완료
+- 유지보수 메모: Perplexity는 Lexical editor 기반이라 exact selector 우선순위, `MAIN` world 입력, 기존 submit 경로 유지가 현재 안정 조합
 **추가 검토 서비스 목록**
 
 | 서비스 | 도메인 | 비고 |

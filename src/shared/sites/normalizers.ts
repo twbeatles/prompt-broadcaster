@@ -154,10 +154,53 @@ export function stringifyComparable(value) {
   }
 }
 
+const PERPLEXITY_PRIMARY_INPUT_SELECTOR = "#ask-input[data-lexical-editor='true'][role='textbox']";
+const PERPLEXITY_SELECTOR_FALLBACKS = [
+  "div#ask-input[data-lexical-editor='true'][role='textbox']",
+  "div#ask-input[contenteditable='true'][role='textbox']",
+  "#ask-input[contenteditable='true']",
+  "div[contenteditable='true'][role='textbox']",
+];
+
+function normalizeSelectorArray(value) {
+  return Array.isArray(value)
+    ? value.filter((entry) => typeof entry === "string" && entry.trim()).map((entry) => entry.trim())
+    : [];
+}
+
+function normalizePerplexitySelectors(site = {}) {
+  if (safeText(site?.id) !== "perplexity") {
+    return {
+      inputSelector: safeText(site?.inputSelector),
+      fallbackSelectors: normalizeSelectorArray(site?.fallbackSelectors),
+    };
+  }
+
+  const overrideInputSelector = safeText(site?.inputSelector);
+  const fallbackSelectors = normalizeSelectorArray(site?.fallbackSelectors);
+  const mergedFallbackSelectors = Array.from(
+    new Set(
+      [
+        overrideInputSelector && overrideInputSelector !== PERPLEXITY_PRIMARY_INPUT_SELECTOR
+          ? overrideInputSelector
+          : "",
+        ...fallbackSelectors,
+        ...PERPLEXITY_SELECTOR_FALLBACKS,
+      ].filter(Boolean)
+    )
+  );
+
+  return {
+    inputSelector: PERPLEXITY_PRIMARY_INPUT_SELECTOR,
+    fallbackSelectors: mergedFallbackSelectors,
+  };
+}
+
 export function buildBaseSiteRecord(site, builtInMeta = {}) {
   const style = BUILT_IN_SITE_STYLE_MAP[site.id] ?? {};
   const url = safeText(site.url);
   const hostname = normalizeHostname(site.hostname || deriveHostname(url));
+  const normalizedSelectors = normalizePerplexitySelectors(site);
 
   return {
     id: safeText(site.id),
@@ -165,15 +208,13 @@ export function buildBaseSiteRecord(site, builtInMeta = {}) {
     url,
     hostname,
     hostnameAliases: normalizeHostnameAliases(site.hostnameAliases, hostname),
-    inputSelector: safeText(site.inputSelector),
+    inputSelector: normalizedSelectors.inputSelector,
     inputType: normalizeInputType(site.inputType, "textarea"),
     submitSelector: safeText(site.submitSelector),
     submitMethod: normalizeSubmitMethod(site.submitMethod, "click"),
     selectorCheckMode: normalizeSelectorCheckMode(site.selectorCheckMode, "input-and-submit"),
     waitMs: normalizeWaitMs(site.waitMs, 2000),
-    fallbackSelectors: Array.isArray(site.fallbackSelectors)
-      ? site.fallbackSelectors.filter((entry) => typeof entry === "string" && entry.trim())
-      : [],
+    fallbackSelectors: normalizedSelectors.fallbackSelectors,
     fallback: normalizeBoolean(site.fallback, true),
     authSelectors: Array.isArray(site.authSelectors)
       ? site.authSelectors.filter((entry) => typeof entry === "string" && entry.trim())
