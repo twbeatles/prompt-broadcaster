@@ -267,7 +267,7 @@ Any data transmitted to external AI services is governed by those services' own 
 - `clipboardRead` (optional)
   - read clipboard contents only when the user invokes the `{{clipboard}}` template variable
 - optional host permissions (`https://*/*`, `http://*/*`)
-  - declared broadly so runtime origin requests are possible, but actually requested only for the exact origin of a custom AI service that the user adds
+  - declared broadly so runtime origin requests are possible, but actually requested only for the exact origin set derived from a custom AI service's `url` and `hostnameAliases`
 
 ### 7. Security
 
@@ -282,6 +282,7 @@ Users can control their data by:
 - clearing history, favorites, and settings from the popup or options page
 - exporting and importing local data as JSON
 - adding, editing, or deleting custom services
+- resetting service data, which also removes unused optional host permissions for deleted custom-service origins
 - removing the extension
 
 According to browser behavior and Chrome policy, uninstalling the extension may also remove local extension storage data.

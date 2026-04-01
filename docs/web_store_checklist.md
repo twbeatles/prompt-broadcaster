@@ -69,8 +69,9 @@
 
 - 기본 호스트 권한(`chatgpt.com`, `gemini.google.com`, `claude.ai`, `grok.com`, `www.perplexity.ai`, `perplexity.ai`)은 해당 지원 사이트에서만 content script를 실행하고, 입력창 탐지, 전송 버튼 탐지, 열린 탭 재사용, 자동 프롬프트 주입/전송을 수행하기 위해 필요합니다.
 - 기본 호스트 권한은 범용 웹 탐색 추적이나 임의 사이트 데이터 수집을 위한 것이 아니라, 사용자가 명시적으로 선택한 지원 AI 웹앱에서 확장 기능을 동작시키기 위한 최소 범위 접근입니다.
-- 선택 호스트 권한(`https://*/*`, `http://*/*`)은 매니페스트에 넓게 선언되어 있지만, 실제 권한 요청은 사용자가 사용자 정의 AI 서비스를 추가할 때 그 서비스의 정확한 origin 패턴에 대해서만 런타임에 수행됩니다.
-- 사용자 정의 서비스 권한이 승인되지 않으면 해당 서비스에는 selector test, 열린 탭 재사용, 자동 입력/전송 기능을 적용하지 않습니다.
+- 선택 호스트 권한(`https://*/*`, `http://*/*`)은 매니페스트에 넓게 선언되어 있지만, 실제 권한 요청은 사용자가 사용자 정의 AI 서비스를 추가할 때 그 서비스의 `url`과 `hostnameAliases`에서 파생된 정확한 origin 패턴 집합에 대해서만 런타임에 수행됩니다.
+- 사용자 정의 서비스 권한이 승인되지 않으면 해당 서비스에는 selector test, 열린 탭 재사용, 자동 입력/전송 기능을 적용하지 않으며 부분 적용도 하지 않습니다.
+- 사용자 정의 서비스를 삭제하거나 서비스 설정을 리셋하거나 가져오기로 교체하면 더 이상 쓰이지 않는 optional origin permission만 자동 제거됩니다.
 - 제출 시에는 [web-store-copy.md](/d:/twbeatles-repos/prompt-broadcaster/docs/web-store-copy.md)와 [privacy-policy.md](/d:/twbeatles-repos/prompt-broadcaster/docs/privacy-policy.md)의 동일한 설명과 표현을 맞춰 두는 것이 좋습니다.
 
 ## 4. 보안 및 정책 확인
@@ -94,7 +95,7 @@ npm run build
 npm run qa:smoke
 ```
 
-`qa:smoke`는 `dist/` 기준 주입/전송 경로를 로컬 fixture로 검증합니다. 다만 실제 Chrome 툴바 팝업 동작, 열린 탭 재사용, 실서비스 Claude 전송 성공 여부는 수동 검수가 필요합니다.
+`qa:smoke`는 `dist/` 기준 주입/전송 경로를 로컬 fixture로 검증합니다. 여기에는 custom service optional permission 정리, import repair, `broadcastCounter` 수명주기, 즐겨찾기 검색 범위도 포함됩니다. 다만 실제 Chrome 툴바 팝업 동작, 열린 탭 재사용, 실서비스 Claude 전송 성공 여부는 수동 검수가 필요합니다.
 
 ### 로컬 테스트
 
@@ -141,6 +142,7 @@ bash ./package.sh
 - 단축키와 컨텍스트 메뉴 동작을 확인
 - ChatGPT, Gemini, Claude, Grok, Perplexity에 각각 한 번씩 실제 전송을 시도하고 특히 Claude와 Perplexity의 전송 버튼 경로를 확인
 - 현재 창의 열린 AI 탭 재사용 설정과 서비스별 특정 탭 선택 UI를 확인
+- 커스텀 서비스 추가/삭제/리셋 후 optional host permission이 필요한 origin에만 남는지 확인
 - 알림 권한, optional clipboard permission 요청 흐름을 확인
 - 공개된 개인정보처리방침 URL을 준비했는지 확인
 - 업로드 ZIP이 `dist/` 기준으로 생성되었는지 확인

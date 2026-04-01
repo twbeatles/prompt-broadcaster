@@ -137,10 +137,18 @@ export function repairImportedBuiltInOverrides(value) {
     }
 
     const sanitized = sanitizeBuiltInOverride(entry, source);
-    normalized[key] = sanitized;
+    const mergedDraft = {
+      ...source,
+      ...sanitized,
+    };
+    const validation = validateSiteDraft(mergedDraft, { isBuiltIn: true });
+    const finalOverride = validation.valid
+      ? sanitized
+      : sanitizeBuiltInOverride({}, source);
+    normalized[key] = finalOverride;
     appliedIds.push(key);
 
-    if (detectBuiltInOverrideAdjustment(entry, sanitized, source)) {
+    if (!validation.valid || detectBuiltInOverrideAdjustment(entry, finalOverride, source)) {
       adjustedIds.push(key);
     }
   }

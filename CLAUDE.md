@@ -54,7 +54,7 @@ To package a release zip:
 
 ### Logic
 - `src/shared/sites/`: built-in, override, and custom site merging
-- `src/shared/prompts/`: history, favorites, template cache, import/export, and settings
+- `src/shared/prompts/`: history, favorites, template cache, broadcast counter, import/export, and settings
 - `src/shared/runtime-state/`: last broadcast, UI toasts, and selector warning state
 - `src/shared/template/`: template detection and rendering
 - `src/popup/app/bootstrap.ts`: popup orchestration
@@ -87,6 +87,16 @@ All aliases normalize to canonical English keys in `src/shared/template/`.
 - Service cards can target a specific tab, force a new tab, or follow the default reuse policy.
 - Default reuse behavior is stored in `appSettings.reuseExistingTabs` and can be changed from the popup or options page.
 - Cancelling a broadcast only closes tabs opened for that broadcast. Reused tabs are preserved.
+
+### Custom service permissions
+- Runtime sites expose `permissionPatterns` derived from `url + hostnameAliases`.
+- Popup save, JSON import, and background permission checks all require the full origin set for a custom service.
+- Deleting custom services, resetting service settings, or replacing imported custom services should remove unused optional host permissions.
+
+### Import/export and counter semantics
+- JSON export/import currently uses `version: 3` and includes `broadcastCounter`.
+- `{{counter}}` preview uses `current + 1`, but the stored counter only increments when at least one target site is successfully queued.
+- Reset-data flows should clear `broadcastCounter` together with history, favorites, template cache, and site data.
 
 ### Popup reopening fallback
 When `chrome.action.openPopup()` fails because Chrome has no active browser window, the background worker stores `lastPrompt`, tries to focus an existing browser window, and finally opens `popup/popup.html` in a standalone popup window.
@@ -124,6 +134,10 @@ Smoke coverage includes:
 - `click`, `enter`, and `shift+enter` submit methods
 - selector checker `ok` and `auth_page` reporting
 - selector checker `input-only` mode for conditional submit UIs
+- custom-site optional permission cleanup and alias-origin handling
+- built-in override import repair for invalid `click` + empty selector combinations
+- `broadcastCounter` export/import/reset lifecycle
+- favorites search across title, text, tags, and folders
 
 ## Conventions
 

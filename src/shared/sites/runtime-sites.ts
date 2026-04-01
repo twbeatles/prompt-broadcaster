@@ -2,7 +2,7 @@
 import { AI_SITES } from "../../config/sites";
 import {
   buildBaseSiteRecord,
-  buildOriginPattern,
+  buildOriginPatterns,
   normalizeBoolean,
   normalizeCustomSite,
   sanitizeBuiltInOverride,
@@ -16,6 +16,38 @@ import {
   setBuiltInSiteStates,
   setCustomSites,
 } from "./storage";
+
+function getCustomSitePermissionPatterns(site) {
+  return Array.isArray(site?.permissionPatterns)
+    ? site.permissionPatterns.filter((pattern) => typeof pattern === "string" && pattern.trim())
+    : [];
+}
+
+function collectCustomSitePermissionPatterns(sites = []) {
+  return new Set(
+    (Array.isArray(sites) ? sites : [])
+      .flatMap((site) => getCustomSitePermissionPatterns(site))
+      .filter(Boolean)
+  );
+}
+
+export async function cleanupUnusedCustomSitePermissions(previousSites = [], nextSites = []) {
+  const nextOrigins = collectCustomSitePermissionPatterns(nextSites);
+  const removableOrigins = [...collectCustomSitePermissionPatterns(previousSites)].filter(
+    (origin) => !nextOrigins.has(origin)
+  );
+
+  if (removableOrigins.length === 0 || !chrome.permissions?.remove) {
+    return [];
+  }
+
+  try {
+    const removed = await chrome.permissions.remove({ origins: removableOrigins });
+    return removed ? removableOrigins : [];
+  } catch (_error) {
+    return [];
+  }
+}
 
 export async function getRuntimeSites() {
   const [customSites, builtInStates, builtInOverrides] = await Promise.all([
@@ -63,6 +95,7 @@ export async function saveCustomSite(siteDraft) {
   }
 
   await setCustomSites(nextSites);
+  await cleanupUnusedCustomSitePermissions(customSites, nextSites);
   return nextSite;
 }
 
@@ -121,13 +154,16 @@ export async function deleteCustomSite(siteId) {
   const customSites = await getCustomSites();
   const nextSites = customSites.filter((site) => site.id !== siteId);
   await setCustomSites(nextSites);
+  await cleanupUnusedCustomSitePermissions(customSites, nextSites);
   return nextSites;
 }
 
 export async function resetSiteSettings() {
+  const customSites = await getCustomSites();
   await resetStoredSiteSettings();
+  await cleanupUnusedCustomSitePermissions(customSites, []);
 }
 
-export function buildSitePermissionPattern(url) {
-  return buildOriginPattern(url);
+export function buildSitePermissionPatterns(url, hostnameAliases = []) {
+  return buildOriginPatterns(url, hostnameAliases);
 }

@@ -102,6 +102,56 @@ export function buildOriginPattern(url) {
   }
 }
 
+function normalizeOriginHost(value) {
+  const input = safeText(value).replace(/\/+$/g, "");
+  if (!input) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(input);
+    if (parsed.host) {
+      return parsed.host.toLowerCase();
+    }
+  } catch (_error) {
+    // Fall through to protocol-prefixed parsing.
+  }
+
+  try {
+    return new URL(`https://${input}`).host.toLowerCase();
+  } catch (_nestedError) {
+    return input.toLowerCase();
+  }
+}
+
+export function buildOriginPatterns(url, hostnameAliases = []) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return [];
+    }
+
+    const primaryHost = normalizeOriginHost(parsed.host);
+    const primaryHostname = normalizeHostname(parsed.hostname);
+    const normalizedAliases = Array.from(
+      new Set(
+        normalizeStringList(hostnameAliases)
+          .map((entry) => normalizeOriginHost(entry))
+          .filter((entry) => entry && entry !== primaryHost && entry !== primaryHostname)
+      )
+    );
+    return Array.from(
+      new Set(
+        [primaryHost, ...normalizedAliases]
+          .filter(Boolean)
+          .map((host) => `${parsed.protocol}//${host}/*`)
+      )
+    );
+  } catch (_error) {
+    return [];
+  }
+}
+
 export function createCustomSiteId(name) {
   const slug = safeText(name)
     .toLowerCase()
@@ -200,6 +250,7 @@ export function buildBaseSiteRecord(site, builtInMeta = {}) {
   const style = BUILT_IN_SITE_STYLE_MAP[site.id] ?? {};
   const url = safeText(site.url);
   const hostname = normalizeHostname(site.hostname || deriveHostname(url));
+  const hostnameAliases = normalizeHostnameAliases(site.hostnameAliases, hostname);
   const normalizedSelectors = normalizePerplexitySelectors(site);
 
   return {
@@ -207,7 +258,7 @@ export function buildBaseSiteRecord(site, builtInMeta = {}) {
     name: safeText(site.name) || "AI Service",
     url,
     hostname,
-    hostnameAliases: normalizeHostnameAliases(site.hostnameAliases, hostname),
+    hostnameAliases,
     inputSelector: normalizedSelectors.inputSelector,
     inputType: normalizeInputType(site.inputType, "textarea"),
     submitSelector: safeText(site.submitSelector),
@@ -228,17 +279,23 @@ export function buildBaseSiteRecord(site, builtInMeta = {}) {
     isCustom: Boolean(builtInMeta.isCustom),
     deletable: Boolean(builtInMeta.isCustom),
     editable: true,
-    permissionPattern: buildOriginPattern(url),
+    permissionPatterns: buildOriginPatterns(url, hostnameAliases),
   };
 }
 
 export function sanitizeBuiltInOverride(override = {}, originalSite = {}) {
+  const submitMethod = normalizeSubmitMethod(override.submitMethod, originalSite.submitMethod);
+  const submitSelector =
+    submitMethod === "click"
+      ? safeText(override.submitSelector) || safeText(originalSite.submitSelector)
+      : safeText(override.submitSelector);
+
   return {
     name: safeText(override.name) || originalSite.name,
     inputSelector: safeText(override.inputSelector) || originalSite.inputSelector,
     inputType: normalizeInputType(override.inputType, originalSite.inputType),
-    submitSelector: safeText(override.submitSelector),
-    submitMethod: normalizeSubmitMethod(override.submitMethod, originalSite.submitMethod),
+    submitSelector,
+    submitMethod,
     selectorCheckMode: normalizeSelectorCheckMode(
       override.selectorCheckMode,
       originalSite.selectorCheckMode || "input-and-submit"

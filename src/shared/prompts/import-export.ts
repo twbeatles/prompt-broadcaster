@@ -1,5 +1,6 @@
 // @ts-nocheck
 import {
+  cleanupUnusedCustomSitePermissions,
   repairImportedBuiltInOverrides,
   repairImportedBuiltInStates,
   repairImportedCustomSites,
@@ -26,12 +27,17 @@ import {
 import {
   ensureUniqueNumericId,
   ensureUniqueStringId,
+  normalizeBroadcastCounter,
   normalizeSettings,
   normalizeTemplateDefaults,
   safeArray,
   safeObject,
   sortByDateDesc,
 } from "./normalizers";
+import {
+  getBroadcastCounter,
+  setBroadcastCounter,
+} from "./broadcast-counter";
 import { getAppSettings, setAppSettings } from "./settings-store";
 import {
   getTemplateVariableCache,
@@ -52,60 +58,78 @@ async function containsOriginPermission(originPattern) {
   }
 }
 
-async function repairImportedCustomSitesWithPermissions(rawSites) {
-  const repaired = repairImportedCustomSites(rawSites);
-  const requestedOrigins = Array.from(
-    new Set(
-      repaired.repairedSites
-        .map((site) => site.permissionPattern)
-        .filter((pattern) => typeof pattern === "string" && pattern.trim())
-    )
-  );
-
-  const grantedOrigins = new Set();
+async function findMissingOriginPermissions(originPatterns = []) {
   const missingOrigins = [];
 
-  for (const origin of requestedOrigins) {
-    if (await containsOriginPermission(origin)) {
-      grantedOrigins.add(origin);
-    } else {
-      missingOrigins.push(origin);
+  for (const originPattern of Array.isArray(originPatterns) ? originPatterns : []) {
+    if (!originPattern) {
+      continue;
+    }
+
+    if (!(await containsOriginPermission(originPattern))) {
+      missingOrigins.push(originPattern);
     }
   }
 
-  let deniedOrigins = [];
-  if (missingOrigins.length > 0) {
+  return missingOrigins;
+}
+
+async function repairImportedCustomSitesWithPermissions(rawSites) {
+  const repaired = repairImportedCustomSites(rawSites);
+  const requestedOrigins = new Set();
+  const deniedOrigins = new Set();
+  const blockedOrigins = new Set();
+
+  const acceptedSites = [];
+  const permissionDeniedSites = [];
+
+  for (const site of repaired.repairedSites) {
+    const permissionPatterns = Array.isArray(site?.permissionPatterns)
+      ? site.permissionPatterns.filter((pattern) => typeof pattern === "string" && pattern.trim())
+      : [];
+
+    permissionPatterns.forEach((origin) => requestedOrigins.add(origin));
+
+    const blockedForSite = permissionPatterns.filter((origin) => blockedOrigins.has(origin));
+    if (blockedForSite.length > 0) {
+      blockedForSite.forEach((origin) => deniedOrigins.add(origin));
+      permissionDeniedSites.push({
+        id: site.id,
+        name: site.name,
+        reason: "permission_denied",
+        origins: blockedForSite,
+      });
+      continue;
+    }
+
+    const missingOrigins = await findMissingOriginPermissions(permissionPatterns);
+    if (missingOrigins.length === 0) {
+      acceptedSites.push(site);
+      continue;
+    }
+
     try {
       const granted = chrome.permissions?.request
         ? await chrome.permissions.request({ origins: missingOrigins })
         : false;
 
       if (granted) {
-        for (const origin of missingOrigins) {
-          grantedOrigins.add(origin);
-        }
-      } else {
-        deniedOrigins = [...missingOrigins];
+        acceptedSites.push(site);
+        continue;
       }
     } catch (_error) {
-      deniedOrigins = [...missingOrigins];
-    }
-  }
-
-  const acceptedSites = [];
-  const permissionDeniedSites = [];
-
-  for (const site of repaired.repairedSites) {
-    if (!site.permissionPattern || grantedOrigins.has(site.permissionPattern)) {
-      acceptedSites.push(site);
-      continue;
+      // Fall through to rejection.
     }
 
+    missingOrigins.forEach((origin) => {
+      blockedOrigins.add(origin);
+      deniedOrigins.add(origin);
+    });
     permissionDeniedSites.push({
       id: site.id,
       name: site.name,
       reason: "permission_denied",
-      origin: site.permissionPattern,
+      origins: missingOrigins,
     });
   }
 
@@ -113,13 +137,14 @@ async function repairImportedCustomSitesWithPermissions(rawSites) {
     acceptedSites,
     rejectedSites: [...repaired.rejectedSites, ...permissionDeniedSites],
     rewrittenIds: repaired.rewrittenIds,
-    deniedOrigins,
-    requestedOrigins,
+    deniedOrigins: [...deniedOrigins],
+    requestedOrigins: [...requestedOrigins],
   };
 }
 
 export async function exportPromptData() {
   const [
+    broadcastCounter,
     history,
     favorites,
     templateVariableCache,
@@ -128,6 +153,7 @@ export async function exportPromptData() {
     builtInSiteStates,
     builtInSiteOverrides,
   ] = await Promise.all([
+    getBroadcastCounter(),
     getPromptHistory(),
     getPromptFavorites(),
     getTemplateVariableCache(),
@@ -139,7 +165,8 @@ export async function exportPromptData() {
 
   return {
     exportedAt: new Date().toISOString(),
-    version: 2,
+    version: 3,
+    broadcastCounter,
     history,
     favorites,
     templateVariableCache,
@@ -152,10 +179,12 @@ export async function exportPromptData() {
 
 export async function importPromptData(jsonString) {
   const parsed = JSON.parse(jsonString);
+  const previousCustomSites = await getCustomSites();
   const history = safeArray(parsed?.history).map((item) => buildHistoryEntry(item));
   const favorites = safeArray(parsed?.favorites).map((item) =>
     buildFavoriteEntry(item)
   );
+  const importedBroadcastCounter = normalizeBroadcastCounter(parsed?.broadcastCounter);
   const templateVariableCache = normalizeTemplateDefaults(parsed?.templateVariableCache);
   const importedSettings = normalizeSettings(parsed?.settings ?? DEFAULT_SETTINGS);
   const importedCustomSites = safeArray(parsed?.customSites);
@@ -185,15 +214,18 @@ export async function importPromptData(jsonString) {
 
   await setAppSettings(importedSettings);
   await Promise.all([
+    setBroadcastCounter(importedBroadcastCounter),
     setPromptFavorites(normalizedFavorites),
     setTemplateVariableCache(templateVariableCache),
     setCustomSites(customSiteImport.acceptedSites),
     setBuiltInSiteStates(builtInStateImport.normalized),
     setBuiltInSiteOverrides(builtInOverrideImport.normalized),
   ]);
+  await cleanupUnusedCustomSitePermissions(previousCustomSites, customSiteImport.acceptedSites);
   await setPromptHistory(normalizedHistory);
 
   return {
+    broadcastCounter: importedBroadcastCounter,
     history: normalizedHistory,
     favorites: normalizedFavorites,
     templateVariableCache,

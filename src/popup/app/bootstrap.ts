@@ -30,7 +30,7 @@ import {
   getLastBroadcast,
 } from "../../shared/runtime-state";
 import {
-  buildSitePermissionPattern,
+  buildSitePermissionPatterns,
   deleteCustomSite,
   getRuntimeSites,
   resetSiteSettings,
@@ -39,6 +39,7 @@ import {
   setRuntimeSiteEnabled,
   validateSiteDraft,
 } from "../../shared/sites";
+import { matchesFavoriteSearch } from "../../shared/prompts/search";
 import { clearAllToasts, initToastRoot, showToast } from "../ui/toast";
 import {
   applyI18n,
@@ -609,7 +610,7 @@ function renderFavoritesFilterBar() {
 }
 
 function filterFavoriteItems(items) {
-  let filtered = filterItems(items, state.favoritesSearch);
+  let filtered = items.filter((item) => matchesFavoriteSearch(item, state.favoritesSearch));
   if (state.favoritesTagFilter) {
     filtered = filtered.filter((item) => (item.tags ?? []).includes(state.favoritesTagFilter));
   }
@@ -1071,9 +1072,6 @@ async function sendResolvedPrompt(finalPrompt, sites) {
     await refreshOpenSiteTabs();
     await chrome.storage.local.set({ lastPrompt: promptInput.value });
     clearAllToasts();
-
-    // Increment counter on each actual broadcast send
-    void chrome.runtime.sendMessage({ action: "incrementBroadcastCounter" }).catch(() => {});
 
     const response = await chrome.runtime.sendMessage({
       action: "broadcast",
@@ -2101,14 +2099,14 @@ function readServiceEditorDraft() {
   };
 }
 
-async function ensureSiteOriginPermission(url) {
+async function ensureSiteOriginPermission(url, hostnameAliases = []) {
   try {
-    const pattern = buildSitePermissionPattern(url);
-    if (!pattern) {
+    const patterns = buildSitePermissionPatterns(url, hostnameAliases);
+    if (patterns.length === 0) {
       return false;
     }
 
-    const permission = { origins: [pattern] };
+    const permission = { origins: patterns };
     const alreadyGranted = await chrome.permissions.contains(permission);
     if (alreadyGranted) {
       return true;
@@ -2152,7 +2150,7 @@ async function saveServiceEditorDraft() {
   }
 
   if (!isBuiltIn) {
-    const granted = await ensureSiteOriginPermission(draft.url);
+    const granted = await ensureSiteOriginPermission(draft.url, draft.hostnameAliases);
     if (!granted) {
       setServiceEditorError(t.servicePermissionDenied);
       return;
@@ -2368,7 +2366,7 @@ async function handleSend() {
       continue;
     }
 
-    const granted = await ensureSiteOriginPermission(site.url);
+    const granted = await ensureSiteOriginPermission(site.url, site.hostnameAliases);
     if (!granted) {
       setStatus(t.servicePermissionDenied, "error");
       showAppToast(t.servicePermissionDenied, "error", 4000);

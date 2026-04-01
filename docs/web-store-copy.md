@@ -1,6 +1,6 @@
 # Chrome Web Store Copy Pack
 
-Last updated: 2026-03-31
+Last updated: 2026-04-01
 
 ## Korean
 
@@ -40,12 +40,13 @@ AI Prompt Broadcaster는 반복 복붙 없이 하나의 프롬프트를 여러 A
 - `clipboardWrite`: 자동 주입 실패 시 프롬프트 복사를 돕는 데 사용합니다.
 - `clipboardRead`(선택 권한): `{{클립보드}}` 템플릿 변수 사용 시에만 클립보드 내용을 읽습니다.
 - `host_permissions`: `chatgpt.com`, `gemini.google.com`, `claude.ai`, `grok.com`, `www.perplexity.ai`, `perplexity.ai`에서만 콘텐츠 스크립트를 실행하고, 열린 탭 재사용과 자동 입력/전송을 수행하기 위해 사용합니다.
-- `optional_host_permissions`: 사용자 정의 AI 서비스를 추가한 경우에만 해당 서비스 origin 권한을 런타임에 요청합니다. 매니페스트에는 `https://*/*`, `http://*/*`가 선언되어 있지만 실제 권한 부여는 사용자가 직접 추가한 서비스의 정확한 origin에 대해서만 요청됩니다.
+- `optional_host_permissions`: 사용자 정의 AI 서비스를 추가한 경우에만 해당 서비스 권한을 런타임에 요청합니다. 매니페스트에는 `https://*/*`, `http://*/*`가 선언되어 있지만 실제 권한 부여는 사용자가 직접 추가한 서비스의 `url`과 `hostnameAliases`에서 파생된 정확한 origin 패턴 집합에 대해서만 요청됩니다.
 
 ### 호스트 권한 사용 근거
 
 - 기본 호스트 권한은 ChatGPT, Gemini, Claude, Grok, Perplexity처럼 기본 지원하는 AI 웹사이트에서 입력창 탐지, 전송 버튼 탐지, 열린 탭 재사용, 자동 전송을 수행하기 위해 필요합니다.
 - 선택 호스트 권한은 사용자가 직접 추가한 사용자 정의 AI 서비스에서 같은 자동화 기능과 셀렉터 테스트를 수행하기 위해서만 사용합니다.
+- 필요한 origin 중 하나라도 거부되면 해당 사용자 정의 서비스는 부분 적용되지 않으며, 서비스를 삭제하거나 초기화하면 더 이상 쓰이지 않는 optional origin permission은 제거됩니다.
 - 호스트 권한은 광고 추적, 임의 사이트 수집, 범용 웹 활동 모니터링 목적으로 사용하지 않습니다.
 
 ### 개인정보 관련 문구
@@ -92,12 +93,13 @@ This extension helps users open one or more AI web service tabs and automaticall
 - `clipboardWrite`: used to copy prompts when automatic injection fails
 - `clipboardRead` (optional): used only when the `{{clipboard}}` template variable is requested by the user
 - `host_permissions`: used only on `chatgpt.com`, `gemini.google.com`, `claude.ai`, `grok.com`, `www.perplexity.ai`, and `perplexity.ai` so the extension can run content scripts, reuse open tabs, and automate prompt insertion and submission on those supported AI sites
-- `optional_host_permissions`: declared broadly in the manifest so the extension can request the exact origin of a user-added custom AI service at runtime; no extra host access is granted unless the user adds that service and approves the permission prompt
+- `optional_host_permissions`: declared broadly in the manifest so the extension can request the exact origin set derived from a user-added custom AI service's `url` and `hostnameAliases` at runtime; no extra host access is granted unless the user adds that service and approves the permission prompt
 
 ### Host Permission Rationale
 
 - Built-in host permissions are limited to the supported AI websites because the extension must detect editors, detect send buttons, reuse matching tabs, and automate prompt submission on those pages.
-- Optional host permissions are used only when the user adds a custom AI service and wants the same selector testing, open-tab reuse, and prompt injection behavior on that user-specified domain.
+- Optional host permissions are used only when the user adds a custom AI service and wants the same selector testing, open-tab reuse, and prompt injection behavior on that user-specified domain or alias set.
+- If any required origin is denied, the custom service is not partially enabled, and unused optional origins are removed when the user deletes or resets that custom service data.
 - Host access is not used for advertising, generic browsing surveillance, or data collection across unrelated sites.
 
 ### Privacy Statement

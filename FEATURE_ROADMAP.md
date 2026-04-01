@@ -1,7 +1,7 @@
 # AI Prompt Broadcaster - 기능 개선 로드맵
 
 > 작성일: 2026-03-31
-> 최종 업데이트: 2026-03-31 (6개 기능 구현 완료)
+> 최종 업데이트: 2026-04-01 (6개 기능 구현 + 운영성 개선 반영)
 > 기준 코드: 현재 `src/` 분석 결과 기반
 
 ---
@@ -16,6 +16,16 @@
 | ⑤ | 서비스별 프롬프트 오버라이드 | ✅ 완료 | 2026-03-31 |
 | ⑩ | 셀렉터 오류 신고 버튼 | ✅ 완료 | 2026-03-31 |
 | ⑥ | 방송 결과 비교 뷰 (옵션 히스토리 상세) | ✅ 완료 | 2026-03-31 |
+
+## 2026-04-01 운영성 개선 완료
+
+- 커스텀 서비스 권한 모델을 `url + hostnameAliases` 기준 다중 origin으로 정리했고, 삭제/리셋/import 교체 시 unused optional host permission을 자동 회수하도록 반영함
+- built-in override import에서 `click + empty submitSelector`를 원본 selector 유지로 보정하고, import validation을 강화함
+- `broadcastCounter`를 export/import/reset 수명주기에 포함시키고, 실제 queued broadcast 기준으로만 증가하도록 정리함
+- 즐겨찾기 검색 범위를 제목, 본문, 태그, 폴더까지 확장함
+- smoke QA를 14개 시나리오 기준으로 확장해 권한 정리, import 보정, counter, 검색 정합성을 자동 검증함
+
+아래 기능별 상세 섹션은 제안 당시 스냅샷을 보존한 메모이므로, 완료 항목의 `현재 상태` 문구는 최신 구현과 다를 수 있다. 최신 동작은 `README.md`, `CLAUDE.md`, `PROJECT_ANALYSIS.md`를 우선 기준으로 본다.
 
 ---
 

@@ -181,7 +181,8 @@ var LOCAL_STORAGE_KEYS = Object.freeze({
   history: "promptHistory",
   favorites: "promptFavorites",
   templateVariableCache: "templateVariableCache",
-  settings: "appSettings"
+  settings: "appSettings",
+  broadcastCounter: "broadcastCounter"
 });
 var DEFAULT_HISTORY_LIMIT = 50;
 var MIN_HISTORY_LIMIT = 10;
@@ -240,6 +241,13 @@ function normalizeHistoryLimit(value) {
     MAX_HISTORY_LIMIT,
     Math.max(MIN_HISTORY_LIMIT, Math.round(numericValue))
   );
+}
+function normalizeBroadcastCounter(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return 0;
+  }
+  return Math.max(0, Math.round(numericValue));
 }
 function normalizeSettings(value) {
   return {
@@ -310,6 +318,21 @@ async function readLocal(key, fallbackValue) {
 }
 async function writeLocal(key, value) {
   await chrome.storage.local.set({ [key]: value });
+}
+
+// src/shared/prompts/broadcast-counter.ts
+async function getBroadcastCounter() {
+  try {
+    const rawValue = await readLocal(LOCAL_STORAGE_KEYS.broadcastCounter, 0);
+    return normalizeBroadcastCounter(rawValue);
+  } catch (_error) {
+    return 0;
+  }
+}
+async function setBroadcastCounter(value) {
+  const normalized = normalizeBroadcastCounter(value);
+  await writeLocal(LOCAL_STORAGE_KEYS.broadcastCounter, normalized);
+  return normalized;
 }
 
 // src/shared/prompts/favorites-store.ts
@@ -717,12 +740,44 @@ function deriveHostname(url) {
     return "";
   }
 }
-function buildOriginPattern(url) {
+function normalizeOriginHost(value) {
+  const input = safeText2(value).replace(/\/+$/g, "");
+  if (!input) {
+    return "";
+  }
+  try {
+    const parsed = new URL(input);
+    if (parsed.host) {
+      return parsed.host.toLowerCase();
+    }
+  } catch (_error) {
+  }
+  try {
+    return new URL(`https://${input}`).host.toLowerCase();
+  } catch (_nestedError) {
+    return input.toLowerCase();
+  }
+}
+function buildOriginPatterns(url, hostnameAliases = []) {
   try {
     const parsed = new URL(url);
-    return `${parsed.origin}/*`;
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return [];
+    }
+    const primaryHost = normalizeOriginHost(parsed.host);
+    const primaryHostname = normalizeHostname(parsed.hostname);
+    const normalizedAliases = Array.from(
+      new Set(
+        normalizeStringList(hostnameAliases).map((entry) => normalizeOriginHost(entry)).filter((entry) => entry && entry !== primaryHost && entry !== primaryHostname)
+      )
+    );
+    return Array.from(
+      new Set(
+        [primaryHost, ...normalizedAliases].filter(Boolean).map((host) => `${parsed.protocol}//${host}/*`)
+      )
+    );
   } catch (_error) {
-    return "";
+    return [];
   }
 }
 function createCustomSiteId(name) {
@@ -796,13 +851,14 @@ function buildBaseSiteRecord(site, builtInMeta = {}) {
   const style = BUILT_IN_SITE_STYLE_MAP[site.id] ?? {};
   const url = safeText2(site.url);
   const hostname = normalizeHostname(site.hostname || deriveHostname(url));
+  const hostnameAliases = normalizeHostnameAliases(site.hostnameAliases, hostname);
   const normalizedSelectors = normalizePerplexitySelectors(site);
   return {
     id: safeText2(site.id),
     name: safeText2(site.name) || "AI Service",
     url,
     hostname,
-    hostnameAliases: normalizeHostnameAliases(site.hostnameAliases, hostname),
+    hostnameAliases,
     inputSelector: normalizedSelectors.inputSelector,
     inputType: normalizeInputType(site.inputType, "textarea"),
     submitSelector: safeText2(site.submitSelector),
@@ -821,16 +877,18 @@ function buildBaseSiteRecord(site, builtInMeta = {}) {
     isCustom: Boolean(builtInMeta.isCustom),
     deletable: Boolean(builtInMeta.isCustom),
     editable: true,
-    permissionPattern: buildOriginPattern(url)
+    permissionPatterns: buildOriginPatterns(url, hostnameAliases)
   };
 }
 function sanitizeBuiltInOverride(override = {}, originalSite = {}) {
+  const submitMethod = normalizeSubmitMethod(override.submitMethod, originalSite.submitMethod);
+  const submitSelector = submitMethod === "click" ? safeText2(override.submitSelector) || safeText2(originalSite.submitSelector) : safeText2(override.submitSelector);
   return {
     name: safeText2(override.name) || originalSite.name,
     inputSelector: safeText2(override.inputSelector) || originalSite.inputSelector,
     inputType: normalizeInputType(override.inputType, originalSite.inputType),
-    submitSelector: safeText2(override.submitSelector),
-    submitMethod: normalizeSubmitMethod(override.submitMethod, originalSite.submitMethod),
+    submitSelector,
+    submitMethod,
     selectorCheckMode: normalizeSelectorCheckMode(
       override.selectorCheckMode,
       originalSite.selectorCheckMode || "input-and-submit"
@@ -1025,9 +1083,15 @@ function repairImportedBuiltInOverrides(value) {
       continue;
     }
     const sanitized = sanitizeBuiltInOverride(entry, source);
-    normalized[key] = sanitized;
+    const mergedDraft = {
+      ...source,
+      ...sanitized
+    };
+    const validation = validateSiteDraft(mergedDraft, { isBuiltIn: true });
+    const finalOverride = validation.valid ? sanitized : sanitizeBuiltInOverride({}, source);
+    normalized[key] = finalOverride;
     appliedIds.push(key);
-    if (detectBuiltInOverrideAdjustment(entry, sanitized, source)) {
+    if (!validation.valid || detectBuiltInOverrideAdjustment(entry, finalOverride, source)) {
       adjustedIds.push(key);
     }
   }
@@ -1147,6 +1211,29 @@ async function resetStoredSiteSettings() {
 }
 
 // src/shared/sites/runtime-sites.ts
+function getCustomSitePermissionPatterns(site) {
+  return Array.isArray(site?.permissionPatterns) ? site.permissionPatterns.filter((pattern) => typeof pattern === "string" && pattern.trim()) : [];
+}
+function collectCustomSitePermissionPatterns(sites = []) {
+  return new Set(
+    (Array.isArray(sites) ? sites : []).flatMap((site) => getCustomSitePermissionPatterns(site)).filter(Boolean)
+  );
+}
+async function cleanupUnusedCustomSitePermissions(previousSites = [], nextSites = []) {
+  const nextOrigins = collectCustomSitePermissionPatterns(nextSites);
+  const removableOrigins = [...collectCustomSitePermissionPatterns(previousSites)].filter(
+    (origin) => !nextOrigins.has(origin)
+  );
+  if (removableOrigins.length === 0 || !chrome.permissions?.remove) {
+    return [];
+  }
+  try {
+    const removed = await chrome.permissions.remove({ origins: removableOrigins });
+    return removed ? removableOrigins : [];
+  } catch (_error) {
+    return [];
+  }
+}
 async function getRuntimeSites() {
   const [customSites, builtInStates, builtInOverrides] = await Promise.all([
     getCustomSites(),
@@ -1178,6 +1265,7 @@ async function saveCustomSite(siteDraft) {
     nextSites.unshift(nextSite);
   }
   await setCustomSites(nextSites);
+  await cleanupUnusedCustomSitePermissions(customSites, nextSites);
   return nextSite;
 }
 async function saveBuiltInSiteOverride(siteId, overrideDraft) {
@@ -1208,13 +1296,16 @@ async function deleteCustomSite(siteId) {
   const customSites = await getCustomSites();
   const nextSites = customSites.filter((site) => site.id !== siteId);
   await setCustomSites(nextSites);
+  await cleanupUnusedCustomSitePermissions(customSites, nextSites);
   return nextSites;
 }
 async function resetSiteSettings() {
+  const customSites = await getCustomSites();
   await resetStoredSiteSettings();
+  await cleanupUnusedCustomSitePermissions(customSites, []);
 }
-function buildSitePermissionPattern(url) {
-  return buildOriginPattern(url);
+function buildSitePermissionPatterns(url, hostnameAliases = []) {
+  return buildOriginPatterns(url, hostnameAliases);
 }
 
 // src/shared/prompts/template-cache-store.ts
@@ -1250,61 +1341,74 @@ async function containsOriginPermission(originPattern) {
     return false;
   }
 }
+async function findMissingOriginPermissions(originPatterns = []) {
+  const missingOrigins = [];
+  for (const originPattern of Array.isArray(originPatterns) ? originPatterns : []) {
+    if (!originPattern) {
+      continue;
+    }
+    if (!await containsOriginPermission(originPattern)) {
+      missingOrigins.push(originPattern);
+    }
+  }
+  return missingOrigins;
+}
 async function repairImportedCustomSitesWithPermissions(rawSites) {
   const repaired = repairImportedCustomSites(rawSites);
-  const requestedOrigins = Array.from(
-    new Set(
-      repaired.repairedSites.map((site) => site.permissionPattern).filter((pattern) => typeof pattern === "string" && pattern.trim())
-    )
-  );
-  const grantedOrigins = /* @__PURE__ */ new Set();
-  const missingOrigins = [];
-  for (const origin of requestedOrigins) {
-    if (await containsOriginPermission(origin)) {
-      grantedOrigins.add(origin);
-    } else {
-      missingOrigins.push(origin);
-    }
-  }
-  let deniedOrigins = [];
-  if (missingOrigins.length > 0) {
-    try {
-      const granted = chrome.permissions?.request ? await chrome.permissions.request({ origins: missingOrigins }) : false;
-      if (granted) {
-        for (const origin of missingOrigins) {
-          grantedOrigins.add(origin);
-        }
-      } else {
-        deniedOrigins = [...missingOrigins];
-      }
-    } catch (_error) {
-      deniedOrigins = [...missingOrigins];
-    }
-  }
+  const requestedOrigins = /* @__PURE__ */ new Set();
+  const deniedOrigins = /* @__PURE__ */ new Set();
+  const blockedOrigins = /* @__PURE__ */ new Set();
   const acceptedSites = [];
   const permissionDeniedSites = [];
   for (const site of repaired.repairedSites) {
-    if (!site.permissionPattern || grantedOrigins.has(site.permissionPattern)) {
+    const permissionPatterns = Array.isArray(site?.permissionPatterns) ? site.permissionPatterns.filter((pattern) => typeof pattern === "string" && pattern.trim()) : [];
+    permissionPatterns.forEach((origin) => requestedOrigins.add(origin));
+    const blockedForSite = permissionPatterns.filter((origin) => blockedOrigins.has(origin));
+    if (blockedForSite.length > 0) {
+      blockedForSite.forEach((origin) => deniedOrigins.add(origin));
+      permissionDeniedSites.push({
+        id: site.id,
+        name: site.name,
+        reason: "permission_denied",
+        origins: blockedForSite
+      });
+      continue;
+    }
+    const missingOrigins = await findMissingOriginPermissions(permissionPatterns);
+    if (missingOrigins.length === 0) {
       acceptedSites.push(site);
       continue;
     }
+    try {
+      const granted = chrome.permissions?.request ? await chrome.permissions.request({ origins: missingOrigins }) : false;
+      if (granted) {
+        acceptedSites.push(site);
+        continue;
+      }
+    } catch (_error) {
+    }
+    missingOrigins.forEach((origin) => {
+      blockedOrigins.add(origin);
+      deniedOrigins.add(origin);
+    });
     permissionDeniedSites.push({
       id: site.id,
       name: site.name,
       reason: "permission_denied",
-      origin: site.permissionPattern
+      origins: missingOrigins
     });
   }
   return {
     acceptedSites,
     rejectedSites: [...repaired.rejectedSites, ...permissionDeniedSites],
     rewrittenIds: repaired.rewrittenIds,
-    deniedOrigins,
-    requestedOrigins
+    deniedOrigins: [...deniedOrigins],
+    requestedOrigins: [...requestedOrigins]
   };
 }
 async function exportPromptData() {
   const [
+    broadcastCounter,
     history,
     favorites,
     templateVariableCache,
@@ -1313,6 +1417,7 @@ async function exportPromptData() {
     builtInSiteStates,
     builtInSiteOverrides
   ] = await Promise.all([
+    getBroadcastCounter(),
     getPromptHistory(),
     getPromptFavorites(),
     getTemplateVariableCache(),
@@ -1323,7 +1428,8 @@ async function exportPromptData() {
   ]);
   return {
     exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
-    version: 2,
+    version: 3,
+    broadcastCounter,
     history,
     favorites,
     templateVariableCache,
@@ -1335,10 +1441,12 @@ async function exportPromptData() {
 }
 async function importPromptData(jsonString) {
   const parsed = JSON.parse(jsonString);
+  const previousCustomSites = await getCustomSites();
   const history = safeArray(parsed?.history).map((item) => buildHistoryEntry(item));
   const favorites = safeArray(parsed?.favorites).map(
     (item) => buildFavoriteEntry(item)
   );
+  const importedBroadcastCounter = normalizeBroadcastCounter(parsed?.broadcastCounter);
   const templateVariableCache = normalizeTemplateDefaults(parsed?.templateVariableCache);
   const importedSettings = normalizeSettings(parsed?.settings ?? DEFAULT_SETTINGS);
   const importedCustomSites = safeArray(parsed?.customSites);
@@ -1364,14 +1472,17 @@ async function importPromptData(jsonString) {
   const builtInOverrideImport = repairImportedBuiltInOverrides(importedBuiltInSiteOverrides);
   await setAppSettings(importedSettings);
   await Promise.all([
+    setBroadcastCounter(importedBroadcastCounter),
     setPromptFavorites(normalizedFavorites),
     setTemplateVariableCache(templateVariableCache),
     setCustomSites(customSiteImport.acceptedSites),
     setBuiltInSiteStates(builtInStateImport.normalized),
     setBuiltInSiteOverrides(builtInOverrideImport.normalized)
   ]);
+  await cleanupUnusedCustomSitePermissions(previousCustomSites, customSiteImport.acceptedSites);
   await setPromptHistory(normalizedHistory);
   return {
+    broadcastCounter: importedBroadcastCounter,
     history: normalizedHistory,
     favorites: normalizedFavorites,
     templateVariableCache,
@@ -1398,6 +1509,26 @@ async function importPromptData(jsonString) {
       }
     }
   };
+}
+
+// src/shared/prompts/search.ts
+function normalizeSearchValue(value) {
+  return safeText(value).trim().toLowerCase();
+}
+function matchesFavoriteSearch(item, query) {
+  const normalizedQuery = normalizeSearchValue(query);
+  if (!normalizedQuery) {
+    return true;
+  }
+  const tags = Array.isArray(item?.tags) ? item.tags.map((tag) => safeText(tag).trim()).filter(Boolean) : [];
+  const values = [
+    item?.title,
+    item?.text,
+    item?.folder,
+    ...tags,
+    ...tags.map((tag) => `#${tag}`)
+  ];
+  return values.some((value) => normalizeSearchValue(value).includes(normalizedQuery));
 }
 
 // src/shared/runtime-state/constants.ts
@@ -2535,7 +2666,7 @@ function renderFavoritesFilterBar() {
   `;
 }
 function filterFavoriteItems(items) {
-  let filtered = filterItems(items, state.favoritesSearch);
+  let filtered = items.filter((item) => matchesFavoriteSearch(item, state.favoritesSearch));
   if (state.favoritesTagFilter) {
     filtered = filtered.filter((item) => (item.tags ?? []).includes(state.favoritesTagFilter));
   }
@@ -2907,8 +3038,6 @@ async function sendResolvedPrompt(finalPrompt, sites) {
     await refreshOpenSiteTabs();
     await chrome.storage.local.set({ lastPrompt: promptInput.value });
     clearAllToasts();
-    void chrome.runtime.sendMessage({ action: "incrementBroadcastCounter" }).catch(() => {
-    });
     const response = await chrome.runtime.sendMessage({
       action: "broadcast",
       prompt: finalPrompt,
@@ -3612,13 +3741,13 @@ function readServiceEditorDraft() {
     enabled: serviceEnabledInput.checked
   };
 }
-async function ensureSiteOriginPermission(url) {
+async function ensureSiteOriginPermission(url, hostnameAliases = []) {
   try {
-    const pattern = buildSitePermissionPattern(url);
-    if (!pattern) {
+    const patterns = buildSitePermissionPatterns(url, hostnameAliases);
+    if (patterns.length === 0) {
       return false;
     }
-    const permission = { origins: [pattern] };
+    const permission = { origins: patterns };
     const alreadyGranted = await chrome.permissions.contains(permission);
     if (alreadyGranted) {
       return true;
@@ -3656,7 +3785,7 @@ async function saveServiceEditorDraft() {
     return;
   }
   if (!isBuiltIn) {
-    const granted = await ensureSiteOriginPermission(draft.url);
+    const granted = await ensureSiteOriginPermission(draft.url, draft.hostnameAliases);
     if (!granted) {
       setServiceEditorError(t.servicePermissionDenied);
       return;
@@ -3846,7 +3975,7 @@ async function handleSend() {
     if (!site.isCustom) {
       continue;
     }
-    const granted = await ensureSiteOriginPermission(site.url);
+    const granted = await ensureSiteOriginPermission(site.url, site.hostnameAliases);
     if (!granted) {
       setStatus(t.servicePermissionDenied, "error");
       showAppToast(t.servicePermissionDenied, "error", 4e3);

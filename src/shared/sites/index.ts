@@ -8,6 +8,7 @@ export {
 } from "./constants";
 export {
   buildOriginPattern,
+  buildOriginPatterns,
   buildBaseSiteRecord,
   createCustomSiteId,
   createImportedCustomSiteIdBase,
@@ -45,7 +46,8 @@ export {
   setCustomSites,
 } from "./storage";
 export {
-  buildSitePermissionPattern,
+  buildSitePermissionPatterns,
+  cleanupUnusedCustomSitePermissions,
   deleteCustomSite,
   findRuntimeSiteById,
   getEnabledRuntimeSites,

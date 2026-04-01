@@ -4,6 +4,7 @@ export const LOCAL_STORAGE_KEYS = Object.freeze({
   favorites: "promptFavorites",
   templateVariableCache: "templateVariableCache",
   settings: "appSettings",
+  broadcastCounter: "broadcastCounter",
 });
 
 export const DEFAULT_HISTORY_LIMIT = 50;

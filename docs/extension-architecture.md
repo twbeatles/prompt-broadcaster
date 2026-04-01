@@ -248,12 +248,15 @@ Runtime site records can include:
 - `fallbackSelectors`
 - `authSelectors`
 - `hostnameAliases`
+- `permissionPatterns`
 - `lastVerified`
 - `verifiedVersion`
 
 The background worker uses `hostname` plus `hostnameAliases` as an allowlist when resolving runtime tabs back to site definitions. Built-in services keep their default hostname, while custom services can extend the allowlist with aliases.
 
 Popup tab targeting relies on that same hostname allowlist, so open-tab discovery and explicit tab selection stay aligned with the configured service registry.
+
+Custom services also derive `permissionPatterns` from `url + hostnameAliases`. Popup save, JSON import, and background execution checks all require that full origin set. If any required origin is denied, the custom service is rejected as a whole. When custom services are deleted, reset, or replaced by import, unused optional host permissions are removed automatically.
 
 `authSelectors` are treated as dedicated auth indicators only when no visible prompt surface is currently available on the page. This prevents public landing pages with both a login link and an editor from being misclassified as auth-only.
 
@@ -267,6 +270,7 @@ Important storage keys:
 - `promptFavorites`
 - `templateVariableCache`
 - `appSettings`
+- `broadcastCounter`
 - `failedSelectors`
 - `pendingInjections`
 - `pendingBroadcasts`
@@ -287,6 +291,15 @@ The legacy `sentTo` field is still stored and exported for backward compatibilit
 Popup and options flows should read `requestedSiteIds` first when reconstructing the original broadcast target list.
 
 `appSettings` also stores reusable-tab behavior, including `reuseExistingTabs`, which controls whether the default routing mode prefers matching open AI tabs before creating new ones.
+
+### Broadcast Counter
+
+`broadcastCounter` is stored in local storage and exported with prompt data JSON `version: 3`.
+
+- popup preview resolves `{{counter}}` as `current + 1`
+- the stored counter increments only when a broadcast queues at least one target site
+- import normalizes missing legacy values to `0`
+- reset-data flows clear the counter together with the rest of the user data
 
 ## High-Level Execution Flow
 
@@ -345,6 +358,11 @@ Current smoke coverage includes:
 - auth selector detection for selector-check flows
 - selector checker `input-only` mode for conditional-submit services
 - import repair for invalid and unauthorized custom service JSON
+- alias-based custom service optional permission handling
+- custom service permission cleanup after delete and reset
+- built-in override repair for invalid click-submit imports
+- `broadcastCounter` export/import/reset semantics
+- favorites search across title, tags, and folders
 
 Popup open-tab discovery and explicit tab targeting are validated manually in Chrome, not by the local fixture smoke suite.
 

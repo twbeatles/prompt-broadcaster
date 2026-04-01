@@ -1,5 +1,10 @@
 // @ts-nocheck
-import { appendPromptHistory, getAppSettings } from "../../shared/prompts";
+import {
+  appendPromptHistory,
+  getAppSettings,
+  getBroadcastCounter,
+  recordQueuedBroadcast,
+} from "../../shared/prompts";
 import {
   clearFailedSelector,
   enqueueUiToast,
@@ -78,7 +83,7 @@ function buildInjectionConfig(site) {
     lastVerified: site?.lastVerified ?? "",
     verifiedVersion: site?.verifiedVersion ?? "",
     isCustom: Boolean(site?.isCustom),
-    permissionPattern: site?.permissionPattern ?? "",
+    permissionPatterns: Array.isArray(site?.permissionPatterns) ? site.permissionPatterns : [],
   };
 }
 
@@ -509,14 +514,21 @@ function getAllowedSiteHostnames(site) {
   );
 }
 
+function getSitePermissionPatterns(site) {
+  return Array.isArray(site?.permissionPatterns)
+    ? site.permissionPatterns.filter((pattern) => typeof pattern === "string" && pattern.trim())
+    : [];
+}
+
 async function isCustomSitePermissionGranted(site) {
-  if (!site?.isCustom || !site?.permissionPattern) {
+  const permissionPatterns = getSitePermissionPatterns(site);
+  if (!site?.isCustom || permissionPatterns.length === 0) {
     return true;
   }
 
   try {
     return await chrome.permissions.contains({
-      origins: [site.permissionPattern],
+      origins: permissionPatterns,
     });
   } catch (error) {
     console.error("[AI Prompt Broadcaster] Failed to check custom site permission.", {
@@ -1148,12 +1160,12 @@ async function getContextMenuTargetSiteIds(menuItemId) {
     const allowedSites = (
       await Promise.all(
         enabledSites.map(async (site) => {
-          if (!site.isCustom || !site.permissionPattern) {
+          if (!site.isCustom || getSitePermissionPatterns(site).length === 0) {
             return site;
           }
 
           const granted = await chrome.permissions.contains({
-            origins: [site.permissionPattern],
+            origins: getSitePermissionPatterns(site),
           });
           return granted ? site : null;
         })
@@ -1203,13 +1215,13 @@ async function rebuildContextMenus() {
   const menuSites = (
     await Promise.all(
       enabledSites.map(async (site) => {
-        if (!site.isCustom || !site.permissionPattern) {
+        if (!site.isCustom || getSitePermissionPatterns(site).length === 0) {
           return site;
         }
 
         try {
           const granted = await chrome.permissions.contains({
-            origins: [site.permissionPattern],
+            origins: getSitePermissionPatterns(site),
           });
           return granted ? site : null;
         } catch (error) {
@@ -2233,7 +2245,7 @@ async function handleBroadcastMessage(message) {
         continue;
       }
 
-      if (site.isCustom && site.permissionPattern) {
+      if (site.isCustom && getSitePermissionPatterns(site).length > 0) {
         const granted = await isCustomSitePermissionGranted(site);
         if (!granted) {
           failedTabSiteIds.push(site.id);
@@ -2304,6 +2316,10 @@ async function handleBroadcastMessage(message) {
       failedTabSiteIds.push(site.id);
       await recordBroadcastSiteResult(broadcast.id, site.id, "tab_create_failed");
     }
+  }
+
+  if (queuedSiteCount > 0) {
+    await recordQueuedBroadcast(queuedSiteCount);
   }
 
   return {
@@ -2518,26 +2534,6 @@ async function handleServiceTestRun(message) {
   }
 }
 
-async function getBroadcastCounter() {
-  try {
-    const result = await chrome.storage.local.get("broadcastCounter");
-    return Number.isFinite(Number(result.broadcastCounter)) ? Number(result.broadcastCounter) : 0;
-  } catch (_error) {
-    return 0;
-  }
-}
-
-async function incrementBroadcastCounter() {
-  try {
-    const current = await getBroadcastCounter();
-    const next = current + 1;
-    await chrome.storage.local.set({ broadcastCounter: next });
-    return next;
-  } catch (_error) {
-    return 0;
-  }
-}
-
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message?.action) {
     case "broadcast":
@@ -2642,13 +2638,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
     case "getBroadcastCounter":
       void getBroadcastCounter()
-        .then((counter) => sendResponse({ ok: true, counter }))
-        .catch((error) => {
-          sendResponse({ ok: false, counter: 0, error: error?.message ?? String(error) });
-        });
-      return true;
-    case "incrementBroadcastCounter":
-      void incrementBroadcastCounter()
         .then((counter) => sendResponse({ ok: true, counter }))
         .catch((error) => {
           sendResponse({ ok: false, counter: 0, error: error?.message ?? String(error) });

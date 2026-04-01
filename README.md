@@ -29,10 +29,10 @@
 ### 주요 기능
 - 하나의 프롬프트를 여러 AI 서비스로 한 번에 방송
 - 전송 성공 프롬프트 히스토리 자동 저장
-- 즐겨찾기 저장, 제목 편집, 검색
+- 즐겨찾기 저장, 제목 편집, 제목/본문/태그/폴더 검색
 - **즐겨찾기 태그·폴더·핀 시스템** – 태그와 폴더로 즐겨찾기를 분류하고, 중요 항목을 상단 고정
 - **서비스별 프롬프트 오버라이드** – 서비스 카드마다 메인 프롬프트와 다른 별도 프롬프트를 지정 가능
-- 히스토리/즐겨찾기 JSON 내보내기 및 가져오기
+- 히스토리/즐겨찾기/템플릿 캐시/설정/서비스 구성을 JSON으로 내보내기 및 가져오기 (`{{counter}}` 포함)
 - **확장 템플릿 변수** – `{{url}}`, `{{title}}`, `{{selection}}`, `{{counter}}`, `{{random}}` 등 9개 이상의 시스템 변수 지원
 - Chrome MV3 기반, 백엔드 없음
 - `chrome.scripting.executeScript` 기반 동적 주입
@@ -122,7 +122,7 @@ GIF 자리표시자: `docs/assets/usage-demo.gif`
 | `{{url}}` | `{{주소}}` | 현재 탭 URL |
 | `{{title}}` | `{{제목}}` | 현재 탭 제목 |
 | `{{selection}}` | `{{선택}}` | 현재 탭에서 선택한 텍스트 |
-| `{{counter}}` | `{{카운터}}` | 누적 전송 횟수 |
+| `{{counter}}` | `{{카운터}}` | 최소 1개 타깃이 정상 큐잉된 방송 누적 횟수 |
 | `{{random}}` | `{{랜덤}}` | 1–1000 랜덤 숫자 |
 
 **사용자 변수** – `{{topic}}`처럼 임의 이름을 사용하면 팝업에서 값을 입력하는 모달이 열립니다.
@@ -131,9 +131,16 @@ GIF 자리표시자: `docs/assets/usage-demo.gif`
 - 즐겨찾기 항목의 `···` 메뉴 → **태그 및 폴더 편집**으로 쉼표 구분 태그와 폴더명을 입력합니다.
 - 같은 메뉴에서 **상단 고정** / **고정 해제**로 중요 항목을 목록 최상단에 고정합니다.
 - 즐겨찾기 패널 상단의 태그·폴더 칩을 클릭하면 해당 항목만 필터링됩니다.
+- 즐겨찾기 검색창은 제목, 본문, 태그, 폴더명을 함께 검색합니다. `#태그명` 형태 검색도 지원합니다.
 
 ### 서비스별 프롬프트 오버라이드
 서비스 카드에서 **Custom prompt for this service** 토글을 켜면 해당 서비스에만 전송할 별도 프롬프트를 입력할 수 있습니다. 비워두면 메인 프롬프트가 사용됩니다.
+
+### 커스텀 서비스 권한
+- 커스텀 서비스는 `url`과 `hostnameAliases`에서 파생된 모든 origin에 대해 optional host permission을 확인합니다.
+- 저장 또는 JSON import 시 필요한 origin 중 하나라도 거부되면 해당 커스텀 서비스는 부분 적용되지 않고 전체가 거부됩니다.
+- 커스텀 서비스를 삭제하거나 서비스 설정을 리셋하거나 JSON import로 교체하면, 더 이상 어떤 커스텀 서비스도 사용하지 않는 origin permission만 자동 회수합니다.
+- `{{counter}}`는 팝업 미리보기에서는 다음 값처럼 보이지만, 실제 저장값은 최소 1개 타깃이 큐잉된 방송에서만 증가하며 export/import/reset과 함께 관리됩니다.
 
 ### 셀렉터 오류 신고
 셀렉터 경고(⚠)가 표시된 서비스는 설정 탭의 서비스 관리 카드에 **Report issue** 링크가 표시됩니다. 클릭하면 해당 서비스의 GitHub 이슈 검색 페이지가 열립니다.
@@ -211,10 +218,10 @@ For build and packaging steps, see [docs/build-guide.md](docs/build-guide.md). F
 - Discover already-open AI tabs in the current window and reuse them by default
 - Choose a specific open tab, force a new tab, or keep the default routing per service from the popup
 - Automatic prompt history for successful broadcasts
-- Favorites with editable titles and live search
+- Favorites with editable titles and search across title, text, tags, and folders
 - **Favorites tag, folder, and pin system** — categorize saved prompts with tags and folders; pin important ones to the top
 - **Per-service prompt overrides** — assign a different prompt to individual service cards without changing the main prompt
-- JSON export/import for history and favorites
+- JSON export/import for history, favorites, template cache, settings, and service configuration, including `broadcastCounter`
 - History keeps requested, submitted, and failed service ids so partial broadcasts can be replayed accurately
 - **Extended template variables** — 9+ system variables including `{{url}}`, `{{title}}`, `{{selection}}`, `{{counter}}`, and `{{random}}`
 - Custom services can store fallback selectors, auth selectors, hostname aliases, and verification metadata
@@ -307,7 +314,7 @@ Template prompts support both user-defined variables and built-in system variabl
 | `{{url}}` | `{{주소}}` | Active tab URL |
 | `{{title}}` | `{{제목}}` | Active tab page title |
 | `{{selection}}` | `{{선택}}` | Text selected on the active tab |
-| `{{counter}}` | `{{카운터}}` | Cumulative broadcast count |
+| `{{counter}}` | `{{카운터}}` | Cumulative count of broadcasts that queued at least one target |
 | `{{random}}` | `{{랜덤}}` | Random number between 1 and 1000 |
 
 `url`, `title`, and `selection` are read from the active browser tab via the background service worker at send time.
@@ -318,6 +325,7 @@ Template prompts support both user-defined variables and built-in system variabl
 - Open the `···` menu on any favorite entry and choose **Edit tags & folder** to assign comma-separated tags and a folder name (up to 50 characters).
 - Use **Pin to top** / **Unpin** from the same menu to keep important favorites at the top of the list.
 - A filter bar above the favorites list shows tag and folder chips for one-click filtering.
+- The favorites search box matches title, body text, tags, and folder names. Queries like `#urgent` also match tags directly.
 
 ### Per-Service Prompt Overrides
 Expand a service card in the compose view and enable the **Custom prompt for this service** toggle to enter a prompt that will be used exclusively for that service. The main prompt is used when the override is left blank or the toggle is off.
@@ -343,6 +351,12 @@ The popup service editor supports the following advanced fields for custom servi
 - `verifiedVersion`: a free-form UI or app build tag
 
 If `submitMethod` is `click`, `submitSelector` is required and validation blocks saving until it is provided.
+
+Custom service permissions are managed per site, not per single URL field:
+
+- optional host permissions are derived from the service `url` plus every `hostnameAliases` entry
+- save and JSON import are all-or-nothing for a custom service if any required origin is denied
+- deleting a custom service, resetting service settings, or replacing custom services through JSON import removes only the unused optional origins
 
 ### Limitations
 - You must already be logged in to each target AI service.
@@ -415,6 +429,10 @@ The smoke script verifies:
 - `click`, `enter`, and `shift+enter` submission paths
 - selector checker `ok` reporting
 - auth page detection through `authSelectors`
+- custom service permission cleanup for shared and unused origins
+- JSON import repair for alias-based custom service permissions and invalid built-in click-submit overrides
+- `broadcastCounter` export/import/reset semantics
+- favorites search across title, tags, and folders
 
 If Chromium is not installed yet for Playwright, run:
 

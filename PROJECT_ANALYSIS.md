@@ -1,7 +1,7 @@
 # AI Prompt Broadcaster - 프로젝트 구조 분석
 
 > 기준일: 2026-03-31
-> 최종 업데이트: 2026-03-31 (6개 기능 구현 반영)
+> 최종 업데이트: 2026-04-01 (권한 모델, import 검증, counter 수명주기, 검색, QA 보강 반영)
 > 분석 범위: 전체 소스코드, 빌드 시스템, 데이터 흐름, UI 구조
 
 ---
@@ -21,6 +21,9 @@ Chrome Manifest V3 기반 확장 프로그램. 프롬프트 하나를 ChatGPT, G
 - 확장 시스템 템플릿 변수 9개 (url, title, selection, counter, random 신규 포함)
 - 셀렉터 오류 GitHub 신고 버튼
 - 옵션 페이지 히스토리 상세 결과 비교 뷰
+- 커스텀 서비스 optional host permission 정리 및 자동 회수
+- built-in override import 검증 강화
+- `broadcastCounter` export/import/reset 정합성
 
 ---
 
@@ -189,7 +192,9 @@ prompt-broadcaster/
 - `enabled` — 활성화 여부
 - `color`, `icon` — 사용자 지정 표시
 - `isBuiltIn`, `isCustom`, `deletable`, `editable` — 관리 플래그
-- `permissionPattern` — 선택적 호스트 권한 요청용
+- `permissionPatterns` — `url + hostnameAliases` 기준 선택적 호스트 권한 origin 목록
+
+커스텀 서비스는 저장, 수정, import 시 필요한 `permissionPatterns` 전체를 확인한다. 필요한 origin 중 하나라도 거부되면 해당 서비스는 부분 적용되지 않는다. 삭제, 리셋, import 교체 시 더 이상 쓰이지 않는 optional host permission은 자동 회수된다.
 
 ### 4.3 프롬프트 스토어 (`src/shared/prompts/`)
 
@@ -199,6 +204,7 @@ prompt-broadcaster/
 | 즐겨찾기 | `promptFavorites` | `FavoritePrompt[]` |
 | 앱 설정 | `appSettings` | `AppSettings` |
 | 템플릿 캐시 | `templateVariableCache` | `Record<string, string>` |
+| 방송 카운터 | `broadcastCounter` | `number` |
 
 **히스토리 아이템 주요 필드:**
 ```typescript
@@ -242,7 +248,7 @@ prompt-broadcaster/
 - `{{url}}` / `{{주소}}` → 활성 일반 브라우저 탭 URL
 - `{{title}}` / `{{제목}}` → 활성 일반 브라우저 탭 제목
 - `{{selection}}` / `{{선택}}` → 활성 일반 브라우저 탭 선택 텍스트
-- `{{counter}}` / `{{카운터}}` → 누적 방송 카운트
+- `{{counter}}` / `{{카운터}}` → 최소 1개 타깃이 큐잉된 방송 누적 카운트
 - `{{random}}` / `{{랜덤}}` → 1~1000 랜덤 값
 
 **사용자 변수** — `{{임의이름}}` 형태면 팝업에서 입력 모달 표시
@@ -390,6 +396,11 @@ Perplexity 예외:
   - 지연 제출 버튼 활성화
   - click / enter / shift+enter 제출 방식
   - 셀렉터 체커 `ok` / `auth_page` 보고
+  - alias hostname 기반 optional permission 검증
+  - 커스텀 서비스 삭제/리셋 시 permission 회수
+  - built-in override import 보정
+  - `broadcastCounter` export/import/reset 정합성
+  - 즐겨찾기 제목/태그/폴더 검색
 
 ```bash
 npx playwright install chromium
@@ -427,7 +438,7 @@ interface RuntimeSite extends SiteConfig {
   isCustom: boolean;
   deletable: boolean;
   editable: boolean;
-  permissionPattern: string;
+  permissionPatterns: string[];
 }
 
 // 히스토리 항목

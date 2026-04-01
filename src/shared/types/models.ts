@@ -29,7 +29,7 @@ export interface RuntimeSite extends SiteConfig {
   isCustom: boolean;
   deletable: boolean;
   editable: boolean;
-  permissionPattern: string;
+  permissionPatterns: string[];
 }
 
 export interface PromptHistoryItem {

@@ -3,7 +3,8 @@ var LOCAL_STORAGE_KEYS = Object.freeze({
   history: "promptHistory",
   favorites: "promptFavorites",
   templateVariableCache: "templateVariableCache",
-  settings: "appSettings"
+  settings: "appSettings",
+  broadcastCounter: "broadcastCounter"
 });
 var DEFAULT_HISTORY_LIMIT = 50;
 var MIN_HISTORY_LIMIT = 10;
@@ -51,6 +52,13 @@ function normalizeHistoryLimit(value) {
     MAX_HISTORY_LIMIT,
     Math.max(MIN_HISTORY_LIMIT, Math.round(numericValue))
   );
+}
+function normalizeBroadcastCounter(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return 0;
+  }
+  return Math.max(0, Math.round(numericValue));
 }
 function normalizeSettings(value) {
   return {
@@ -103,6 +111,32 @@ async function readLocal(key, fallbackValue) {
 }
 async function writeLocal(key, value) {
   await chrome.storage.local.set({ [key]: value });
+}
+
+// src/shared/prompts/broadcast-counter.ts
+async function getBroadcastCounter() {
+  try {
+    const rawValue = await readLocal(LOCAL_STORAGE_KEYS.broadcastCounter, 0);
+    return normalizeBroadcastCounter(rawValue);
+  } catch (_error) {
+    return 0;
+  }
+}
+async function setBroadcastCounter(value) {
+  const normalized = normalizeBroadcastCounter(value);
+  await writeLocal(LOCAL_STORAGE_KEYS.broadcastCounter, normalized);
+  return normalized;
+}
+async function recordQueuedBroadcast(queuedSiteCount) {
+  try {
+    if (normalizeBroadcastCounter(queuedSiteCount) <= 0) {
+      return getBroadcastCounter();
+    }
+    const current = await getBroadcastCounter();
+    return setBroadcastCounter(current + 1);
+  } catch (_error) {
+    return getBroadcastCounter();
+  }
 }
 
 // src/shared/prompts/settings-store.ts
@@ -396,12 +430,44 @@ function deriveHostname(url) {
     return "";
   }
 }
-function buildOriginPattern(url) {
+function normalizeOriginHost(value) {
+  const input = safeText2(value).replace(/\/+$/g, "");
+  if (!input) {
+    return "";
+  }
+  try {
+    const parsed = new URL(input);
+    if (parsed.host) {
+      return parsed.host.toLowerCase();
+    }
+  } catch (_error) {
+  }
+  try {
+    return new URL(`https://${input}`).host.toLowerCase();
+  } catch (_nestedError) {
+    return input.toLowerCase();
+  }
+}
+function buildOriginPatterns(url, hostnameAliases = []) {
   try {
     const parsed = new URL(url);
-    return `${parsed.origin}/*`;
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return [];
+    }
+    const primaryHost = normalizeOriginHost(parsed.host);
+    const primaryHostname = normalizeHostname(parsed.hostname);
+    const normalizedAliases = Array.from(
+      new Set(
+        normalizeStringList(hostnameAliases).map((entry) => normalizeOriginHost(entry)).filter((entry) => entry && entry !== primaryHost && entry !== primaryHostname)
+      )
+    );
+    return Array.from(
+      new Set(
+        [primaryHost, ...normalizedAliases].filter(Boolean).map((host) => `${parsed.protocol}//${host}/*`)
+      )
+    );
   } catch (_error) {
-    return "";
+    return [];
   }
 }
 function createCustomSiteId(name) {
@@ -455,13 +521,14 @@ function buildBaseSiteRecord(site, builtInMeta = {}) {
   const style = BUILT_IN_SITE_STYLE_MAP[site.id] ?? {};
   const url = safeText2(site.url);
   const hostname = normalizeHostname(site.hostname || deriveHostname(url));
+  const hostnameAliases = normalizeHostnameAliases(site.hostnameAliases, hostname);
   const normalizedSelectors = normalizePerplexitySelectors(site);
   return {
     id: safeText2(site.id),
     name: safeText2(site.name) || "AI Service",
     url,
     hostname,
-    hostnameAliases: normalizeHostnameAliases(site.hostnameAliases, hostname),
+    hostnameAliases,
     inputSelector: normalizedSelectors.inputSelector,
     inputType: normalizeInputType(site.inputType, "textarea"),
     submitSelector: safeText2(site.submitSelector),
@@ -480,16 +547,18 @@ function buildBaseSiteRecord(site, builtInMeta = {}) {
     isCustom: Boolean(builtInMeta.isCustom),
     deletable: Boolean(builtInMeta.isCustom),
     editable: true,
-    permissionPattern: buildOriginPattern(url)
+    permissionPatterns: buildOriginPatterns(url, hostnameAliases)
   };
 }
 function sanitizeBuiltInOverride(override = {}, originalSite = {}) {
+  const submitMethod = normalizeSubmitMethod(override.submitMethod, originalSite.submitMethod);
+  const submitSelector = submitMethod === "click" ? safeText2(override.submitSelector) || safeText2(originalSite.submitSelector) : safeText2(override.submitSelector);
   return {
     name: safeText2(override.name) || originalSite.name,
     inputSelector: safeText2(override.inputSelector) || originalSite.inputSelector,
     inputType: normalizeInputType(override.inputType, originalSite.inputType),
-    submitSelector: safeText2(override.submitSelector),
-    submitMethod: normalizeSubmitMethod(override.submitMethod, originalSite.submitMethod),
+    submitSelector,
+    submitMethod,
     selectorCheckMode: normalizeSelectorCheckMode(
       override.selectorCheckMode,
       originalSite.selectorCheckMode || "input-and-submit"
@@ -539,6 +608,53 @@ function normalizeCustomSite(site) {
     },
     { isCustom: true }
   );
+}
+
+// src/shared/security.ts
+function isValidURL(string) {
+  try {
+    const url = new URL(string);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch (_) {
+    return false;
+  }
+}
+
+// src/shared/sites/validation.ts
+function validateSiteDraft(draft, { isBuiltIn = false } = {}) {
+  const errors = [];
+  const name = safeText2(draft?.name);
+  const url = safeText2(draft?.url);
+  const inputSelector = safeText2(draft?.inputSelector);
+  if (!name) {
+    errors.push("Service name is required.");
+  }
+  if (!isBuiltIn && !url) {
+    errors.push("Service URL is required.");
+  }
+  if (url && !isValidURL(url)) {
+    errors.push("Service URL must be a valid http or https URL.");
+  }
+  if (!inputSelector) {
+    errors.push("Input selector is required.");
+  }
+  if (!VALID_INPUT_TYPES.has(safeText2(draft?.inputType))) {
+    errors.push("Input type is invalid.");
+  }
+  if (!VALID_SUBMIT_METHODS.has(safeText2(draft?.submitMethod))) {
+    errors.push("Submit method is invalid.");
+  }
+  const selectorCheckMode = safeText2(draft?.selectorCheckMode);
+  if (selectorCheckMode && !VALID_SELECTOR_CHECK_MODES.has(selectorCheckMode)) {
+    errors.push("Selector check mode is invalid.");
+  }
+  if (safeText2(draft?.submitMethod) === "click" && !safeText2(draft?.submitSelector)) {
+    errors.push("Submit selector is required when using click submit.");
+  }
+  return {
+    valid: errors.length === 0,
+    errors
+  };
 }
 
 // src/shared/sites/import-repair.ts
@@ -637,9 +753,15 @@ function repairImportedBuiltInOverrides(value) {
       continue;
     }
     const sanitized = sanitizeBuiltInOverride(entry, source);
-    normalized[key] = sanitized;
+    const mergedDraft = {
+      ...source,
+      ...sanitized
+    };
+    const validation = validateSiteDraft(mergedDraft, { isBuiltIn: true });
+    const finalOverride = validation.valid ? sanitized : sanitizeBuiltInOverride({}, source);
+    normalized[key] = finalOverride;
     appliedIds.push(key);
-    if (detectBuiltInOverrideAdjustment(entry, sanitized, source)) {
+    if (!validation.valid || detectBuiltInOverrideAdjustment(entry, finalOverride, source)) {
       adjustedIds.push(key);
     }
   }
@@ -910,7 +1032,7 @@ function buildInjectionConfig(site) {
     lastVerified: site?.lastVerified ?? "",
     verifiedVersion: site?.verifiedVersion ?? "",
     isCustom: Boolean(site?.isCustom),
-    permissionPattern: site?.permissionPattern ?? ""
+    permissionPatterns: Array.isArray(site?.permissionPatterns) ? site.permissionPatterns : []
   };
 }
 function normalizePrompt(value) {
@@ -1254,13 +1376,17 @@ function getAllowedSiteHostnames(site) {
     ].filter((entry) => typeof entry === "string" && entry.trim()).map((entry) => entry.trim().toLowerCase())
   );
 }
+function getSitePermissionPatterns(site) {
+  return Array.isArray(site?.permissionPatterns) ? site.permissionPatterns.filter((pattern) => typeof pattern === "string" && pattern.trim()) : [];
+}
 async function isCustomSitePermissionGranted(site) {
-  if (!site?.isCustom || !site?.permissionPattern) {
+  const permissionPatterns = getSitePermissionPatterns(site);
+  if (!site?.isCustom || permissionPatterns.length === 0) {
     return true;
   }
   try {
     return await chrome.permissions.contains({
-      origins: [site.permissionPattern]
+      origins: permissionPatterns
     });
   } catch (error) {
     console.error("[AI Prompt Broadcaster] Failed to check custom site permission.", {
@@ -1789,11 +1915,11 @@ async function getContextMenuTargetSiteIds(menuItemId) {
     const enabledSites = await getEnabledRuntimeSites();
     const allowedSites = (await Promise.all(
       enabledSites.map(async (site) => {
-        if (!site.isCustom || !site.permissionPattern) {
+        if (!site.isCustom || getSitePermissionPatterns(site).length === 0) {
           return site;
         }
         const granted = await chrome.permissions.contains({
-          origins: [site.permissionPattern]
+          origins: getSitePermissionPatterns(site)
         });
         return granted ? site : null;
       })
@@ -1832,12 +1958,12 @@ async function rebuildContextMenus() {
   const enabledSites = await getEnabledRuntimeSites();
   const menuSites = (await Promise.all(
     enabledSites.map(async (site) => {
-      if (!site.isCustom || !site.permissionPattern) {
+      if (!site.isCustom || getSitePermissionPatterns(site).length === 0) {
         return site;
       }
       try {
         const granted = await chrome.permissions.contains({
-          origins: [site.permissionPattern]
+          origins: getSitePermissionPatterns(site)
         });
         return granted ? site : null;
       } catch (error) {
@@ -2651,7 +2777,7 @@ async function handleBroadcastMessage(message) {
       if (!pendingBeforeCreate[broadcast.id]) {
         continue;
       }
-      if (site.isCustom && site.permissionPattern) {
+      if (site.isCustom && getSitePermissionPatterns(site).length > 0) {
         const granted = await isCustomSitePermissionGranted(site);
         if (!granted) {
           failedTabSiteIds.push(site.id);
@@ -2705,6 +2831,9 @@ async function handleBroadcastMessage(message) {
       failedTabSiteIds.push(site.id);
       await recordBroadcastSiteResult(broadcast.id, site.id, "tab_create_failed");
     }
+  }
+  if (queuedSiteCount > 0) {
+    await recordQueuedBroadcast(queuedSiteCount);
   }
   return {
     ok: queuedSiteCount > 0,
@@ -2873,24 +3002,6 @@ async function handleServiceTestRun(message) {
     };
   }
 }
-async function getBroadcastCounter() {
-  try {
-    const result = await chrome.storage.local.get("broadcastCounter");
-    return Number.isFinite(Number(result.broadcastCounter)) ? Number(result.broadcastCounter) : 0;
-  } catch (_error) {
-    return 0;
-  }
-}
-async function incrementBroadcastCounter() {
-  try {
-    const current = await getBroadcastCounter();
-    const next = current + 1;
-    await chrome.storage.local.set({ broadcastCounter: next });
-    return next;
-  } catch (_error) {
-    return 0;
-  }
-}
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message?.action) {
     case "broadcast":
@@ -2971,11 +3082,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
     case "getBroadcastCounter":
       void getBroadcastCounter().then((counter) => sendResponse({ ok: true, counter })).catch((error) => {
-        sendResponse({ ok: false, counter: 0, error: error?.message ?? String(error) });
-      });
-      return true;
-    case "incrementBroadcastCounter":
-      void incrementBroadcastCounter().then((counter) => sendResponse({ ok: true, counter })).catch((error) => {
         sendResponse({ ok: false, counter: 0, error: error?.message ?? String(error) });
       });
       return true;

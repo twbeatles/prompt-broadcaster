@@ -1,4 +1,9 @@
 export {
+  getBroadcastCounter,
+  recordQueuedBroadcast,
+  setBroadcastCounter,
+} from "./broadcast-counter";
+export {
   DEFAULT_HISTORY_LIMIT,
   DEFAULT_SETTINGS,
   LOCAL_STORAGE_KEYS,
@@ -9,6 +14,7 @@ export {
   ensureUniqueNumericId,
   ensureUniqueStringId,
   normalizeBoolean,
+  normalizeBroadcastCounter,
   normalizeHistoryLimit,
   normalizeIsoDate,
   normalizeSentTo,
@@ -45,6 +51,7 @@ export {
   exportPromptData,
   importPromptData,
 } from "./import-export";
+export { matchesFavoriteSearch } from "./search";
 export {
   getAppSettings,
   getHistoryLimit,

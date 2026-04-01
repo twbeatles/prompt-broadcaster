@@ -25,6 +25,12 @@ function createChromeMock({ grantedOrigins = [], requestGrantsMissingOrigins = t
   const granted = new Set(grantedOrigins);
 
   return {
+    __getGrantedOrigins() {
+      return [...granted].sort();
+    },
+    __getStorage() {
+      return { ...storage };
+    },
     storage: {
       local: {
         async get(key) {
@@ -50,6 +56,12 @@ function createChromeMock({ grantedOrigins = [], requestGrantsMissingOrigins = t
         async set(nextValue) {
           Object.assign(storage, nextValue ?? {});
         },
+        async remove(key) {
+          const keys = Array.isArray(key) ? key : [key];
+          keys.forEach((entry) => {
+            delete storage[entry];
+          });
+        },
       },
     },
     permissions: {
@@ -64,6 +76,11 @@ function createChromeMock({ grantedOrigins = [], requestGrantsMissingOrigins = t
         }
 
         origins.forEach((origin) => granted.add(origin));
+        return true;
+      },
+      async remove(permission) {
+        const origins = Array.isArray(permission?.origins) ? permission.origins : [];
+        origins.forEach((origin) => granted.delete(origin));
         return true;
       },
     },
@@ -251,6 +268,10 @@ async function configureSelectorChecker(page, site) {
 
 async function runSelectorChecker(page) {
   await page.addScriptTag({ path: selectorCheckerPath });
+}
+
+function sortStrings(values) {
+  return [...values].sort();
 }
 
 async function main() {
@@ -538,16 +559,82 @@ async function main() {
 
   await browser.close();
 
+  await runStep("custom site permission cleanup removes only unused origins", async () => {
+    const chromeMock = createChromeMock({
+      grantedOrigins: [
+        "https://alpha.example.com/*",
+        "https://beta.example.com/*",
+        "https://shared.example.com/*",
+        "https://unrelated.example.com/*",
+      ],
+    });
+    const module = await loadBundledModule("src/shared/sites/index.ts", chromeMock);
+    assert.deepEqual(
+      module.buildSitePermissionPatterns("https://alpha.example.com:8443/", ["shared.example.com"]),
+      [
+        "https://alpha.example.com:8443/*",
+        "https://shared.example.com/*",
+      ],
+    );
+
+    await module.saveCustomSite({
+      id: "alpha",
+      name: "Alpha",
+      url: "https://alpha.example.com/",
+      hostnameAliases: ["shared.example.com"],
+      inputSelector: "#alpha",
+      inputType: "textarea",
+      submitMethod: "enter",
+    });
+    await module.saveCustomSite({
+      id: "beta",
+      name: "Beta",
+      url: "https://beta.example.com/",
+      hostnameAliases: ["shared.example.com"],
+      inputSelector: "#beta",
+      inputType: "textarea",
+      submitMethod: "enter",
+    });
+
+    await module.deleteCustomSite("alpha");
+    assert.deepEqual(chromeMock.__getGrantedOrigins(), [
+      "https://beta.example.com/*",
+      "https://shared.example.com/*",
+      "https://unrelated.example.com/*",
+    ]);
+
+    await module.resetSiteSettings();
+    assert.deepEqual(chromeMock.__getGrantedOrigins(), [
+      "https://unrelated.example.com/*",
+    ]);
+  });
+
   await runStep("import repair keeps valid sites and rejects invalid or unauthorized ones", async () => {
     const chromeMock = createChromeMock({
       grantedOrigins: [
         "https://allowed.example.com/*",
+        "https://alias-denied.example.com/*",
+        "https://alias-ok-mirror.example.com/*",
+        "https://alias-ok.example.com/*",
+        "https://legacy.example.com/*",
         "https://mirror.example.com/*",
         "https://second.example.com/*",
       ],
       requestGrantsMissingOrigins: false,
     });
     const module = await loadBundledModule("src/shared/stores/prompt-store.ts", chromeMock);
+    await chromeMock.storage.local.set({
+      customSites: [
+        {
+          id: "legacy",
+          name: "Legacy",
+          url: "https://legacy.example.com/",
+          inputSelector: "#legacy",
+          inputType: "textarea",
+          submitMethod: "enter",
+        },
+      ],
+    });
     const result = await module.importPromptData(JSON.stringify({
       settings: { historyLimit: 55 },
       customSites: [
@@ -571,6 +658,24 @@ async function main() {
           id: "my-ai",
           name: "Duplicate AI",
           url: "https://second.example.com/",
+          inputSelector: "#prompt",
+          inputType: "textarea",
+          submitMethod: "enter",
+        },
+        {
+          id: "alias-ok",
+          name: "Alias OK",
+          url: "https://alias-ok.example.com/",
+          hostnameAliases: ["alias-ok-mirror.example.com"],
+          inputSelector: "#prompt",
+          inputType: "textarea",
+          submitMethod: "enter",
+        },
+        {
+          id: "alias-denied",
+          name: "Alias Denied",
+          url: "https://alias-denied.example.com/",
+          hostnameAliases: ["alias-missing.example.com"],
           inputSelector: "#prompt",
           inputType: "textarea",
           submitMethod: "enter",
@@ -601,6 +706,8 @@ async function main() {
           inputSelector: "#override",
           inputType: "invalid",
           selectorCheckMode: "bad-mode",
+          submitMethod: "click",
+          submitSelector: "",
         },
         unknown: {
           inputSelector: "#ignored",
@@ -608,20 +715,121 @@ async function main() {
       },
     }));
 
-    assert.equal(result.customSites.length, 3);
+    assert.equal(result.customSites.length, 4);
     assert.deepEqual(result.customSites.map((site) => site.id), [
       "custom-chatgpt",
       "my-ai",
       "my-ai-2",
+      "alias-ok",
     ]);
-    assert.equal(result.importSummary.customSites.rejected.length, 2);
-    assert.equal(result.importSummary.customSites.deniedOrigins.length, 1);
+    assert.equal(result.importSummary.customSites.rejected.length, 3);
+    assert.deepEqual(sortStrings(result.importSummary.customSites.deniedOrigins), [
+      "https://alias-missing.example.com/*",
+      "https://denied.example.com/*",
+    ]);
     assert.equal(result.importSummary.customSites.rewrittenIds.length, 2);
     assert.deepEqual(Object.keys(result.builtInSiteStates), ["chatgpt"]);
     assert.deepEqual(Object.keys(result.builtInSiteOverrides), ["chatgpt"]);
     assert.equal(result.builtInSiteOverrides.chatgpt.inputSelector, "#override");
     assert.equal(result.builtInSiteOverrides.chatgpt.inputType, "contenteditable");
     assert.equal(result.builtInSiteOverrides.chatgpt.selectorCheckMode, "input-and-submit");
+    assert.equal(
+      result.builtInSiteOverrides.chatgpt.submitSelector,
+      "button[data-testid='send-button'], button[aria-label*='send' i], button[aria-label*='보내기' i]",
+    );
+    assert.ok(!chromeMock.__getGrantedOrigins().includes("https://legacy.example.com/*"));
+  });
+
+  await runStep("broadcast counter export import and favorite search stay consistent", async () => {
+    const chromeMock = createChromeMock();
+    const module = await loadBundledModule("src/shared/stores/prompt-store.ts", chromeMock);
+
+    assert.equal(await module.getBroadcastCounter(), 0);
+    assert.equal(await module.recordQueuedBroadcast(0), 0);
+    assert.equal(await module.getBroadcastCounter(), 0);
+    assert.equal(await module.recordQueuedBroadcast(2), 1);
+    assert.equal(await module.getBroadcastCounter(), 1);
+
+    const exported = await module.exportPromptData();
+    assert.equal(exported.version, 3);
+    assert.equal(exported.broadcastCounter, 1);
+
+    await module.setBroadcastCounter(9);
+    const legacyImport = await module.importPromptData(JSON.stringify({
+      version: 2,
+      settings: { historyLimit: 50 },
+    }));
+    assert.equal(legacyImport.broadcastCounter, 0);
+    assert.equal(await module.getBroadcastCounter(), 0);
+
+    const modernImport = await module.importPromptData(JSON.stringify({
+      version: 3,
+      broadcastCounter: 4,
+      settings: { historyLimit: 50 },
+    }));
+    assert.equal(modernImport.broadcastCounter, 4);
+    assert.equal(await module.getBroadcastCounter(), 4);
+
+    assert.equal(
+      module.matchesFavoriteSearch(
+        {
+          title: "Alpha Plan",
+          text: "Prompt comparison notes",
+          tags: ["urgent", "weekly"],
+          folder: "Work",
+        },
+        "alpha",
+      ),
+      true,
+    );
+    assert.equal(
+      module.matchesFavoriteSearch(
+        {
+          title: "Alpha Plan",
+          text: "Prompt comparison notes",
+          tags: ["urgent", "weekly"],
+          folder: "Work",
+        },
+        "weekly",
+      ),
+      true,
+    );
+    assert.equal(
+      module.matchesFavoriteSearch(
+        {
+          title: "Alpha Plan",
+          text: "Prompt comparison notes",
+          tags: ["urgent", "weekly"],
+          folder: "Work",
+        },
+        "#urgent",
+      ),
+      true,
+    );
+    assert.equal(
+      module.matchesFavoriteSearch(
+        {
+          title: "Alpha Plan",
+          text: "Prompt comparison notes",
+          tags: ["urgent", "weekly"],
+          folder: "Work",
+        },
+        "work",
+      ),
+      true,
+    );
+    assert.equal(
+      module.matchesFavoriteSearch(
+        {
+          title: "Alpha Plan",
+          text: "Prompt comparison notes",
+          tags: ["urgent", "weekly"],
+          folder: "Work",
+        },
+        "missing",
+      ),
+      false,
+    );
   });
 
   const failed = results.filter((result) => !result.ok);

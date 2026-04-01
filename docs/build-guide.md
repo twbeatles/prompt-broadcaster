@@ -75,6 +75,10 @@ The smoke flow loads local fixtures from `qa/fixtures/` and validates the built 
 - selector checker `ok` and `auth_page` reporting
 - selector checker `input-only` mode for conditional-submit UIs
 - JSON import repair for invalid, duplicate, and unauthorized custom services
+- alias-based custom-service permission requests and cleanup of unused optional origins
+- built-in override import repair for `click` configurations with empty selectors
+- `broadcastCounter` export/import/reset consistency
+- favorites search matching title, tags, and folders
 
 The smoke suite does not cover live Chrome popup behavior such as open-tab discovery, per-service tab targeting, or the reusable-tab setting. Check those manually in a real browser window before release.
 
@@ -144,9 +148,10 @@ The generated ZIP contains the built extension from `dist/` only.
 8. In the popup, verify that currently open AI tabs appear under the matching service cards and that `Reuse open AI tabs` behaves as expected
 9. Verify prompt submission on all built-in services, with dedicated checks for Claude click-submit behavior and Perplexity conditional submit behavior
    For Perplexity specifically, confirm that the prompt is inserted once into `#ask-input[data-lexical-editor='true']` and that submission still succeeds through the standard submit path
-10. Confirm that cancelling a broadcast leaves reused tabs open and closes only newly opened tabs
-11. Run the packaging script for your platform
-12. Upload the generated ZIP to Chrome Web Store or attach it to a GitHub release
+10. Add, import, delete, and reset a custom service and confirm optional host permissions are granted and cleaned up only for the required origins
+11. Confirm that cancelling a broadcast leaves reused tabs open and closes only newly opened tabs
+12. Run the packaging script for your platform
+13. Upload the generated ZIP to Chrome Web Store or attach it to a GitHub release
 
 ## Chrome Web Store Release Checklist
 
@@ -168,6 +173,7 @@ Before uploading, run these manual checks in a real Chrome window:
 - ChatGPT, Gemini, Claude, Grok, and Perplexity all inject and submit from the built `dist/` extension
 - Claude specifically reaches a real prompt submit path rather than clicking a decoy action button
 - Perplexity specifically uses the exact Lexical composer selector and should not duplicate the prompt text before submit
+- custom-service add/import/delete/reset keeps optional host permissions aligned with `url + hostnameAliases`
 - options page, history, favorites, and service editor text render correctly in Korean
 - standalone popup fallback still opens when Chrome cannot surface the toolbar action popup
 

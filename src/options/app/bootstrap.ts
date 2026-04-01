@@ -4,6 +4,7 @@ import {
   DEFAULT_SETTINGS,
   exportPromptData,
   getAppSettings,
+  setBroadcastCounter,
   getPromptHistory,
   importPromptData,
   setAppSettings,
@@ -693,6 +694,7 @@ function exportFilteredHistoryAsCsv() {
 
 async function resetAllData() {
   await Promise.all([
+    setBroadcastCounter(0),
     setPromptHistory([]),
     setPromptFavorites([]),
     setTemplateVariableCache({}),
