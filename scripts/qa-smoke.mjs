@@ -21,48 +21,61 @@ async function ensureFileExists(targetPath) {
 }
 
 function createChromeMock({ grantedOrigins = [], requestGrantsMissingOrigins = true } = {}) {
-  const storage = {};
+  const localStorage = {};
+  const sessionStorage = {};
+  const alarms = {};
   const granted = new Set(grantedOrigins);
+
+  function createStorageArea(store) {
+    return {
+      async get(key) {
+        if (typeof key === "string") {
+          return { [key]: store[key] };
+        }
+
+        if (Array.isArray(key)) {
+          return Object.fromEntries(key.map((entry) => [entry, store[entry]]));
+        }
+
+        if (key && typeof key === "object") {
+          return Object.fromEntries(
+            Object.entries(key).map(([entryKey, fallbackValue]) => [
+              entryKey,
+              store[entryKey] ?? fallbackValue,
+            ])
+          );
+        }
+
+        return { ...store };
+      },
+      async set(nextValue) {
+        Object.assign(store, nextValue ?? {});
+      },
+      async remove(key) {
+        const keys = Array.isArray(key) ? key : [key];
+        keys.forEach((entry) => {
+          delete store[entry];
+        });
+      },
+    };
+  }
 
   return {
     __getGrantedOrigins() {
       return [...granted].sort();
     },
     __getStorage() {
-      return { ...storage };
+      return {
+        local: { ...localStorage },
+        session: { ...sessionStorage },
+      };
+    },
+    __getAlarms() {
+      return { ...alarms };
     },
     storage: {
-      local: {
-        async get(key) {
-          if (typeof key === "string") {
-            return { [key]: storage[key] };
-          }
-
-          if (Array.isArray(key)) {
-            return Object.fromEntries(key.map((entry) => [entry, storage[entry]]));
-          }
-
-          if (key && typeof key === "object") {
-            return Object.fromEntries(
-              Object.entries(key).map(([entryKey, fallbackValue]) => [
-                entryKey,
-                storage[entryKey] ?? fallbackValue,
-              ])
-            );
-          }
-
-          return { ...storage };
-        },
-        async set(nextValue) {
-          Object.assign(storage, nextValue ?? {});
-        },
-        async remove(key) {
-          const keys = Array.isArray(key) ? key : [key];
-          keys.forEach((entry) => {
-            delete storage[entry];
-          });
-        },
-      },
+      local: createStorageArea(localStorage),
+      session: createStorageArea(sessionStorage),
     },
     permissions: {
       async contains(permission) {
@@ -87,6 +100,17 @@ function createChromeMock({ grantedOrigins = [], requestGrantsMissingOrigins = t
     i18n: {
       getMessage() {
         return "";
+      },
+    },
+    alarms: {
+      clear(name) {
+        const key = String(name ?? "");
+        const existed = Object.prototype.hasOwnProperty.call(alarms, key);
+        delete alarms[key];
+        return existed;
+      },
+      create(name, value) {
+        alarms[String(name ?? "")] = value ?? {};
       },
     },
   };
@@ -830,6 +854,231 @@ async function main() {
       ),
       false,
     );
+  });
+
+  await runStep("template resolution includes per-site override variables and resolves prompts", async () => {
+    const module = await loadBundledModule("src/shared/broadcast/resolution.ts", createChromeMock());
+    const targets = [
+      {
+        id: "chatgpt",
+        promptTemplate: "Base prompt for {{topic}} on {{date}}",
+      },
+      {
+        id: "claude",
+        promptTemplate: "Override for {{audience}} with {{selection}}",
+      },
+    ];
+
+    const variables = module.detectTemplateVariablesForTargets(targets);
+    assert.deepEqual(
+      variables.map((variable) => variable.name),
+      ["topic", "date", "audience", "selection"],
+    );
+    assert.deepEqual(
+      module.findMissingTemplateValuesForTargets(targets, { topic: "Launch" }),
+      ["audience"],
+    );
+
+    const resolved = module.resolveBroadcastTargets(targets, {
+      topic: "Launch",
+      date: "2026-04-01",
+      audience: "QA",
+      selection: "Selected text",
+    });
+    assert.equal(resolved[0].resolvedPrompt, "Base prompt for Launch on 2026-04-01");
+    assert.equal(resolved[1].resolvedPrompt, "Override for QA with Selected text");
+  });
+
+  await runStep("resolved prompt precedence preserves retry payload", async () => {
+    const module = await loadBundledModule("src/shared/broadcast/resolution.ts", createChromeMock());
+
+    assert.equal(
+      module.pickBroadcastTargetPrompt(
+        {
+          promptOverride: "Override prompt that should not win",
+          resolvedPrompt: "Rendered retry prompt",
+        },
+        "Base prompt",
+      ),
+      "Rendered retry prompt",
+    );
+    assert.equal(
+      module.pickBroadcastTargetPrompt(
+        {
+          resolvedPrompt: "",
+          promptOverride: "Override prompt that should not win",
+        },
+        "Base prompt",
+      ),
+      "",
+    );
+  });
+
+  await runStep("csv export helper escapes formulas safely", async () => {
+    const module = await loadBundledModule("src/shared/export/csv.ts", createChromeMock());
+
+    assert.equal(
+      module.buildCsvLine([
+        "=SUM(A1:A2)",
+        "+1",
+        "-2",
+        "@cmd",
+        "plain",
+        'quote " test',
+      ]),
+      "\"'=SUM(A1:A2)\",\"'+1\",\"'-2\",\"'@cmd\",\"plain\",\"quote \"\" test\"",
+    );
+  });
+
+  await runStep("pending broadcast state keeps accumulated site results during sequential completions", async () => {
+    const module = await loadBundledModule("src/shared/broadcast/state.ts", createChromeMock());
+    const initial = {
+      id: "broadcast-1",
+      prompt: "Launch prompt",
+      siteIds: ["chatgpt", "claude"],
+      total: 2,
+      completed: 0,
+      submittedSiteIds: [],
+      failedSiteIds: [],
+      siteResults: {},
+      startedAt: "2026-04-01T00:00:00.000Z",
+      status: "sending",
+    };
+
+    const first = module.applyPendingBroadcastSiteResult(
+      initial,
+      "chatgpt",
+      "submitted",
+      "2026-04-01T00:01:00.000Z",
+    );
+    assert.equal(first.nextRecord.siteResults.chatgpt, "submitted");
+    assert.equal(first.nextRecord.completed, 1);
+
+    const duplicate = module.applyPendingBroadcastSiteResult(
+      first.nextRecord,
+      "chatgpt",
+      "failed",
+      "2026-04-01T00:01:30.000Z",
+    );
+    assert.equal(duplicate.nextRecord.siteResults.chatgpt, "submitted");
+    assert.equal(duplicate.nextRecord.completed, 1);
+
+    const final = module.applyPendingBroadcastSiteResult(
+      first.nextRecord,
+      "claude",
+      "failed",
+      "2026-04-01T00:02:00.000Z",
+    );
+    assert.equal(final.nextRecord, null);
+    assert.equal(final.completedRecord.siteResults.chatgpt, "submitted");
+    assert.equal(final.completedRecord.siteResults.claude, "failed");
+    assert.equal(final.summary.status, "partial");
+  });
+
+  await runStep("reusable tab preflight excludes auth settings and invalid composer surfaces", async () => {
+    const module = await loadBundledModule("src/shared/sites/reuse-preflight.ts", createChromeMock());
+
+    assert.deepEqual(
+      module.evaluateReusableTabSnapshot({
+        pathname: "/auth/login",
+        hasPromptSurface: true,
+      }),
+      { ok: false, reason: "auth_path" },
+    );
+    assert.deepEqual(
+      module.evaluateReusableTabSnapshot({
+        pathname: "/settings/profile",
+        hasPromptSurface: true,
+      }),
+      { ok: false, reason: "settings_path" },
+    );
+    assert.deepEqual(
+      module.evaluateReusableTabSnapshot({
+        pathname: "/chat",
+        hasPromptSurface: false,
+        hasAuthSurface: false,
+      }),
+      { ok: false, reason: "missing_input" },
+    );
+    assert.deepEqual(
+      module.evaluateReusableTabSnapshot({
+        pathname: "/chat",
+        hasPromptSurface: true,
+        hasSubmitSurface: false,
+        requiresSubmitSurface: true,
+      }),
+      { ok: false, reason: "missing_submit" },
+    );
+    assert.deepEqual(
+      module.evaluateReusableTabSnapshot({
+        pathname: "/chat",
+        hasPromptSurface: true,
+        hasSubmitSurface: true,
+        requiresSubmitSurface: true,
+      }),
+      { ok: true },
+    );
+  });
+
+  await runStep("reset helper clears local and session runtime state", async () => {
+    const chromeMock = createChromeMock();
+    const module = await loadBundledModule("src/shared/runtime-state/reset.ts", chromeMock);
+
+    await chromeMock.storage.local.set({
+      lastPrompt: "draft",
+      promptHistory: [{ id: 1 }],
+      promptFavorites: [{ id: "fav-1" }],
+      templateVariableCache: { topic: "Launch" },
+      appSettings: {
+        historyLimit: 75,
+        autoClosePopup: true,
+        desktopNotifications: false,
+        reuseExistingTabs: false,
+      },
+      broadcastCounter: 9,
+      failedSelectors: [{ serviceId: "chatgpt" }],
+      onboardingCompleted: true,
+      customSites: [{ id: "custom-site" }],
+      builtInSiteStates: { chatgpt: { enabled: false } },
+      builtInSiteOverrides: { chatgpt: { inputSelector: "#composer" } },
+    });
+    await chromeMock.storage.session.set({
+      pendingUiToasts: [{ message: "queued" }],
+      lastBroadcast: { broadcastId: "broadcast-1" },
+      pendingInjections: { 1: { broadcastId: "broadcast-1" } },
+      pendingBroadcasts: { "broadcast-1": { id: "broadcast-1" } },
+      selectorAlerts: { signature: 1 },
+    });
+    chromeMock.alarms.create("badge-clear", { when: 123 });
+
+    await module.resetPersistedExtensionState({
+      additionalSessionKeys: ["pendingInjections", "pendingBroadcasts", "selectorAlerts"],
+      clearAlarmName: "badge-clear",
+    });
+
+    const storage = chromeMock.__getStorage();
+    assert.equal(storage.local.lastPrompt, undefined);
+    assert.deepEqual(storage.local.promptHistory, []);
+    assert.deepEqual(storage.local.promptFavorites, []);
+    assert.deepEqual(storage.local.templateVariableCache, {});
+    assert.deepEqual(storage.local.appSettings, {
+      historyLimit: 50,
+      autoClosePopup: false,
+      desktopNotifications: true,
+      reuseExistingTabs: true,
+    });
+    assert.equal(storage.local.broadcastCounter, 0);
+    assert.deepEqual(storage.local.failedSelectors, []);
+    assert.equal(storage.local.onboardingCompleted, false);
+    assert.deepEqual(storage.local.customSites, []);
+    assert.deepEqual(storage.local.builtInSiteStates, {});
+    assert.deepEqual(storage.local.builtInSiteOverrides, {});
+    assert.deepEqual(storage.session.pendingUiToasts, []);
+    assert.equal(storage.session.lastBroadcast, null);
+    assert.equal(storage.session.pendingInjections, undefined);
+    assert.equal(storage.session.pendingBroadcasts, undefined);
+    assert.equal(storage.session.selectorAlerts, undefined);
+    assert.deepEqual(chromeMock.__getAlarms(), {});
   });
 
   const failed = results.filter((result) => !result.ok);

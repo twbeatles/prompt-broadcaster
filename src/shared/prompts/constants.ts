@@ -1,4 +1,5 @@
-// @ts-nocheck
+import type { AppSettings } from "../types/models";
+
 export const LOCAL_STORAGE_KEYS = Object.freeze({
   history: "promptHistory",
   favorites: "promptFavorites",
@@ -15,4 +16,4 @@ export const DEFAULT_SETTINGS = Object.freeze({
   autoClosePopup: false,
   desktopNotifications: true,
   reuseExistingTabs: true,
-});
+}) as Readonly<AppSettings>;

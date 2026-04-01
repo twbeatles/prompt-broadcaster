@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { LOCAL_STORAGE_KEYS } from "./constants";
 import {
   ensureUniqueNumericId,
@@ -12,41 +11,50 @@ import {
 } from "./normalizers";
 import { getHistoryLimit } from "./settings-store";
 import { readLocal, writeLocal } from "./storage";
+import type { PromptHistoryItem } from "../types/models";
 
-export function buildHistoryEntry(entry) {
-  const createdAt = normalizeIsoDate(entry?.createdAt);
-  const siteResults = normalizeStringRecord(entry?.siteResults);
+function asHistoryRecord(entry: unknown): Record<string, unknown> {
+  return entry && typeof entry === "object" && !Array.isArray(entry)
+    ? (entry as Record<string, unknown>)
+    : {};
+}
+
+export function buildHistoryEntry(entry: unknown): PromptHistoryItem {
+  const source = asHistoryRecord(entry);
+  const numericId = Number(source.id);
+  const createdAt = normalizeIsoDate(source.createdAt);
+  const siteResults = normalizeStringRecord(source.siteResults);
   const siteResultKeys = normalizeSiteIdList(Object.keys(siteResults));
   const submittedSiteIds = normalizeSiteIdList(
-    Array.isArray(entry?.submittedSiteIds) ? entry.submittedSiteIds : entry?.sentTo
+    Array.isArray(source.submittedSiteIds) ? source.submittedSiteIds : source.sentTo
   );
   const failedSiteIds = normalizeSiteIdList(
-    Array.isArray(entry?.failedSiteIds)
-      ? entry.failedSiteIds
+    Array.isArray(source.failedSiteIds)
+      ? source.failedSiteIds
       : siteResultKeys.filter((siteId) => !submittedSiteIds.includes(siteId))
   );
   const requestedSiteIds = normalizeSiteIdList(
-    Array.isArray(entry?.requestedSiteIds)
-      ? entry.requestedSiteIds
+    Array.isArray(source.requestedSiteIds)
+      ? source.requestedSiteIds
       : siteResultKeys.length > 0
         ? siteResultKeys
         : submittedSiteIds
   );
 
   return {
-    id: Number.isFinite(entry?.id) ? Number(entry.id) : Date.now(),
-    text: safeText(entry?.text),
+    id: Number.isFinite(numericId) ? numericId : Date.now(),
+    text: safeText(source.text),
     requestedSiteIds,
     submittedSiteIds,
     failedSiteIds,
     sentTo: submittedSiteIds,
     createdAt,
-    status: normalizeStatus(entry?.status),
+    status: normalizeStatus(source.status),
     siteResults,
   };
 }
 
-export async function getPromptHistory() {
+export async function getPromptHistory(): Promise<PromptHistoryItem[]> {
   const historyLimit = await getHistoryLimit();
   const rawHistory = await readLocal(LOCAL_STORAGE_KEYS.history, []);
   return sortByDateDesc(
@@ -54,7 +62,7 @@ export async function getPromptHistory() {
   ).slice(0, historyLimit);
 }
 
-export async function setPromptHistory(historyItems) {
+export async function setPromptHistory(historyItems: unknown[]): Promise<PromptHistoryItem[]> {
   const historyLimit = await getHistoryLimit();
   const normalized = sortByDateDesc(
     safeArray(historyItems).map((item) => buildHistoryEntry(item))
@@ -64,7 +72,7 @@ export async function setPromptHistory(historyItems) {
   return normalized;
 }
 
-export async function appendPromptHistory(entry) {
+export async function appendPromptHistory(entry: unknown): Promise<PromptHistoryItem> {
   const historyLimit = await getHistoryLimit();
   const history = await getPromptHistory();
   const normalized = buildHistoryEntry(entry);
@@ -76,13 +84,13 @@ export async function appendPromptHistory(entry) {
   return normalized;
 }
 
-export async function deletePromptHistoryItem(historyId) {
+export async function deletePromptHistoryItem(historyId: number | string) {
   const history = await getPromptHistory();
   const nextHistory = history.filter((item) => Number(item.id) !== Number(historyId));
   await setPromptHistory(nextHistory);
   return nextHistory;
 }
 
-export async function clearPromptHistory() {
+export async function clearPromptHistory(): Promise<void> {
   await writeLocal(LOCAL_STORAGE_KEYS.history, []);
 }

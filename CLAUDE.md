@@ -72,20 +72,24 @@ To package a release zip:
 ### Template variables
 System variables: `{{date}}`, `{{time}}`, `{{weekday}}`, `{{clipboard}}`, plus Korean aliases.
 All aliases normalize to canonical English keys in `src/shared/template/`.
+Popup scans the main prompt and every enabled per-service override together, resolves a site-level `resolvedPrompt` before dispatch, and retry flows should reuse that stored resolved prompt instead of re-reading current UI state.
 
 ### Injection flow
 1. Popup sends a broadcast message with one target per selected service.
 2. Each target can use default routing, force a new tab, or point to a specific already-open AI tab.
-3. Background queues targets in order and processes them sequentially so focus-sensitive editors are handled more reliably.
-4. On tab readiness, background injects `content/injector.js`.
-5. Injector finds the input, applies the prompt, and waits for click-submit buttons to become enabled when async editors delay state updates.
-6. Results are written back to `chrome.storage.session`.
-7. Popup updates send-status icons and restored broadcast state.
+3. Popup includes `resolvedPrompt` when a target prompt has already been rendered from template variables or a per-service override.
+4. Background prefers `resolvedPrompt` over raw `promptOverride` when injecting or retrying.
+5. Background queues targets in order and processes them sequentially so focus-sensitive editors are handled more reliably.
+6. On tab readiness, background injects `content/injector.js`.
+7. Injector finds the input, applies the prompt, and waits for click-submit buttons to become enabled when async editors delay state updates.
+8. Results are written back to `chrome.storage.session`.
+9. Popup updates send-status icons and restored broadcast state.
 
 ### Open-tab targeting
 - Popup can query the current normal browser window for open AI tabs mapped to configured services.
 - Service cards can target a specific tab, force a new tab, or follow the default reuse policy.
 - Default reuse behavior is stored in `appSettings.reuseExistingTabs` and can be changed from the popup or options page.
+- Matching hostname alone is not enough for reuse. Background also preflights the tab for non-auth/non-settings route, visible editable prompt surface, and required submit controls.
 - Cancelling a broadcast only closes tabs opened for that broadcast. Reused tabs are preserved.
 
 ### Custom service permissions
@@ -96,7 +100,12 @@ All aliases normalize to canonical English keys in `src/shared/template/`.
 ### Import/export and counter semantics
 - JSON export/import currently uses `version: 3` and includes `broadcastCounter`.
 - `{{counter}}` preview uses `current + 1`, but the stored counter only increments when at least one target site is successfully queued.
-- Reset-data flows should clear `broadcastCounter` together with history, favorites, template cache, and site data.
+- Reset-data flows should clear `broadcastCounter` together with history, favorites, template cache, site data, and session runtime state such as `pendingBroadcasts`, `pendingInjections`, `pendingUiToasts`, and `lastBroadcast`.
+- CSV exports are built through `src/shared/export/csv.ts`, which quotes cells and prefixes formula-leading values with `'`.
+
+### Background state consistency
+- Pending injections, pending broadcasts, and selector alerts are mirrored in background memory and written through a serialized mutation chain.
+- History append, last-broadcast sync, counter updates, and completion notifications should happen off the same finalized broadcast state, not ad-hoc read-modify-write calls from multiple surfaces.
 
 ### Popup reopening fallback
 When `chrome.action.openPopup()` fails because Chrome has no active browser window, the background worker stores `lastPrompt`, tries to focus an existing browser window, and finally opens `popup/popup.html` in a standalone popup window.
@@ -138,6 +147,11 @@ Smoke coverage includes:
 - built-in override import repair for invalid `click` + empty selector combinations
 - `broadcastCounter` export/import/reset lifecycle
 - favorites search across title, text, tags, and folders
+- per-service override template resolution and retry prompt preservation
+- CSV export formula escaping
+- pending broadcast result accumulation
+- reusable-tab preflight filtering
+- reset helper cleanup across local and session state
 
 ## Conventions
 

@@ -1,7 +1,7 @@
 # AI Prompt Broadcaster - 프로젝트 구조 분석
 
 > 기준일: 2026-03-31
-> 최종 업데이트: 2026-04-01 (권한 모델, import 검증, counter 수명주기, 검색, QA 보강 반영)
+> 최종 업데이트: 2026-04-01 (권한 모델, import 검증, counter 수명주기, 검색, resolvedPrompt/reset/preflight, QA 보강 반영)
 > 분석 범위: 전체 소스코드, 빌드 시스템, 데이터 흐름, UI 구조
 
 ---
@@ -24,6 +24,9 @@ Chrome Manifest V3 기반 확장 프로그램. 프롬프트 하나를 ChatGPT, G
 - 커스텀 서비스 optional host permission 정리 및 자동 회수
 - built-in override import 검증 강화
 - `broadcastCounter` export/import/reset 정합성
+- site-level `resolvedPrompt`와 retry 일관성
+- background state 직렬화 및 reset 일원화
+- reusable-tab preflight와 CSV export 안전화
 
 ---
 
@@ -86,6 +89,8 @@ prompt-broadcaster/
 │   │       └── toast.ts          # 토스트 알림
 │   └── shared/
 │       ├── chrome/               # Chrome API 래퍼
+│       ├── broadcast/            # resolved prompt / broadcast state helper
+│       ├── export/               # CSV 등 내보내기 helper
 │       ├── i18n/
 │       │   └── messages.ts       # i18n 헬퍼
 │       ├── prompts/              # 히스토리·즐겨찾기·설정·import/export
@@ -233,10 +238,18 @@ prompt-broadcaster/
 
 ### 4.4 런타임 상태 (`src/shared/runtime-state/`)
 
-`chrome.storage.session`에 저장 (세션 범위):
+local 저장:
+- `failedSelectors` — 서비스별 셀렉터 실패 기록
+- `onboardingCompleted` — 온보딩 완료 여부
+
+session 저장:
 - `lastBroadcast` — 현재/최근 방송 진행 상황
 - `pendingUiToasts` — 표시 대기 중인 알림 큐
-- `failedSelectors` — 서비스별 셀렉터 실패 기록
+- `pendingInjections` — 탭별 주입 대기/진행 레코드
+- `pendingBroadcasts` — 방송별 집계 상태
+- `selectorAlerts` — 중복 selector alert 방지용 서명 캐시
+
+background는 위 session 상태를 메모리에도 캐시하고, 단일 mutation 체인으로 직렬화해 동시 완료/취소/리셋 상황에서 siteResults와 카운터가 유실되지 않도록 관리한다.
 
 ### 4.5 템플릿 유틸 (`src/shared/template/`)
 
@@ -267,9 +280,12 @@ prompt-broadcaster/
   ↓
 사용자: 프롬프트 작성 + 서비스 선택
   ↓ (템플릿 변수 있으면 모달)
+팝업: 메인 프롬프트 + 서비스별 override를 함께 스캔하고 site별 `resolvedPrompt` 계산
+  ↓
 팝업 → background: BroadcastMessage 전송
   ↓
 background: 탭 결정 (재사용/새탭/지정탭)
+background: reuse 후보는 hostname 매칭 후 auth/settings path, 입력 surface, submit preflight까지 확인
 background: 대기열에 추가, 순차 처리
   ↓
 background → 탭: content/injector.js 주입
@@ -284,6 +300,9 @@ background: lastBroadcast 업데이트
 팝업: 상태 아이콘 갱신
 히스토리 항목 저장
 ```
+
+retry는 현재 팝업 입력 상태를 다시 읽지 않고, 실패 시점에 저장된 `resolvedPrompt`를 그대로 재사용한다.
+Reset data는 options가 storage를 직접 지우지 않고 background에 `resetAllData`를 요청해 진행 중 broadcast cancel 후 local/session 상태를 함께 초기화한다.
 
 Perplexity 예외:
 - `#ask-input[data-lexical-editor='true']`를 최우선 selector로 강제
@@ -302,9 +321,16 @@ Perplexity 예외:
     tabId?: number,
     reuseExistingTab?: boolean,
     openInNewTab?: boolean
+    promptOverride?: string,
+    resolvedPrompt?: string
   }>
 }
 ```
+
+추가 background action:
+- `resetAllData` — background 주도 전체 초기화
+- `getActiveTabContext` — 템플릿 시스템 변수용 현재 탭 정보 조회
+- `getBroadcastCounter` — `{{counter}}` 미리보기용 현재 값 조회
 
 **콘텐츠 스크립트 → 백그라운드:**
 - `selector-check:report` — 셀렉터 검증 결과
@@ -401,6 +427,11 @@ Perplexity 예외:
   - built-in override import 보정
   - `broadcastCounter` export/import/reset 정합성
   - 즐겨찾기 제목/태그/폴더 검색
+  - 서비스별 override 템플릿 해석 및 retry prompt 보존
+  - CSV export formula injection 방어
+  - pending broadcast state 누적 정합성
+  - reusable-tab preflight 필터링
+  - reset helper의 local/session 동시 초기화
 
 ```bash
 npx playwright install chromium

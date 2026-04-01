@@ -1,21 +1,16 @@
 // @ts-nocheck
 import { AI_SITES } from "../../config/sites";
 import {
-  DEFAULT_SETTINGS,
   exportPromptData,
   getAppSettings,
-  setBroadcastCounter,
   getPromptHistory,
   importPromptData,
-  setAppSettings,
-  setPromptFavorites,
   setPromptHistory,
-  setTemplateVariableCache,
   updateAppSettings,
 } from "../../shared/prompts";
-import { setFailedSelectors, setOnboardingCompleted } from "../../shared/runtime-state";
+import { buildCsvLine } from "../../shared/export/csv";
 import { escapeHTML } from "../../shared/security";
-import { getRuntimeSites, resetSiteSettings, updateRuntimeSite } from "../../shared/sites";
+import { getRuntimeSites, updateRuntimeSite } from "../../shared/sites";
 import { initToastRoot, showToast } from "../../popup/ui/toast";
 import { CHART_COLORS, buildBarChartMarkup, buildDonutMarkup } from "../ui/charts";
 import { applyI18n, isKorean, locale, msg, t } from "./i18n";
@@ -674,18 +669,17 @@ function exportFilteredHistoryAsCsv() {
     t.history.tablePrompt,
   ];
   const lines = rows.map((entry) => {
-    const values = [
+    return buildCsvLine([
       entry.createdAt,
       entry.status,
       getRequestedServices(entry).join("|"),
-      entry.text.replace(/"/g, "\"\""),
-    ];
-    return `"${values.join('","')}"`;
+      entry.text,
+    ]);
   });
 
   downloadBlob(
     `ai-prompt-broadcaster-history-${new Date().toISOString().replace(/[:.]/g, "-")}.csv`,
-    [header.join(","), ...lines].join("\n"),
+    [buildCsvLine(header), ...lines].join("\n"),
     "text/csv;charset=utf-8"
   );
   setStatus(t.history.exportSuccess, "success");
@@ -693,21 +687,12 @@ function exportFilteredHistoryAsCsv() {
 }
 
 async function resetAllData() {
-  await Promise.all([
-    setBroadcastCounter(0),
-    setPromptHistory([]),
-    setPromptFavorites([]),
-    setTemplateVariableCache({}),
-    setFailedSelectors([]),
-    setOnboardingCompleted(false),
-    setAppSettings(DEFAULT_SETTINGS),
-    resetSiteSettings(),
-    chrome.storage.local.remove("lastPrompt"),
-  ]);
+  const response = await chrome.runtime.sendMessage({ action: "resetAllData" });
+  if (!response?.ok) {
+    throw new Error(response?.error ?? t.settings.resetFailed);
+  }
 
-  state.history = [];
-  state.runtimeSites = await getRuntimeSites();
-  state.settings = { ...DEFAULT_SETTINGS };
+  await loadData();
   state.historyPage = 1;
   renderServiceFilterOptions();
   applySettingsToControls();

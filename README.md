@@ -135,6 +135,7 @@ GIF 자리표시자: `docs/assets/usage-demo.gif`
 
 ### 서비스별 프롬프트 오버라이드
 서비스 카드에서 **Custom prompt for this service** 토글을 켜면 해당 서비스에만 전송할 별도 프롬프트를 입력할 수 있습니다. 비워두면 메인 프롬프트가 사용됩니다.
+메인 프롬프트와 서비스별 오버라이드는 모두 같은 템플릿 변수 해석 경로를 타며, 재시도 시에도 최초 전송 시점의 해석된 프롬프트가 그대로 재사용됩니다.
 
 ### 커스텀 서비스 권한
 - 커스텀 서비스는 `url`과 `hostnameAliases`에서 파생된 모든 origin에 대해 optional host permission을 확인합니다.
@@ -147,6 +148,9 @@ GIF 자리표시자: `docs/assets/usage-demo.gif`
 
 ### 전송 결과 비교 뷰
 옵션 페이지(`chrome://extensions` → AI Prompt Broadcaster → 세부정보 → 확장 옵션) 히스토리 탭에서 특정 전송 기록을 클릭하면 모달 하단에 서비스별 전송 결과(✅ 성공 / ❌ 실패 / ⏳ 요청만)가 카드 형태로 나열됩니다.
+
+### Reset data
+옵션 페이지의 **Reset data**는 background worker를 통해 실행됩니다. 진행 중인 방송을 먼저 정리한 뒤 히스토리, 즐겨찾기, 템플릿 캐시, 커스텀 서비스, `lastPrompt` 같은 local 데이터뿐 아니라 `pendingBroadcasts`, `pendingInjections`, `pendingUiToasts`, `lastBroadcast` 같은 session/runtime 상태도 함께 초기화합니다.
 
 ### 새 AI 서비스 추가 방법
 기본 내장 서비스 추가는 `src/config/sites/builtins.ts`에 새 항목을 추가하는 것입니다. `src/config/sites.ts`는 하위 호환용 re-export만 담당합니다.
@@ -298,6 +302,7 @@ GIF placeholder: `docs/assets/usage-demo.gif`
 - The popup can list currently open AI tabs in the active browser window and let you target a specific tab per service.
 - A reusable-tab setting is available in both the popup settings tab and the options page.
 - The default routing mode reuses a matching open AI tab before opening a new one when `reuseExistingTabs` is enabled.
+- Reuse candidates must still pass a lightweight preflight: matching service host, non-auth/non-settings route, visible editable prompt surface, and submit surface availability when the service requires click-submit.
 - Cancelling a broadcast closes only tabs opened by the current broadcast and leaves reused conversation tabs untouched.
 
 ### Template Variables
@@ -329,6 +334,7 @@ Template prompts support both user-defined variables and built-in system variabl
 
 ### Per-Service Prompt Overrides
 Expand a service card in the compose view and enable the **Custom prompt for this service** toggle to enter a prompt that will be used exclusively for that service. The main prompt is used when the override is left blank or the toggle is off.
+Both the main prompt and per-service overrides go through the same template-variable resolution flow, and retry actions reuse the exact resolved prompt captured by the original broadcast.
 
 ### Selector Error Reporting
 When the selector checker detects a stale or missing selector (⚠), a **Report issue** link appears in the settings tab's service management card for that service. Clicking it opens a GitHub issue search scoped to that service so you can check existing reports or file a new one.
@@ -361,7 +367,7 @@ Custom service permissions are managed per site, not per single URL field:
 ### Limitations
 - You must already be logged in to each target AI service.
 - The extension depends on each site's DOM structure and selectors, so automatic injection can break when a site updates its UI.
-- Open-tab discovery is scoped to a normal Chrome browser window and only matches tabs whose hostnames map back to configured services.
+- Open-tab discovery is scoped to a normal Chrome browser window and only considers tabs that map back to a configured service and still expose a usable prompt surface.
 - Some services may restrict automation or synthetic input events, which can force the fallback flow.
 - Support is provided on a best-effort basis and is not guaranteed to work in every environment.
 
@@ -433,6 +439,11 @@ The smoke script verifies:
 - JSON import repair for alias-based custom service permissions and invalid built-in click-submit overrides
 - `broadcastCounter` export/import/reset semantics
 - favorites search across title, tags, and folders
+- per-service override template resolution and retry prompt preservation
+- CSV export escaping for spreadsheet formula-leading cells
+- pending broadcast state accumulation across sequential site completions
+- reusable-tab preflight rejection for auth/settings/non-input tabs
+- reset helper cleanup for both local and session runtime state
 
 If Chromium is not installed yet for Playwright, run:
 

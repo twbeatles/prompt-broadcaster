@@ -1,38 +1,40 @@
-// @ts-nocheck
 import {
   DEFAULT_HISTORY_LIMIT,
   DEFAULT_SETTINGS,
   MAX_HISTORY_LIMIT,
   MIN_HISTORY_LIMIT,
 } from "./constants";
+import type { AppSettings } from "../types/models";
 
-export function safeText(value) {
+export function safeText(value: unknown) {
   return typeof value === "string" ? value : "";
 }
 
-export function safeArray(value) {
-  return Array.isArray(value) ? value : [];
+export function safeArray<T = unknown>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : [];
 }
 
-export function safeObject(value) {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+export function safeObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
-export function normalizeSentTo(sentTo) {
+export function normalizeSentTo(sentTo: unknown) {
   return Array.from(
     new Set(
-      safeArray(sentTo)
-        .filter((entry) => typeof entry === "string" && entry.trim())
-        .map((entry) => entry.trim())
+      safeArray(sentTo).flatMap((entry) =>
+        typeof entry === "string" && entry.trim() ? [entry.trim()] : []
+      )
     )
   );
 }
 
-export function normalizeSiteIdList(value) {
+export function normalizeSiteIdList(value: unknown) {
   return normalizeSentTo(value);
 }
 
-export function normalizeIsoDate(value, fallback = new Date().toISOString()) {
+export function normalizeIsoDate(value: unknown, fallback = new Date().toISOString()) {
   if (typeof value !== "string") {
     return fallback;
   }
@@ -41,7 +43,7 @@ export function normalizeIsoDate(value, fallback = new Date().toISOString()) {
   return Number.isFinite(time) ? new Date(time).toISOString() : fallback;
 }
 
-export function normalizeTemplateDefaults(value) {
+export function normalizeTemplateDefaults(value: unknown): Record<string, string> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return {};
   }
@@ -53,11 +55,11 @@ export function normalizeTemplateDefaults(value) {
   );
 }
 
-export function normalizeBoolean(value, fallback = false) {
+export function normalizeBoolean(value: unknown, fallback = false) {
   return typeof value === "boolean" ? value : fallback;
 }
 
-export function normalizeHistoryLimit(value) {
+export function normalizeHistoryLimit(value: unknown) {
   const numericValue = Number(value);
   if (!Number.isFinite(numericValue)) {
     return DEFAULT_HISTORY_LIMIT;
@@ -69,7 +71,7 @@ export function normalizeHistoryLimit(value) {
   );
 }
 
-export function normalizeBroadcastCounter(value) {
+export function normalizeBroadcastCounter(value: unknown) {
   const numericValue = Number(value);
   if (!Number.isFinite(numericValue)) {
     return 0;
@@ -78,29 +80,30 @@ export function normalizeBroadcastCounter(value) {
   return Math.max(0, Math.round(numericValue));
 }
 
-export function normalizeSettings(value) {
+export function normalizeSettings(value: unknown): AppSettings {
+  const settings = safeObject(value);
   return {
-    historyLimit: normalizeHistoryLimit(value?.historyLimit),
+    historyLimit: normalizeHistoryLimit(settings.historyLimit),
     autoClosePopup: normalizeBoolean(
-      value?.autoClosePopup,
+      settings.autoClosePopup,
       DEFAULT_SETTINGS.autoClosePopup
     ),
     desktopNotifications: normalizeBoolean(
-      value?.desktopNotifications,
+      settings.desktopNotifications,
       DEFAULT_SETTINGS.desktopNotifications
     ),
     reuseExistingTabs: normalizeBoolean(
-      value?.reuseExistingTabs,
+      settings.reuseExistingTabs,
       DEFAULT_SETTINGS.reuseExistingTabs
     ),
   };
 }
 
-export function normalizeStatus(value) {
+export function normalizeStatus(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : "submitted";
 }
 
-export function normalizeStringRecord(value) {
+export function normalizeStringRecord(value: unknown): Record<string, string> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return {};
   }
@@ -112,15 +115,17 @@ export function normalizeStringRecord(value) {
   );
 }
 
-export function sortByDateDesc(items, field = "createdAt") {
+export function sortByDateDesc<T>(items: T[], field = "createdAt") {
   return [...items].sort((left, right) => {
-    const leftTime = Date.parse(left[field] ?? "") || 0;
-    const rightTime = Date.parse(right[field] ?? "") || 0;
+    const leftRecord = left as Record<string, unknown>;
+    const rightRecord = right as Record<string, unknown>;
+    const leftTime = Date.parse(String(leftRecord[field] ?? "")) || 0;
+    const rightTime = Date.parse(String(rightRecord[field] ?? "")) || 0;
     return rightTime - leftTime;
   });
 }
 
-export function ensureUniqueNumericId(items, preferredId) {
+export function ensureUniqueNumericId<T extends { id?: unknown }>(items: T[], preferredId: number) {
   let candidate = Number.isFinite(preferredId) ? preferredId : Date.now();
   const usedIds = new Set(items.map((item) => Number(item.id)));
 
@@ -131,7 +136,7 @@ export function ensureUniqueNumericId(items, preferredId) {
   return candidate;
 }
 
-export function ensureUniqueStringId(items, preferredId) {
+export function ensureUniqueStringId<T extends { id?: unknown }>(items: T[], preferredId: unknown) {
   let candidate =
     typeof preferredId === "string" && preferredId.trim()
       ? preferredId.trim()
@@ -145,7 +150,7 @@ export function ensureUniqueStringId(items, preferredId) {
   return candidate;
 }
 
-export function normalizeTags(value) {
+export function normalizeTags(value: unknown) {
   if (!Array.isArray(value)) {
     return [];
   }

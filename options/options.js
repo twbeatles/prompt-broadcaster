@@ -172,7 +172,9 @@ function safeObject(value) {
 function normalizeSentTo(sentTo) {
   return Array.from(
     new Set(
-      safeArray(sentTo).filter((entry) => typeof entry === "string" && entry.trim()).map((entry) => entry.trim())
+      safeArray(sentTo).flatMap(
+        (entry) => typeof entry === "string" && entry.trim() ? [entry.trim()] : []
+      )
     )
   );
 }
@@ -215,18 +217,19 @@ function normalizeBroadcastCounter(value) {
   return Math.max(0, Math.round(numericValue));
 }
 function normalizeSettings(value) {
+  const settings = safeObject(value);
   return {
-    historyLimit: normalizeHistoryLimit(value?.historyLimit),
+    historyLimit: normalizeHistoryLimit(settings.historyLimit),
     autoClosePopup: normalizeBoolean(
-      value?.autoClosePopup,
+      settings.autoClosePopup,
       DEFAULT_SETTINGS.autoClosePopup
     ),
     desktopNotifications: normalizeBoolean(
-      value?.desktopNotifications,
+      settings.desktopNotifications,
       DEFAULT_SETTINGS.desktopNotifications
     ),
     reuseExistingTabs: normalizeBoolean(
-      value?.reuseExistingTabs,
+      settings.reuseExistingTabs,
       DEFAULT_SETTINGS.reuseExistingTabs
     )
   };
@@ -244,8 +247,10 @@ function normalizeStringRecord(value) {
 }
 function sortByDateDesc(items, field = "createdAt") {
   return [...items].sort((left, right) => {
-    const leftTime = Date.parse(left[field] ?? "") || 0;
-    const rightTime = Date.parse(right[field] ?? "") || 0;
+    const leftRecord = left;
+    const rightRecord = right;
+    const leftTime = Date.parse(String(leftRecord[field] ?? "")) || 0;
+    const rightTime = Date.parse(String(rightRecord[field] ?? "")) || 0;
     return rightTime - leftTime;
   });
 }
@@ -357,28 +362,33 @@ async function getHistoryLimit() {
 }
 
 // src/shared/prompts/history-store.ts
+function asHistoryRecord(entry) {
+  return entry && typeof entry === "object" && !Array.isArray(entry) ? entry : {};
+}
 function buildHistoryEntry(entry) {
-  const createdAt = normalizeIsoDate(entry?.createdAt);
-  const siteResults = normalizeStringRecord(entry?.siteResults);
+  const source = asHistoryRecord(entry);
+  const numericId = Number(source.id);
+  const createdAt = normalizeIsoDate(source.createdAt);
+  const siteResults = normalizeStringRecord(source.siteResults);
   const siteResultKeys = normalizeSiteIdList(Object.keys(siteResults));
   const submittedSiteIds = normalizeSiteIdList(
-    Array.isArray(entry?.submittedSiteIds) ? entry.submittedSiteIds : entry?.sentTo
+    Array.isArray(source.submittedSiteIds) ? source.submittedSiteIds : source.sentTo
   );
   const failedSiteIds = normalizeSiteIdList(
-    Array.isArray(entry?.failedSiteIds) ? entry.failedSiteIds : siteResultKeys.filter((siteId) => !submittedSiteIds.includes(siteId))
+    Array.isArray(source.failedSiteIds) ? source.failedSiteIds : siteResultKeys.filter((siteId) => !submittedSiteIds.includes(siteId))
   );
   const requestedSiteIds = normalizeSiteIdList(
-    Array.isArray(entry?.requestedSiteIds) ? entry.requestedSiteIds : siteResultKeys.length > 0 ? siteResultKeys : submittedSiteIds
+    Array.isArray(source.requestedSiteIds) ? source.requestedSiteIds : siteResultKeys.length > 0 ? siteResultKeys : submittedSiteIds
   );
   return {
-    id: Number.isFinite(entry?.id) ? Number(entry.id) : Date.now(),
-    text: safeText(entry?.text),
+    id: Number.isFinite(numericId) ? numericId : Date.now(),
+    text: safeText(source.text),
     requestedSiteIds,
     submittedSiteIds,
     failedSiteIds,
     sentTo: submittedSiteIds,
     createdAt,
-    status: normalizeStatus(entry?.status),
+    status: normalizeStatus(source.status),
     siteResults
   };
 }
@@ -407,7 +417,9 @@ var SITE_STORAGE_KEYS = Object.freeze({
 var VALID_INPUT_TYPES = /* @__PURE__ */ new Set(["textarea", "contenteditable", "input"]);
 var VALID_SUBMIT_METHODS = /* @__PURE__ */ new Set(["click", "enter", "shift+enter"]);
 var VALID_SELECTOR_CHECK_MODES = /* @__PURE__ */ new Set(["input-and-submit", "input-only"]);
-var BUILT_IN_SITE_IDS = new Set(AI_SITES.map((site) => site.id));
+var BUILT_IN_SITE_IDS = new Set(
+  AI_SITES.map((site) => String(site?.id ?? "")).filter(Boolean)
+);
 var BUILT_IN_SITE_STYLE_MAP = Object.freeze({
   chatgpt: { color: "#10a37f", icon: "GPT" },
   gemini: { color: "#4285f4", icon: "Gem" },
@@ -953,13 +965,6 @@ async function setBuiltInSiteOverrides(overrides) {
   await writeLocal2(SITE_STORAGE_KEYS.builtInSiteOverrides, normalized);
   return normalized;
 }
-async function resetStoredSiteSettings() {
-  await Promise.all([
-    writeLocal2(SITE_STORAGE_KEYS.customSites, []),
-    writeLocal2(SITE_STORAGE_KEYS.builtInSiteStates, {}),
-    writeLocal2(SITE_STORAGE_KEYS.builtInSiteOverrides, {})
-  ]);
-}
 
 // src/shared/sites/runtime-sites.ts
 function getCustomSitePermissionPatterns(site) {
@@ -1029,7 +1034,10 @@ async function saveBuiltInSiteOverride(siteId, overrideDraft) {
     throw new Error("Built-in site not found.");
   }
   const overrides = await getBuiltInSiteOverrides();
-  overrides[siteId] = sanitizeBuiltInOverride(overrideDraft, source);
+  overrides[siteId] = sanitizeBuiltInOverride(
+    overrideDraft ?? {},
+    source
+  );
   await setBuiltInSiteOverrides(overrides);
   return overrides[siteId];
 }
@@ -1065,11 +1073,6 @@ async function setRuntimeSiteEnabled(siteId, enabled) {
     (site) => site.id === siteId ? { ...site, enabled: Boolean(enabled) } : site
   );
   await setCustomSites(nextSites);
-}
-async function resetSiteSettings() {
-  const customSites = await getCustomSites();
-  await resetStoredSiteSettings();
-  await cleanupUnusedCustomSitePermissions(customSites, []);
 }
 
 // src/shared/prompts/template-cache-store.ts
@@ -1266,59 +1269,17 @@ async function importPromptData(jsonString) {
   };
 }
 
-// src/shared/runtime-state/constants.ts
-var LOCAL_RUNTIME_KEYS = Object.freeze({
-  failedSelectors: "failedSelectors",
-  onboardingCompleted: "onboardingCompleted"
-});
-var SESSION_RUNTIME_KEYS = Object.freeze({
-  pendingUiToasts: "pendingUiToasts",
-  lastBroadcast: "lastBroadcast"
-});
-
-// src/shared/runtime-state/normalizers.ts
-function safeText3(value) {
-  return typeof value === "string" ? value.trim() : "";
+// src/shared/export/csv.ts
+function normalizeCsvCellValue(value) {
+  const text = String(value ?? "");
+  return /^[=+\-@]/.test(text) ? `'${text}` : text;
 }
-function normalizeBoolean3(value, fallback = false) {
-  return typeof value === "boolean" ? value : fallback;
+function escapeCsvCell(value) {
+  const normalized = normalizeCsvCellValue(value).replace(/"/g, '""');
+  return `"${normalized}"`;
 }
-function normalizeIsoDate2(value, fallback = (/* @__PURE__ */ new Date()).toISOString()) {
-  if (typeof value !== "string") {
-    return fallback;
-  }
-  const time = Date.parse(value);
-  return Number.isFinite(time) ? new Date(time).toISOString() : fallback;
-}
-function normalizeArray(value) {
-  return Array.isArray(value) ? value : [];
-}
-function normalizeFailedSelectorEntry(entry) {
-  return {
-    serviceId: safeText3(entry?.serviceId),
-    selector: safeText3(entry?.selector),
-    source: safeText3(entry?.source),
-    timestamp: normalizeIsoDate2(entry?.timestamp)
-  };
-}
-
-// src/shared/runtime-state/storage.ts
-async function writeStorage(area, key, value) {
-  await chrome.storage[area].set({ [key]: value });
-}
-
-// src/shared/runtime-state/failed-selectors.ts
-async function setFailedSelectors(entries) {
-  const normalized = normalizeArray(entries).map((entry) => normalizeFailedSelectorEntry(entry)).filter((entry) => entry.serviceId);
-  await writeStorage("local", LOCAL_RUNTIME_KEYS.failedSelectors, normalized);
-  return normalized;
-}
-
-// src/shared/runtime-state/onboarding.ts
-async function setOnboardingCompleted(completed) {
-  const normalized = normalizeBoolean3(completed, false);
-  await writeStorage("local", LOCAL_RUNTIME_KEYS.onboardingCompleted, normalized);
-  return normalized;
+function buildCsvLine(values) {
+  return (Array.isArray(values) ? values : []).map((value) => escapeCsvCell(value)).join(",");
 }
 
 // src/popup/ui/toast.ts
@@ -2250,37 +2211,27 @@ function exportFilteredHistoryAsCsv() {
     t.history.tablePrompt
   ];
   const lines = rows.map((entry) => {
-    const values = [
+    return buildCsvLine([
       entry.createdAt,
       entry.status,
       getRequestedServices(entry).join("|"),
-      entry.text.replace(/"/g, '""')
-    ];
-    return `"${values.join('","')}"`;
+      entry.text
+    ]);
   });
   downloadBlob(
     `ai-prompt-broadcaster-history-${(/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-")}.csv`,
-    [header.join(","), ...lines].join("\n"),
+    [buildCsvLine(header), ...lines].join("\n"),
     "text/csv;charset=utf-8"
   );
   setStatus(t.history.exportSuccess, "success");
   showAppToast(t.history.exportSuccess, "success", 1800);
 }
 async function resetAllData() {
-  await Promise.all([
-    setBroadcastCounter(0),
-    setPromptHistory([]),
-    setPromptFavorites([]),
-    setTemplateVariableCache({}),
-    setFailedSelectors([]),
-    setOnboardingCompleted(false),
-    setAppSettings(DEFAULT_SETTINGS),
-    resetSiteSettings(),
-    chrome.storage.local.remove("lastPrompt")
-  ]);
-  state.history = [];
-  state.runtimeSites = await getRuntimeSites();
-  state.settings = { ...DEFAULT_SETTINGS };
+  const response = await chrome.runtime.sendMessage({ action: "resetAllData" });
+  if (!response?.ok) {
+    throw new Error(response?.error ?? t.settings.resetFailed);
+  }
+  await loadData();
   state.historyPage = 1;
   renderServiceFilterOptions();
   applySettingsToControls();

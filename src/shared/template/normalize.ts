@@ -1,23 +1,22 @@
-// @ts-nocheck
 import {
   SYSTEM_TEMPLATE_ALIAS_MAP,
   SYSTEM_TEMPLATE_DEFINITIONS,
   SYSTEM_TEMPLATE_KEYS,
 } from "./constants";
 
-export function pad2(value) {
+export function pad2(value: number | string) {
   return String(value).padStart(2, "0");
 }
 
-export function normalizeLocale(locale) {
+export function normalizeLocale(locale: unknown) {
   return typeof locale === "string" && locale.toLowerCase().startsWith("ko") ? "ko" : "en";
 }
 
-export function normalizeTemplateVariableName(value) {
+export function normalizeTemplateVariableName(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-export function canonicalizeTemplateVariableName(value) {
+export function canonicalizeTemplateVariableName(value: unknown) {
   const normalizedValue = normalizeTemplateVariableName(value);
   if (!normalizedValue) {
     return "";
@@ -26,11 +25,11 @@ export function canonicalizeTemplateVariableName(value) {
   return SYSTEM_TEMPLATE_ALIAS_MAP.get(normalizedValue.toLowerCase()) ?? normalizedValue;
 }
 
-export function isSystemTemplateVariable(name) {
+export function isSystemTemplateVariable(name: unknown) {
   return SYSTEM_TEMPLATE_KEYS.has(canonicalizeTemplateVariableName(name));
 }
 
-export function getTemplateVariableDisplayName(name, locale = "en") {
+export function getTemplateVariableDisplayName(name: unknown, locale = "en") {
   const canonicalName = canonicalizeTemplateVariableName(name);
   if (!SYSTEM_TEMPLATE_KEYS.has(canonicalName)) {
     return normalizeTemplateVariableName(name);
@@ -40,7 +39,7 @@ export function getTemplateVariableDisplayName(name, locale = "en") {
   return SYSTEM_TEMPLATE_DEFINITIONS[canonicalName].labels[normalizedLocale];
 }
 
-export function normalizeTemplateValueRecord(values = {}) {
+export function normalizeTemplateValueRecord(values: unknown = {}) {
   if (!values || typeof values !== "object" || Array.isArray(values)) {
     return {};
   }

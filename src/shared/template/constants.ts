@@ -1,4 +1,3 @@
-// @ts-nocheck
 export const TEMPLATE_VARIABLE_PATTERN = /{{\s*([^{}]+?)\s*}}/g;
 
 export const SYSTEM_TEMPLATE_VARIABLES = Object.freeze({
@@ -12,6 +11,14 @@ export const SYSTEM_TEMPLATE_VARIABLES = Object.freeze({
   counter: "counter",
   random: "random",
 });
+
+interface SystemTemplateDefinition {
+  aliases: string[];
+  labels: {
+    ko: string;
+    en: string;
+  };
+}
 
 export const SYSTEM_TEMPLATE_DEFINITIONS = Object.freeze({
   [SYSTEM_TEMPLATE_VARIABLES.date]: {
@@ -50,15 +57,15 @@ export const SYSTEM_TEMPLATE_DEFINITIONS = Object.freeze({
     aliases: ["random", "랜덤"],
     labels: { ko: "랜덤 숫자", en: "random number" },
   },
-});
+}) as Readonly<Record<string, SystemTemplateDefinition>>;
 
-export const SYSTEM_TEMPLATE_ALIAS_MAP = new Map(
+export const SYSTEM_TEMPLATE_ALIAS_MAP = new Map<string, string>(
   Object.entries(SYSTEM_TEMPLATE_DEFINITIONS).flatMap(([canonicalName, definition]) =>
     definition.aliases.map((alias) => [alias.toLowerCase(), canonicalName])
   )
 );
 
-export const SYSTEM_TEMPLATE_KEYS = new Set(Object.keys(SYSTEM_TEMPLATE_DEFINITIONS));
+export const SYSTEM_TEMPLATE_KEYS = new Set<string>(Object.keys(SYSTEM_TEMPLATE_DEFINITIONS));
 
 export const WEEKDAY_LOCALES = Object.freeze({
   ko: "ko-KR",

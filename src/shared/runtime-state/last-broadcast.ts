@@ -1,14 +1,16 @@
-// @ts-nocheck
 import { SESSION_RUNTIME_KEYS } from "./constants";
 import { normalizeLastBroadcast } from "./normalizers";
 import { readStorage, writeStorage } from "./storage";
+import type { LastBroadcastSummary } from "../types/models";
 
-export async function getLastBroadcast() {
+export async function getLastBroadcast(): Promise<LastBroadcastSummary | null> {
   const value = await readStorage("session", SESSION_RUNTIME_KEYS.lastBroadcast, null);
   return normalizeLastBroadcast(value);
 }
 
-export async function setLastBroadcast(broadcast) {
+export async function setLastBroadcast(
+  broadcast: LastBroadcastSummary | null
+): Promise<LastBroadcastSummary | null> {
   const normalized = normalizeLastBroadcast(broadcast);
   await writeStorage("session", SESSION_RUNTIME_KEYS.lastBroadcast, normalized);
   return normalized;

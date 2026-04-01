@@ -22,3 +22,4 @@ export {
   getPendingUiToasts,
   setPendingUiToasts,
 } from "./ui-toasts";
+export { resetPersistedExtensionState } from "./reset";

@@ -1,13 +1,23 @@
-// @ts-nocheck
-export function safeText(value) {
+import type {
+  FailedSelectorRecord,
+  LastBroadcastSummary,
+  UiToast,
+  UiToastAction,
+} from "../types/models";
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+export function safeText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-export function normalizeBoolean(value, fallback = false) {
+export function normalizeBoolean(value: unknown, fallback = false) {
   return typeof value === "boolean" ? value : fallback;
 }
 
-export function normalizeIsoDate(value, fallback = new Date().toISOString()) {
+export function normalizeIsoDate(value: unknown, fallback = new Date().toISOString()) {
   if (typeof value !== "string") {
     return fallback;
   }
@@ -16,45 +26,50 @@ export function normalizeIsoDate(value, fallback = new Date().toISOString()) {
   return Number.isFinite(time) ? new Date(time).toISOString() : fallback;
 }
 
-export function normalizeArray(value) {
-  return Array.isArray(value) ? value : [];
+export function normalizeArray<T = unknown>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : [];
 }
 
-export function normalizeFailedSelectorEntry(entry) {
+export function normalizeFailedSelectorEntry(entry: unknown): FailedSelectorRecord {
+  const source = isPlainObject(entry) ? entry : {};
   return {
-    serviceId: safeText(entry?.serviceId),
-    selector: safeText(entry?.selector),
-    source: safeText(entry?.source),
-    timestamp: normalizeIsoDate(entry?.timestamp),
+    serviceId: safeText(source.serviceId),
+    selector: safeText(source.selector),
+    source: safeText(source.source),
+    timestamp: normalizeIsoDate(source.timestamp),
   };
 }
 
-export function normalizeToastAction(action) {
+export function normalizeToastAction(action: unknown): UiToastAction {
+  const source = isPlainObject(action) ? action : {};
   return {
-    id: safeText(action?.id) || `action-${Date.now()}`,
-    label: safeText(action?.label) || "Action",
-    variant: safeText(action?.variant) || "default",
+    id: safeText(source.id) || `action-${Date.now()}`,
+    label: safeText(source.label) || "Action",
+    variant: safeText(source.variant) || "default",
   };
 }
 
-export function normalizeUiToast(entry) {
+export function normalizeUiToast(entry: unknown): UiToast {
+  const source = isPlainObject(entry) ? entry : {};
   return {
-    id: safeText(entry?.id) || `toast-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    message: safeText(entry?.message),
-    type: safeText(entry?.type) || "info",
-    duration: Number.isFinite(Number(entry?.duration)) ? Number(entry.duration) : 3000,
-    createdAt: normalizeIsoDate(entry?.createdAt),
-    actions: normalizeArray(entry?.actions).map((action) => normalizeToastAction(action)),
-    meta: entry?.meta && typeof entry.meta === "object" && !Array.isArray(entry.meta)
-      ? entry.meta
+    id: safeText(source.id) || `toast-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    message: safeText(source.message),
+    type: safeText(source.type) || "info",
+    duration: Number.isFinite(Number(source.duration)) ? Number(source.duration) : 3000,
+    createdAt: normalizeIsoDate(source.createdAt),
+    actions: normalizeArray(source.actions).map((action) => normalizeToastAction(action)),
+    meta: isPlainObject(source.meta)
+      ? source.meta
       : {},
   };
 }
 
-export function normalizeLastBroadcast(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+export function normalizeLastBroadcast(value: unknown): LastBroadcastSummary | null {
+  if (!isPlainObject(value)) {
     return null;
   }
+
+  const siteResults = isPlainObject(value.siteResults) ? value.siteResults : {};
 
   return {
     broadcastId: safeText(value.broadcastId),
@@ -71,14 +86,11 @@ export function normalizeLastBroadcast(value) {
     failedSiteIds: normalizeArray(value.failedSiteIds)
       .map((siteId) => safeText(siteId))
       .filter(Boolean),
-    siteResults:
-      value.siteResults && typeof value.siteResults === "object" && !Array.isArray(value.siteResults)
-        ? Object.fromEntries(
-            Object.entries(value.siteResults)
-              .map(([key, status]) => [safeText(key), safeText(status)])
-              .filter(([key, status]) => key && status)
-          )
-        : {},
+    siteResults: Object.fromEntries(
+      Object.entries(siteResults)
+        .map(([key, status]) => [safeText(key), safeText(status)])
+        .filter(([key, status]) => key && status)
+    ),
     startedAt: normalizeIsoDate(value.startedAt),
     finishedAt: safeText(value.finishedAt) ? normalizeIsoDate(value.finishedAt) : "",
   };

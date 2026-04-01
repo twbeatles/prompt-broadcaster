@@ -79,8 +79,14 @@ The smoke flow loads local fixtures from `qa/fixtures/` and validates the built 
 - built-in override import repair for `click` configurations with empty selectors
 - `broadcastCounter` export/import/reset consistency
 - favorites search matching title, tags, and folders
+- per-service override template resolution and retry prompt preservation
+- CSV export escaping for spreadsheet formula-leading values
+- pending broadcast state accumulation across sequential site completions
+- reusable-tab preflight filtering for auth/settings/non-input tabs
+- reset helper cleanup across local and session runtime state
 
-The smoke suite does not cover live Chrome popup behavior such as open-tab discovery, per-service tab targeting, or the reusable-tab setting. Check those manually in a real browser window before release.
+The smoke suite still does not cover full live Chrome popup behavior such as real-window open-tab discovery or explicit tab targeting. Check those manually in a real browser window before release.
+Run `npm run build` first and then `npm run qa:smoke` after the build finishes. The smoke script reads the built files from `dist/` and should not be started in parallel with the build.
 
 If Playwright does not have a browser installed yet, run:
 
@@ -146,12 +152,15 @@ The generated ZIP contains the built extension from `dist/` only.
 6. Open the toolbar popup and confirm no modal is shown on initial load
 7. Open and close the favorites-save modal from the popup and confirm both `닫기` and `취소` work
 8. In the popup, verify that currently open AI tabs appear under the matching service cards and that `Reuse open AI tabs` behaves as expected
+   Confirm that auth pages, settings pages, and tabs without a usable prompt surface are not offered as reusable targets
 9. Verify prompt submission on all built-in services, with dedicated checks for Claude click-submit behavior and Perplexity conditional submit behavior
    For Perplexity specifically, confirm that the prompt is inserted once into `#ask-input[data-lexical-editor='true']` and that submission still succeeds through the standard submit path
-10. Add, import, delete, and reset a custom service and confirm optional host permissions are granted and cleaned up only for the required origins
-11. Confirm that cancelling a broadcast leaves reused tabs open and closes only newly opened tabs
-12. Run the packaging script for your platform
-13. Upload the generated ZIP to Chrome Web Store or attach it to a GitHub release
+10. Verify that a per-service prompt override with template variables resolves correctly and that retry reuses the originally rendered prompt even after editing the popup text
+11. Add, import, delete, and reset a custom service and confirm optional host permissions are granted and cleaned up only for the required origins
+12. Confirm that cancelling a broadcast leaves reused tabs open and closes only newly opened tabs
+13. Trigger **Reset data** and confirm it clears both local prompt data and in-memory/session runtime state
+14. Run the packaging script for your platform
+15. Upload the generated ZIP to Chrome Web Store or attach it to a GitHub release
 
 ## Chrome Web Store Release Checklist
 
@@ -174,6 +183,9 @@ Before uploading, run these manual checks in a real Chrome window:
 - Claude specifically reaches a real prompt submit path rather than clicking a decoy action button
 - Perplexity specifically uses the exact Lexical composer selector and should not duplicate the prompt text before submit
 - custom-service add/import/delete/reset keeps optional host permissions aligned with `url + hostnameAliases`
+- per-service override retry still sends the originally resolved prompt
+- reusable-tab discovery excludes auth/settings/non-input tabs
+- reset-data clears both local prompt data and session runtime state
 - options page, history, favorites, and service editor text render correctly in Korean
 - standalone popup fallback still opens when Chrome cannot surface the toolbar action popup
 
@@ -198,6 +210,7 @@ Before uploading, run these manual checks in a real Chrome window:
 - Confirm the target AI tabs are already open in the same window
 - Rebuild and reload the extension if you recently changed popup or background code
 - Make sure the tab URL still matches one of the configured service hostnames or hostname aliases
+- Reuse candidates also need a visible editable prompt surface, a non-auth/non-settings route, and any required click-submit controls
 
 ### Packaging fails with file lock or `EBUSY`
 

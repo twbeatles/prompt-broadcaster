@@ -1,5 +1,10 @@
 // @ts-nocheck
 import {
+  detectTemplateVariablesForTargets as detectBroadcastTemplateVariables,
+  findMissingTemplateValuesForTargets as findMissingBroadcastTemplateValues,
+  resolveBroadcastTargets,
+} from "../../shared/broadcast/resolution";
+import {
   SYSTEM_TEMPLATE_VARIABLES,
   buildSystemTemplateValues,
   detectTemplateVariables,
@@ -647,7 +652,12 @@ function renderLists() {
 }
 
 function currentPromptVariables() {
-  return detectTemplateVariables(promptInput.value);
+  const checkedTargets = buildComposerBroadcastTargets(checkedSiteIds(), promptInput.value);
+  if (checkedTargets.length === 0) {
+    return detectTemplateVariables(promptInput.value);
+  }
+
+  return detectTemplateVariablesForTargets(checkedTargets);
 }
 
 function renderTemplateSummary() {
@@ -750,25 +760,85 @@ function applySettingsToControls() {
     : t.reuseTabsDescDisabled;
 }
 
-function buildBroadcastTargets(siteIds = []) {
+function buildComposerBroadcastTargets(siteIds = [], basePrompt = promptInput.value) {
   return normalizeSiteIdList(siteIds).map((siteId) => {
     const targetSelection = state.siteTargetSelections?.[siteId];
     const promptOverride =
       typeof state.sitePromptOverrides?.[siteId] === "string" &&
       state.sitePromptOverrides[siteId].trim()
-        ? state.sitePromptOverrides[siteId].trim()
-        : undefined;
+        ? state.sitePromptOverrides[siteId]
+        : "";
+    const target = {
+      id: siteId,
+      promptTemplate: promptOverride.trim() ? promptOverride : String(basePrompt ?? ""),
+    };
 
     if (typeof targetSelection === "number") {
-      return { id: siteId, tabId: targetSelection, ...(promptOverride ? { promptOverride } : {}) };
+      return { ...target, tabId: targetSelection };
     }
 
     if (targetSelection === "new") {
-      return { id: siteId, reuseExistingTab: false, target: "new", ...(promptOverride ? { promptOverride } : {}) };
+      return { ...target, reuseExistingTab: false, target: "new" };
     }
 
-    return { id: siteId, ...(promptOverride ? { promptOverride } : {}) };
+    return target;
   });
+}
+
+function buildRuntimeBroadcastTargets(targets = []) {
+  return (Array.isArray(targets) ? targets : [])
+    .filter((target) => target && typeof target.id === "string" && target.id.trim())
+    .map((target) => {
+      const payload = { id: target.id };
+
+      if (typeof target.tabId === "number") {
+        payload.tabId = target.tabId;
+      } else if (target.target === "new" || target.reuseExistingTab === false) {
+        payload.reuseExistingTab = false;
+        payload.target = "new";
+      }
+
+      if (typeof target.promptOverride === "string" && target.promptOverride.trim()) {
+        payload.promptOverride = target.promptOverride;
+      }
+
+      if (typeof target.resolvedPrompt === "string") {
+        payload.resolvedPrompt = target.resolvedPrompt;
+      }
+
+      return payload;
+    });
+}
+
+function detectTemplateVariablesForTargets(targets = []) {
+  return detectBroadcastTemplateVariables(targets);
+}
+
+function findMissingTemplateValuesForTargets(targets = [], userValues = {}) {
+  return findMissingBroadcastTemplateValues(targets, userValues);
+}
+
+function buildResolvedBroadcastTargets(targets = [], values = {}) {
+  return resolveBroadcastTargets(targets, values);
+}
+
+function buildTemplatePreviewText(targets = [], values = {}) {
+  const resolvedTargets = buildResolvedBroadcastTargets(targets, values);
+  const uniquePrompts = Array.from(
+    new Set(
+      resolvedTargets
+        .map((target) => target.resolvedPrompt)
+        .filter((prompt) => typeof prompt === "string")
+    )
+  );
+
+  if (uniquePrompts.length <= 1) {
+    return uniquePrompts[0] ?? "";
+  }
+
+  return resolvedTargets
+    .map((target) => `[${getRuntimeSiteLabel(target.id)}]\n${target.resolvedPrompt}`)
+    .join("\n\n---\n\n");
 }
 
 async function loadStoredData() {
@@ -1001,7 +1071,8 @@ function setSiteCardState(siteId, cardState) {
   }
 }
 
-function addRetryButton(siteId, finalPrompt) {
+function addRetryButton(target, mainPrompt) {
+  const siteId = target?.id;
   const card = getSiteCardElement(siteId);
   if (!card) {
     return;
@@ -1023,18 +1094,19 @@ function addRetryButton(siteId, finalPrompt) {
       await refreshOpenSiteTabs();
       const response = await chrome.runtime.sendMessage({
         action: "broadcast",
-        prompt: finalPrompt,
-        sites: buildBroadcastTargets([siteId]),
+        prompt: mainPrompt,
+        sites: buildRuntimeBroadcastTargets([target]),
       });
-      if (response?.ok) {
+      const failedIds = Array.isArray(response?.failedTabSiteIds) ? response.failedTabSiteIds : [];
+      if (response?.ok && !failedIds.includes(siteId)) {
         setSiteCardState(siteId, "sent");
       } else {
         setSiteCardState(siteId, "failed");
-        addRetryButton(siteId, finalPrompt);
+        addRetryButton(target, mainPrompt);
       }
     } catch (_error) {
       setSiteCardState(siteId, "failed");
-      addRetryButton(siteId, finalPrompt);
+      addRetryButton(target, mainPrompt);
     }
   });
   card.appendChild(retryBtn);
@@ -1052,13 +1124,13 @@ function triggerRipple(button, event) {
   ripple.addEventListener("animationend", () => ripple.remove(), { once: true });
 }
 
-async function sendResolvedPrompt(finalPrompt, sites) {
+async function sendResolvedPrompt(mainPrompt, targets) {
   if (state.isSending) {
     return;
   }
 
   const siteIds = normalizeSiteIdList(
-    sites.map((site) => (typeof site === "string" ? site : site?.id))
+    (Array.isArray(targets) ? targets : []).map((target) => target?.id)
   );
 
   setSendingState(true);
@@ -1075,15 +1147,18 @@ async function sendResolvedPrompt(finalPrompt, sites) {
 
     const response = await chrome.runtime.sendMessage({
       action: "broadcast",
-      prompt: finalPrompt,
-      sites: buildBroadcastTargets(siteIds),
+      prompt: mainPrompt,
+      sites: buildRuntimeBroadcastTargets(targets),
     });
 
     if (response?.ok) {
       if (Array.isArray(response.failedTabSiteIds)) {
         response.failedTabSiteIds.forEach((siteId) => {
           setSiteCardState(siteId, "failed");
-          addRetryButton(siteId, finalPrompt);
+          const failedTarget = targets.find((target) => target.id === siteId);
+          if (failedTarget) {
+            addRetryButton(failedTarget, mainPrompt);
+          }
         });
       }
 
@@ -1096,13 +1171,22 @@ async function sendResolvedPrompt(finalPrompt, sites) {
     } else {
       siteIds.forEach((siteId) => {
         setSiteCardState(siteId, "failed");
-        addRetryButton(siteId, finalPrompt);
+        const failedTarget = targets.find((target) => target.id === siteId);
+        if (failedTarget) {
+          addRetryButton(failedTarget, mainPrompt);
+        }
       });
       setStatus(t.error(response?.error ?? getUnknownErrorText()), "error");
     }
   } catch (error) {
     console.error("[AI Prompt Broadcaster] Broadcast send failed.", error);
-    siteIds.forEach((siteId) => setSiteCardState(siteId, "failed"));
+    siteIds.forEach((siteId) => {
+      setSiteCardState(siteId, "failed");
+      const failedTarget = targets.find((target) => target.id === siteId);
+      if (failedTarget) {
+        addRetryButton(failedTarget, mainPrompt);
+      }
+    });
     setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
     showAppToast(t.error(error?.message ?? getUnknownErrorText()), "error", 4000);
     setSendingState(false);
@@ -1376,9 +1460,9 @@ async function confirmTemplateModalSend() {
   await updateTemplateVariableCache(cachedValues);
   state.templateVariableCache = mergeTemplateSources(state.templateVariableCache, cachedValues);
 
-  const finalPrompt = renderTemplatePrompt(modalState.prompt, previewState.values);
+  const resolvedTargets = buildResolvedBroadcastTargets(modalState.targets, previewState.values);
   hideTemplateModal();
-  await sendResolvedPrompt(finalPrompt, modalState.sites);
+  await sendResolvedPrompt(modalState.prompt, resolvedTargets);
 }
 
 function buildTemplateSendPreviewStateV2() {
@@ -1388,8 +1472,11 @@ function buildTemplateSendPreviewStateV2() {
   }
 
   const values = mergeTemplateSources(modalState.systemValues, modalState.userValues);
-  const preview = renderTemplatePrompt(modalState.prompt, values);
-  const missingUserValues = findMissingTemplateValues(modalState.prompt, modalState.userValues);
+  const preview = buildTemplatePreviewText(modalState.targets, values);
+  const missingUserValues = findMissingTemplateValuesForTargets(
+    modalState.targets,
+    modalState.userValues
+  );
   const clipboardRequired = modalState.variables.some(
     (variable) => variable.name === SYSTEM_TEMPLATE_VARIABLES.clipboard
   );
@@ -1465,11 +1552,11 @@ function renderTemplateModalV2() {
   templateModalConfirm.disabled = Boolean(errorMessage);
 }
 
-async function openTemplateModalV2(prompt, sites) {
-  const variables = detectTemplateVariables(prompt);
+async function openTemplateModalV2(prompt, targets) {
+  const variables = detectTemplateVariablesForTargets(targets);
 
   if (variables.length === 0) {
-    await sendResolvedPrompt(prompt, sites);
+    await sendResolvedPrompt(prompt, buildResolvedBroadcastTargets(targets));
     return;
   }
 
@@ -1501,7 +1588,7 @@ async function openTemplateModalV2(prompt, sites) {
 
   state.pendingTemplateSend = {
     prompt,
-    sites,
+    targets,
     variables,
     userValues,
     systemValues,
@@ -1718,6 +1805,7 @@ function renderSiteCheckboxes() {
     checkbox.addEventListener("change", () => {
       card.classList.toggle("checked", checkbox.checked);
       syncToggleAllLabel();
+      renderTemplateSummary();
     });
 
     const siteStatus = document.createElement("span");
@@ -1911,6 +1999,7 @@ function renderSiteCheckboxesPanel() {
       const nowActive = Boolean(overrideTextarea.value.trim());
       overrideToggle.classList.toggle("active", nowActive);
       overrideToggle.textContent = nowActive ? "✎ " + (msg("popup_override_active") || "Custom") : "✎";
+      renderTemplateSummary();
     });
 
     overrideToggle.addEventListener("click", () => {
@@ -2359,6 +2448,7 @@ async function handleSend() {
     return;
   }
 
+  const composerTargets = buildComposerBroadcastTargets(selectedSiteIds, prompt);
   const selectedSites = state.runtimeSites.filter((site) => selectedSiteIds.includes(site.id));
 
   for (const site of selectedSites) {
@@ -2375,7 +2465,7 @@ async function handleSend() {
   }
 
   await chrome.storage.local.set({ lastPrompt: prompt });
-  await openTemplateModalV2(prompt, selectedSiteIds);
+  await openTemplateModalV2(prompt, composerTargets);
 }
 
 function bindGlobalEvents() {
@@ -2402,6 +2492,7 @@ function bindGlobalEvents() {
     });
 
     syncToggleAllLabel();
+    renderTemplateSummary();
   });
 
   saveFavoriteBtn.addEventListener("click", () => {

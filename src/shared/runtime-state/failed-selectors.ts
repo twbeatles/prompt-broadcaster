@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { LOCAL_RUNTIME_KEYS } from "./constants";
 import {
   normalizeArray,
@@ -6,15 +5,16 @@ import {
   safeText,
 } from "./normalizers";
 import { readStorage, writeStorage } from "./storage";
+import type { FailedSelectorRecord } from "../types/models";
 
-export async function getFailedSelectors() {
+export async function getFailedSelectors(): Promise<FailedSelectorRecord[]> {
   const rawValue = await readStorage("local", LOCAL_RUNTIME_KEYS.failedSelectors, []);
   return normalizeArray(rawValue)
     .map((entry) => normalizeFailedSelectorEntry(entry))
     .filter((entry) => entry.serviceId);
 }
 
-export async function setFailedSelectors(entries) {
+export async function setFailedSelectors(entries: unknown[]): Promise<FailedSelectorRecord[]> {
   const normalized = normalizeArray(entries)
     .map((entry) => normalizeFailedSelectorEntry(entry))
     .filter((entry) => entry.serviceId);
@@ -22,7 +22,11 @@ export async function setFailedSelectors(entries) {
   return normalized;
 }
 
-export async function markFailedSelector(serviceId, selector = "", source = "injector") {
+export async function markFailedSelector(
+  serviceId: unknown,
+  selector = "",
+  source = "injector"
+): Promise<FailedSelectorRecord[]> {
   const normalizedServiceId = safeText(serviceId);
   if (!normalizedServiceId) {
     return [];
@@ -42,7 +46,7 @@ export async function markFailedSelector(serviceId, selector = "", source = "inj
   return setFailedSelectors(next);
 }
 
-export async function clearFailedSelector(serviceId) {
+export async function clearFailedSelector(serviceId: unknown): Promise<FailedSelectorRecord[]> {
   const normalizedServiceId = safeText(serviceId);
   const current = await getFailedSelectors();
   const next = current.filter((entry) => entry.serviceId !== normalizedServiceId);

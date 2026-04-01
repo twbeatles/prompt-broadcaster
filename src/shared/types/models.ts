@@ -1,6 +1,19 @@
 export type InputType = "textarea" | "contenteditable" | "input";
 export type SubmitMethod = "click" | "enter" | "shift+enter";
 export type SelectorCheckMode = "input-and-submit" | "input-only";
+export type TemplateVariableKind = "system" | "user";
+
+export interface AppSettings {
+  historyLimit: number;
+  autoClosePopup: boolean;
+  desktopNotifications: boolean;
+  reuseExistingTabs: boolean;
+}
+
+export interface TemplateVariableDescriptor {
+  name: string;
+  kind: TemplateVariableKind;
+}
 
 export interface SiteConfig {
   id: string;
@@ -30,6 +43,30 @@ export interface RuntimeSite extends SiteConfig {
   deletable: boolean;
   editable: boolean;
   permissionPatterns: string[];
+}
+
+export interface BroadcastTargetSelection {
+  id: string;
+  tabId?: number | null;
+  reuseExistingTab?: boolean;
+  openInNewTab?: boolean;
+  target?: string;
+  promptOverride?: string;
+}
+
+export interface ResolvedBroadcastTarget extends BroadcastTargetSelection {
+  resolvedPrompt: string;
+}
+
+export interface OpenSiteTab {
+  siteId: string;
+  siteName: string;
+  tabId: number;
+  title: string;
+  url: string;
+  active: boolean;
+  status: string;
+  windowId: number | null;
 }
 
 export interface PromptHistoryItem {
@@ -100,6 +137,7 @@ export interface PendingInjectionRecord {
   siteId: string;
   prompt: string;
   site: RuntimeSite;
+  tabId?: number;
   createdAt: number;
   injected: boolean;
   status: string;
@@ -117,4 +155,19 @@ export interface PendingBroadcastRecord {
   siteResults: Record<string, string>;
   startedAt: string;
   status: string;
+  originTabId?: number | null;
+  originWindowId?: number | null;
+}
+
+export interface ReusableTabSurfaceSnapshot {
+  pathname?: string;
+  hasPromptSurface?: boolean;
+  hasAuthSurface?: boolean;
+  hasSubmitSurface?: boolean;
+  requiresSubmitSurface?: boolean;
+}
+
+export interface ReusableTabPreflightResult {
+  ok: boolean;
+  reason?: string;
 }

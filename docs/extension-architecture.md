@@ -2,7 +2,7 @@
 
 ## Overview
 
-AI Prompt Broadcaster is a Chrome Manifest V3 extension that can reuse an already-open AI tab in the current window or open a fresh tab per service, inject the prompt into the target page, and record the result in local Chrome storage.
+AI Prompt Broadcaster is a Chrome Manifest V3 extension that can reuse an already-open AI tab in the current window or open a fresh tab per service, inject the prompt into the target page, and record the result in Chrome local/session storage.
 
 The repository now uses a `src/ -> dist/` build pipeline:
 
@@ -38,15 +38,15 @@ prompt-broadcaster/
 │   │   │   └── submit.ts
 │   │   ├── selection/
 │   │   │   ├── helper.ts
+│   │   │   ├── main.ts
 │   │   │   ├── messages.ts
 │   │   │   ├── reader.ts
 │   │   │   └── tracker.ts
-│   │   │   └── main.ts
 │   │   └── selector-checker/
 │   │       ├── checks.ts
 │   │       ├── dom.ts
 │   │       ├── helper.ts
-│   │       └── main.ts
+│   │       ├── main.ts
 │   │       ├── report.ts
 │   │       └── runtime.ts
 │   ├── onboarding/
@@ -72,7 +72,9 @@ prompt-broadcaster/
 │   │   ├── main.ts
 │   │   └── ui/toast.ts
 │   └── shared/
+│       ├── broadcast/
 │       ├── chrome/
+│       ├── export/
 │       ├── i18n/
 │       ├── prompts/
 │       ├── runtime-state/
@@ -141,8 +143,10 @@ Responsibilities:
 
 - receive popup and content-script messages
 - resolve target routing, including specific reused tabs and forced new tabs
+- prefer site-level `resolvedPrompt` payloads over raw overrides when a prompt has already been rendered in the popup
 - open target tabs and track pending broadcasts
 - reconcile `chrome.storage.session` state after worker restarts
+- keep `pendingInjections`, `pendingBroadcasts`, and `selectorAlerts` mirrored in memory and updated through a serialized mutation chain
 - maintain action badge state
 - create Chrome notifications
 - reopen the UI through the toolbar popup when possible and fall back to a standalone popup window when no active browser window exists
@@ -158,6 +162,7 @@ Responsibilities:
 - discover currently open AI tabs in the active browser window
 - let each service use default routing, a specific tab, or a forced new tab
 - template variable detection and substitution
+- resolve per-service prompt overrides into a final `resolvedPrompt` before dispatch
 - system template alias support for both Korean and English keys
 - history and favorites UI
 - runtime site management UI
@@ -175,6 +180,7 @@ Responsibilities:
 - paginated history table
 - runtime service inspection and `waitMs` adjustment
 - data export/import and settings controls
+- background-driven reset flow and CSV export
 
 ### Content Injector
 
@@ -254,7 +260,7 @@ Runtime site records can include:
 
 The background worker uses `hostname` plus `hostnameAliases` as an allowlist when resolving runtime tabs back to site definitions. Built-in services keep their default hostname, while custom services can extend the allowlist with aliases.
 
-Popup tab targeting relies on that same hostname allowlist, so open-tab discovery and explicit tab selection stay aligned with the configured service registry.
+Popup tab targeting starts from that same hostname allowlist, then narrows reuse candidates through a lightweight preflight: non-auth/non-settings route, visible editable prompt surface, and required submit controls for click-submit services.
 
 Custom services also derive `permissionPatterns` from `url + hostnameAliases`. Popup save, JSON import, and background execution checks all require that full origin set. If any required origin is denied, the custom service is rejected as a whole. When custom services are deleted, reset, or replaced by import, unused optional host permissions are removed automatically.
 
@@ -271,12 +277,21 @@ Important storage keys:
 - `templateVariableCache`
 - `appSettings`
 - `broadcastCounter`
+- `onboardingCompleted`
+
+Important local-storage keys:
+
 - `failedSelectors`
+
+Important session-storage keys:
+
 - `pendingInjections`
 - `pendingBroadcasts`
+- `selectorAlerts`
 - `lastBroadcast`
 - `pendingUiToasts`
-- `onboardingCompleted`
+
+The background worker caches those session keys in memory and persists them through one serialized mutation queue so overlapping broadcast updates do not lose site results, counters, or selector-alert dedupe state.
 
 ### Prompt History Schema
 
@@ -305,15 +320,17 @@ Popup and options flows should read `requestedSiteIds` first when reconstructing
 
 1. The user submits a prompt from the popup, a keyboard shortcut, or the context menu.
 2. Popup routing can specify default behavior, a forced new tab, or a specific already-open AI tab per service.
-3. The background worker resolves the final target for each service and queues them in the selected order.
-4. Each pending injection is recorded in `chrome.storage.session`.
-5. When a target tab is ready, the background worker focuses it, injects `content/injector.js`, and waits for the injection result before moving on to the next queued tab.
-6. The injector locates the input field, applies the prompt, and waits for click-submit buttons to become enabled when async editors defer their internal state updates.
-7. Perplexity is a special case: the background worker first writes the prompt from the page `MAIN` world so Lexical state stays consistent, then hands submission back to the standard injector submit path.
-8. Success or failure is written back into session/local state.
-9. Popup, options, badge state, and notifications reflect the latest result.
+3. Popup resolves template variables across the main prompt and any enabled per-service override, then includes a site-level `resolvedPrompt` in the broadcast payload when needed.
+4. The background worker resolves the final target for each service and queues them in the selected order.
+5. Each pending injection is recorded in `chrome.storage.session`.
+6. When a target tab is ready, the background worker focuses it, injects `content/injector.js`, and waits for the injection result before moving on to the next queued tab.
+7. The injector locates the input field, applies the prompt, and waits for click-submit buttons to become enabled when async editors defer their internal state updates.
+8. Perplexity is a special case: the background worker first writes the prompt from the page `MAIN` world so Lexical state stays consistent, then hands submission back to the standard injector submit path.
+9. Success or failure is written back into session/local state.
+10. Popup, options, badge state, and notifications reflect the latest result.
 
 If a broadcast is cancelled, the worker closes only tabs that were opened for that broadcast. Reused tabs are left open.
+If reset is requested, the worker cancels in-flight broadcasts first and then clears both local prompt data and session runtime state.
 
 ## Popup Open Flow
 
@@ -341,6 +358,7 @@ Supported aliases:
 - English: `date`, `time`, `weekday`, `clipboard`, `url`, `title`, `selection`, `counter`, `random`
 
 Detection, preview rendering, and final prompt rendering all normalize aliases to canonical keys so mixed-language templates still resolve consistently.
+Per-service overrides use that same resolution flow, and retry actions reuse the previously resolved site prompt instead of re-rendering from current popup state.
 
 ## Local QA
 
@@ -363,8 +381,13 @@ Current smoke coverage includes:
 - built-in override repair for invalid click-submit imports
 - `broadcastCounter` export/import/reset semantics
 - favorites search across title, tags, and folders
+- per-service override template resolution and retry prompt preservation
+- CSV export escaping for spreadsheet formula-leading values
+- pending broadcast state accumulation across sequential site completions
+- reusable-tab preflight rejection for auth/settings/non-input tabs
+- reset helper cleanup across local and session runtime state
 
-Popup open-tab discovery and explicit tab targeting are validated manually in Chrome, not by the local fixture smoke suite.
+Full end-to-end open-tab discovery and explicit tab targeting still need a real Chrome window for manual verification, but the reusable-tab preflight helper is covered by the local smoke suite.
 
 ## i18n and Static Assets
 

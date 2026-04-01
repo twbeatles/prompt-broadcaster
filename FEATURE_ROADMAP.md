@@ -1,7 +1,7 @@
 # AI Prompt Broadcaster - 기능 개선 로드맵
 
 > 작성일: 2026-03-31
-> 최종 업데이트: 2026-04-01 (6개 기능 구현 + 운영성 개선 반영)
+> 최종 업데이트: 2026-04-01 (6개 기능 구현 + 운영성/정합성 보강 반영)
 > 기준 코드: 현재 `src/` 분석 결과 기반
 
 ---
@@ -23,7 +23,12 @@
 - built-in override import에서 `click + empty submitSelector`를 원본 selector 유지로 보정하고, import validation을 강화함
 - `broadcastCounter`를 export/import/reset 수명주기에 포함시키고, 실제 queued broadcast 기준으로만 증가하도록 정리함
 - 즐겨찾기 검색 범위를 제목, 본문, 태그, 폴더까지 확장함
-- smoke QA를 14개 시나리오 기준으로 확장해 권한 정리, import 보정, counter, 검색 정합성을 자동 검증함
+- 서비스별 프롬프트 오버라이드를 site-level `resolvedPrompt` 기준으로 정리했고, retry가 최초 해석된 프롬프트를 그대로 재사용하도록 보강함
+- background가 `pendingBroadcasts`, `pendingInjections`, `selectorAlerts`를 메모리 캐시 + 직렬 mutation 체인으로 관리하도록 정리함
+- reset flow를 background 주도로 바꿔 진행 중 broadcast cancel, local/session 상태 동시 초기화, badge/toast 정리까지 포함하도록 반영함
+- 열린 AI 탭 재사용을 hostname-only가 아니라 auth/settings path, 입력 surface, submit preflight 기준까지 검사하도록 강화함
+- CSV export에 formula injection 방어를 추가하고 shared/core 타입 경계를 단계적으로 복구함
+- smoke QA를 20개 시나리오 기준으로 확장해 권한 정리, import 보정, counter, 검색, override/retry, reset, reusable-tab preflight 정합성을 자동 검증함
 
 아래 기능별 상세 섹션은 제안 당시 스냅샷을 보존한 메모이므로, 완료 항목의 `현재 상태` 문구는 최신 구현과 다를 수 있다. 최신 동작은 `README.md`, `CLAUDE.md`, `PROJECT_ANALYSIS.md`를 우선 기준으로 본다.
 

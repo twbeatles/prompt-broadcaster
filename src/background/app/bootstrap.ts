@@ -1,22 +1,31 @@
 // @ts-nocheck
 import {
+  pickBroadcastTargetPrompt,
+} from "../../shared/broadcast/resolution";
+import {
+  applyPendingBroadcastSiteResult as applyBroadcastSiteResultMutation,
+  buildPendingBroadcastSummary as buildBroadcastSummary,
+  getUnresolvedPendingBroadcastSiteIds as getUnresolvedBroadcastSiteIds,
+} from "../../shared/broadcast/state";
+import {
   appendPromptHistory,
   getAppSettings,
   getBroadcastCounter,
-  recordQueuedBroadcast,
+  setBroadcastCounter,
 } from "../../shared/prompts";
 import {
   clearFailedSelector,
   enqueueUiToast,
   getLastBroadcast,
   markFailedSelector,
+  resetPersistedExtensionState,
   setLastBroadcast,
-  setOnboardingCompleted,
 } from "../../shared/runtime-state";
 import {
   getEnabledRuntimeSites,
   getRuntimeSites,
 } from "../../shared/sites";
+import { evaluateReusableTabSnapshot } from "../../shared/sites/reuse-preflight";
 import {
   BADGE_CLEAR_ALARM,
   BADGE_CLEAR_DELAY_MS,
@@ -45,10 +54,18 @@ import {
 const activeInjections = new Set();
 const queuedInjectionTabIds = new Set();
 const selectionCache = new Map();
+const suppressedCompletedBroadcastIds = new Set();
+const backgroundSessionState = {
+  loaded: false,
+  pendingInjections: {},
+  pendingBroadcasts: {},
+  selectorAlerts: {},
+};
 let lastNormalWindowId = null;
 let lastNormalTabId = null;
 let contextMenuRefreshChain = Promise.resolve();
 let injectionProcessChain = Promise.resolve();
+let backgroundStateMutationChain = Promise.resolve();
 
 function getI18nMessage(key, substitutions) {
   return chrome.i18n.getMessage(key, substitutions) || "";
@@ -62,6 +79,93 @@ function sleep(ms) {
   return new Promise((resolve) => {
     setTimeout(resolve, Number.isFinite(ms) ? ms : 0);
   });
+}
+
+function clonePlainValue(value) {
+  return value ? JSON.parse(JSON.stringify(value)) : value;
+}
+
+function splitSelectorList(selectorGroup) {
+  const source = typeof selectorGroup === "string" ? selectorGroup.trim() : "";
+  if (!source) {
+    return [];
+  }
+
+  const parts = [];
+  let current = "";
+  let bracketDepth = 0;
+  let parenDepth = 0;
+  let quote = null;
+  let escaping = false;
+
+  for (const character of source) {
+    current += character;
+
+    if (escaping) {
+      escaping = false;
+      continue;
+    }
+
+    if (character === "\\") {
+      escaping = true;
+      continue;
+    }
+
+    if (quote) {
+      if (character === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (character === "'" || character === "\"") {
+      quote = character;
+      continue;
+    }
+
+    if (character === "[") {
+      bracketDepth += 1;
+      continue;
+    }
+
+    if (character === "]") {
+      bracketDepth = Math.max(0, bracketDepth - 1);
+      continue;
+    }
+
+    if (character === "(") {
+      parenDepth += 1;
+      continue;
+    }
+
+    if (character === ")") {
+      parenDepth = Math.max(0, parenDepth - 1);
+      continue;
+    }
+
+    if (character === "," && bracketDepth === 0 && parenDepth === 0) {
+      current = current.slice(0, -1);
+      const normalized = current.trim();
+      if (normalized) {
+        parts.push(normalized);
+      }
+      current = "";
+    }
+  }
+
+  const trailing = current.trim();
+  if (trailing) {
+    parts.push(trailing);
+  }
+
+  return parts;
+}
+
+function normalizeSelectorEntries(selectors = []) {
+  return (Array.isArray(selectors) ? selectors : [])
+    .filter((selector) => typeof selector === "string" && selector.trim())
+    .flatMap((selector) => splitSelectorList(selector))
+    .filter((selector, index, entries) => entries.indexOf(selector) === index);
 }
 
 function buildInjectionConfig(site) {
@@ -89,46 +193,6 @@ function buildInjectionConfig(site) {
 
 function normalizePrompt(value) {
   return typeof value === "string" ? value : "";
-}
-
-function summarizeBroadcastStatus(record) {
-  if (!record) {
-    return "idle";
-  }
-
-  if (record.completed < record.total) {
-    return "sending";
-  }
-
-  if ((record.submittedSiteIds ?? []).length === 0) {
-    return "failed";
-  }
-
-  if ((record.failedSiteIds ?? []).length > 0) {
-    return "partial";
-  }
-
-  return "submitted";
-}
-
-function buildLastBroadcastSummary(record, overrides = {}) {
-  return {
-    broadcastId: record.id,
-    status: summarizeBroadcastStatus(record),
-    prompt: record.prompt,
-    siteIds: [...(record.siteIds ?? [])],
-    total: Number(record.total ?? 0),
-    completed: Number(record.completed ?? 0),
-    submittedSiteIds: [...(record.submittedSiteIds ?? [])],
-    failedSiteIds: [...(record.failedSiteIds ?? [])],
-    siteResults: { ...(record.siteResults ?? {}) },
-    startedAt: record.startedAt ?? nowIso(),
-    finishedAt:
-      record.completed >= record.total && summarizeBroadcastStatus(record) !== "sending"
-        ? nowIso()
-        : "",
-    ...overrides,
-  };
 }
 
 async function rememberNormalTab(tab) {
@@ -304,13 +368,6 @@ function getBroadcastAgeMs(record) {
   return Number.isFinite(startedAtMs) ? Date.now() - startedAtMs : 0;
 }
 
-function getUnresolvedSiteIds(record) {
-  const siteResults = record?.siteResults ?? {};
-  return Array.isArray(record?.siteIds)
-    ? record.siteIds.filter((siteId) => !siteResults?.[siteId])
-    : [];
-}
-
 async function finalizeBroadcastSites(broadcastId, siteIds, status) {
   let lastSummary = null;
 
@@ -340,67 +397,106 @@ async function restoreBroadcastFocus(record) {
   });
 }
 
-async function readSessionValue(key, fallbackValue) {
-  try {
-    const result = await chrome.storage.session.get(key);
-    return result[key] ?? fallbackValue;
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to read session storage.", {
-      key,
-      error,
-    });
-    return fallbackValue;
+async function ensureBackgroundSessionStateLoaded() {
+  if (backgroundSessionState.loaded) {
+    return;
   }
+
+  try {
+    const result = await chrome.storage.session.get([
+      PENDING_INJECTIONS_KEY,
+      PENDING_BROADCASTS_KEY,
+      SELECTOR_ALERTS_KEY,
+    ]);
+    backgroundSessionState.pendingInjections = clonePlainValue(result[PENDING_INJECTIONS_KEY] ?? {}) ?? {};
+    backgroundSessionState.pendingBroadcasts = clonePlainValue(result[PENDING_BROADCASTS_KEY] ?? {}) ?? {};
+    backgroundSessionState.selectorAlerts = clonePlainValue(result[SELECTOR_ALERTS_KEY] ?? {}) ?? {};
+  } catch (error) {
+    console.error("[AI Prompt Broadcaster] Failed to initialize session-state cache.", error);
+    backgroundSessionState.pendingInjections = {};
+    backgroundSessionState.pendingBroadcasts = {};
+    backgroundSessionState.selectorAlerts = {};
+  }
+
+  backgroundSessionState.loaded = true;
 }
 
-async function writeSessionValue(key, value) {
-  try {
-    await chrome.storage.session.set({ [key]: value });
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to write session storage.", {
-      key,
-      error,
-    });
-  }
+async function persistBackgroundSessionState() {
+  await chrome.storage.session.set({
+    [PENDING_INJECTIONS_KEY]: backgroundSessionState.pendingInjections,
+    [PENDING_BROADCASTS_KEY]: backgroundSessionState.pendingBroadcasts,
+    [SELECTOR_ALERTS_KEY]: backgroundSessionState.selectorAlerts,
+  });
+}
+
+function queueBackgroundStateMutation(mutator) {
+  const runMutation = async () => {
+    await ensureBackgroundSessionStateLoaded();
+    const result = await mutator(backgroundSessionState);
+    await persistBackgroundSessionState();
+    return result;
+  };
+
+  const resultPromise = backgroundStateMutationChain.then(runMutation, runMutation);
+  backgroundStateMutationChain = resultPromise.then(() => undefined, () => undefined);
+  return resultPromise;
+}
+
+async function waitForBackgroundStateSettled() {
+  await backgroundStateMutationChain;
 }
 
 async function getPendingInjections() {
-  return readSessionValue(PENDING_INJECTIONS_KEY, {});
+  await ensureBackgroundSessionStateLoaded();
+  return clonePlainValue(backgroundSessionState.pendingInjections) ?? {};
 }
 
 async function setPendingInjections(value) {
-  await writeSessionValue(PENDING_INJECTIONS_KEY, value);
+  return queueBackgroundStateMutation((state) => {
+    state.pendingInjections = clonePlainValue(value) ?? {};
+    return clonePlainValue(state.pendingInjections) ?? {};
+  });
 }
 
 async function getPendingBroadcasts() {
-  return readSessionValue(PENDING_BROADCASTS_KEY, {});
+  await ensureBackgroundSessionStateLoaded();
+  return clonePlainValue(backgroundSessionState.pendingBroadcasts) ?? {};
 }
 
 async function setPendingBroadcasts(value) {
-  await writeSessionValue(PENDING_BROADCASTS_KEY, value);
+  return queueBackgroundStateMutation((state) => {
+    state.pendingBroadcasts = clonePlainValue(value) ?? {};
+    return clonePlainValue(state.pendingBroadcasts) ?? {};
+  });
 }
 
 async function getSelectorAlerts() {
-  return readSessionValue(SELECTOR_ALERTS_KEY, {});
+  await ensureBackgroundSessionStateLoaded();
+  return clonePlainValue(backgroundSessionState.selectorAlerts) ?? {};
 }
 
 async function setSelectorAlerts(value) {
-  await writeSessionValue(SELECTOR_ALERTS_KEY, value);
+  return queueBackgroundStateMutation((state) => {
+    state.selectorAlerts = clonePlainValue(value) ?? {};
+    return clonePlainValue(state.selectorAlerts) ?? {};
+  });
 }
 
 async function updatePendingInjection(tabId, updater) {
-  const pending = await getPendingInjections();
-  const current = pending[String(tabId)];
-  const nextValue = typeof updater === "function" ? updater(current) : updater;
+  return queueBackgroundStateMutation((state) => {
+    const pending = state.pendingInjections ?? {};
+    const current = pending[String(tabId)];
+    const nextValue = typeof updater === "function" ? updater(clonePlainValue(current) ?? current) : updater;
 
-  if (nextValue) {
-    pending[String(tabId)] = nextValue;
-  } else {
-    delete pending[String(tabId)];
-  }
+    if (nextValue) {
+      pending[String(tabId)] = nextValue;
+    } else {
+      delete pending[String(tabId)];
+    }
 
-  await setPendingInjections(pending);
-  return nextValue ?? null;
+    state.pendingInjections = pending;
+    return clonePlainValue(nextValue) ?? null;
+  });
 }
 
 async function addPendingInjection(tabId, payload) {
@@ -456,6 +552,7 @@ async function resolveSelectedTargets(siteRefs) {
     let targetTabId = null;
     let forceNewTab = false;
     let promptOverride = null;
+    let resolvedPrompt = null;
 
     if (typeof siteRef === "string") {
       resolvedSite = runtimeSites.find((site) => site.id === siteRef) ?? null;
@@ -475,6 +572,10 @@ async function resolveSelectedTargets(siteRefs) {
         typeof siteRef.promptOverride === "string" && siteRef.promptOverride.trim()
           ? siteRef.promptOverride.trim()
           : null;
+      resolvedPrompt =
+        typeof siteRef.resolvedPrompt === "string"
+          ? siteRef.resolvedPrompt
+          : null;
     }
 
     if (!resolvedSite || !resolvedSite.id || seenIds.has(resolvedSite.id)) {
@@ -487,6 +588,7 @@ async function resolveSelectedTargets(siteRefs) {
       targetTabId,
       forceNewTab,
       promptOverride,
+      resolvedPrompt,
     });
   }
 
@@ -518,6 +620,132 @@ function getSitePermissionPatterns(site) {
   return Array.isArray(site?.permissionPatterns)
     ? site.permissionPatterns.filter((pattern) => typeof pattern === "string" && pattern.trim())
     : [];
+}
+
+async function runReusableTabPreflight(tabId, site) {
+  try {
+    const inputSelectors = normalizeSelectorEntries([
+      site?.inputSelector,
+      ...(Array.isArray(site?.fallbackSelectors) ? site.fallbackSelectors : []),
+    ]);
+    const authSelectors = normalizeSelectorEntries(site?.authSelectors);
+    const submitSelectors = (
+      site?.submitMethod === "click" &&
+      site?.selectorCheckMode !== "input-only" &&
+      typeof site?.submitSelector === "string" &&
+      site.submitSelector.trim()
+    )
+      ? normalizeSelectorEntries([site.submitSelector])
+      : [];
+
+    const [result] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: ({ nextInputSelectors, nextAuthSelectors, nextSubmitSelectors }) => {
+        function isElementVisible(element) {
+          if (!(element instanceof HTMLElement) && !(element instanceof SVGElement)) {
+            return true;
+          }
+
+          const style = window.getComputedStyle(element);
+          if (
+            element.hidden ||
+            element.getAttribute("hidden") !== null ||
+            element.getAttribute("aria-hidden") === "true" ||
+            style.display === "none" ||
+            style.visibility === "hidden" ||
+            style.visibility === "collapse"
+          ) {
+            return false;
+          }
+
+          return element.getClientRects().length > 0;
+        }
+
+        function isEditableElement(element) {
+          if (element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement) {
+            return !element.readOnly;
+          }
+
+          return element instanceof HTMLElement ? element.isContentEditable : false;
+        }
+
+        function collectElementsDeep(selector, root, matches, seen) {
+          if (typeof root.querySelectorAll === "function") {
+            for (const element of Array.from(root.querySelectorAll(selector))) {
+              if (!seen.has(element)) {
+                seen.add(element);
+                matches.push(element);
+              }
+            }
+          }
+
+          const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+          let current = walker.currentNode;
+          while (current) {
+            if (current.shadowRoot) {
+              collectElementsDeep(selector, current.shadowRoot, matches, seen);
+            }
+            current = walker.nextNode();
+          }
+        }
+
+        function findDeep(selectors, { editableOnly = false } = {}) {
+          for (const selector of selectors) {
+            try {
+              const matches = [];
+              collectElementsDeep(selector, document, matches, new Set());
+              const match = matches.find((element) =>
+                isElementVisible(element) && (!editableOnly || isEditableElement(element))
+              );
+              if (match) {
+                return true;
+              }
+            } catch (_error) {
+              // Ignore invalid or stale selectors during lightweight preflight.
+            }
+          }
+
+          return false;
+        }
+
+        return {
+          pathname: window.location.pathname,
+          hasPromptSurface: findDeep(nextInputSelectors, { editableOnly: true }),
+          hasAuthSurface: findDeep(nextAuthSelectors),
+          hasSubmitSurface:
+            nextSubmitSelectors.length === 0 ? true : findDeep(nextSubmitSelectors),
+        };
+      },
+      args: [{
+        nextInputSelectors: inputSelectors,
+        nextAuthSelectors: authSelectors,
+        nextSubmitSelectors: submitSelectors,
+      }],
+    });
+
+    const snapshot = result?.result ?? {};
+    return evaluateReusableTabSnapshot({
+      pathname: snapshot.pathname,
+      hasPromptSurface: snapshot.hasPromptSurface,
+      hasAuthSurface: snapshot.hasAuthSurface,
+      hasSubmitSurface: snapshot.hasSubmitSurface,
+      requiresSubmitSurface: submitSelectors.length > 0,
+    }).ok === true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+async function isReusableTabForSite(tab, site) {
+  if (!Number.isFinite(tab?.id) || !isInjectableTabUrl(tab?.url ?? "")) {
+    return false;
+  }
+
+  if (!isSameSiteOrigin(tab.url, site)) {
+    return false;
+  }
+
+  return runReusableTabPreflight(tab.id, site);
 }
 
 async function isCustomSitePermissionGranted(site) {
@@ -588,13 +816,15 @@ async function findReusableTabsForSites(sites, options = {}) {
         })
         .sort((left, right) => scoreReusableTabForSite(left, site) - scoreReusableTabForSite(right, site));
 
-      const match = candidates[0];
-      if (!match?.id) {
-        continue;
-      }
+      for (const candidate of candidates) {
+        if (!(await isReusableTabForSite(candidate, site))) {
+          continue;
+        }
 
-      reusableTabsBySiteId.set(site.id, match);
-      usedTabIds.add(match.id);
+        reusableTabsBySiteId.set(site.id, candidate);
+        usedTabIds.add(candidate.id);
+        break;
+      }
     }
 
     return reusableTabsBySiteId;
@@ -671,14 +901,17 @@ async function getOpenAiTabsForWindow(windowId) {
       chrome.tabs.query({ windowId: normalizedWindowId }),
     ]);
 
-    return tabs
-      .map((tab) => {
+    const openTabs = await Promise.all(tabs.map(async (tab) => {
         if (!Number.isFinite(tab?.id) || !isInjectableTabUrl(tab?.url ?? "")) {
           return null;
         }
 
         const site = runtimeSites.find((entry) => isSameSiteOrigin(tab.url, entry));
         if (!site) {
+          return null;
+        }
+
+        if (!(await isReusableTabForSite(tab, site))) {
           return null;
         }
 
@@ -692,8 +925,9 @@ async function getOpenAiTabsForWindow(windowId) {
           status: typeof tab.status === "string" ? tab.status : "",
           windowId: normalizedWindowId,
         };
-      })
-      .filter(Boolean);
+      }));
+
+    return openTabs.filter(Boolean);
   } catch (error) {
     console.error("[AI Prompt Broadcaster] Failed to collect open AI tabs.", {
       windowId: normalizedWindowId,
@@ -715,7 +949,7 @@ async function getExplicitReusableTabForTarget(target) {
       return null;
     }
 
-    return isSameSiteOrigin(tab.url, target.site) ? tab : null;
+    return (await isReusableTabForSite(tab, target.site)) ? tab : null;
   } catch (_error) {
     return null;
   }
@@ -1360,7 +1594,6 @@ async function createPendingBroadcast(prompt, sites) {
     console.warn("[AI Prompt Broadcaster] Starting a new broadcast while pending tabs still exist.", pendingInjections);
   }
 
-  const pendingBroadcasts = await getPendingBroadcasts();
   const originContext = await getFocusedTabContext();
   const broadcastId =
     typeof crypto?.randomUUID === "function"
@@ -1382,27 +1615,36 @@ async function createPendingBroadcast(prompt, sites) {
     originWindowId: originContext?.windowId ?? null,
   };
 
-  pendingBroadcasts[broadcastId] = record;
-  await setPendingBroadcasts(pendingBroadcasts);
-  await syncLastBroadcast(buildLastBroadcastSummary(record, { finishedAt: "" }));
+  await queueBackgroundStateMutation((state) => {
+    state.pendingBroadcasts[broadcastId] = record;
+    return clonePlainValue(record);
+  });
+  await syncLastBroadcast(buildBroadcastSummary(record, { finishedAt: "" }, nowIso()));
   return record;
 }
 
 async function maybeCreateSelectorNotification(report) {
   try {
-    const selectorAlerts = await getSelectorAlerts();
     const signature = [
       report.siteId,
       report.pageUrl,
       ...(report.missing ?? []).map((entry) => `${entry.field}:${entry.selector}`),
     ].join("|");
 
-    if (selectorAlerts[signature]) {
+    const shouldNotify = await queueBackgroundStateMutation((state) => {
+      const selectorAlerts = state.selectorAlerts ?? {};
+      if (selectorAlerts[signature]) {
+        return false;
+      }
+
+      selectorAlerts[signature] = Date.now();
+      state.selectorAlerts = selectorAlerts;
+      return true;
+    });
+
+    if (!shouldNotify) {
       return;
     }
-
-    selectorAlerts[signature] = Date.now();
-    await setSelectorAlerts(selectorAlerts);
 
     await chrome.notifications.create(`selector-changed-${report.siteId}`, {
       type: "basic",
@@ -1473,60 +1715,76 @@ async function maybeCreateBroadcastNotification(summary) {
 
 async function recordBroadcastSiteResult(broadcastId, siteId, status) {
   try {
-    const pendingBroadcasts = await getPendingBroadcasts();
-    const record = pendingBroadcasts[broadcastId];
-    if (!record) {
+    const mutationResult = await queueBackgroundStateMutation((state) => {
+      const record = state.pendingBroadcasts[broadcastId];
+      if (!record) {
+        return {
+          summary: null,
+          completedRecord: null,
+        };
+      }
+
+      if (record.siteResults?.[siteId]) {
+        return {
+          summary: buildBroadcastSummary(record, {}, nowIso()),
+          completedRecord: null,
+        };
+      }
+
+      const mutation = applyBroadcastSiteResultMutation(record, siteId, status, nowIso());
+      if (mutation.nextRecord) {
+        state.pendingBroadcasts[broadcastId] = mutation.nextRecord;
+      } else {
+        delete state.pendingBroadcasts[broadcastId];
+      }
+
+      return {
+        summary: mutation.summary,
+        completedRecord: mutation.completedRecord ? clonePlainValue(mutation.completedRecord) : null,
+      };
+    });
+
+    if (!mutationResult?.summary) {
       return null;
     }
 
-    if (record.siteResults?.[siteId]) {
-      return buildLastBroadcastSummary(record);
-    }
+    const { summary, completedRecord } = mutationResult;
 
-    record.siteResults = {
-      ...(record.siteResults ?? {}),
-      [siteId]: status,
-    };
-    record.completed = Object.keys(record.siteResults).length;
+    try {
+      if (completedRecord) {
+        const suppressCompletionEffects = suppressedCompletedBroadcastIds.has(broadcastId);
+        suppressedCompletedBroadcastIds.delete(broadcastId);
 
-    if (status === "submitted") {
-      record.submittedSiteIds = Array.from(
-        new Set([...(record.submittedSiteIds ?? []), siteId])
-      );
-    } else {
-      record.failedSiteIds = Array.from(
-        new Set([...(record.failedSiteIds ?? []), siteId])
-      );
-    }
+        if (suppressCompletionEffects) {
+          await syncLastBroadcast(summary);
+          return summary;
+        }
 
-    record.status = summarizeBroadcastStatus(record);
-    const summary = buildLastBroadcastSummary(record, {
-      finishedAt: record.status === "sending" ? "" : nowIso(),
-    });
+        await appendPromptHistory({
+          id: Date.now(),
+          text: completedRecord.prompt,
+          requestedSiteIds: completedRecord.siteIds,
+          submittedSiteIds: completedRecord.submittedSiteIds,
+          failedSiteIds: completedRecord.failedSiteIds,
+          sentTo: completedRecord.submittedSiteIds,
+          createdAt: completedRecord.startedAt,
+          status: summary.status,
+          siteResults: completedRecord.siteResults,
+        });
 
-    if (record.completed >= record.total) {
-      delete pendingBroadcasts[broadcastId];
-      await setPendingBroadcasts(pendingBroadcasts);
-
-      await appendPromptHistory({
-        id: Date.now(),
-        text: record.prompt,
-        requestedSiteIds: record.siteIds,
-        submittedSiteIds: record.submittedSiteIds,
-        failedSiteIds: record.failedSiteIds,
-        sentTo: record.submittedSiteIds,
-        createdAt: record.startedAt,
-        status: summary.status,
-        siteResults: record.siteResults,
+        await syncLastBroadcast(summary);
+        await restoreBroadcastFocus(completedRecord);
+        await maybeCreateBroadcastNotification(summary);
+      } else {
+        await syncLastBroadcast(summary);
+      }
+    } catch (sideEffectError) {
+      console.error("[AI Prompt Broadcaster] Broadcast completion side effect failed.", {
+        broadcastId,
+        siteId,
+        status,
+        sideEffectError,
       });
-
-      await syncLastBroadcast(summary);
-      await restoreBroadcastFocus(record);
-      await maybeCreateBroadcastNotification(summary);
-    } else {
-      pendingBroadcasts[broadcastId] = record;
-      await setPendingBroadcasts(pendingBroadcasts);
-      await syncLastBroadcast(summary);
     }
 
     return summary;
@@ -1571,7 +1829,7 @@ async function cancelBroadcast(broadcastId, reason = "cancelled") {
 
   const refreshedPendingBroadcasts = await getPendingBroadcasts();
   const record = refreshedPendingBroadcasts[normalizedBroadcastId];
-  const unresolvedSiteIds = getUnresolvedSiteIds(record).filter((siteId) => !pendingSiteIds.has(siteId));
+  const unresolvedSiteIds = getUnresolvedBroadcastSiteIds(record).filter((siteId) => !pendingSiteIds.has(siteId));
   lastSummary = (await finalizeBroadcastSites(normalizedBroadcastId, unresolvedSiteIds, reason)) ?? lastSummary;
 
   await Promise.all(
@@ -1589,17 +1847,19 @@ async function cancelBroadcast(broadcastId, reason = "cancelled") {
   const fallbackSummary = await getLastBroadcast();
   const summary = lastSummary ?? fallbackSummary;
 
-  await enqueueUiToast({
-    message:
-      getI18nMessage("toast_broadcast_cancelled") ||
-      "Broadcast cancelled.",
-    type: "warning",
-    duration: 5000,
-    meta: {
-      broadcastId: normalizedBroadcastId,
-      reason,
-    },
-  });
+  if (reason !== "reset") {
+    await enqueueUiToast({
+      message:
+        getI18nMessage("toast_broadcast_cancelled") ||
+        "Broadcast cancelled.",
+      type: "warning",
+      duration: 5000,
+      meta: {
+        broadcastId: normalizedBroadcastId,
+        reason,
+      },
+    });
+  }
 
   return summary;
 }
@@ -1620,7 +1880,7 @@ async function reconcilePendingBroadcasts() {
   }
 
   for (const [broadcastId, record] of Object.entries(pendingBroadcasts)) {
-    const unresolvedSiteIds = getUnresolvedSiteIds(record);
+    const unresolvedSiteIds = getUnresolvedBroadcastSiteIds(record);
     if (unresolvedSiteIds.length === 0) {
       continue;
     }
@@ -2291,7 +2551,7 @@ async function handleBroadcastMessage(message) {
       await addPendingInjection(targetTab.id, {
         broadcastId: broadcast.id,
         siteId: site.id,
-        prompt: target.promptOverride ?? prompt,
+        prompt: pickBroadcastTargetPrompt(target, prompt),
         site,
         injected: false,
         status: "pending",
@@ -2319,7 +2579,11 @@ async function handleBroadcastMessage(message) {
   }
 
   if (queuedSiteCount > 0) {
-    await recordQueuedBroadcast(queuedSiteCount);
+    await queueBackgroundStateMutation(async () => {
+      const currentCounter = await getBroadcastCounter();
+      await setBroadcastCounter(currentCounter + 1);
+      return currentCounter + 1;
+    });
   }
 
   return {
@@ -2454,6 +2718,52 @@ async function handleCancelBroadcastMessage(message) {
     ok: Boolean(summary),
     summary,
   };
+}
+
+async function resetAllExtensionData() {
+  await reconcilePendingBroadcasts();
+
+  const pendingBroadcasts = await getPendingBroadcasts();
+  for (const broadcastId of Object.keys(pendingBroadcasts)) {
+    suppressedCompletedBroadcastIds.add(broadcastId);
+    await cancelBroadcast(broadcastId, "reset");
+  }
+
+  const remainingInjections = await getPendingInjections();
+  await Promise.all(
+    Object.entries(remainingInjections).map(async ([tabIdKey, job]) => {
+      if (job?.closeOnCancel === false) {
+        return;
+      }
+
+      await closeTabQuietly(Number(tabIdKey));
+    })
+  );
+
+  activeInjections.clear();
+  queuedInjectionTabIds.clear();
+  selectionCache.clear();
+  lastNormalWindowId = null;
+  lastNormalTabId = null;
+
+  await queueBackgroundStateMutation((state) => {
+    state.pendingInjections = {};
+    state.pendingBroadcasts = {};
+    state.selectorAlerts = {};
+    return true;
+  });
+
+  await resetPersistedExtensionState({
+    additionalSessionKeys: [
+      PENDING_INJECTIONS_KEY,
+      PENDING_BROADCASTS_KEY,
+      SELECTOR_ALERTS_KEY,
+    ],
+    clearAlarmName: BADGE_CLEAR_ALARM,
+  });
+  await clearBadge();
+
+  return { ok: true };
 }
 
 async function handleGetActiveTabContext() {
@@ -2626,6 +2936,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       void handleCancelBroadcastMessage(message)
         .then((result) => sendResponse(result))
         .catch((error) => {
+          sendResponse({ ok: false, error: error?.message ?? String(error) });
+        });
+      return true;
+    case "resetAllData":
+      void resetAllExtensionData()
+        .then((result) => sendResponse(result))
+        .catch((error) => {
+          console.error("[AI Prompt Broadcaster] Reset-all-data failed.", error);
           sendResponse({ ok: false, error: error?.message ?? String(error) });
         });
       return true;

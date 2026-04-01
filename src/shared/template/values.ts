@@ -1,15 +1,27 @@
-// @ts-nocheck
 import {
   SYSTEM_TEMPLATE_VARIABLES,
   WEEKDAY_LOCALES,
 } from "./constants";
 import { normalizeLocale, pad2 } from "./normalize";
 
-export function buildSystemTemplateValues(now = new Date(), options = {}) {
+interface BuildSystemTemplateValuesOptions {
+  locale?: string;
+  extra?: {
+    url?: string;
+    title?: string;
+    selection?: string;
+    counter?: string | number;
+  };
+}
+
+export function buildSystemTemplateValues(
+  now: Date = new Date(),
+  options: BuildSystemTemplateValuesOptions = {}
+) {
   const date = now instanceof Date ? now : new Date();
   const locale = normalizeLocale(options?.locale);
 
-  const values = {
+  const values: Record<string, string> = {
     [SYSTEM_TEMPLATE_VARIABLES.date]: [
       date.getFullYear(),
       pad2(date.getMonth() + 1),

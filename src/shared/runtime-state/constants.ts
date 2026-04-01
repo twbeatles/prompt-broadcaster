@@ -1,4 +1,3 @@
-// @ts-nocheck
 export const LOCAL_RUNTIME_KEYS = Object.freeze({
   failedSelectors: "failedSelectors",
   onboardingCompleted: "onboardingCompleted",

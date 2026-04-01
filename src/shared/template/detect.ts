@@ -1,11 +1,11 @@
-// @ts-nocheck
 import { SYSTEM_TEMPLATE_KEYS, TEMPLATE_VARIABLE_PATTERN } from "./constants";
 import { canonicalizeTemplateVariableName } from "./normalize";
+import type { TemplateVariableDescriptor } from "../types/models";
 
-export function detectTemplateVariables(template) {
+export function detectTemplateVariables(template: unknown): TemplateVariableDescriptor[] {
   const source = typeof template === "string" ? template : "";
-  const seen = new Set();
-  const variables = [];
+  const seen = new Set<string>();
+  const variables: TemplateVariableDescriptor[] = [];
 
   for (const match of source.matchAll(TEMPLATE_VARIABLE_PATTERN)) {
     const canonicalName = canonicalizeTemplateVariableName(match[1]);
@@ -24,10 +24,10 @@ export function detectTemplateVariables(template) {
   return variables;
 }
 
-export function getUserTemplateVariables(template) {
+export function getUserTemplateVariables(template: unknown) {
   return detectTemplateVariables(template).filter((variable) => variable.kind === "user");
 }
 
-export function hasTemplateVariables(template) {
+export function hasTemplateVariables(template: unknown) {
   return detectTemplateVariables(template).length > 0;
 }

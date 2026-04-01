@@ -1,14 +1,17 @@
+export interface BroadcastSiteTargetMessage {
+  id?: string;
+  tabId?: number;
+  reuseExistingTab?: boolean;
+  openInNewTab?: boolean;
+  target?: string;
+  promptOverride?: string;
+  resolvedPrompt?: string;
+}
+
 export interface BroadcastMessage {
   action: "broadcast";
   prompt: string;
-  sites: Array<string | {
-    id?: string;
-    tabId?: number;
-    reuseExistingTab?: boolean;
-    openInNewTab?: boolean;
-    target?: string;
-    promptOverride?: string;
-  }>;
+  sites: Array<string | BroadcastSiteTargetMessage>;
 }
 
 export interface SelectorCheckInitMessage {
@@ -60,6 +63,23 @@ export interface GetOpenAiTabsMessage {
   windowId?: number | null;
 }
 
+export interface CancelBroadcastMessage {
+  action: "cancelBroadcast";
+  broadcastId: string;
+}
+
+export interface GetActiveTabContextMessage {
+  action: "getActiveTabContext";
+}
+
+export interface GetBroadcastCounterMessage {
+  action: "getBroadcastCounter";
+}
+
+export interface ResetAllDataMessage {
+  action: "resetAllData";
+}
+
 export interface UiToastMessage {
   action: "uiToast";
   toast: Record<string, unknown>;
@@ -80,5 +100,9 @@ export type RuntimeMessage =
   | InjectFallbackMessage
   | PopupOpenedMessage
   | GetOpenAiTabsMessage
+  | CancelBroadcastMessage
+  | GetActiveTabContextMessage
+  | GetBroadcastCounterMessage
+  | ResetAllDataMessage
   | UiToastMessage
   | SelectionUpdateMessage;

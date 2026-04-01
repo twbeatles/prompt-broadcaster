@@ -176,6 +176,37 @@ function findMissingTemplateValues(template, values = {}) {
   return getUserTemplateVariables(template).map((variable) => variable.name).filter((name) => !String(normalizedValues[name] ?? "").trim());
 }
 
+// src/shared/broadcast/resolution.ts
+function detectTemplateVariablesForTargets(targets = []) {
+  const seen = /* @__PURE__ */ new Set();
+  const variables = [];
+  targets.forEach((target) => {
+    detectTemplateVariables(target?.promptTemplate ?? "").forEach((variable) => {
+      if (seen.has(variable.name)) {
+        return;
+      }
+      seen.add(variable.name);
+      variables.push(variable);
+    });
+  });
+  return variables;
+}
+function findMissingTemplateValuesForTargets(targets = [], userValues = {}) {
+  return Array.from(
+    new Set(
+      targets.flatMap(
+        (target) => findMissingTemplateValues(target?.promptTemplate ?? "", userValues)
+      )
+    )
+  );
+}
+function resolveBroadcastTargets(targets = [], values = {}) {
+  return targets.map((target) => ({
+    ...target,
+    resolvedPrompt: renderTemplatePrompt(target?.promptTemplate ?? "", values)
+  }));
+}
+
 // src/shared/prompts/constants.ts
 var LOCAL_STORAGE_KEYS = Object.freeze({
   history: "promptHistory",
@@ -207,7 +238,9 @@ function safeObject(value) {
 function normalizeSentTo(sentTo) {
   return Array.from(
     new Set(
-      safeArray(sentTo).filter((entry) => typeof entry === "string" && entry.trim()).map((entry) => entry.trim())
+      safeArray(sentTo).flatMap(
+        (entry) => typeof entry === "string" && entry.trim() ? [entry.trim()] : []
+      )
     )
   );
 }
@@ -250,18 +283,19 @@ function normalizeBroadcastCounter(value) {
   return Math.max(0, Math.round(numericValue));
 }
 function normalizeSettings(value) {
+  const settings = safeObject(value);
   return {
-    historyLimit: normalizeHistoryLimit(value?.historyLimit),
+    historyLimit: normalizeHistoryLimit(settings.historyLimit),
     autoClosePopup: normalizeBoolean(
-      value?.autoClosePopup,
+      settings.autoClosePopup,
       DEFAULT_SETTINGS.autoClosePopup
     ),
     desktopNotifications: normalizeBoolean(
-      value?.desktopNotifications,
+      settings.desktopNotifications,
       DEFAULT_SETTINGS.desktopNotifications
     ),
     reuseExistingTabs: normalizeBoolean(
-      value?.reuseExistingTabs,
+      settings.reuseExistingTabs,
       DEFAULT_SETTINGS.reuseExistingTabs
     )
   };
@@ -279,8 +313,10 @@ function normalizeStringRecord(value) {
 }
 function sortByDateDesc(items, field = "createdAt") {
   return [...items].sort((left, right) => {
-    const leftTime = Date.parse(left[field] ?? "") || 0;
-    const rightTime = Date.parse(right[field] ?? "") || 0;
+    const leftRecord = left;
+    const rightRecord = right;
+    const leftTime = Date.parse(String(leftRecord[field] ?? "")) || 0;
+    const rightTime = Date.parse(String(rightRecord[field] ?? "")) || 0;
     return rightTime - leftTime;
   });
 }
@@ -460,28 +496,33 @@ async function getHistoryLimit() {
 }
 
 // src/shared/prompts/history-store.ts
+function asHistoryRecord(entry) {
+  return entry && typeof entry === "object" && !Array.isArray(entry) ? entry : {};
+}
 function buildHistoryEntry(entry) {
-  const createdAt = normalizeIsoDate(entry?.createdAt);
-  const siteResults = normalizeStringRecord(entry?.siteResults);
+  const source = asHistoryRecord(entry);
+  const numericId = Number(source.id);
+  const createdAt = normalizeIsoDate(source.createdAt);
+  const siteResults = normalizeStringRecord(source.siteResults);
   const siteResultKeys = normalizeSiteIdList(Object.keys(siteResults));
   const submittedSiteIds = normalizeSiteIdList(
-    Array.isArray(entry?.submittedSiteIds) ? entry.submittedSiteIds : entry?.sentTo
+    Array.isArray(source.submittedSiteIds) ? source.submittedSiteIds : source.sentTo
   );
   const failedSiteIds = normalizeSiteIdList(
-    Array.isArray(entry?.failedSiteIds) ? entry.failedSiteIds : siteResultKeys.filter((siteId) => !submittedSiteIds.includes(siteId))
+    Array.isArray(source.failedSiteIds) ? source.failedSiteIds : siteResultKeys.filter((siteId) => !submittedSiteIds.includes(siteId))
   );
   const requestedSiteIds = normalizeSiteIdList(
-    Array.isArray(entry?.requestedSiteIds) ? entry.requestedSiteIds : siteResultKeys.length > 0 ? siteResultKeys : submittedSiteIds
+    Array.isArray(source.requestedSiteIds) ? source.requestedSiteIds : siteResultKeys.length > 0 ? siteResultKeys : submittedSiteIds
   );
   return {
-    id: Number.isFinite(entry?.id) ? Number(entry.id) : Date.now(),
-    text: safeText(entry?.text),
+    id: Number.isFinite(numericId) ? numericId : Date.now(),
+    text: safeText(source.text),
     requestedSiteIds,
     submittedSiteIds,
     failedSiteIds,
     sentTo: submittedSiteIds,
     createdAt,
-    status: normalizeStatus(entry?.status),
+    status: normalizeStatus(source.status),
     siteResults
   };
 }
@@ -662,7 +703,9 @@ var SITE_STORAGE_KEYS = Object.freeze({
 var VALID_INPUT_TYPES = /* @__PURE__ */ new Set(["textarea", "contenteditable", "input"]);
 var VALID_SUBMIT_METHODS = /* @__PURE__ */ new Set(["click", "enter", "shift+enter"]);
 var VALID_SELECTOR_CHECK_MODES = /* @__PURE__ */ new Set(["input-and-submit", "input-only"]);
-var BUILT_IN_SITE_IDS = new Set(AI_SITES.map((site) => site.id));
+var BUILT_IN_SITE_IDS = new Set(
+  AI_SITES.map((site) => String(site?.id ?? "")).filter(Boolean)
+);
 var BUILT_IN_SITE_STYLE_MAP = Object.freeze({
   chatgpt: { color: "#10a37f", icon: "GPT" },
   gemini: { color: "#4285f4", icon: "Gem" },
@@ -1274,7 +1317,10 @@ async function saveBuiltInSiteOverride(siteId, overrideDraft) {
     throw new Error("Built-in site not found.");
   }
   const overrides = await getBuiltInSiteOverrides();
-  overrides[siteId] = sanitizeBuiltInOverride(overrideDraft, source);
+  overrides[siteId] = sanitizeBuiltInOverride(
+    overrideDraft ?? {},
+    source
+  );
   await setBuiltInSiteOverrides(overrides);
   return overrides[siteId];
 }
@@ -1305,7 +1351,10 @@ async function resetSiteSettings() {
   await cleanupUnusedCustomSitePermissions(customSites, []);
 }
 function buildSitePermissionPatterns(url, hostnameAliases = []) {
-  return buildOriginPatterns(url, hostnameAliases);
+  return buildOriginPatterns(
+    url,
+    hostnameAliases
+  );
 }
 
 // src/shared/prompts/template-cache-store.ts
@@ -1542,6 +1591,9 @@ var SESSION_RUNTIME_KEYS = Object.freeze({
 });
 
 // src/shared/runtime-state/normalizers.ts
+function isPlainObject2(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
 function safeText3(value) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -1556,35 +1608,39 @@ function normalizeArray(value) {
   return Array.isArray(value) ? value : [];
 }
 function normalizeFailedSelectorEntry(entry) {
+  const source = isPlainObject2(entry) ? entry : {};
   return {
-    serviceId: safeText3(entry?.serviceId),
-    selector: safeText3(entry?.selector),
-    source: safeText3(entry?.source),
-    timestamp: normalizeIsoDate2(entry?.timestamp)
+    serviceId: safeText3(source.serviceId),
+    selector: safeText3(source.selector),
+    source: safeText3(source.source),
+    timestamp: normalizeIsoDate2(source.timestamp)
   };
 }
 function normalizeToastAction(action) {
+  const source = isPlainObject2(action) ? action : {};
   return {
-    id: safeText3(action?.id) || `action-${Date.now()}`,
-    label: safeText3(action?.label) || "Action",
-    variant: safeText3(action?.variant) || "default"
+    id: safeText3(source.id) || `action-${Date.now()}`,
+    label: safeText3(source.label) || "Action",
+    variant: safeText3(source.variant) || "default"
   };
 }
 function normalizeUiToast(entry) {
+  const source = isPlainObject2(entry) ? entry : {};
   return {
-    id: safeText3(entry?.id) || `toast-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    message: safeText3(entry?.message),
-    type: safeText3(entry?.type) || "info",
-    duration: Number.isFinite(Number(entry?.duration)) ? Number(entry.duration) : 3e3,
-    createdAt: normalizeIsoDate2(entry?.createdAt),
-    actions: normalizeArray(entry?.actions).map((action) => normalizeToastAction(action)),
-    meta: entry?.meta && typeof entry.meta === "object" && !Array.isArray(entry.meta) ? entry.meta : {}
+    id: safeText3(source.id) || `toast-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    message: safeText3(source.message),
+    type: safeText3(source.type) || "info",
+    duration: Number.isFinite(Number(source.duration)) ? Number(source.duration) : 3e3,
+    createdAt: normalizeIsoDate2(source.createdAt),
+    actions: normalizeArray(source.actions).map((action) => normalizeToastAction(action)),
+    meta: isPlainObject2(source.meta) ? source.meta : {}
   };
 }
 function normalizeLastBroadcast(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isPlainObject2(value)) {
     return null;
   }
+  const siteResults = isPlainObject2(value.siteResults) ? value.siteResults : {};
   return {
     broadcastId: safeText3(value.broadcastId),
     status: safeText3(value.status) || "idle",
@@ -1594,21 +1650,24 @@ function normalizeLastBroadcast(value) {
     completed: Number.isFinite(Number(value.completed)) ? Number(value.completed) : 0,
     submittedSiteIds: normalizeArray(value.submittedSiteIds).map((siteId) => safeText3(siteId)).filter(Boolean),
     failedSiteIds: normalizeArray(value.failedSiteIds).map((siteId) => safeText3(siteId)).filter(Boolean),
-    siteResults: value.siteResults && typeof value.siteResults === "object" && !Array.isArray(value.siteResults) ? Object.fromEntries(
-      Object.entries(value.siteResults).map(([key, status]) => [safeText3(key), safeText3(status)]).filter(([key, status]) => key && status)
-    ) : {},
+    siteResults: Object.fromEntries(
+      Object.entries(siteResults).map(([key, status]) => [safeText3(key), safeText3(status)]).filter(([key, status]) => key && status)
+    ),
     startedAt: normalizeIsoDate2(value.startedAt),
     finishedAt: safeText3(value.finishedAt) ? normalizeIsoDate2(value.finishedAt) : ""
   };
 }
 
 // src/shared/runtime-state/storage.ts
+function getStorageArea(area) {
+  return area === "session" ? chrome.storage.session : chrome.storage.local;
+}
 async function readStorage(area, key, fallbackValue) {
-  const result = await chrome.storage[area].get(key);
+  const result = await getStorageArea(area).get(key);
   return result[key] ?? fallbackValue;
 }
 async function writeStorage(area, key, value) {
-  await chrome.storage[area].set({ [key]: value });
+  await getStorageArea(area).set({ [key]: value });
 }
 
 // src/shared/runtime-state/failed-selectors.ts
@@ -2695,7 +2754,11 @@ function renderLists() {
   renderFavoritesList();
 }
 function currentPromptVariables() {
-  return detectTemplateVariables(promptInput.value);
+  const checkedTargets = buildComposerBroadcastTargets(checkedSiteIds(), promptInput.value);
+  if (checkedTargets.length === 0) {
+    return detectTemplateVariables(promptInput.value);
+  }
+  return detectTemplateVariablesForTargets2(checkedTargets);
 }
 function renderTemplateSummary() {
   const variables = currentPromptVariables();
@@ -2770,18 +2833,62 @@ function applySettingsToControls() {
   reuseExistingTabsLabel.textContent = t.reuseTabsLabel;
   reuseExistingTabsDesc.textContent = state.settings.reuseExistingTabs ? t.reuseTabsDescEnabled : t.reuseTabsDescDisabled;
 }
-function buildBroadcastTargets(siteIds = []) {
+function buildComposerBroadcastTargets(siteIds = [], basePrompt = promptInput.value) {
   return normalizeSiteIdList2(siteIds).map((siteId) => {
     const targetSelection = state.siteTargetSelections?.[siteId];
-    const promptOverride = typeof state.sitePromptOverrides?.[siteId] === "string" && state.sitePromptOverrides[siteId].trim() ? state.sitePromptOverrides[siteId].trim() : void 0;
+    const promptOverride = typeof state.sitePromptOverrides?.[siteId] === "string" && state.sitePromptOverrides[siteId].trim() ? state.sitePromptOverrides[siteId] : "";
+    const target = {
+      id: siteId,
+      promptTemplate: promptOverride.trim() ? promptOverride : String(basePrompt ?? "")
+    };
     if (typeof targetSelection === "number") {
-      return { id: siteId, tabId: targetSelection, ...promptOverride ? { promptOverride } : {} };
+      return { ...target, tabId: targetSelection };
     }
     if (targetSelection === "new") {
-      return { id: siteId, reuseExistingTab: false, target: "new", ...promptOverride ? { promptOverride } : {} };
+      return { ...target, reuseExistingTab: false, target: "new" };
     }
-    return { id: siteId, ...promptOverride ? { promptOverride } : {} };
+    return target;
   });
+}
+function buildRuntimeBroadcastTargets(targets = []) {
+  return (Array.isArray(targets) ? targets : []).filter((target) => target && typeof target.id === "string" && target.id.trim()).map((target) => {
+    const payload = { id: target.id };
+    if (typeof target.tabId === "number") {
+      payload.tabId = target.tabId;
+    } else if (target.target === "new" || target.reuseExistingTab === false) {
+      payload.reuseExistingTab = false;
+      payload.target = "new";
+    }
+    if (typeof target.promptOverride === "string" && target.promptOverride.trim()) {
+      payload.promptOverride = target.promptOverride;
+    }
+    if (typeof target.resolvedPrompt === "string") {
+      payload.resolvedPrompt = target.resolvedPrompt;
+    }
+    return payload;
+  });
+}
+function detectTemplateVariablesForTargets2(targets = []) {
+  return detectTemplateVariablesForTargets(targets);
+}
+function findMissingTemplateValuesForTargets2(targets = [], userValues = {}) {
+  return findMissingTemplateValuesForTargets(targets, userValues);
+}
+function buildResolvedBroadcastTargets(targets = [], values = {}) {
+  return resolveBroadcastTargets(targets, values);
+}
+function buildTemplatePreviewText(targets = [], values = {}) {
+  const resolvedTargets = buildResolvedBroadcastTargets(targets, values);
+  const uniquePrompts = Array.from(
+    new Set(
+      resolvedTargets.map((target) => target.resolvedPrompt).filter((prompt) => typeof prompt === "string")
+    )
+  );
+  if (uniquePrompts.length <= 1) {
+    return uniquePrompts[0] ?? "";
+  }
+  return resolvedTargets.map((target) => `[${getRuntimeSiteLabel(target.id)}]
+${target.resolvedPrompt}`).join("\n\n---\n\n");
 }
 async function loadStoredData() {
   try {
@@ -2974,7 +3081,8 @@ function setSiteCardState(siteId, cardState) {
     card.classList.add(cardState);
   }
 }
-function addRetryButton(siteId, finalPrompt) {
+function addRetryButton(target, mainPrompt) {
+  const siteId = target?.id;
   const card = getSiteCardElement(siteId);
   if (!card) {
     return;
@@ -2996,18 +3104,19 @@ function addRetryButton(siteId, finalPrompt) {
       await refreshOpenSiteTabs();
       const response = await chrome.runtime.sendMessage({
         action: "broadcast",
-        prompt: finalPrompt,
-        sites: buildBroadcastTargets([siteId])
+        prompt: mainPrompt,
+        sites: buildRuntimeBroadcastTargets([target])
       });
-      if (response?.ok) {
+      const failedIds = Array.isArray(response?.failedTabSiteIds) ? response.failedTabSiteIds : [];
+      if (response?.ok && !failedIds.includes(siteId)) {
         setSiteCardState(siteId, "sent");
       } else {
         setSiteCardState(siteId, "failed");
-        addRetryButton(siteId, finalPrompt);
+        addRetryButton(target, mainPrompt);
       }
     } catch (_error) {
       setSiteCardState(siteId, "failed");
-      addRetryButton(siteId, finalPrompt);
+      addRetryButton(target, mainPrompt);
     }
   });
   card.appendChild(retryBtn);
@@ -3023,12 +3132,12 @@ function triggerRipple(button, event) {
   button.appendChild(ripple);
   ripple.addEventListener("animationend", () => ripple.remove(), { once: true });
 }
-async function sendResolvedPrompt(finalPrompt, sites) {
+async function sendResolvedPrompt(mainPrompt, targets) {
   if (state.isSending) {
     return;
   }
   const siteIds = normalizeSiteIdList2(
-    sites.map((site) => typeof site === "string" ? site : site?.id)
+    (Array.isArray(targets) ? targets : []).map((target) => target?.id)
   );
   setSendingState(true);
   armSendSafetyTimer();
@@ -3040,14 +3149,17 @@ async function sendResolvedPrompt(finalPrompt, sites) {
     clearAllToasts();
     const response = await chrome.runtime.sendMessage({
       action: "broadcast",
-      prompt: finalPrompt,
-      sites: buildBroadcastTargets(siteIds)
+      prompt: mainPrompt,
+      sites: buildRuntimeBroadcastTargets(targets)
     });
     if (response?.ok) {
       if (Array.isArray(response.failedTabSiteIds)) {
         response.failedTabSiteIds.forEach((siteId) => {
           setSiteCardState(siteId, "failed");
-          addRetryButton(siteId, finalPrompt);
+          const failedTarget = targets.find((target) => target.id === siteId);
+          if (failedTarget) {
+            addRetryButton(failedTarget, mainPrompt);
+          }
         });
       }
       setStatus(t.sending(response.createdSiteCount ?? siteIds.length), "warning");
@@ -3058,13 +3170,22 @@ async function sendResolvedPrompt(finalPrompt, sites) {
     } else {
       siteIds.forEach((siteId) => {
         setSiteCardState(siteId, "failed");
-        addRetryButton(siteId, finalPrompt);
+        const failedTarget = targets.find((target) => target.id === siteId);
+        if (failedTarget) {
+          addRetryButton(failedTarget, mainPrompt);
+        }
       });
       setStatus(t.error(response?.error ?? getUnknownErrorText()), "error");
     }
   } catch (error) {
     console.error("[AI Prompt Broadcaster] Broadcast send failed.", error);
-    siteIds.forEach((siteId) => setSiteCardState(siteId, "failed"));
+    siteIds.forEach((siteId) => {
+      setSiteCardState(siteId, "failed");
+      const failedTarget = targets.find((target) => target.id === siteId);
+      if (failedTarget) {
+        addRetryButton(failedTarget, mainPrompt);
+      }
+    });
     setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
     showAppToast(t.error(error?.message ?? getUnknownErrorText()), "error", 4e3);
     setSendingState(false);
@@ -3193,9 +3314,9 @@ async function confirmTemplateModalSend() {
   const cachedValues = compactVariableValues(modalState.userValues);
   await updateTemplateVariableCache(cachedValues);
   state.templateVariableCache = mergeTemplateSources(state.templateVariableCache, cachedValues);
-  const finalPrompt = renderTemplatePrompt(modalState.prompt, previewState.values);
+  const resolvedTargets = buildResolvedBroadcastTargets(modalState.targets, previewState.values);
   hideTemplateModal();
-  await sendResolvedPrompt(finalPrompt, modalState.sites);
+  await sendResolvedPrompt(modalState.prompt, resolvedTargets);
 }
 function buildTemplateSendPreviewStateV2() {
   const modalState = state.pendingTemplateSend;
@@ -3203,8 +3324,11 @@ function buildTemplateSendPreviewStateV2() {
     return null;
   }
   const values = mergeTemplateSources(modalState.systemValues, modalState.userValues);
-  const preview = renderTemplatePrompt(modalState.prompt, values);
-  const missingUserValues = findMissingTemplateValues(modalState.prompt, modalState.userValues);
+  const preview = buildTemplatePreviewText(modalState.targets, values);
+  const missingUserValues = findMissingTemplateValuesForTargets2(
+    modalState.targets,
+    modalState.userValues
+  );
   const clipboardRequired = modalState.variables.some(
     (variable) => variable.name === SYSTEM_TEMPLATE_VARIABLES.clipboard
   );
@@ -3261,10 +3385,10 @@ function renderTemplateModalV2() {
   setTemplateModalError(errorMessage);
   templateModalConfirm.disabled = Boolean(errorMessage);
 }
-async function openTemplateModalV2(prompt, sites) {
-  const variables = detectTemplateVariables(prompt);
+async function openTemplateModalV2(prompt, targets) {
+  const variables = detectTemplateVariablesForTargets2(targets);
   if (variables.length === 0) {
-    await sendResolvedPrompt(prompt, sites);
+    await sendResolvedPrompt(prompt, buildResolvedBroadcastTargets(targets));
     return;
   }
   const baseDefaults = mergeTemplateSources(
@@ -3287,7 +3411,7 @@ async function openTemplateModalV2(prompt, sites) {
   }
   state.pendingTemplateSend = {
     prompt,
-    sites,
+    targets,
     variables,
     userValues,
     systemValues
@@ -3578,6 +3702,7 @@ function renderSiteCheckboxesPanel() {
       const nowActive = Boolean(overrideTextarea.value.trim());
       overrideToggle.classList.toggle("active", nowActive);
       overrideToggle.textContent = nowActive ? "✎ " + (msg("popup_override_active") || "Custom") : "✎";
+      renderTemplateSummary();
     });
     overrideToggle.addEventListener("click", () => {
       overrideWrap.hidden = !overrideWrap.hidden;
@@ -3970,6 +4095,7 @@ async function handleSend() {
     showAppToast(t.toastNoService, "warning", 2e3);
     return;
   }
+  const composerTargets = buildComposerBroadcastTargets(selectedSiteIds, prompt);
   const selectedSites = state.runtimeSites.filter((site) => selectedSiteIds.includes(site.id));
   for (const site of selectedSites) {
     if (!site.isCustom) {
@@ -3983,7 +4109,7 @@ async function handleSend() {
     }
   }
   await chrome.storage.local.set({ lastPrompt: prompt });
-  await openTemplateModalV2(prompt, selectedSiteIds);
+  await openTemplateModalV2(prompt, composerTargets);
 }
 function bindGlobalEvents() {
   tabButtons.forEach((button) => {
@@ -4005,6 +4131,7 @@ function bindGlobalEvents() {
       checkbox.closest(".site-card")?.classList.toggle("checked", shouldCheckAll);
     });
     syncToggleAllLabel();
+    renderTemplateSummary();
   });
   saveFavoriteBtn.addEventListener("click", () => {
     void openFavoriteModal().catch((error) => {
