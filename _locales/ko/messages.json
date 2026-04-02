@@ -1143,7 +1143,12 @@
     "message": "대기시간 배율"
   },
   "popup_wait_multiplier_value": {
-    "message": "$1$x"
+    "message": "$VALUE$x",
+    "placeholders": {
+      "value": {
+        "content": "$1"
+      }
+    }
   },
   "popup_resend_modal_title": {
     "message": "히스토리 재전송"
@@ -1218,16 +1223,31 @@
     "message": "필터 결과 삭제"
   },
   "options_history_delete_older_than": {
-    "message": "$1$일 이전 삭제"
+    "message": "$DAYS$일 이전 삭제",
+    "placeholders": {
+      "days": {
+        "content": "$1"
+      }
+    }
   },
   "options_history_delete_selected_confirm": {
     "message": "선택한 히스토리 항목을 삭제할까요?"
   },
   "options_history_delete_filtered_confirm": {
-    "message": "필터링된 히스토리 $1개를 삭제할까요?"
+    "message": "필터링된 히스토리 $COUNT$개를 삭제할까요?",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
   },
   "options_history_delete_older_confirm": {
-    "message": "$1일보다 오래된 항목을 삭제할까요?"
+    "message": "$DAYS$일보다 오래된 항목을 삭제할까요?",
+    "placeholders": {
+      "days": {
+        "content": "$1"
+      }
+    }
   },
   "options_history_delete_success": {
     "message": "히스토리를 삭제했습니다."
@@ -1236,7 +1256,12 @@
     "message": "대기시간 배율"
   },
   "options_settings_wait_multiplier_value": {
-    "message": "$1$x"
+    "message": "$VALUE$x",
+    "placeholders": {
+      "value": {
+        "content": "$1"
+      }
+    }
   },
   "options_import_report_title": {
     "message": "가져오기 상세"

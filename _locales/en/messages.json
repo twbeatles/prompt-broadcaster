@@ -1143,7 +1143,12 @@
     "message": "Wait multiplier"
   },
   "popup_wait_multiplier_value": {
-    "message": "$1$x"
+    "message": "$VALUE$x",
+    "placeholders": {
+      "value": {
+        "content": "$1"
+      }
+    }
   },
   "popup_resend_modal_title": {
     "message": "Resend History Item"
@@ -1218,16 +1223,31 @@
     "message": "Delete filtered"
   },
   "options_history_delete_older_than": {
-    "message": "Delete older than $1$d"
+    "message": "Delete older than $DAYS$d",
+    "placeholders": {
+      "days": {
+        "content": "$1"
+      }
+    }
   },
   "options_history_delete_selected_confirm": {
     "message": "Delete the selected history items?"
   },
   "options_history_delete_filtered_confirm": {
-    "message": "Delete $1 filtered history item(s)?"
+    "message": "Delete $COUNT$ filtered history item(s)?",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
   },
   "options_history_delete_older_confirm": {
-    "message": "Delete items older than $1 days?"
+    "message": "Delete items older than $DAYS$ days?",
+    "placeholders": {
+      "days": {
+        "content": "$1"
+      }
+    }
   },
   "options_history_delete_success": {
     "message": "History deleted."
@@ -1236,7 +1256,12 @@
     "message": "Wait multiplier"
   },
   "options_settings_wait_multiplier_value": {
-    "message": "$1$x"
+    "message": "$VALUE$x",
+    "placeholders": {
+      "value": {
+        "content": "$1"
+      }
+    }
   },
   "options_import_report_title": {
     "message": "Import Details"

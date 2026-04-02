@@ -1,5 +1,5 @@
 import { build } from "esbuild";
-import { cp, mkdir, rm, stat } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
@@ -105,6 +105,39 @@ async function buildIifeEntry(item) {
   });
 }
 
+function validateLocaleMessages() {
+  const localeDir = path.join(rootDir, "_locales");
+  const variablePattern = /\$([^$]+)\$/g;
+  const invalidNumericPattern = /\$\d/;
+
+  return readdir(localeDir, { withFileTypes: true }).then((entries) => Promise.all(entries
+    .filter((entry) => entry.isDirectory())
+    .map(async (entry) => {
+      const locale = entry.name;
+      const filePath = path.join(localeDir, locale, "messages.json");
+      const messages = JSON.parse(await readFile(filePath, "utf8"));
+
+      for (const [key, localeEntry] of Object.entries(messages)) {
+        const message = localeEntry?.message ?? "";
+        const placeholders = Object.fromEntries(
+          Object.keys(localeEntry?.placeholders ?? {}).map((name) => [name.toLowerCase(), true]),
+        );
+
+        if (invalidNumericPattern.test(message)) {
+          throw new Error(`${locale}/${key} uses a raw numeric placeholder in message: ${message}`);
+        }
+
+        let match;
+        while ((match = variablePattern.exec(message)) !== null) {
+          const variableName = match[1].toLowerCase();
+          if (!placeholders[variableName]) {
+            throw new Error(`${locale}/${key} uses undefined placeholder $${match[1]}$`);
+          }
+        }
+      }
+    })));
+}
+
 async function main() {
   await rm(distDir, { recursive: true, force: true });
 
@@ -112,6 +145,7 @@ async function main() {
     return;
   }
 
+  await validateLocaleMessages();
   await mkdir(distDir, { recursive: true });
   await Promise.all(staticTargets.map((target) => copyStaticTarget(target)));
 
