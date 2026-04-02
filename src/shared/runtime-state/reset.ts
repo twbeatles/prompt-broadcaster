@@ -10,6 +10,7 @@ import { resetSiteSettings } from "../sites";
 import { setFailedSelectors } from "./failed-selectors";
 import { setLastBroadcast as setLastBroadcastSummary } from "./last-broadcast";
 import { setOnboardingCompleted as setOnboardingState } from "./onboarding";
+import { setStrategyStats } from "./strategy-stats";
 import { setPendingUiToasts as setUiToasts } from "./ui-toasts";
 
 interface ResetPersistedExtensionStateOptions {
@@ -47,6 +48,7 @@ export async function resetPersistedExtensionState(
     setUiToasts([]),
     setLastBroadcastSummary(null),
     setOnboardingState(false),
+    setStrategyStats({}),
     setAppSettings(DEFAULT_SETTINGS),
     resetSiteSettings(),
     localKeys.length > 0 ? chrome.storage.local.remove(localKeys) : Promise.resolve(),

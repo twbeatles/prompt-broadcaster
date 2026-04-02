@@ -42,11 +42,11 @@ export const AI_SITES = Object.freeze([
     url: "https://gemini.google.com/app",
     hostname: "gemini.google.com",
     inputSelector:
-      "div.ql-editor.textarea.new-input-ui[contenteditable='true'], div.ql-editor[contenteditable='true'][role='textbox']",
+      "div[contenteditable='true'][role='textbox'], div.ql-editor.textarea.new-input-ui[contenteditable='true'], div.ql-editor[contenteditable='true'][role='textbox']",
     fallbackSelectors: [
+      "div[contenteditable='true'][role='textbox']",
       "div.ql-editor.textarea.new-input-ui[contenteditable='true']",
       "div.ql-editor[contenteditable='true'][role='textbox']",
-      "div[contenteditable='true'][role='textbox']",
       "textarea, div[contenteditable='true']",
     ],
     inputType: "contenteditable",
@@ -56,8 +56,8 @@ export const AI_SITES = Object.freeze([
     selectorCheckMode: "input-and-submit",
     waitMs: 2500,
     fallback: true,
-    lastVerified: "2026-03",
-    verifiedVersion: "gemini-app-mar-2026",
+    lastVerified: "2026-04",
+    verifiedVersion: "gemini-app-apr-2026",
     authSelectors: [
       "input[type='email']",
       "input[type='password']",
@@ -69,10 +69,11 @@ export const AI_SITES = Object.freeze([
     url: "https://claude.ai/new",
     hostname: "claude.ai",
     inputSelector:
-      "div[contenteditable='true'][aria-label='Write your prompt to Claude'], div[contenteditable='true'][role='textbox']",
+      "div[contenteditable='true'][role='textbox'], div[contenteditable='true'][aria-label*='Claude' i], div[contenteditable='true'][aria-label*='prompt' i]",
     fallbackSelectors: [
-      "div[contenteditable='true'][aria-label='Write your prompt to Claude']",
       "div[contenteditable='true'][role='textbox']",
+      "div[contenteditable='true'][aria-label*='Claude' i]",
+      "div[contenteditable='true'][aria-label*='prompt' i]",
       "div[contenteditable='true']",
       "textarea",
     ],
@@ -83,8 +84,8 @@ export const AI_SITES = Object.freeze([
     selectorCheckMode: "input-and-submit",
     waitMs: 1500,
     fallback: true,
-    lastVerified: "2026-03",
-    verifiedVersion: "claude-web-mar-2026",
+    lastVerified: "2026-04",
+    verifiedVersion: "claude-web-apr-2026",
     authSelectors: [
       "input#email",
       "input[type='email']",

@@ -775,8 +775,9 @@ async function main() {
     assert.equal(await module.getBroadcastCounter(), 1);
 
     const exported = await module.exportPromptData();
-    assert.equal(exported.version, 3);
+    assert.equal(exported.version, 4);
     assert.equal(exported.broadcastCounter, 1);
+    assert.deepEqual(exported.settings, module.DEFAULT_SETTINGS);
 
     await module.setBroadcastCounter(9);
     const legacyImport = await module.importPromptData(JSON.stringify({
@@ -785,14 +786,50 @@ async function main() {
     }));
     assert.equal(legacyImport.broadcastCounter, 0);
     assert.equal(await module.getBroadcastCounter(), 0);
+    assert.equal(legacyImport.importSummary.version, 4);
+    assert.equal(legacyImport.importSummary.migratedFromVersion, 2);
+    assert.equal(legacyImport.settings.waitMsMultiplier, 1);
+    assert.equal(legacyImport.settings.historySort, "latest");
+    assert.equal(legacyImport.settings.favoriteSort, "recentUsed");
 
     const modernImport = await module.importPromptData(JSON.stringify({
       version: 3,
       broadcastCounter: 4,
+      favorites: [
+        {
+          id: "fav-1",
+          title: "Alpha Plan",
+          text: "Prompt comparison notes",
+          createdAt: "2026-04-01T00:00:00.000Z",
+          favoritedAt: "2026-04-01T00:00:00.000Z",
+        },
+      ],
+      history: [
+        {
+          id: 101,
+          text: "Legacy result mapping",
+          createdAt: "2026-04-01T00:00:00.000Z",
+          siteResults: {
+            chatgpt: "submitted",
+            claude: "selector_failed",
+          },
+        },
+      ],
       settings: { historyLimit: 50 },
     }));
     assert.equal(modernImport.broadcastCounter, 4);
     assert.equal(await module.getBroadcastCounter(), 4);
+    assert.equal(modernImport.importSummary.version, 4);
+    assert.equal(modernImport.importSummary.migratedFromVersion, 3);
+    assert.equal(modernImport.settings.waitMsMultiplier, 1);
+    assert.equal(modernImport.settings.historySort, "latest");
+    assert.equal(modernImport.settings.favoriteSort, "recentUsed");
+    assert.equal(modernImport.history[0].siteResults.chatgpt.code, "submitted");
+    assert.equal(modernImport.history[0].siteResults.claude.code, "selector_timeout");
+    assert.deepEqual(modernImport.history[0].submittedSiteIds, ["chatgpt"]);
+    assert.deepEqual(modernImport.history[0].failedSiteIds, ["claude"]);
+    assert.equal(modernImport.favorites[0].usageCount, 0);
+    assert.equal(modernImport.favorites[0].lastUsedAt, null);
 
     assert.equal(
       module.matchesFavoriteSearch(
@@ -943,36 +980,63 @@ async function main() {
       siteResults: {},
       startedAt: "2026-04-01T00:00:00.000Z",
       status: "sending",
+      openedTabIds: [55],
     };
 
     const first = module.applyPendingBroadcastSiteResult(
       initial,
       "chatgpt",
-      "submitted",
+      { code: "submitted", strategy: "execCommand" },
       "2026-04-01T00:01:00.000Z",
     );
-    assert.equal(first.nextRecord.siteResults.chatgpt, "submitted");
+    assert.deepEqual(first.nextRecord.siteResults.chatgpt, {
+      code: "submitted",
+      strategy: "execCommand",
+    });
     assert.equal(first.nextRecord.completed, 1);
+    assert.notStrictEqual(first.nextRecord.openedTabIds, initial.openedTabIds);
+    assert.deepEqual(first.nextRecord.openedTabIds, [55]);
 
     const duplicate = module.applyPendingBroadcastSiteResult(
       first.nextRecord,
       "chatgpt",
-      "failed",
+      "submit_failed",
       "2026-04-01T00:01:30.000Z",
     );
-    assert.equal(duplicate.nextRecord.siteResults.chatgpt, "submitted");
+    assert.equal(duplicate.nextRecord.siteResults.chatgpt.code, "submitted");
     assert.equal(duplicate.nextRecord.completed, 1);
 
     const final = module.applyPendingBroadcastSiteResult(
       first.nextRecord,
       "claude",
-      "failed",
+      "submit_failed",
       "2026-04-01T00:02:00.000Z",
     );
     assert.equal(final.nextRecord, null);
-    assert.equal(final.completedRecord.siteResults.chatgpt, "submitted");
-    assert.equal(final.completedRecord.siteResults.claude, "failed");
+    assert.equal(final.completedRecord.siteResults.chatgpt.code, "submitted");
+    assert.equal(final.completedRecord.siteResults.claude.code, "submit_failed");
     assert.equal(final.summary.status, "partial");
+  });
+
+  await runStep("strategy stats accumulate attempt outcomes", async () => {
+    const module = await loadBundledModule("src/shared/runtime-state/index.ts", createChromeMock());
+
+    const first = await module.recordStrategyAttempts("claude", [
+      { name: "execCommand", success: false },
+      { name: "paste", success: true },
+    ]);
+    assert.deepEqual(first.claude, {
+      execCommand: { success: 0, fail: 1 },
+      paste: { success: 1, fail: 0 },
+    });
+
+    const second = await module.recordStrategyAttempts("claude", [
+      { name: "paste", success: true },
+    ]);
+    assert.deepEqual(second.claude, {
+      execCommand: { success: 0, fail: 1 },
+      paste: { success: 2, fail: 0 },
+    });
   });
 
   await runStep("reusable tab preflight excludes auth settings and invalid composer surfaces", async () => {
@@ -1034,9 +1098,17 @@ async function main() {
         autoClosePopup: true,
         desktopNotifications: false,
         reuseExistingTabs: false,
+        waitMsMultiplier: 2.5,
+        historySort: "oldest",
+        favoriteSort: "title",
       },
       broadcastCounter: 9,
       failedSelectors: [{ serviceId: "chatgpt" }],
+      strategyStats: {
+        chatgpt: {
+          execCommand: { success: 3, fail: 1 },
+        },
+      },
       onboardingCompleted: true,
       customSites: [{ id: "custom-site" }],
       builtInSiteStates: { chatgpt: { enabled: false } },
@@ -1066,9 +1138,13 @@ async function main() {
       autoClosePopup: false,
       desktopNotifications: true,
       reuseExistingTabs: true,
+      waitMsMultiplier: 1,
+      historySort: "latest",
+      favoriteSort: "recentUsed",
     });
     assert.equal(storage.local.broadcastCounter, 0);
     assert.deepEqual(storage.local.failedSelectors, []);
+    assert.deepEqual(storage.local.strategyStats, {});
     assert.equal(storage.local.onboardingCompleted, false);
     assert.deepEqual(storage.local.customSites, []);
     assert.deepEqual(storage.local.builtInSiteStates, {});

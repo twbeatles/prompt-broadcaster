@@ -699,3 +699,23 @@ tr:last-child td {
     background: rgba(255, 255, 255, 0.12);
   }
 }
+
+.history-bulk-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+.checkbox-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
+.btn.ghost {
+  background: transparent;
+}

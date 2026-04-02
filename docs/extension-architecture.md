@@ -21,7 +21,8 @@ prompt-broadcaster/
 │   ├── background/
 │   │   ├── app/
 │   │   │   ├── bootstrap.ts
-│   │   │   └── constants.ts
+│   │   │   ├── constants.ts
+│   │   │   └── injection-helpers.ts
 │   │   └── main.ts
 │   ├── config/
 │   │   ├── sites/
@@ -60,6 +61,8 @@ prompt-broadcaster/
 │   ├── options/
 │   │   ├── app/
 │   │   │   ├── bootstrap.ts
+│   │   │   ├── dom.ts
+│   │   │   ├── helpers.ts
 │   │   │   ├── i18n.ts
 │   │   │   └── state.ts
 │   │   ├── main.ts
@@ -67,7 +70,11 @@ prompt-broadcaster/
 │   ├── popup/
 │   │   ├── app/
 │   │   │   ├── bootstrap.ts
+│   │   │   ├── dom.ts
+│   │   │   ├── helpers.ts
 │   │   │   ├── i18n.ts
+│   │   │   ├── list-markup.ts
+│   │   │   ├── sorting.ts
 │   │   │   └── state.ts
 │   │   ├── main.ts
 │   │   └── ui/toast.ts
@@ -78,6 +85,7 @@ prompt-broadcaster/
 │       ├── i18n/
 │       ├── prompts/
 │       ├── runtime-state/
+│       │   └── strategy-stats.ts
 │       ├── sites/
 │       ├── stores/
 │       ├── template/
@@ -151,6 +159,7 @@ Responsibilities:
 - create Chrome notifications
 - reopen the UI through the toolbar popup when possible and fall back to a standalone popup window when no active browser window exists
 - handle commands and context menu actions
+- delegate timeout scaling, selector normalization, result-code mapping, and adaptive strategy-order calculation to `src/background/app/injection-helpers.ts`
 
 ### Popup
 
@@ -169,6 +178,9 @@ Responsibilities:
 - reusable-tab settings control
 - toast-based feedback
 - restore recent broadcast state and selector warnings
+- compose DOM access through `src/popup/app/dom.ts`
+- keep pure formatting, sorting, and list-markup helpers in `src/popup/app/helpers.ts`, `sorting.ts`, and `list-markup.ts`
+- support popup shortcuts, resend-service selection, favorite duplication, import reports, and keyboard roving focus
 
 ### Options Page
 
@@ -181,6 +193,8 @@ Responsibilities:
 - runtime service inspection and `waitMs` adjustment
 - data export/import and settings controls
 - background-driven reset flow and CSV export
+- bulk history deletion, import report modal, and wait-multiplier controls
+- compose DOM lookups and pure formatting helpers through `src/options/app/dom.ts` and `helpers.ts`
 
 ### Content Injector
 
@@ -278,6 +292,7 @@ Important storage keys:
 - `appSettings`
 - `broadcastCounter`
 - `onboardingCompleted`
+- `strategyStats`
 
 Important local-storage keys:
 
@@ -295,26 +310,38 @@ The background worker caches those session keys in memory and persists them thro
 
 ### Prompt History Schema
 
-Prompt history entries are normalized in `src/shared/prompts/history-store.ts` and now keep three explicit service id arrays:
+Prompt history entries are normalized in `src/shared/prompts/history-store.ts` and now keep three explicit service id arrays plus structured result objects:
 
 - `requestedSiteIds`: every service the user asked to target
 - `submittedSiteIds`: services that actually reached the submission step
 - `failedSiteIds`: services that failed before submission
+- `siteResults`: `Record<string, SiteInjectionResult>` with normalized result codes such as `submitted`, `selector_timeout`, `auth_required`, and `submit_failed`
 
 The legacy `sentTo` field is still stored and exported for backward compatibility, and mirrors `submittedSiteIds`.
 
 Popup and options flows should read `requestedSiteIds` first when reconstructing the original broadcast target list.
 
-`appSettings` also stores reusable-tab behavior, including `reuseExistingTabs`, which controls whether the default routing mode prefers matching open AI tabs before creating new ones.
+`appSettings` also stores reusable-tab behavior and popup/options UX preferences, including:
+
+- `reuseExistingTabs`
+- `waitMsMultiplier`
+- `historySort`
+- `favoriteSort`
 
 ### Broadcast Counter
 
-`broadcastCounter` is stored in local storage and exported with prompt data JSON `version: 3`.
+`broadcastCounter` is stored in local storage and exported with prompt data JSON `version: 4`.
 
 - popup preview resolves `{{counter}}` as `current + 1`
 - the stored counter increments only when a broadcast queues at least one target site
-- import normalizes missing legacy values to `0`
+- import migrates older payloads (`v1 -> v2 -> v3 -> v4`) and normalizes missing legacy values to `0`
 - reset-data flows clear the counter together with the rest of the user data
+
+### Strategy Stats and Pending Tab Tracking
+
+- `strategyStats` is stored in local storage and records success/failure counts per injector strategy and site
+- pending broadcast records also keep `openedTabIds` so cancellation can close only tabs opened for the current broadcast
+- reused tabs are never added to that close set
 
 ## High-Level Execution Flow
 
@@ -380,10 +407,12 @@ Current smoke coverage includes:
 - custom service permission cleanup after delete and reset
 - built-in override repair for invalid click-submit imports
 - `broadcastCounter` export/import/reset semantics
+- import migration to export `version: 4`
 - favorites search across title, tags, and folders
 - per-service override template resolution and retry prompt preservation
 - CSV export escaping for spreadsheet formula-leading values
-- pending broadcast state accumulation across sequential site completions
+- pending broadcast state accumulation across sequential site completions with structured `siteResults`
+- adaptive strategy-stat accumulation
 - reusable-tab preflight rejection for auth/settings/non-input tabs
 - reset helper cleanup across local and session runtime state
 

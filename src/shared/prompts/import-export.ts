@@ -11,9 +11,7 @@ import {
   setBuiltInSiteStates,
   setCustomSites,
 } from "../sites";
-import {
-  DEFAULT_SETTINGS,
-} from "./constants";
+import { DEFAULT_SETTINGS } from "./constants";
 import {
   buildFavoriteEntry,
   getPromptFavorites,
@@ -43,6 +41,8 @@ import {
   getTemplateVariableCache,
   setTemplateVariableCache,
 } from "./template-cache-store";
+
+const CURRENT_EXPORT_VERSION = 4;
 
 async function containsOriginPermission(originPattern) {
   try {
@@ -142,6 +142,69 @@ async function repairImportedCustomSitesWithPermissions(rawSites) {
   };
 }
 
+function normalizeImportVersion(value) {
+  const version = Number(value);
+  if (!Number.isFinite(version) || version <= 0) {
+    return 1;
+  }
+
+  return Math.max(1, Math.floor(version));
+}
+
+function migrateV1ToV2(payload) {
+  return {
+    ...payload,
+    version: 2,
+    broadcastCounter: payload.broadcastCounter ?? 0,
+  };
+}
+
+function migrateV2ToV3(payload) {
+  return {
+    ...payload,
+    version: 3,
+    builtInSiteStates: payload.builtInSiteStates ?? {},
+    builtInSiteOverrides: payload.builtInSiteOverrides ?? {},
+  };
+}
+
+function migrateV3ToV4(payload) {
+  return {
+    ...payload,
+    version: 4,
+    settings: normalizeSettings(payload.settings ?? DEFAULT_SETTINGS),
+    history: safeArray(payload.history).map((entry) => buildHistoryEntry(entry)),
+    favorites: safeArray(payload.favorites).map((entry) => buildFavoriteEntry(entry)),
+  };
+}
+
+function migrateImportData(rawValue) {
+  let payload = safeObject(rawValue);
+  const sourceVersion = normalizeImportVersion(payload.version);
+  let workingVersion = sourceVersion;
+
+  if (workingVersion < 2) {
+    payload = migrateV1ToV2(payload);
+    workingVersion = 2;
+  }
+
+  if (workingVersion < 3) {
+    payload = migrateV2ToV3(payload);
+    workingVersion = 3;
+  }
+
+  if (workingVersion < 4) {
+    payload = migrateV3ToV4(payload);
+    workingVersion = 4;
+  }
+
+  return {
+    migrated: payload,
+    sourceVersion,
+    targetVersion: CURRENT_EXPORT_VERSION,
+  };
+}
+
 export async function exportPromptData() {
   const [
     broadcastCounter,
@@ -165,7 +228,7 @@ export async function exportPromptData() {
 
   return {
     exportedAt: new Date().toISOString(),
-    version: 3,
+    version: CURRENT_EXPORT_VERSION,
     broadcastCounter,
     history,
     favorites,
@@ -179,17 +242,18 @@ export async function exportPromptData() {
 
 export async function importPromptData(jsonString) {
   const parsed = JSON.parse(jsonString);
+  const { migrated, sourceVersion, targetVersion } = migrateImportData(parsed);
   const previousCustomSites = await getCustomSites();
-  const history = safeArray(parsed?.history).map((item) => buildHistoryEntry(item));
-  const favorites = safeArray(parsed?.favorites).map((item) =>
+  const history = safeArray(migrated?.history).map((item) => buildHistoryEntry(item));
+  const favorites = safeArray(migrated?.favorites).map((item) =>
     buildFavoriteEntry(item)
   );
-  const importedBroadcastCounter = normalizeBroadcastCounter(parsed?.broadcastCounter);
-  const templateVariableCache = normalizeTemplateDefaults(parsed?.templateVariableCache);
-  const importedSettings = normalizeSettings(parsed?.settings ?? DEFAULT_SETTINGS);
-  const importedCustomSites = safeArray(parsed?.customSites);
-  const importedBuiltInSiteStates = safeObject(parsed?.builtInSiteStates);
-  const importedBuiltInSiteOverrides = safeObject(parsed?.builtInSiteOverrides);
+  const importedBroadcastCounter = normalizeBroadcastCounter(migrated?.broadcastCounter);
+  const templateVariableCache = normalizeTemplateDefaults(migrated?.templateVariableCache);
+  const importedSettings = normalizeSettings(migrated?.settings ?? DEFAULT_SETTINGS);
+  const importedCustomSites = safeArray(migrated?.customSites);
+  const importedBuiltInSiteStates = safeObject(migrated?.builtInSiteStates);
+  const importedBuiltInSiteOverrides = safeObject(migrated?.builtInSiteOverrides);
   const historyLimit = importedSettings.historyLimit;
 
   const normalizedHistory = [];
@@ -234,9 +298,12 @@ export async function importPromptData(jsonString) {
     builtInSiteStates: builtInStateImport.normalized,
     builtInSiteOverrides: builtInOverrideImport.normalized,
     importSummary: {
+      version: targetVersion,
+      migratedFromVersion: sourceVersion,
       customSites: {
         importedCount: importedCustomSites.length,
         acceptedIds: customSiteImport.acceptedSites.map((site) => site.id),
+        acceptedNames: customSiteImport.acceptedSites.map((site) => site.name),
         rejected: customSiteImport.rejectedSites,
         rewrittenIds: customSiteImport.rewrittenIds,
         deniedOrigins: customSiteImport.deniedOrigins,

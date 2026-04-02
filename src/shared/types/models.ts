@@ -2,12 +2,80 @@ export type InputType = "textarea" | "contenteditable" | "input";
 export type SubmitMethod = "click" | "enter" | "shift+enter";
 export type SelectorCheckMode = "input-and-submit" | "input-only";
 export type TemplateVariableKind = "system" | "user";
+export type HistorySort = "latest" | "oldest" | "mostSuccess" | "mostFailure";
+export type FavoriteSort = "recentUsed" | "usageCount" | "title" | "createdAt";
+export type InjectionResultCode =
+  | "submitted"
+  | "selector_timeout"
+  | "auth_required"
+  | "submit_failed"
+  | "strategy_exhausted"
+  | "permission_denied"
+  | "tab_create_failed"
+  | "tab_closed"
+  | "injection_timeout"
+  | "cancelled"
+  | "unexpected_error";
+
+export interface InjectionStrategyAttempt {
+  name: string;
+  success: boolean;
+}
+
+export interface SiteInjectionResult {
+  code: InjectionResultCode;
+  message?: string;
+  strategy?: string;
+  elapsedMs?: number;
+  attempts?: InjectionStrategyAttempt[];
+}
+
+export interface StrategyStats {
+  [siteId: string]: {
+    [strategyName: string]: {
+      success: number;
+      fail: number;
+    };
+  };
+}
+
+export interface ImportRejectedSite {
+  id?: string;
+  name: string;
+  reason: string;
+  origins?: string[];
+}
+
+export interface ImportSummary {
+  version: number;
+  migratedFromVersion: number;
+  customSites: {
+    importedCount: number;
+    acceptedIds: string[];
+    acceptedNames: string[];
+    rejected: ImportRejectedSite[];
+    rewrittenIds: string[];
+    deniedOrigins: string[];
+  };
+  builtInSiteStates: {
+    appliedIds: string[];
+    droppedIds: string[];
+  };
+  builtInSiteOverrides: {
+    appliedIds: string[];
+    droppedIds: string[];
+    adjustedIds: string[];
+  };
+}
 
 export interface AppSettings {
   historyLimit: number;
   autoClosePopup: boolean;
   desktopNotifications: boolean;
   reuseExistingTabs: boolean;
+  waitMsMultiplier: number;
+  historySort: HistorySort;
+  favoriteSort: FavoriteSort;
 }
 
 export interface TemplateVariableDescriptor {
@@ -78,7 +146,7 @@ export interface PromptHistoryItem {
   sentTo: string[];
   createdAt: string;
   status: string;
-  siteResults: Record<string, string>;
+  siteResults: Record<string, SiteInjectionResult>;
 }
 
 export interface FavoritePrompt {
@@ -93,6 +161,8 @@ export interface FavoritePrompt {
   tags: string[];
   folder: string;
   pinned: boolean;
+  usageCount: number;
+  lastUsedAt: string | null;
 }
 
 export interface FailedSelectorRecord {
@@ -127,7 +197,7 @@ export interface LastBroadcastSummary {
   completed: number;
   submittedSiteIds: string[];
   failedSiteIds: string[];
-  siteResults: Record<string, string>;
+  siteResults: Record<string, SiteInjectionResult>;
   startedAt: string;
   finishedAt: string;
 }
@@ -152,11 +222,12 @@ export interface PendingBroadcastRecord {
   completed: number;
   submittedSiteIds: string[];
   failedSiteIds: string[];
-  siteResults: Record<string, string>;
+  siteResults: Record<string, SiteInjectionResult>;
   startedAt: string;
   status: string;
   originTabId?: number | null;
   originWindowId?: number | null;
+  openedTabIds: number[];
 }
 
 export interface ReusableTabSurfaceSnapshot {

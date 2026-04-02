@@ -586,9 +586,9 @@ var AIPromptBroadcasterInjectorBundle = (() => {
       return leftScore - rightScore;
     })[0] ?? null;
   }
-  async function submitByClick(selector, referenceElement) {
+  async function submitByClick(selector, referenceElement, timeoutMs = SUBMIT_BUTTON_WAIT_TIMEOUT_MS) {
     try {
-      const deadline = performance.now() + SUBMIT_BUTTON_WAIT_TIMEOUT_MS;
+      const deadline = performance.now() + Math.max(Number(timeoutMs) || 0, SUBMIT_BUTTON_POLL_INTERVAL_MS);
       while (true) {
         const candidates = findElementsDeep(selector, document, {
           visibleOnly: true,
@@ -632,13 +632,27 @@ var AIPromptBroadcasterInjectorBundle = (() => {
     }
   }
   async function submitPrompt(element, config) {
-    if (config?.submitMethod === "click") {
-      return config?.submitSelector ? submitByClick(config.submitSelector, element) : submitByEnter(element, false);
+    const retryCount = Math.max(0, Math.round(Number(config?.submitRetryCount) || 0));
+    const submitTimeoutMs = Number(config?.submitTimeoutMs);
+    const timeoutMs = Number.isFinite(submitTimeoutMs) ? submitTimeoutMs : SUBMIT_BUTTON_WAIT_TIMEOUT_MS;
+    for (let attemptIndex = 0; attemptIndex <= retryCount; attemptIndex += 1) {
+      let submitted = false;
+      const method = config?.submitMethod;
+      if (method === "click") {
+        submitted = config?.submitSelector ? await submitByClick(config.submitSelector, element, timeoutMs) : submitByEnter(element, false);
+      } else if (method === "shift+enter") {
+        submitted = submitByEnter(element, true);
+      } else {
+        submitted = submitByEnter(element, false);
+      }
+      if (submitted) {
+        return true;
+      }
+      if (attemptIndex < retryCount) {
+        await sleep(250);
+      }
     }
-    if (config?.submitMethod === "shift+enter") {
-      return submitByEnter(element, true);
-    }
-    return submitByEnter(element, false);
+    return false;
   }
 
   // src/content/injector/main.ts
@@ -650,11 +664,32 @@ var AIPromptBroadcasterInjectorBundle = (() => {
       prompt
     ].join("\n");
   }
+  function orderStrategies(strategies, preferredNames) {
+    const requestedNames = Array.isArray(preferredNames) ? preferredNames.map((name) => typeof name === "string" ? name.trim() : "").filter(Boolean) : [];
+    if (requestedNames.length === 0) {
+      return strategies;
+    }
+    const byName = new Map(strategies.map((strategy) => [strategy.name, strategy]));
+    const ordered = [];
+    requestedNames.forEach((name) => {
+      const strategy = byName.get(name);
+      if (strategy && !ordered.includes(strategy)) {
+        ordered.push(strategy);
+      }
+    });
+    strategies.forEach((strategy) => {
+      if (!ordered.includes(strategy)) {
+        ordered.push(strategy);
+      }
+    });
+    return ordered;
+  }
   async function performInjectPrompt(prompt, config) {
+    const attempts = [];
     try {
       const serviceName = config?.name ?? "AI service";
       if (isLikelyAuthPage(config)) {
-        return { status: "login_required" };
+        return { status: "auth_required" };
       }
       if ((config?.waitMs ?? 0) > 0) {
         await sleep(config.waitMs);
@@ -673,12 +708,12 @@ var AIPromptBroadcasterInjectorBundle = (() => {
           serviceId: config?.id,
           copied
         });
-        return { status: "selector_failed", copied };
+        return { status: "selector_timeout", copied, attempts };
       }
       const { element, selector, elapsedMs } = match;
       const resolvedInputType = element instanceof HTMLTextAreaElement ? "textarea" : element instanceof HTMLInputElement ? "input" : element.isContentEditable ? "contenteditable" : config?.inputType === "input" ? "input" : config?.inputType === "contenteditable" ? "contenteditable" : "textarea";
       const lexicalEditor = resolvedInputType === "contenteditable" && isLexicalEditorElement(element);
-      const strategies = resolvedInputType === "contenteditable" ? lexicalEditor ? [
+      const defaultStrategies = resolvedInputType === "contenteditable" ? lexicalEditor ? [
         { name: "lexicalEditorState", run: () => strategyLexicalEditorState(element, prompt) },
         { name: "execCommand", run: () => strategyExecCommand(element, prompt) }
       ] : [
@@ -689,6 +724,7 @@ var AIPromptBroadcasterInjectorBundle = (() => {
         { name: "nativeSetter", run: () => strategyNativeSetter(element, prompt) },
         { name: "paste", run: () => strategyPasteEvent(element, prompt) }
       ];
+      const strategies = orderStrategies(defaultStrategies, config?.strategyOrder);
       let usedStrategy = "";
       let injected = false;
       for (const [index, strategy] of strategies.entries()) {
@@ -696,6 +732,10 @@ var AIPromptBroadcasterInjectorBundle = (() => {
           clearContentEditableText(element);
         }
         const success = strategy.run();
+        attempts.push({
+          name: strategy.name,
+          success
+        });
         log(`${serviceName} strategy ${strategy.name} ${success ? "succeeded" : "failed"}`);
         if (success) {
           usedStrategy = strategy.name;
@@ -710,7 +750,7 @@ var AIPromptBroadcasterInjectorBundle = (() => {
           serviceId: config?.id,
           copied
         });
-        return { status: "fallback_required", copied };
+        return { status: "strategy_exhausted", copied, attempts };
       }
       log(`✅ ${serviceName} 주입 성공 (셀렉터: ${selector}, 대기: ${elapsedMs}ms, 전략: ${usedStrategy})`);
       await sendRuntimeMessage({
@@ -721,14 +761,15 @@ var AIPromptBroadcasterInjectorBundle = (() => {
         elapsedMs
       });
       if (!await submitPrompt(element, config)) {
-        return { status: "submit_failed" };
+        return { status: "submit_failed", selector, strategy: usedStrategy, inputType: resolvedInputType, elapsedMs, attempts };
       }
       return {
         status: "submitted",
         selector,
         strategy: usedStrategy,
         inputType: resolvedInputType,
-        elapsedMs
+        elapsedMs,
+        attempts
       };
     } catch (error) {
       logError("injectPrompt failed", error);
@@ -739,16 +780,17 @@ var AIPromptBroadcasterInjectorBundle = (() => {
         copied
       });
       return {
-        status: "failed",
+        status: "unexpected_error",
         copied,
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
+        attempts
       };
     }
   }
   async function submitOnlyPrompt(config) {
     try {
       if (isLikelyAuthPage(config)) {
-        return { status: "login_required" };
+        return { status: "auth_required" };
       }
       if ((config?.waitMs ?? 0) > 0) {
         await sleep(config.waitMs);
@@ -756,7 +798,7 @@ var AIPromptBroadcasterInjectorBundle = (() => {
       const selectorCandidates = normalizeSelectors(config);
       const match = await waitForElement(selectorCandidates, Math.max((config?.waitMs ?? 0) + 6e3, 8e3));
       if (!match?.element) {
-        return { status: "selector_failed" };
+        return { status: "selector_timeout" };
       }
       const { element, selector, elapsedMs } = match;
       if (!await submitPrompt(element, config)) {
@@ -766,13 +808,15 @@ var AIPromptBroadcasterInjectorBundle = (() => {
         status: "submitted",
         selector,
         strategy: "submitOnly",
-        elapsedMs
+        elapsedMs,
+        attempts: []
       };
     } catch (error) {
       logError("submitOnlyPrompt failed", error);
       return {
-        status: "failed",
-        error: error instanceof Error ? error.message : String(error)
+        status: "unexpected_error",
+        error: error instanceof Error ? error.message : String(error),
+        attempts: []
       };
     }
   }

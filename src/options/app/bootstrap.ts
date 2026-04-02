@@ -1,10 +1,12 @@
 // @ts-nocheck
-import { AI_SITES } from "../../config/sites";
 import {
+  deletePromptHistoryItemsBeforeDate,
+  deletePromptHistoryItemsByIds,
   exportPromptData,
   getAppSettings,
   getPromptHistory,
   importPromptData,
+  normalizeResultCode,
   setPromptHistory,
   updateAppSettings,
 } from "../../shared/prompts";
@@ -13,45 +15,76 @@ import { escapeHTML } from "../../shared/security";
 import { getRuntimeSites, updateRuntimeSite } from "../../shared/sites";
 import { initToastRoot, showToast } from "../../popup/ui/toast";
 import { CHART_COLORS, buildBarChartMarkup, buildDonutMarkup } from "../ui/charts";
-import { applyI18n, isKorean, locale, msg, t } from "./i18n";
+import { applyI18n, isKorean, msg, t } from "./i18n";
 import { state } from "./state";
+import { optionsDom } from "./dom";
+import {
+  buildBadgeMarkup,
+  buildImportReportMarkup,
+  buildImportSummaryText,
+  createEmptyState,
+  formatDateTime,
+  formatShortDate,
+  getRequestedServices,
+  getSiteLabel,
+  getStatusInfo,
+  getSubmittedServices,
+  previewText,
+} from "./helpers";
 
 const PAGE_SIZE = 10;
 
-const navButtons = [...document.querySelectorAll(".nav-button")];
-const pageSections = [...document.querySelectorAll(".page-section")];
-const pageStatus = document.getElementById("page-status");
-const toastHost = document.getElementById("toast-host");
-const dashboardCards = document.getElementById("dashboard-cards");
-const serviceDonut = document.getElementById("service-donut");
-const dailyBarChart = document.getElementById("daily-bar-chart");
-const historyServiceFilter = document.getElementById("history-service-filter");
-const historyDateFrom = document.getElementById("history-date-from");
-const historyDateTo = document.getElementById("history-date-to");
-const historyExportCsv = document.getElementById("history-export-csv");
-const historyTableWrap = document.getElementById("history-table-wrap");
-const historyPrevPage = document.getElementById("history-prev-page");
-const historyNextPage = document.getElementById("history-next-page");
-const historyPageInfo = document.getElementById("history-page-info");
-const servicesGrid = document.getElementById("services-grid");
-const historyLimitSlider = document.getElementById("history-limit-slider");
-const historyLimitValue = document.getElementById("history-limit-value");
-const autoCloseToggle = document.getElementById("auto-close-toggle");
-const desktopNotificationToggle = document.getElementById("desktop-notification-toggle");
-const reuseTabsToggle = document.getElementById("reuse-tabs-toggle");
-const reuseTabsSettingTitle = document.getElementById("reuse-tabs-setting-title");
-const reuseTabsSettingDesc = document.getElementById("reuse-tabs-setting-desc");
-const shortcutList = document.getElementById("shortcut-list");
-const openShortcutsBtn = document.getElementById("open-shortcuts-btn");
-const settingsResetData = document.getElementById("settings-reset-data");
-const settingsExportJson = document.getElementById("settings-export-json");
-const settingsImportJson = document.getElementById("settings-import-json");
-const settingsImportJsonInput = document.getElementById("settings-import-json-input");
-const historyModal = document.getElementById("history-modal");
-const historyModalClose = document.getElementById("history-modal-close");
-const historyModalMeta = document.getElementById("history-modal-meta");
-const historyModalServices = document.getElementById("history-modal-services");
-const historyModalText = document.getElementById("history-modal-text");
+const { navButtons, pageSections, pageStatus } = optionsDom.navigation;
+const { dashboardCards, serviceDonut, dailyBarChart } = optionsDom.dashboard;
+const {
+  historyServiceFilter,
+  historyDateFrom,
+  historyDateTo,
+  historyExportCsv,
+  historyTableWrap,
+  historySelectAll,
+  historySelectAllLabel,
+  historyDeleteSelected,
+  historyDeleteFiltered,
+  historyDelete7d,
+  historyDelete30d,
+  historyDelete90d,
+  historyPrevPage,
+  historyNextPage,
+  historyPageInfo,
+} = optionsDom.history;
+const { servicesGrid } = optionsDom.services;
+const {
+  historyLimitSlider,
+  historyLimitValue,
+  autoCloseToggle,
+  desktopNotificationToggle,
+  reuseTabsToggle,
+  reuseTabsSettingTitle,
+  reuseTabsSettingDesc,
+  waitMultiplierSettingTitle,
+  waitMultiplierSlider,
+  waitMultiplierSettingValue,
+  shortcutList,
+  openShortcutsBtn,
+  settingsResetData,
+  settingsExportJson,
+  settingsImportJson,
+  settingsImportJsonInput,
+} = optionsDom.settings;
+const {
+  historyModal,
+  historyModalClose,
+  historyModalMeta,
+  historyModalServices,
+  historyModalText,
+  importReportModal,
+  importReportModalClose,
+  importReportModalTitle,
+  importReportModalDesc,
+  importReportBody,
+} = optionsDom.modals;
+const { toastHost } = optionsDom;
 
 function setStatus(text, type = "") {
   pageStatus.textContent = text;
@@ -78,122 +111,17 @@ function showConfirmToast(message, onConfirm) {
   });
 }
 
-function buildImportSummaryText(summary, { short = false } = {}) {
-  const acceptedCount = summary?.customSites?.acceptedIds?.length ?? 0;
-  const rejectedCount = summary?.customSites?.rejected?.length ?? 0;
-  const rewrittenCount = summary?.customSites?.rewrittenIds?.length ?? 0;
-  const deniedCount = (summary?.customSites?.rejected ?? []).filter(
-    (entry) => entry?.reason === "permission_denied"
-  ).length;
-  const overrideAdjustedCount = summary?.builtInSiteOverrides?.adjustedIds?.length ?? 0;
-  const overrideDroppedCount = summary?.builtInSiteOverrides?.droppedIds?.length ?? 0;
-  const stateDroppedCount = summary?.builtInSiteStates?.droppedIds?.length ?? 0;
-
-  if (isKorean) {
-    const parts = [
-      `가져오기 완료: 커스텀 서비스 ${acceptedCount}개 적용`,
-      rejectedCount > 0 ? `건너뜀 ${rejectedCount}개` : "",
-      rewrittenCount > 0 ? `ID 재작성 ${rewrittenCount}개` : "",
-      deniedCount > 0 ? `권한 거부 ${deniedCount}개` : "",
-    ].filter(Boolean);
-
-    if (!short && overrideAdjustedCount + overrideDroppedCount + stateDroppedCount > 0) {
-      parts.push(
-        `기본 서비스 보정 ${overrideAdjustedCount + overrideDroppedCount + stateDroppedCount}개`
-      );
-    }
-
-    return parts.join(", ");
-  }
-
-  const parts = [
-    `Import complete: ${acceptedCount} custom service(s) applied`,
-    rejectedCount > 0 ? `${rejectedCount} skipped` : "",
-    rewrittenCount > 0 ? `${rewrittenCount} id rewrite(s)` : "",
-    deniedCount > 0 ? `${deniedCount} permission denial(s)` : "",
-  ].filter(Boolean);
-
-  if (!short && overrideAdjustedCount + overrideDroppedCount + stateDroppedCount > 0) {
-    parts.push(
-      `${overrideAdjustedCount + overrideDroppedCount + stateDroppedCount} built-in adjustment(s)`
-    );
-  }
-
-  return parts.join(", ");
+function openImportReportModal(summary) {
+  state.pendingImportSummary = summary;
+  importReportModalTitle.textContent = t.settings.importReportTitle;
+  importReportModalDesc.textContent = t.settings.importReportDesc;
+  importReportBody.innerHTML = buildImportReportMarkup(summary);
+  importReportModal.hidden = false;
 }
 
-function formatDateTime(value) {
-  try {
-    return new Intl.DateTimeFormat(locale, {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(value));
-  } catch (_error) {
-    return value;
-  }
-}
-
-function formatShortDate(value) {
-  try {
-    return new Intl.DateTimeFormat(locale, {
-      month: "numeric",
-      day: "numeric",
-    }).format(new Date(value));
-  } catch (_error) {
-    return value;
-  }
-}
-
-function previewText(text, maxLength = 60) {
-  const collapsed = String(text ?? "").replace(/\s+/g, " ").trim();
-  return collapsed.length <= maxLength ? collapsed || "-" : `${collapsed.slice(0, maxLength)}...`;
-}
-
-function getSiteLabel(siteId) {
-  return state.runtimeSites.find((site) => site.id === siteId)?.name
-    ?? AI_SITES.find((site) => site.id === siteId)?.name
-    ?? siteId;
-}
-
-function getRequestedServices(entry) {
-  const siteResultKeys = Object.keys(entry.siteResults ?? {});
-  if (Array.isArray(entry?.requestedSiteIds) && entry.requestedSiteIds.length > 0) {
-    return entry.requestedSiteIds;
-  }
-
-  return siteResultKeys.length > 0 ? siteResultKeys : entry.sentTo ?? [];
-}
-
-function getSubmittedServices(entry) {
-  if (Array.isArray(entry?.submittedSiteIds) && entry.submittedSiteIds.length > 0) {
-    return entry.submittedSiteIds;
-  }
-
-  return entry.sentTo ?? [];
-}
-
-function getStatusInfo(status) {
-  switch (status) {
-    case "submitted":
-      return { label: t.statuses.submitted, className: "success" };
-    case "partial":
-      return { label: t.statuses.partial, className: "partial" };
-    case "failed":
-      return { label: t.statuses.failed, className: "failed" };
-    default:
-      return { label: status || t.statuses.unknown, className: "" };
-  }
-}
-
-function buildBadgeMarkup(siteId) {
-  return `<span class="badge">${escapeHTML(getSiteLabel(siteId))}</span>`;
-}
-
-function createEmptyState(message) {
-  return `<div class="empty-state">${escapeHTML(message)}</div>`;
+function closeImportReportModal() {
+  state.pendingImportSummary = null;
+  importReportModal.hidden = true;
 }
 
 function polarToCartesian(cx, cy, radius, angle) {
@@ -320,7 +248,7 @@ function buildDashboardMetrics(history) {
     .sort((left, right) => right[1] - left[1])
     .map(([siteId, count]) => ({
       id: siteId,
-      label: getSiteLabel(siteId),
+      label: getSiteLabel(siteId, state.runtimeSites),
       count,
     }));
 
@@ -339,7 +267,7 @@ function buildDashboardMetrics(history) {
 
   return {
     totalTransmissions: history.length,
-    mostUsedService: mostUsed ? getSiteLabel(mostUsed[0]) : "-",
+    mostUsedService: mostUsed ? getSiteLabel(mostUsed[0], state.runtimeSites) : "-",
     weekCount,
     averagePromptLength,
     donutItems,
@@ -390,12 +318,24 @@ function filteredHistory() {
   });
 }
 
+function syncHistorySelectionState() {
+  const availableIds = new Set(state.history.map((entry) => Number(entry.id)));
+  state.selectedHistoryIds = new Set(
+    [...state.selectedHistoryIds].filter((historyId) => availableIds.has(Number(historyId)))
+  );
+}
+
 function renderHistoryTable() {
+  syncHistorySelectionState();
   const history = filteredHistory();
   const pageCount = Math.max(1, Math.ceil(history.length / PAGE_SIZE));
   state.historyPage = Math.min(state.historyPage, pageCount);
   const startIndex = (state.historyPage - 1) * PAGE_SIZE;
   const currentPageRows = history.slice(startIndex, startIndex + PAGE_SIZE);
+  const currentPageIds = currentPageRows.map((entry) => Number(entry.id));
+  const allCurrentPageSelected =
+    currentPageIds.length > 0 &&
+    currentPageIds.every((historyId) => state.selectedHistoryIds.has(historyId));
 
   if (currentPageRows.length === 0) {
     historyTableWrap.innerHTML = createEmptyState(t.history.emptyFiltered);
@@ -404,6 +344,7 @@ function renderHistoryTable() {
       <table>
         <thead>
           <tr>
+            <th>${escapeHTML(t.history.tableSelect)}</th>
             <th>${escapeHTML(t.history.tableDate)}</th>
             <th>${escapeHTML(t.history.tablePrompt)}</th>
             <th>${escapeHTML(t.history.tableServices)}</th>
@@ -416,9 +357,10 @@ function renderHistoryTable() {
               const status = getStatusInfo(entry.status);
               return `
                 <tr class="table-row-button" data-history-id="${entry.id}">
+                  <td><input type="checkbox" data-history-select="${entry.id}" ${state.selectedHistoryIds.has(Number(entry.id)) ? "checked" : ""} /></td>
                   <td>${escapeHTML(formatDateTime(entry.createdAt))}</td>
                   <td>${escapeHTML(previewText(entry.text))}</td>
-                  <td><div class="service-badges">${getRequestedServices(entry).map((siteId) => buildBadgeMarkup(siteId)).join("")}</div></td>
+                  <td><div class="service-badges">${getRequestedServices(entry).map((siteId) => buildBadgeMarkup(siteId, state.runtimeSites)).join("")}</div></td>
                   <td><span class="status-pill ${status.className}">${escapeHTML(status.label)}</span></td>
                 </tr>
               `;
@@ -432,6 +374,9 @@ function renderHistoryTable() {
   historyPageInfo.textContent = t.history.pageInfo(state.historyPage, pageCount);
   historyPrevPage.disabled = state.historyPage <= 1;
   historyNextPage.disabled = state.historyPage >= pageCount;
+  historySelectAll.checked = allCurrentPageSelected;
+  historyDeleteSelected.disabled = state.selectedHistoryIds.size === 0;
+  historyDeleteFiltered.disabled = history.length === 0;
 }
 
 function renderServiceFilterOptions() {
@@ -490,6 +435,15 @@ function applySettingsToControls() {
   reuseTabsToggle.checked = state.settings.reuseExistingTabs;
   reuseTabsSettingTitle.textContent = t.settings.reuseTabsTitle;
   reuseTabsSettingDesc.textContent = t.settings.reuseTabsDesc;
+  waitMultiplierSettingTitle.textContent = t.settings.waitMultiplierTitle;
+  waitMultiplierSlider.value = String(state.settings.waitMsMultiplier);
+  waitMultiplierSettingValue.textContent = t.settings.waitMultiplierValue(state.settings.waitMsMultiplier);
+  historySelectAllLabel.textContent = t.history.selectAllLabel;
+  historyDeleteSelected.textContent = t.history.deleteSelected;
+  historyDeleteFiltered.textContent = t.history.deleteFiltered;
+  historyDelete7d.textContent = t.history.deleteOlderThan(7);
+  historyDelete30d.textContent = t.history.deleteOlderThan(30);
+  historyDelete90d.textContent = t.history.deleteOlderThan(90);
 }
 
 function buildResultComparisonMarkup(entry) {
@@ -505,16 +459,15 @@ function buildResultComparisonMarkup(entry) {
     const name = site?.name ?? siteId;
     const color = site?.color ?? "#888";
     const icon = site?.icon ?? siteId.slice(0, 2).toUpperCase();
-    const rawStatus = siteResults[siteId] ?? (submitted.has(siteId) ? "submitted" : failed.has(siteId) ? "failed" : "unknown");
+    const result = siteResults[siteId];
+    const rawStatus = normalizeResultCode(result?.code ?? (submitted.has(siteId) ? "submitted" : failed.has(siteId) ? "unexpected_error" : "unknown"));
     const isOk = rawStatus === "submitted";
     const isFailed = rawStatus !== "submitted" && rawStatus !== "unknown";
     const statusEmoji = isOk ? "✅" : isFailed ? "❌" : "⏳";
     const statusLabel = isOk
       ? (msg("options_status_complete") || "Completed")
       : isFailed
-        ? (rawStatus === "login_required"
-            ? (msg("toast_login_required", [name]) || `Login required`)
-            : rawStatus.replace(/_/g, " "))
+        ? (t.settings.resultCodeLabels[rawStatus] || rawStatus.replace(/_/g, " "))
         : (msg("options_status_unknown") || "Unknown");
 
     const siteUrl = site?.url ?? "#";
@@ -547,7 +500,9 @@ function openHistoryModal(historyId) {
 
   const status = getStatusInfo(entry.status);
   historyModalMeta.textContent = `${formatDateTime(entry.createdAt)} · ${status.label}`;
-  historyModalServices.innerHTML = getRequestedServices(entry).map((siteId) => buildBadgeMarkup(siteId)).join("");
+  historyModalServices.innerHTML = getRequestedServices(entry)
+    .map((siteId) => buildBadgeMarkup(siteId, state.runtimeSites))
+    .join("");
   historyModalText.textContent = entry.text;
 
   // Result comparison view
@@ -604,6 +559,7 @@ async function loadData() {
   ]);
 
   state.history = history;
+  state.selectedHistoryIds.clear();
   state.runtimeSites = runtimeSites;
   state.settings = settings;
   renderServiceFilterOptions();
@@ -642,11 +598,16 @@ function switchSection(sectionId) {
   state.activeSection = sectionId;
 
   navButtons.forEach((button) => {
-    button.classList.toggle("active", button.dataset.section === sectionId);
+    const active = button.dataset.section === sectionId;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
   });
 
   pageSections.forEach((section) => {
-    section.classList.toggle("active", section.id === `section-${sectionId}`);
+    const active = section.id === `section-${sectionId}`;
+    section.classList.toggle("active", active);
+    section.hidden = !active;
   });
 }
 
@@ -684,6 +645,33 @@ function exportFilteredHistoryAsCsv() {
   );
   setStatus(t.history.exportSuccess, "success");
   showAppToast(t.history.exportSuccess, "success", 1800);
+}
+
+async function refreshHistoryAfterMutation() {
+  state.history = await getPromptHistory();
+  syncHistorySelectionState();
+  renderDashboard();
+  renderHistoryTable();
+  renderServicesSection();
+}
+
+async function deleteSelectedHistoryRows(historyIds) {
+  await deletePromptHistoryItemsByIds(historyIds);
+  historyIds.forEach((historyId) => state.selectedHistoryIds.delete(Number(historyId)));
+  await refreshHistoryAfterMutation();
+  setStatus(t.history.deleteSuccess, "success");
+  showAppToast(t.history.deleteSuccess, "success", 1800);
+}
+
+async function deleteHistoryOlderThanDays(days) {
+  const cutoff = new Date();
+  cutoff.setHours(0, 0, 0, 0);
+  cutoff.setDate(cutoff.getDate() - days);
+  await deletePromptHistoryItemsBeforeDate(cutoff);
+  state.selectedHistoryIds.clear();
+  await refreshHistoryAfterMutation();
+  setStatus(t.history.deleteSuccess, "success");
+  showAppToast(t.history.deleteSuccess, "success", 1800);
 }
 
 async function resetAllData() {
@@ -728,6 +716,23 @@ function bindEvents() {
 
   historyExportCsv.addEventListener("click", exportFilteredHistoryAsCsv);
 
+  historySelectAll.addEventListener("change", (event) => {
+    const history = filteredHistory();
+    const startIndex = (state.historyPage - 1) * PAGE_SIZE;
+    const currentPageRows = history.slice(startIndex, startIndex + PAGE_SIZE);
+    const checked = Boolean(event.target.checked);
+
+    currentPageRows.forEach((entry) => {
+      if (checked) {
+        state.selectedHistoryIds.add(Number(entry.id));
+      } else {
+        state.selectedHistoryIds.delete(Number(entry.id));
+      }
+    });
+
+    renderHistoryTable();
+  });
+
   historyPrevPage.addEventListener("click", () => {
     state.historyPage = Math.max(1, state.historyPage - 1);
     renderHistoryTable();
@@ -739,6 +744,18 @@ function bindEvents() {
   });
 
   historyTableWrap.addEventListener("click", (event) => {
+    const checkbox = event.target.closest("[data-history-select]");
+    if (checkbox) {
+      const historyId = Number(checkbox.dataset.historySelect);
+      if (checkbox.checked) {
+        state.selectedHistoryIds.add(historyId);
+      } else {
+        state.selectedHistoryIds.delete(historyId);
+      }
+      renderHistoryTable();
+      return;
+    }
+
     const row = event.target.closest("[data-history-id]");
     if (row) {
       openHistoryModal(row.dataset.historyId);
@@ -750,6 +767,37 @@ function bindEvents() {
     if (event.target === historyModal) {
       closeHistoryModal();
     }
+  });
+
+  historyDeleteSelected.addEventListener("click", () => {
+    showConfirmToast(t.history.deleteSelectedConfirm, async () => {
+      await deleteSelectedHistoryRows([...state.selectedHistoryIds]);
+    });
+  });
+
+  historyDeleteFiltered.addEventListener("click", () => {
+    const historyIds = filteredHistory().map((entry) => Number(entry.id));
+    showConfirmToast(t.history.deleteFilteredConfirm(historyIds.length), async () => {
+      await deleteSelectedHistoryRows(historyIds);
+    });
+  });
+
+  historyDelete7d.addEventListener("click", () => {
+    showConfirmToast(t.history.deleteOlderConfirm(7), async () => {
+      await deleteHistoryOlderThanDays(7);
+    });
+  });
+
+  historyDelete30d.addEventListener("click", () => {
+    showConfirmToast(t.history.deleteOlderConfirm(30), async () => {
+      await deleteHistoryOlderThanDays(30);
+    });
+  });
+
+  historyDelete90d.addEventListener("click", () => {
+    showConfirmToast(t.history.deleteOlderConfirm(90), async () => {
+      await deleteHistoryOlderThanDays(90);
+    });
   });
 
   historyLimitSlider.addEventListener("input", (event) => {
@@ -781,6 +829,18 @@ function bindEvents() {
   reuseTabsToggle.addEventListener("change", (event) => {
     void saveSettings({ reuseExistingTabs: event.target.checked }).catch((error) => {
       console.error("[AI Prompt Broadcaster] Failed to save tab reuse setting.", error);
+      setStatus(error?.message ?? t.saveFailed, "error");
+      showAppToast(error?.message ?? t.saveFailed, "error", 3000);
+    });
+  });
+
+  waitMultiplierSlider.addEventListener("input", (event) => {
+    waitMultiplierSettingValue.textContent = t.settings.waitMultiplierValue(event.target.value);
+  });
+
+  waitMultiplierSlider.addEventListener("change", (event) => {
+    void saveSettings({ waitMsMultiplier: Number(event.target.value) }).catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to save wait multiplier.", error);
       setStatus(error?.message ?? t.saveFailed, "error");
       showAppToast(error?.message ?? t.saveFailed, "error", 3000);
     });
@@ -839,12 +899,20 @@ function bindEvents() {
       await loadData();
       setStatus(buildImportSummaryText(result.importSummary), "success");
       showAppToast(buildImportSummaryText(result.importSummary, { short: true }), "success", 2600);
+      openImportReportModal(result.importSummary);
     } catch (error) {
       console.error("[AI Prompt Broadcaster] Failed to import JSON.", error);
       setStatus(error?.message ?? t.settings.importFailed, "error");
       showAppToast(error?.message ?? t.settings.importFailed, "error", 3000);
     } finally {
       settingsImportJsonInput.value = "";
+    }
+  });
+
+  importReportModalClose.addEventListener("click", closeImportReportModal);
+  importReportModal.addEventListener("click", (event) => {
+    if (event.target === importReportModal) {
+      closeImportReportModal();
     }
   });
 
@@ -907,6 +975,7 @@ async function init() {
     initToastRoot(toastHost);
     renderServiceFilterOptions();
     bindEvents();
+    switchSection(state.activeSection);
     await renderShortcutList();
     await loadData();
   } catch (error) {

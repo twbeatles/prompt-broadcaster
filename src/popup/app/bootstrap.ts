@@ -18,12 +18,15 @@ import {
   createFavoritePrompt,
   deleteFavoriteItem,
   deletePromptHistoryItem,
+  duplicateFavoriteItem,
   exportPromptData,
   getAppSettings,
   getPromptFavorites,
   getPromptHistory,
   getTemplateVariableCache,
   importPromptData,
+  markFavoriteUsed,
+  normalizeResultCode,
   updateFavoriteTitle,
   updateFavoriteMeta,
   updateAppSettings,
@@ -54,113 +57,159 @@ import {
   isKorean,
   msg,
   t,
+  uiLanguage,
 } from "./i18n";
-import { SITE_EMOJI, state } from "./state";
+import { state } from "./state";
+import { popupDom } from "./dom";
+import {
+  compareDateValues,
+  escapeAttribute,
+  escapeHtml,
+  formatDate,
+  getSiteIcon,
+  isTextEditingTarget,
+  joinMultilineValues,
+  normalizeSiteIdList,
+  previewText,
+  splitMultilineValues,
+} from "./helpers";
+import {
+  buildEmptyState,
+  buildFavoriteItemMarkup,
+  buildHistoryItemMarkup,
+  buildImportReportMarkup,
+  getHistorySelectedSiteIds,
+  renderServiceBadges,
+} from "./list-markup";
+import {
+  getFavoriteSortOptions,
+  getHistorySortOptions,
+  sortFavoriteItemsForDisplay,
+  sortHistoryItemsForDisplay,
+} from "./sorting";
 
-const extTitle = document.getElementById("ext-title");
-const extDesc = document.getElementById("ext-desc");
-const tabButtons = [...document.querySelectorAll(".tab-button")];
-const panels = [...document.querySelectorAll(".tab-panel")];
-const promptInput = document.getElementById("prompt-input");
-const promptCounter = document.getElementById("prompt-counter");
-const clearPromptBtn = document.getElementById("clear-prompt-btn");
-const templateSummary = document.getElementById("template-summary");
-const templateSummaryLabel = document.getElementById("template-summary-label");
-const templateChipList = document.getElementById("template-chip-list");
-const sitesLabel = document.getElementById("sites-label");
-const sitesContainer = document.getElementById("sites-container");
-const toggleAllBtn = document.getElementById("toggle-all");
-const saveFavoriteBtn = document.getElementById("save-favorite-btn");
-const cancelSendBtn = document.getElementById("cancel-send-btn");
-const sendBtn = document.getElementById("send-btn");
-const statusMsg = document.getElementById("status-message");
-const historySearchInput = document.getElementById("history-search");
-const favoritesSearchInput = document.getElementById("favorites-search");
-const historyList = document.getElementById("history-list");
-const favoritesList = document.getElementById("favorites-list");
-const settingsTitle = document.getElementById("settings-title");
-const settingsDesc = document.getElementById("settings-desc");
-const reuseExistingTabsToggle = document.getElementById("reuse-existing-tabs-toggle");
-const reuseExistingTabsLabel = document.getElementById("reuse-existing-tabs-label");
-const reuseExistingTabsDesc = document.getElementById("reuse-existing-tabs-desc");
-const openOptionsBtn = document.getElementById("open-options-btn");
-const clearHistoryBtn = document.getElementById("clear-history-btn");
-const exportJsonBtn = document.getElementById("export-json-btn");
-const importJsonBtn = document.getElementById("import-json-btn");
-const importJsonInput = document.getElementById("import-json-input");
-const serviceManagementTitle = document.getElementById("service-management-title");
-const serviceManagementDesc = document.getElementById("service-management-desc");
-const addServiceBtn = document.getElementById("add-service-btn");
-const resetSitesBtn = document.getElementById("reset-sites-btn");
-const managedSitesList = document.getElementById("managed-sites-list");
-const serviceEditor = document.getElementById("service-editor");
-const serviceEditorTitle = document.getElementById("service-editor-title");
-const serviceEditorDesc = document.getElementById("service-editor-desc");
-const serviceNameLabel = document.getElementById("service-name-label");
-const serviceNameInput = document.getElementById("service-name-input");
-const serviceUrlLabel = document.getElementById("service-url-label");
-const serviceUrlInput = document.getElementById("service-url-input");
-const serviceInputSelectorLabel = document.getElementById("service-input-selector-label");
-const serviceInputSelectorInput = document.getElementById("service-input-selector-input");
-const testSelectorBtn = document.getElementById("test-selector-btn");
-const serviceInputTypeLabel = document.getElementById("service-input-type-label");
-const serviceSubmitSelectorLabel = document.getElementById("service-submit-selector-label");
-const serviceSubmitSelectorInput = document.getElementById("service-submit-selector-input");
-const serviceSubmitMethodLabel = document.getElementById("service-submit-method-label");
-const serviceSubmitMethodSelect = document.getElementById("service-submit-method-select");
-const serviceAdvancedTitle = document.getElementById("service-advanced-title");
-const serviceFallbackSelectorsLabel = document.getElementById("service-fallback-selectors-label");
-const serviceFallbackSelectorsInput = document.getElementById("service-fallback-selectors-input");
-const serviceAuthSelectorsLabel = document.getElementById("service-auth-selectors-label");
-const serviceAuthSelectorsInput = document.getElementById("service-auth-selectors-input");
-const serviceHostnameAliasesLabel = document.getElementById("service-hostname-aliases-label");
-const serviceHostnameAliasesInput = document.getElementById("service-hostname-aliases-input");
-const serviceLastVerifiedLabel = document.getElementById("service-last-verified-label");
-const serviceLastVerifiedInput = document.getElementById("service-last-verified-input");
-const serviceVerifiedVersionLabel = document.getElementById("service-verified-version-label");
-const serviceVerifiedVersionInput = document.getElementById("service-verified-version-input");
-const serviceWaitLabel = document.getElementById("service-wait-label");
-const serviceWaitRange = document.getElementById("service-wait-range");
-const serviceWaitValue = document.getElementById("service-wait-value");
-const serviceColorLabel = document.getElementById("service-color-label");
-const serviceColorInput = document.getElementById("service-color-input");
-const serviceIconLabel = document.getElementById("service-icon-label");
-const serviceIconInput = document.getElementById("service-icon-input");
-const serviceEnabledLabel = document.getElementById("service-enabled-label");
-const serviceEnabledInput = document.getElementById("service-enabled-input");
-const serviceTestResult = document.getElementById("service-test-result");
-const serviceEditorError = document.getElementById("service-editor-error");
-const serviceEditorCancel = document.getElementById("service-editor-cancel");
-const serviceEditorSave = document.getElementById("service-editor-save");
-const toastHost = document.getElementById("toast-host");
-
-const templateModal = document.getElementById("template-modal");
-const templateModalTitle = document.getElementById("template-modal-title");
-const templateModalDesc = document.getElementById("template-modal-desc");
-const templateModalClose = document.getElementById("template-modal-close");
-const templateModalSystemInfo = document.getElementById("template-modal-system-info");
-const templateFields = document.getElementById("template-fields");
-const templatePreviewLabel = document.getElementById("template-preview-label");
-const templatePreview = document.getElementById("template-preview");
-const templateModalError = document.getElementById("template-modal-error");
-const templateModalCancel = document.getElementById("template-modal-cancel");
-const templateModalConfirm = document.getElementById("template-modal-confirm");
-
-const favoriteModal = document.getElementById("favorite-modal");
-const favoriteModalTitle = document.getElementById("favorite-modal-title");
-const favoriteModalDesc = document.getElementById("favorite-modal-desc");
-const favoriteModalClose = document.getElementById("favorite-modal-close");
-const favoriteTitleLabel = document.getElementById("favorite-title-label");
-const favoriteTitleInput = document.getElementById("favorite-title-input");
-const favoriteSaveDefaultsRow = document.getElementById("favorite-save-defaults-row");
-const favoriteSaveDefaults = document.getElementById("favorite-save-defaults");
-const favoriteSaveDefaultsLabel = document.getElementById("favorite-save-defaults-label");
-const favoriteDefaultFieldsWrap = document.getElementById("favorite-default-fields-wrap");
-const favoriteDefaultFieldsLabel = document.getElementById("favorite-default-fields-label");
-const favoriteDefaultFields = document.getElementById("favorite-default-fields");
-const favoriteModalError = document.getElementById("favorite-modal-error");
-const favoriteModalCancel = document.getElementById("favorite-modal-cancel");
-const favoriteModalConfirm = document.getElementById("favorite-modal-confirm");
+const { extTitle, extDesc } = popupDom.header;
+const { tabButtons, panels } = popupDom.tabs;
+const {
+  promptInput,
+  promptCounter,
+  clearPromptBtn,
+  templateSummary,
+  templateSummaryLabel,
+  templateChipList,
+  sitesLabel,
+  sitesContainer,
+  toggleAllBtn,
+  saveFavoriteBtn,
+  cancelSendBtn,
+  sendBtn,
+  statusMsg,
+} = popupDom.compose;
+const { historySearchInput, historySortSelect, historyList } = popupDom.history;
+const { favoritesSearchInput, favoritesSortSelect, favoritesList } = popupDom.favorites;
+const {
+  settingsTitle,
+  settingsDesc,
+  reuseExistingTabsToggle,
+  reuseExistingTabsLabel,
+  reuseExistingTabsDesc,
+  openOptionsBtn,
+  clearHistoryBtn,
+  exportJsonBtn,
+  importJsonBtn,
+  importJsonInput,
+  waitMultiplierLabel,
+  waitMultiplierRange,
+  waitMultiplierValue,
+} = popupDom.settings;
+const {
+  serviceManagementTitle,
+  serviceManagementDesc,
+  addServiceBtn,
+  resetSitesBtn,
+  managedSitesList,
+  serviceEditor,
+  serviceEditorTitle,
+  serviceEditorDesc,
+  serviceNameLabel,
+  serviceNameInput,
+  serviceUrlLabel,
+  serviceUrlInput,
+  serviceInputSelectorLabel,
+  serviceInputSelectorInput,
+  testSelectorBtn,
+  serviceInputTypeLabel,
+  serviceSubmitSelectorLabel,
+  serviceSubmitSelectorInput,
+  serviceSubmitMethodLabel,
+  serviceSubmitMethodSelect,
+  serviceAdvancedTitle,
+  serviceFallbackSelectorsLabel,
+  serviceFallbackSelectorsInput,
+  serviceAuthSelectorsLabel,
+  serviceAuthSelectorsInput,
+  serviceHostnameAliasesLabel,
+  serviceHostnameAliasesInput,
+  serviceLastVerifiedLabel,
+  serviceLastVerifiedInput,
+  serviceVerifiedVersionLabel,
+  serviceVerifiedVersionInput,
+  serviceWaitLabel,
+  serviceWaitRange,
+  serviceWaitValue,
+  serviceColorLabel,
+  serviceColorInput,
+  serviceIconLabel,
+  serviceIconInput,
+  serviceEnabledLabel,
+  serviceEnabledInput,
+  serviceTestResult,
+  serviceEditorError,
+  serviceEditorCancel,
+  serviceEditorSave,
+} = popupDom.serviceManagement;
+const {
+  templateModal,
+  templateModalTitle,
+  templateModalDesc,
+  templateModalClose,
+  templateModalSystemInfo,
+  templateFields,
+  templatePreviewLabel,
+  templatePreview,
+  templateModalError,
+  templateModalCancel,
+  templateModalConfirm,
+  favoriteModal,
+  favoriteModalTitle,
+  favoriteModalDesc,
+  favoriteModalClose,
+  favoriteTitleLabel,
+  favoriteTitleInput,
+  favoriteSaveDefaultsRow,
+  favoriteSaveDefaults,
+  favoriteSaveDefaultsLabel,
+  favoriteDefaultFieldsWrap,
+  favoriteDefaultFieldsLabel,
+  favoriteDefaultFields,
+  favoriteModalError,
+  favoriteModalCancel,
+  favoriteModalConfirm,
+  resendModal,
+  resendModalTitle,
+  resendModalDesc,
+  resendModalSites,
+  resendModalClose,
+  resendModalCancel,
+  resendModalConfirm,
+  importReportModal,
+  importReportModalTitle,
+  importReportModalDesc,
+  importReportBody,
+  importReportModalClose,
+  importReportModalConfirm,
+} = popupDom.modals;
+const { toastHost } = popupDom;
 
 function setStatus(text, type = "") {
   statusMsg.textContent = text;
@@ -226,31 +275,6 @@ function buildBroadcastToastSignature(summary) {
   ].join("|");
 }
 
-function escapeAttribute(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
-
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function getSiteIcon(site) {
-  if (site?.icon) {
-    return site.icon;
-  }
-
-  return SITE_EMOJI[site?.id] ?? site?.name?.slice(0, 2)?.toUpperCase() ?? "AI";
-}
-
 function getEnabledSites() {
   return state.runtimeSites.filter((site) => site.enabled);
 }
@@ -293,6 +317,110 @@ function getDefaultTargetModeLabel() {
 
 function getDefaultSiteTargetSelection() {
   return "default";
+}
+
+function renderSortControls() {
+  historySortSelect.innerHTML = getHistorySortOptions()
+    .map((option) => `<option value="${escapeAttribute(option.value)}">${escapeHtml(option.label)}</option>`)
+    .join("");
+  favoritesSortSelect.innerHTML = getFavoriteSortOptions()
+    .map((option) => `<option value="${escapeAttribute(option.value)}">${escapeHtml(option.label)}</option>`)
+    .join("");
+
+  historySortSelect.value = state.settings.historySort;
+  favoritesSortSelect.value = state.settings.favoriteSort;
+}
+
+function getFocusableElements(root) {
+  return [...root.querySelectorAll(
+    "button:not([disabled]), [href], input:not([disabled]):not([type='hidden']), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])"
+  )].filter((element) => !element.hidden && element.getAttribute("aria-hidden") !== "true");
+}
+
+function openOverlay(overlay, initialFocus = null) {
+  if (!overlay) {
+    return;
+  }
+
+  state.lastFocusedElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  overlay.hidden = false;
+  state.openModalId = overlay.id;
+
+  window.requestAnimationFrame(() => {
+    const fallbackTarget = getFocusableElements(overlay)[0] ?? overlay.querySelector(".modal-card");
+    (initialFocus ?? fallbackTarget)?.focus?.();
+  });
+}
+
+function closeOverlay(overlay) {
+  if (!overlay) {
+    return;
+  }
+
+  overlay.hidden = true;
+  if (state.openModalId === overlay.id) {
+    state.openModalId = null;
+  }
+  if (state.lastFocusedElement?.focus) {
+    state.lastFocusedElement.focus();
+  }
+  state.lastFocusedElement = null;
+}
+
+function getOpenOverlay() {
+  return [importReportModal, resendModal, favoriteModal, templateModal].find((overlay) => overlay && !overlay.hidden) ?? null;
+}
+
+function closeActiveOverlayOrMenu() {
+  const overlay = getOpenOverlay();
+  if (overlay === importReportModal) {
+    closeOverlay(importReportModal);
+    return true;
+  }
+  if (overlay === resendModal) {
+    closeOverlay(resendModal);
+    state.pendingResendHistory = null;
+    return true;
+  }
+  if (overlay === favoriteModal) {
+    hideFavoriteModal();
+    return true;
+  }
+  if (overlay === templateModal) {
+    hideTemplateModal();
+    return true;
+  }
+  if (state.openMenuKey) {
+    state.openMenuKey = null;
+    renderLists();
+    return true;
+  }
+  return false;
+}
+
+function trapModalFocus(event) {
+  if (event.key !== "Tab") {
+    return;
+  }
+
+  const overlay = getOpenOverlay();
+  if (!overlay) {
+    return;
+  }
+
+  const focusable = getFocusableElements(overlay);
+  if (focusable.length === 0) {
+    event.preventDefault();
+    return;
+  }
+
+  const currentIndex = focusable.indexOf(document.activeElement);
+  const nextIndex = event.shiftKey
+    ? (currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1)
+    : (currentIndex === -1 || currentIndex >= focusable.length - 1 ? 0 : currentIndex + 1);
+
+  event.preventDefault();
+  focusable[nextIndex]?.focus?.();
 }
 
 function syncSiteTargetSelections() {
@@ -347,73 +475,8 @@ function applyDynamicPromptPlaceholder() {
   promptInput.setAttribute("placeholder", nextPlaceholder);
 }
 
-function previewText(text, maxLength = 50) {
-  const collapsed = String(text).replace(/\s+/g, " ").trim();
-  if (collapsed.length <= maxLength) {
-    return collapsed || "-";
-  }
-
-  return `${collapsed.slice(0, maxLength)}...`;
-}
-
-function formatDate(isoString) {
-  try {
-    return new Intl.DateTimeFormat(isKorean ? "ko-KR" : "en-US", {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(new Date(isoString));
-  } catch (_error) {
-    return isoString;
-  }
-}
-
-function normalizeSiteIdList(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return Array.from(
-    new Set(
-      value
-        .filter((entry) => typeof entry === "string" && entry.trim())
-        .map((entry) => entry.trim())
-    )
-  );
-}
-
-function getHistorySelectedSiteIds(item) {
-  return normalizeSiteIdList(
-    Array.isArray(item?.requestedSiteIds) && item.requestedSiteIds.length > 0
-      ? item.requestedSiteIds
-      : item?.sentTo
-  );
-}
-
 function getTemplateDisplayName(name) {
   return getTemplateVariableDisplayName(name, uiLanguage);
-}
-
-function joinMultilineValues(values) {
-  return Array.isArray(values) ? values.join("\n") : "";
-}
-
-function splitMultilineValues(value) {
-  return String(value ?? "")
-    .split(/\r?\n/g)
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-}
-
-function renderServiceBadges(siteIds = []) {
-  return siteIds
-    .map((siteId) => {
-      const site = state.runtimeSites.find((entry) => entry.id === siteId);
-      const label = getSiteIcon(site) ?? siteId.slice(0, 2).toUpperCase();
-      return `<span class="service-badge">${escapeHtml(label)}</span>`;
-    })
-    .join("");
 }
 
 function allCheckboxes() {
@@ -438,7 +501,9 @@ function applySiteSelection(sentTo) {
   allCheckboxes().forEach((checkbox) => {
     const shouldCheck = selected.size === 0 ? checkbox.checked : selected.has(checkbox.value);
     checkbox.checked = shouldCheck;
-    checkbox.closest(".site-card")?.classList.toggle("checked", shouldCheck);
+    const card = checkbox.closest(".site-card");
+    card?.classList.toggle("checked", shouldCheck);
+    card?.setAttribute("aria-selected", String(shouldCheck));
   });
 
   syncToggleAllLabel();
@@ -448,24 +513,20 @@ function switchTab(tabId) {
   state.activeTab = tabId;
 
   tabButtons.forEach((button) => {
-    button.classList.toggle("active", button.dataset.tab === tabId);
+    const active = button.dataset.tab === tabId;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
   });
 
   panels.forEach((panel) => {
-    panel.classList.toggle("active", panel.dataset.panel === tabId);
+    const active = panel.dataset.panel === tabId;
+    panel.classList.toggle("active", active);
+    panel.hidden = !active;
   });
 
   state.openMenuKey = null;
   renderLists();
-}
-
-function buildEmptyState(message) {
-  return `
-    <div class="empty-state">
-      <div>${escapeHtml(message)}</div>
-      <button class="empty-action" type="button" data-switch-tab="compose">${escapeHtml(t.emptyActionCompose)}</button>
-    </div>
-  `;
 }
 
 function filterItems(items, query) {
@@ -479,83 +540,12 @@ function filterItems(items, query) {
   );
 }
 
-function buildHistoryItemMarkup(item) {
-  const menuKey = `history:${item.id}`;
-
-  return `
-    <article class="prompt-item" data-history-id="${item.id}">
-      <button class="prompt-main" type="button" data-load-history="${item.id}">
-        <div class="prompt-preview">${escapeHtml(previewText(item.text))}</div>
-        <div class="prompt-meta">
-          <div class="service-icons">${renderServiceBadges(getHistorySelectedSiteIds(item))}</div>
-          <span>${escapeHtml(formatDate(item.createdAt))}</span>
-        </div>
-      </button>
-      <div class="prompt-actions">
-        <button class="menu-button" type="button" aria-label="${escapeAttribute(t.menuMore)}" data-toggle-menu="${escapeAttribute(menuKey)}">...</button>
-        <div class="item-menu ${state.openMenuKey === menuKey ? "open" : ""}">
-          <button class="menu-item" type="button" data-action="favorite" data-history-id="${item.id}">${escapeHtml(t.addFavorite)}</button>
-          <button class="menu-item danger" type="button" data-action="delete-history" data-history-id="${item.id}">${escapeHtml(t.delete)}</button>
-        </div>
-      </div>
-    </article>
-  `;
-}
-
-function buildFavoriteTagsMarkup(item) {
-  const tags = Array.isArray(item.tags) ? item.tags : [];
-  const folder = typeof item.folder === "string" && item.folder.trim() ? item.folder.trim() : "";
-  const pinIcon = item.pinned ? `<span class="fav-pin-icon" title="${escapeHtml(msg("popup_favorite_pinned") || "Pinned")}">📌</span>` : "";
-  const folderBadge = folder ? `<span class="fav-folder-badge" data-filter-folder="${escapeAttribute(folder)}">📁 ${escapeHtml(folder)}</span>` : "";
-  const tagChips = tags.map(
-    (tag) => `<span class="fav-tag-chip" data-filter-tag="${escapeAttribute(tag)}">#${escapeHtml(tag)}</span>`
-  ).join("");
-
-  if (!pinIcon && !folderBadge && !tagChips) return "";
-  return `<div class="fav-meta-row">${pinIcon}${folderBadge}${tagChips}</div>`;
-}
-
-function buildFavoriteItemMarkup(item) {
-  const menuKey = `favorite:${item.id}`;
-  const safeFavoriteId = escapeAttribute(item.id);
-  const pinLabel = item.pinned
-    ? (msg("popup_favorite_unpin") || "Unpin")
-    : (msg("popup_favorite_pin") || "Pin");
-
-  return `
-    <article class="prompt-item${item.pinned ? " pinned-item" : ""}" data-favorite-id="${safeFavoriteId}">
-      <div class="favorite-title-row">
-        <span class="favorite-star">${escapeHtml(t.favoriteStar)}</span>
-        <input
-          class="favorite-title-input"
-          type="text"
-          data-favorite-title="${safeFavoriteId}"
-          value="${escapeAttribute(item.title)}"
-          placeholder="${escapeAttribute(t.titlePlaceholder)}"
-        />
-      </div>
-      ${buildFavoriteTagsMarkup(item)}
-      <button class="prompt-main" type="button" data-load-favorite="${safeFavoriteId}">
-        <div class="prompt-preview">${escapeHtml(previewText(item.text))}</div>
-        <div class="prompt-meta">
-          <div class="service-icons">${renderServiceBadges(item.sentTo)}</div>
-          <span>${escapeHtml(formatDate(item.createdAt))}</span>
-        </div>
-      </button>
-      <div class="prompt-actions">
-        <button class="menu-button" type="button" aria-label="${escapeAttribute(t.menuMore)}" data-toggle-menu="${escapeAttribute(menuKey)}">...</button>
-        <div class="item-menu ${state.openMenuKey === menuKey ? "open" : ""}">
-          <button class="menu-item" type="button" data-action="edit-favorite-tags" data-favorite-id="${safeFavoriteId}">${escapeHtml(msg("popup_favorite_edit_tags") || "Edit tags & folder")}</button>
-          <button class="menu-item" type="button" data-action="toggle-pin-favorite" data-favorite-id="${safeFavoriteId}">${escapeHtml(pinLabel)}</button>
-          <button class="menu-item danger" type="button" data-action="delete-favorite" data-favorite-id="${safeFavoriteId}">${escapeHtml(t.delete)}</button>
-        </div>
-      </div>
-    </article>
-  `;
-}
 
 function renderHistoryList() {
-  const items = filterItems(state.history, state.historySearch);
+  const items = sortHistoryItemsForDisplay(
+    filterItems(state.history, state.historySearch),
+    state.settings.historySort
+  );
 
   if (items.length === 0) {
     historyList.innerHTML = buildEmptyState(
@@ -564,7 +554,12 @@ function renderHistoryList() {
     return;
   }
 
-  historyList.innerHTML = items.map((item) => buildHistoryItemMarkup(item)).join("");
+  historyList.innerHTML = items
+    .map((item) => buildHistoryItemMarkup(item, {
+      openMenuKey: state.openMenuKey,
+      runtimeSites: state.runtimeSites,
+    }))
+    .join("");
 }
 
 function getUniqueFavoriteTags() {
@@ -622,12 +617,7 @@ function filterFavoriteItems(items) {
   if (state.favoritesFolderFilter) {
     filtered = filtered.filter((item) => (item.folder ?? "").trim() === state.favoritesFolderFilter);
   }
-  // Pinned items first
-  return [...filtered].sort((a, b) => {
-    if (a.pinned && !b.pinned) return -1;
-    if (!a.pinned && b.pinned) return 1;
-    return 0;
-  });
+  return sortFavoriteItemsForDisplay(filtered, state.settings.favoriteSort);
 }
 
 function renderFavoritesList() {
@@ -643,7 +633,12 @@ function renderFavoritesList() {
     return;
   }
 
-  favoritesList.innerHTML = items.map((item) => buildFavoriteItemMarkup(item)).join("");
+  favoritesList.innerHTML = items
+    .map((item) => buildFavoriteItemMarkup(item, {
+      openMenuKey: state.openMenuKey,
+      runtimeSites: state.runtimeSites,
+    }))
+    .join("");
 }
 
 function renderLists() {
@@ -758,6 +753,10 @@ function applySettingsToControls() {
   reuseExistingTabsDesc.textContent = state.settings.reuseExistingTabs
     ? t.reuseTabsDescEnabled
     : t.reuseTabsDescDisabled;
+  waitMultiplierLabel.textContent = t.waitMultiplierLabel;
+  waitMultiplierRange.value = String(state.settings.waitMsMultiplier);
+  waitMultiplierValue.textContent = t.waitMultiplierValue(state.settings.waitMsMultiplier);
+  renderSortControls();
 }
 
 function buildComposerBroadcastTargets(siteIds = [], basePrompt = promptInput.value) {
@@ -913,6 +912,7 @@ function setLoadedTemplateContext(item) {
       ? { ...item.templateDefaults }
       : {};
   state.loadedFavoriteTitle = typeof item?.title === "string" ? item.title : "";
+  state.loadedFavoriteId = typeof item?.id === "string" ? item.id : "";
 }
 
 function loadPromptIntoComposer(item) {
@@ -938,7 +938,8 @@ function setCardStatesFromBroadcast(summary) {
 
   summary.siteIds.forEach((siteId) => {
     const status = summary.siteResults?.[siteId];
-    if (status === "submitted") {
+    const code = normalizeResultCode(status?.code ?? status);
+    if (code === "submitted") {
       setSiteCardState(siteId, "sent");
       return;
     }
@@ -1200,14 +1201,14 @@ async function sendResolvedPrompt(mainPrompt, targets) {
 
 function hideTemplateModal() {
   state.pendingTemplateSend = null;
-  templateModal.hidden = true;
+  closeOverlay(templateModal);
   templateModalError.hidden = true;
   templateModalError.textContent = "";
 }
 
 function hideFavoriteModal() {
   state.pendingFavoriteSave = null;
-  favoriteModal.hidden = true;
+  closeOverlay(favoriteModal);
   favoriteModalError.hidden = true;
   favoriteModalError.textContent = "";
   favoriteTitleInput.value = "";
@@ -1223,9 +1224,149 @@ function dismissFavoriteModal(event) {
   hideFavoriteModal();
 }
 
+function hideResendModal() {
+  state.pendingResendHistory = null;
+  closeOverlay(resendModal);
+}
+
+function openResendModal(historyItem) {
+  state.pendingResendHistory = historyItem;
+  resendModalTitle.textContent = t.resendModalTitle;
+  resendModalDesc.textContent = t.resendModalDesc;
+  resendModalCancel.textContent = t.resendModalCancel;
+  resendModalConfirm.textContent = t.resendModalConfirm;
+
+  const requestedSiteIds = getHistorySelectedSiteIds(historyItem);
+  const availableSiteIds = new Set(getEnabledSites().map((site) => site.id));
+
+  resendModalSites.innerHTML = requestedSiteIds.map((siteId) => {
+    const site = state.runtimeSites.find((entry) => entry.id === siteId);
+    const disabled = !availableSiteIds.has(siteId);
+    return `
+      <label class="checkbox-row">
+        <input type="checkbox" value="${escapeAttribute(siteId)}" data-resend-site="${escapeAttribute(siteId)}" ${disabled ? "disabled" : "checked"} />
+        <span>${escapeHtml(site?.name ?? siteId)}${disabled ? ` (${escapeHtml(t.resendSiteUnavailable)})` : ""}</span>
+      </label>
+    `;
+  }).join("");
+
+  openOverlay(resendModal, resendModalSites.querySelector("input:not([disabled])"));
+}
+
+async function confirmResendModal() {
+  const historyItem = state.pendingResendHistory;
+  if (!historyItem) {
+    return;
+  }
+
+  const selectedSiteIds = [...resendModalSites.querySelectorAll("[data-resend-site]:checked")]
+    .map((checkbox) => checkbox.value)
+    .filter(Boolean);
+
+  if (selectedSiteIds.length === 0) {
+    setStatus(t.warnNoSite, "error");
+    return;
+  }
+
+  hideResendModal();
+  await sendResolvedPrompt(historyItem.text, selectedSiteIds.map((siteId) => ({ id: siteId })));
+}
+
+function openImportReportModal(summary) {
+  state.pendingImportSummary = summary;
+  importReportModalTitle.textContent = t.importReportTitle;
+  importReportModalDesc.textContent = t.importReportDesc;
+  importReportModalConfirm.textContent = t.importReportClose;
+  importReportBody.innerHTML = buildImportReportMarkup(summary);
+  openOverlay(importReportModal, importReportModalClose);
+}
+
+function hideImportReportModal() {
+  state.pendingImportSummary = null;
+  closeOverlay(importReportModal);
+}
+
+function getPromptButtonsForActiveTab() {
+  if (state.activeTab === "history") {
+    return [...historyList.querySelectorAll("[data-load-history]")];
+  }
+
+  if (state.activeTab === "favorites") {
+    return [...favoritesList.querySelectorAll("[data-load-favorite]")];
+  }
+
+  return [];
+}
+
+function focusAdjacentPromptButton(direction) {
+  const buttons = getPromptButtonsForActiveTab();
+  if (buttons.length === 0) {
+    return;
+  }
+
+  const currentIndex = buttons.findIndex((button) => button === document.activeElement);
+  const nextIndex = currentIndex === -1
+    ? (direction > 0 ? 0 : buttons.length - 1)
+    : (currentIndex + direction + buttons.length) % buttons.length;
+  buttons[nextIndex]?.focus?.();
+}
+
+async function handleGlobalShortcut(event) {
+  if (event.defaultPrevented) {
+    return;
+  }
+
+  const shortcutKey = event.key.toLowerCase();
+  const hasPrimaryModifier = event.ctrlKey || event.metaKey;
+
+  if (event.key === "Escape") {
+    if (closeActiveOverlayOrMenu()) {
+      event.preventDefault();
+    }
+    return;
+  }
+
+  if (getOpenOverlay()) {
+    return;
+  }
+
+  if (hasPrimaryModifier && event.shiftKey && event.key === "Enter") {
+    event.preventDefault();
+    await cancelCurrentBroadcast();
+    return;
+  }
+
+  if (hasPrimaryModifier && !event.shiftKey && event.key === "Enter") {
+    event.preventDefault();
+    await handleSend();
+    return;
+  }
+
+  if (hasPrimaryModifier && !event.shiftKey && ["1", "2", "3", "4"].includes(shortcutKey)) {
+    event.preventDefault();
+    switchTab(["compose", "history", "favorites", "settings"][Number(shortcutKey) - 1]);
+    return;
+  }
+
+  if (hasPrimaryModifier && !event.shiftKey && shortcutKey === "a" && state.activeTab === "compose" && !isTextEditingTarget(event.target)) {
+    event.preventDefault();
+    toggleAllBtn.click();
+    return;
+  }
+
+  if ((event.key === "ArrowDown" || event.key === "ArrowUp") && !isTextEditingTarget(event.target)) {
+    if (state.activeTab === "history" || state.activeTab === "favorites") {
+      event.preventDefault();
+      focusAdjacentPromptButton(event.key === "ArrowDown" ? 1 : -1);
+    }
+  }
+}
+
 function resetTransientModals() {
   hideTemplateModal();
   hideFavoriteModal();
+  hideResendModal();
+  hideImportReportModal();
 }
 
 function setTemplateModalError(message = "") {
@@ -1322,6 +1463,19 @@ async function readClipboardTemplateValue() {
       text: "",
       error: error?.message ?? String(error),
     };
+  }
+}
+
+async function maybeMarkLoadedFavoriteAsUsed() {
+  if (!state.loadedFavoriteId) {
+    return;
+  }
+
+  try {
+    await markFavoriteUsed(state.loadedFavoriteId);
+    state.favorites = await getPromptFavorites();
+  } catch (error) {
+    console.error("[AI Prompt Broadcaster] Failed to update favorite usage.", error);
   }
 }
 
@@ -1440,7 +1594,7 @@ async function openTemplateModal(prompt, sites) {
   };
 
   renderTemplateModal();
-  templateModal.hidden = false;
+  openOverlay(templateModal, templateFields.querySelector("input") ?? templateModalConfirm);
 }
 
 async function confirmTemplateModalSend() {
@@ -1462,6 +1616,7 @@ async function confirmTemplateModalSend() {
 
   const resolvedTargets = buildResolvedBroadcastTargets(modalState.targets, previewState.values);
   hideTemplateModal();
+  await maybeMarkLoadedFavoriteAsUsed();
   await sendResolvedPrompt(modalState.prompt, resolvedTargets);
 }
 
@@ -1556,6 +1711,7 @@ async function openTemplateModalV2(prompt, targets) {
   const variables = detectTemplateVariablesForTargets(targets);
 
   if (variables.length === 0) {
+    await maybeMarkLoadedFavoriteAsUsed();
     await sendResolvedPrompt(prompt, buildResolvedBroadcastTargets(targets));
     return;
   }
@@ -1595,7 +1751,7 @@ async function openTemplateModalV2(prompt, targets) {
   };
 
   renderTemplateModalV2();
-  templateModal.hidden = false;
+  openOverlay(templateModal, templateFields.querySelector("input") ?? templateModalConfirm);
 }
 
 function renderFavoriteDefaultFields() {
@@ -1681,11 +1837,8 @@ async function openFavoriteModal() {
 
   setFavoriteModalError("");
   renderFavoriteModal();
-  favoriteModal.hidden = false;
-  window.requestAnimationFrame(() => {
-    favoriteTitleInput.focus();
-    favoriteTitleInput.select();
-  });
+  openOverlay(favoriteModal, favoriteTitleInput);
+  window.requestAnimationFrame(() => favoriteTitleInput.select());
 }
 
 async function confirmFavoriteSave() {
@@ -1735,6 +1888,8 @@ function renderTabLabels() {
   reuseExistingTabsDesc.textContent = state.settings.reuseExistingTabs
     ? t.reuseTabsDescEnabled
     : t.reuseTabsDescDisabled;
+  waitMultiplierLabel.textContent = t.waitMultiplierLabel;
+  waitMultiplierValue.textContent = t.waitMultiplierValue(state.settings.waitMsMultiplier);
   openOptionsBtn.textContent = t.openOptions;
   clearHistoryBtn.textContent = t.clearHistory;
   exportJsonBtn.textContent = t.exportJson;
@@ -1763,6 +1918,13 @@ function renderTabLabels() {
   serviceEnabledLabel.textContent = t.serviceFieldEnabled;
   serviceEditorCancel.textContent = t.serviceEditorCancel;
   serviceEditorSave.textContent = t.serviceEditorSave;
+  resendModalTitle.textContent = t.resendModalTitle;
+  resendModalDesc.textContent = t.resendModalDesc;
+  resendModalCancel.textContent = t.resendModalCancel;
+  resendModalConfirm.textContent = t.resendModalConfirm;
+  importReportModalTitle.textContent = t.importReportTitle;
+  importReportModalDesc.textContent = t.importReportDesc;
+  importReportModalConfirm.textContent = t.importReportClose;
 
   tabButtons.forEach((button) => {
     button.textContent = t.tabs[button.dataset.tab];
@@ -1835,6 +1997,8 @@ function renderSiteCheckboxesPanel() {
     card.className = "site-card checked";
     card.dataset.siteId = site.id;
     card.style.setProperty("--site-color", site.color || "#c24f2e");
+    card.setAttribute("role", "option");
+    card.tabIndex = 0;
 
     const mainRow = document.createElement("label");
     mainRow.className = "site-card-main";
@@ -1862,7 +2026,23 @@ function renderSiteCheckboxesPanel() {
 
     checkbox.addEventListener("change", () => {
       card.classList.toggle("checked", checkbox.checked);
+      card.setAttribute("aria-selected", String(checkbox.checked));
+      card.setAttribute(
+        "aria-label",
+        `${getRuntimeSiteLabel(site.id)} ${checkbox.checked ? t.ariaSelected : t.ariaNotSelected}`
+      );
       syncToggleAllLabel();
+      renderTemplateSummary();
+    });
+
+    card.addEventListener("keydown", (event) => {
+      if (event.key !== " " && event.key !== "Enter") {
+        return;
+      }
+
+      event.preventDefault();
+      checkbox.checked = !checkbox.checked;
+      checkbox.dispatchEvent(new Event("change", { bubbles: true }));
     });
 
     const siteStatus = document.createElement("span");
@@ -1876,6 +2056,11 @@ function renderSiteCheckboxesPanel() {
 
     mainRow.append(checkbox, siteIcon, siteName, warningIcon, siteStatus);
     card.classList.toggle("checked", checkbox.checked);
+    card.setAttribute("aria-selected", String(checkbox.checked));
+    card.setAttribute(
+      "aria-label",
+      `${getRuntimeSiteLabel(site.id)} ${checkbox.checked ? t.ariaSelected : t.ariaNotSelected}`
+    );
     card.appendChild(mainRow);
 
     const openTabs = getOpenSiteTabs(site.id);
@@ -2334,6 +2519,13 @@ async function handleHistoryAction(action, historyId) {
     return;
   }
 
+  if (action === "resend-history") {
+    state.openMenuKey = null;
+    renderHistoryList();
+    openResendModal(item);
+    return;
+  }
+
   if (action === "delete-history") {
     await deletePromptHistoryItem(historyId);
     state.history = await getPromptHistory();
@@ -2372,6 +2564,15 @@ async function handleFavoriteAction(action, favoriteId) {
     state.openMenuKey = null;
     openFavoriteTagsModal(item);
     return;
+  }
+
+  if (action === "duplicate-favorite") {
+    await duplicateFavoriteItem(favoriteId, t.favoriteDuplicatePrefix);
+    state.favorites = await getPromptFavorites();
+    state.openMenuKey = null;
+    renderFavoritesList();
+    setStatus(t.favoriteDuplicated, "success");
+    showAppToast(t.favoriteDuplicated, "success", 2200);
   }
 }
 
@@ -2475,6 +2676,9 @@ function bindGlobalEvents() {
 
   clearPromptBtn.addEventListener("click", () => {
     promptInput.value = "";
+    state.loadedFavoriteId = "";
+    state.loadedFavoriteTitle = "";
+    state.loadedTemplateDefaults = {};
     updatePromptCounter();
     autoResizePromptInput();
     renderTemplateSummary();
@@ -2539,9 +2743,35 @@ function bindGlobalEvents() {
     renderHistoryList();
   });
 
+  historySortSelect.addEventListener("change", (event) => {
+    const nextValue = event.target.value;
+    state.settings = {
+      ...state.settings,
+      historySort: nextValue,
+    };
+    renderHistoryList();
+    void updateAppSettings({ historySort: nextValue }).catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to save history sort.", error);
+      setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
+    });
+  });
+
   favoritesSearchInput.addEventListener("input", (event) => {
     state.favoritesSearch = event.target.value;
     renderFavoritesList();
+  });
+
+  favoritesSortSelect.addEventListener("change", (event) => {
+    const nextValue = event.target.value;
+    state.settings = {
+      ...state.settings,
+      favoriteSort: nextValue,
+    };
+    renderFavoritesList();
+    void updateAppSettings({ favoriteSort: nextValue }).catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to save favorite sort.", error);
+      setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
+    });
   });
 
   // Favorites filter bar — tag/folder chip clicks (event delegation via parent panel)
@@ -2721,6 +2951,24 @@ function bindGlobalEvents() {
     });
   });
 
+  waitMultiplierRange.addEventListener("input", (event) => {
+    waitMultiplierValue.textContent = t.waitMultiplierValue(Number(event.target.value));
+  });
+
+  waitMultiplierRange.addEventListener("change", (event) => {
+    const nextValue = Number(event.target.value);
+    state.settings = {
+      ...state.settings,
+      waitMsMultiplier: nextValue,
+    };
+    applySettingsToControls();
+    void updateAppSettings({ waitMsMultiplier: nextValue }).catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to save wait multiplier.", error);
+      setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
+      showAppToast(t.error(error?.message ?? getUnknownErrorText()), "error", 3200);
+    });
+  });
+
   openOptionsBtn.addEventListener("click", () => {
     void chrome.runtime.openOptionsPage().catch((error) => {
       console.error("[AI Prompt Broadcaster] Failed to open options page.", error);
@@ -2765,6 +3013,7 @@ function bindGlobalEvents() {
       await refreshStoredData();
       setStatus(buildImportSummaryText(result.importSummary), "success");
       showAppToast(buildImportSummaryText(result.importSummary, { short: true }), "success", 2600);
+      openImportReportModal(result.importSummary);
     } catch (error) {
       setStatus(t.importFailed, "error");
       console.error("[AI Prompt Broadcaster] JSON import failed.", error);
@@ -2905,6 +3154,35 @@ function bindGlobalEvents() {
     });
   });
 
+  resendModalClose.addEventListener("click", hideResendModal);
+  resendModalCancel.addEventListener("click", hideResendModal);
+  resendModal.addEventListener("click", (event) => {
+    if (event.target === resendModal) {
+      hideResendModal();
+    }
+  });
+  resendModalConfirm.addEventListener("click", () => {
+    void confirmResendModal().catch((error) => {
+      console.error("[AI Prompt Broadcaster] Resend modal confirm failed.", error);
+      setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
+    });
+  });
+
+  importReportModalClose.addEventListener("click", hideImportReportModal);
+  importReportModalConfirm.addEventListener("click", hideImportReportModal);
+  importReportModal.addEventListener("click", (event) => {
+    if (event.target === importReportModal) {
+      hideImportReportModal();
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    trapModalFocus(event);
+    void handleGlobalShortcut(event).catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to handle popup shortcut.", error);
+    });
+  });
+
   chrome.tabs.onCreated.addListener(() => {
     scheduleOpenSiteTabsRefresh();
   });
@@ -2966,6 +3244,7 @@ async function init() {
     initToastRoot(toastHost);
     renderTabLabels();
     bindGlobalEvents();
+    switchTab(state.activeTab);
     syncToggleAllLabel();
     await loadStoredData();
     await chrome.runtime.sendMessage({ action: "popupOpened" }).catch(() => null);

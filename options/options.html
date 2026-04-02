@@ -17,11 +17,11 @@
         </div>
       </div>
 
-      <nav class="nav-list">
-        <button class="nav-button active" type="button" data-section="dashboard" data-i18n="options_nav_dashboard">Dashboard</button>
-        <button class="nav-button" type="button" data-section="history" data-i18n="options_nav_history">History</button>
-        <button class="nav-button" type="button" data-section="services" data-i18n="options_nav_services">Services</button>
-        <button class="nav-button" type="button" data-section="settings" data-i18n="options_nav_settings">Settings</button>
+      <nav class="nav-list" role="tablist" aria-label="Dashboard sections">
+        <button class="nav-button active" type="button" role="tab" aria-selected="true" aria-controls="section-dashboard" data-section="dashboard" data-i18n="options_nav_dashboard">Dashboard</button>
+        <button class="nav-button" type="button" role="tab" aria-selected="false" aria-controls="section-history" data-section="history" data-i18n="options_nav_history">History</button>
+        <button class="nav-button" type="button" role="tab" aria-selected="false" aria-controls="section-services" data-section="services" data-i18n="options_nav_services">Services</button>
+        <button class="nav-button" type="button" role="tab" aria-selected="false" aria-controls="section-settings" data-section="settings" data-i18n="options_nav_settings">Settings</button>
       </nav>
     </aside>
 
@@ -29,7 +29,7 @@
       <div id="page-status" class="status-line" role="status" aria-live="polite"></div>
       <div id="toast-host" aria-live="polite" aria-atomic="true"></div>
 
-      <section id="section-dashboard" class="page-section active">
+      <section id="section-dashboard" class="page-section active" role="tabpanel" tabindex="0">
         <div class="section-head">
           <h2 data-i18n="options_dashboard_title">Dashboard</h2>
           <p data-i18n="options_dashboard_desc">Review high-level usage metrics and recent prompt activity.</p>
@@ -51,7 +51,7 @@
         </div>
       </section>
 
-      <section id="section-history" class="page-section">
+      <section id="section-history" class="page-section" role="tabpanel" tabindex="0">
         <div class="section-head">
           <h2 data-i18n="options_history_title">History</h2>
           <p data-i18n="options_history_desc">Browse transmission history, filter results, and export CSV.</p>
@@ -65,6 +65,17 @@
           </div>
         </div>
         <div class="panel">
+          <div class="history-bulk-toolbar">
+            <label class="checkbox-inline" for="history-select-all">
+              <input id="history-select-all" type="checkbox" />
+              <span id="history-select-all-label"></span>
+            </label>
+            <button id="history-delete-selected" class="btn danger" type="button"></button>
+            <button id="history-delete-filtered" class="btn danger" type="button"></button>
+            <button id="history-delete-7d" class="btn danger ghost" type="button"></button>
+            <button id="history-delete-30d" class="btn danger ghost" type="button"></button>
+            <button id="history-delete-90d" class="btn danger ghost" type="button"></button>
+          </div>
           <div id="history-table-wrap"></div>
           <div class="pagination">
             <button id="history-prev-page" class="btn" type="button" data-i18n="options_pagination_prev">Previous</button>
@@ -74,7 +85,7 @@
         </div>
       </section>
 
-      <section id="section-services" class="page-section">
+      <section id="section-services" class="page-section" role="tabpanel" tabindex="0">
         <div class="section-head">
           <h2 data-i18n="options_services_title">Service Management</h2>
           <p data-i18n="options_services_desc">Inspect supported services, usage volume, and success rate.</p>
@@ -82,7 +93,7 @@
         <div id="services-grid" class="services-grid"></div>
       </section>
 
-      <section id="section-settings" class="page-section">
+      <section id="section-settings" class="page-section" role="tabpanel" tabindex="0">
         <div class="section-head">
           <h2 data-i18n="options_settings_title">Settings</h2>
           <p data-i18n="options_settings_desc">Configure retention, notifications, shortcuts, and data management.</p>
@@ -113,6 +124,11 @@
               </div>
               <input id="reuse-tabs-toggle" type="checkbox" />
             </div>
+          </div>
+          <div class="settings-control">
+            <strong id="wait-multiplier-setting-title"></strong>
+            <input id="wait-multiplier-slider" type="range" min="0.5" max="3" step="0.1" />
+            <span id="wait-multiplier-setting-value" class="helper"></span>
           </div>
           <div class="settings-control">
             <strong data-i18n="options_settings_shortcuts">Keyboard shortcuts</strong>
@@ -147,6 +163,19 @@
       <div id="history-modal-services" class="service-badges"></div>
       <pre id="history-modal-text" class="modal-prompt"></pre>
       <div id="history-modal-comparison"></div>
+    </div>
+  </div>
+
+  <div id="import-report-modal" class="modal-overlay" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="import-report-modal-title">
+      <div class="modal-header">
+        <div>
+          <h2 id="import-report-modal-title"></h2>
+          <p id="import-report-modal-desc" class="helper"></p>
+        </div>
+        <button id="import-report-modal-close" class="btn" type="button" data-i18n="common_close">Close</button>
+      </div>
+      <div id="import-report-body" class="settings-stack"></div>
     </div>
   </div>
 

@@ -17,6 +17,11 @@ export {
   setOnboardingCompleted,
 } from "./onboarding";
 export {
+  getStrategyStats,
+  recordStrategyAttempts,
+  setStrategyStats,
+} from "./strategy-stats";
+export {
   drainPendingUiToasts,
   enqueueUiToast,
   getPendingUiToasts,

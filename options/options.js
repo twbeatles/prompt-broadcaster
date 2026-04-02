@@ -1,146 +1,3 @@
-// src/config/sites/builtins.ts
-var AI_SITES = Object.freeze([
-  {
-    id: "chatgpt",
-    name: "ChatGPT",
-    url: "https://chatgpt.com/",
-    hostname: "chatgpt.com",
-    inputSelector: "#prompt-textarea, div#prompt-textarea[contenteditable='true'], textarea[aria-label*='chatgpt' i], textarea[aria-label*='채팅' i]",
-    fallbackSelectors: [
-      "#prompt-textarea",
-      "div#prompt-textarea[contenteditable='true']",
-      "textarea[aria-label*='chatgpt' i]",
-      "textarea[aria-label*='채팅' i]",
-      "textarea.wcDTda_fallbackTextarea",
-      "div[contenteditable='true'][data-id='root']",
-      "main div[contenteditable='true']"
-    ],
-    inputType: "contenteditable",
-    submitSelector: "button[data-testid='send-button'], button[aria-label*='send' i], button[aria-label*='보내기' i]",
-    submitMethod: "click",
-    selectorCheckMode: "input-and-submit",
-    waitMs: 2e3,
-    fallback: true,
-    lastVerified: "2026-03",
-    verifiedVersion: "web-ui-mar-2026",
-    authSelectors: [
-      "form[action*='/auth']",
-      "input[name='email']",
-      "input[name='username']"
-    ]
-  },
-  {
-    id: "gemini",
-    name: "Gemini",
-    url: "https://gemini.google.com/app",
-    hostname: "gemini.google.com",
-    inputSelector: "div.ql-editor.textarea.new-input-ui[contenteditable='true'], div.ql-editor[contenteditable='true'][role='textbox']",
-    fallbackSelectors: [
-      "div.ql-editor.textarea.new-input-ui[contenteditable='true']",
-      "div.ql-editor[contenteditable='true'][role='textbox']",
-      "div[contenteditable='true'][role='textbox']",
-      "textarea, div[contenteditable='true']"
-    ],
-    inputType: "contenteditable",
-    submitSelector: "button.send-button, button[aria-label*='send' i], button[aria-label*='보내기' i]",
-    submitMethod: "click",
-    selectorCheckMode: "input-and-submit",
-    waitMs: 2500,
-    fallback: true,
-    lastVerified: "2026-03",
-    verifiedVersion: "gemini-app-mar-2026",
-    authSelectors: [
-      "input[type='email']",
-      "input[type='password']"
-    ]
-  },
-  {
-    id: "claude",
-    name: "Claude",
-    url: "https://claude.ai/new",
-    hostname: "claude.ai",
-    inputSelector: "div[contenteditable='true'][aria-label='Write your prompt to Claude'], div[contenteditable='true'][role='textbox']",
-    fallbackSelectors: [
-      "div[contenteditable='true'][aria-label='Write your prompt to Claude']",
-      "div[contenteditable='true'][role='textbox']",
-      "div[contenteditable='true']",
-      "textarea"
-    ],
-    inputType: "contenteditable",
-    submitSelector: "button[aria-label='Send message'], button[aria-label*='send' i], button[aria-label*='submit' i], button[aria-label*='보내' i], button[aria-label*='전송' i]",
-    submitMethod: "click",
-    selectorCheckMode: "input-and-submit",
-    waitMs: 1500,
-    fallback: true,
-    lastVerified: "2026-03",
-    verifiedVersion: "claude-web-mar-2026",
-    authSelectors: [
-      "input#email",
-      "input[type='email']",
-      "input[type='password']",
-      "form[action*='login']"
-    ]
-  },
-  {
-    id: "grok",
-    name: "Grok",
-    url: "https://grok.com/",
-    hostname: "grok.com",
-    inputSelector: "div.tiptap.ProseMirror[contenteditable='true'], div.ProseMirror[contenteditable='true'][translate='no'], div.ProseMirror[contenteditable='true']",
-    fallbackSelectors: [
-      "div.tiptap.ProseMirror[contenteditable='true']",
-      "div.ProseMirror[contenteditable='true'][translate='no']",
-      "div.ProseMirror[contenteditable='true']",
-      "textarea[aria-label*='grok' i]",
-      "textarea[placeholder*='help' i]",
-      "textarea"
-    ],
-    inputType: "contenteditable",
-    submitSelector: "button[aria-label*='submit' i], button[aria-label*='제출' i]",
-    submitMethod: "click",
-    selectorCheckMode: "input-and-submit",
-    waitMs: 2e3,
-    fallback: true,
-    lastVerified: "2026-03",
-    verifiedVersion: "grok-web-mar-2026",
-    authSelectors: [
-      "input[autocomplete='username']",
-      "input[type='password']"
-    ]
-  },
-  {
-    id: "perplexity",
-    name: "Perplexity",
-    url: "https://www.perplexity.ai/",
-    hostname: "www.perplexity.ai",
-    hostnameAliases: ["perplexity.ai"],
-    inputSelector: "#ask-input[data-lexical-editor='true'][role='textbox']",
-    fallbackSelectors: [
-      "div#ask-input[data-lexical-editor='true'][role='textbox']",
-      "div#ask-input[contenteditable='true'][role='textbox']",
-      "#ask-input[contenteditable='true']",
-      "div[contenteditable='true'][role='textbox']",
-      "textarea[placeholder*='Ask'][data-testid='search-input']",
-      "textarea[placeholder*='Ask']",
-      "textarea[placeholder*='질문']",
-      "textarea"
-    ],
-    inputType: "contenteditable",
-    submitSelector: "button[aria-label*='Submit'][type='submit'], button[type='submit'][aria-label*='검색'], button[aria-label*='submit' i], button[aria-label*='제출' i]",
-    submitMethod: "click",
-    selectorCheckMode: "input-only",
-    waitMs: 2e3,
-    fallback: true,
-    lastVerified: "2026-03",
-    verifiedVersion: "perplexity-web-mar-2026",
-    authSelectors: [
-      "input[type='email']",
-      "input[type='password']",
-      "button[data-testid='login-button']"
-    ]
-  }
-]);
-
 // src/shared/prompts/constants.ts
 var LOCAL_STORAGE_KEYS = Object.freeze({
   history: "promptHistory",
@@ -152,14 +9,47 @@ var LOCAL_STORAGE_KEYS = Object.freeze({
 var DEFAULT_HISTORY_LIMIT = 50;
 var MIN_HISTORY_LIMIT = 10;
 var MAX_HISTORY_LIMIT = 200;
+var MIN_WAIT_MS_MULTIPLIER = 0.5;
+var MAX_WAIT_MS_MULTIPLIER = 3;
+var DEFAULT_WAIT_MS_MULTIPLIER = 1;
+var DEFAULT_HISTORY_SORT = "latest";
+var DEFAULT_FAVORITE_SORT = "recentUsed";
 var DEFAULT_SETTINGS = Object.freeze({
   historyLimit: DEFAULT_HISTORY_LIMIT,
   autoClosePopup: false,
   desktopNotifications: true,
-  reuseExistingTabs: true
+  reuseExistingTabs: true,
+  waitMsMultiplier: DEFAULT_WAIT_MS_MULTIPLIER,
+  historySort: DEFAULT_HISTORY_SORT,
+  favoriteSort: DEFAULT_FAVORITE_SORT
 });
 
 // src/shared/prompts/normalizers.ts
+var VALID_HISTORY_SORTS = /* @__PURE__ */ new Set([
+  "latest",
+  "oldest",
+  "mostSuccess",
+  "mostFailure"
+]);
+var VALID_FAVORITE_SORTS = /* @__PURE__ */ new Set([
+  "recentUsed",
+  "usageCount",
+  "title",
+  "createdAt"
+]);
+var VALID_RESULT_CODES = /* @__PURE__ */ new Set([
+  "submitted",
+  "selector_timeout",
+  "auth_required",
+  "submit_failed",
+  "strategy_exhausted",
+  "permission_denied",
+  "tab_create_failed",
+  "tab_closed",
+  "injection_timeout",
+  "cancelled",
+  "unexpected_error"
+]);
 function safeText(value) {
   return typeof value === "string" ? value : "";
 }
@@ -187,6 +77,13 @@ function normalizeIsoDate(value, fallback = (/* @__PURE__ */ new Date()).toISOSt
   }
   const time = Date.parse(value);
   return Number.isFinite(time) ? new Date(time).toISOString() : fallback;
+}
+function normalizeNullableIsoDate(value) {
+  if (typeof value !== "string" || !value.trim()) {
+    return null;
+  }
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? new Date(time).toISOString() : null;
 }
 function normalizeTemplateDefaults(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -216,6 +113,23 @@ function normalizeBroadcastCounter(value) {
   }
   return Math.max(0, Math.round(numericValue));
 }
+function normalizeWaitMsMultiplier(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return DEFAULT_WAIT_MS_MULTIPLIER;
+  }
+  const clamped = Math.min(
+    MAX_WAIT_MS_MULTIPLIER,
+    Math.max(MIN_WAIT_MS_MULTIPLIER, numericValue)
+  );
+  return Math.round(clamped * 10) / 10;
+}
+function normalizeHistorySort(value) {
+  return VALID_HISTORY_SORTS.has(value) ? value : DEFAULT_HISTORY_SORT;
+}
+function normalizeFavoriteSort(value) {
+  return VALID_FAVORITE_SORTS.has(value) ? value : DEFAULT_FAVORITE_SORT;
+}
 function normalizeSettings(value) {
   const settings = safeObject(value);
   return {
@@ -231,18 +145,93 @@ function normalizeSettings(value) {
     reuseExistingTabs: normalizeBoolean(
       settings.reuseExistingTabs,
       DEFAULT_SETTINGS.reuseExistingTabs
-    )
+    ),
+    waitMsMultiplier: normalizeWaitMsMultiplier(settings.waitMsMultiplier),
+    historySort: normalizeHistorySort(settings.historySort),
+    favoriteSort: normalizeFavoriteSort(settings.favoriteSort)
   };
 }
 function normalizeStatus(value) {
   return typeof value === "string" && value.trim() ? value.trim() : "submitted";
 }
-function normalizeStringRecord(value) {
+function normalizeResultCode(value) {
+  const normalized = safeText(value).trim();
+  if (VALID_RESULT_CODES.has(normalized)) {
+    return normalized;
+  }
+  switch (normalized) {
+    case "submitted":
+      return "submitted";
+    case "selector_failed":
+      return "selector_timeout";
+    case "login_required":
+    case "redirected_or_login_required":
+      return "auth_required";
+    case "submit_failed":
+      return "submit_failed";
+    case "fallback_required":
+      return "strategy_exhausted";
+    case "permission_denied":
+      return "permission_denied";
+    case "tab_create_failed":
+      return "tab_create_failed";
+    case "tab_closed":
+      return "tab_closed";
+    case "injection_timeout":
+    case "broadcast_stale":
+      return "injection_timeout";
+    case "cancelled":
+    case "reset":
+      return "cancelled";
+    case "failed":
+    case "injection_failed":
+    default:
+      return "unexpected_error";
+  }
+}
+function buildSiteInjectionResult(code, overrides = {}) {
+  const normalizedCode = normalizeResultCode(code);
+  const result = {
+    code: normalizedCode
+  };
+  if (typeof overrides.message === "string" && overrides.message.trim()) {
+    result.message = overrides.message.trim();
+  }
+  if (typeof overrides.strategy === "string" && overrides.strategy.trim()) {
+    result.strategy = overrides.strategy.trim();
+  }
+  if (Number.isFinite(Number(overrides.elapsedMs))) {
+    result.elapsedMs = Number(overrides.elapsedMs);
+  }
+  if (Array.isArray(overrides.attempts) && overrides.attempts.length > 0) {
+    result.attempts = overrides.attempts.map((attempt) => ({
+      name: safeText(attempt?.name).trim(),
+      success: Boolean(attempt?.success)
+    })).filter((attempt) => attempt.name);
+  }
+  return result;
+}
+function normalizeSiteInjectionResult(value) {
+  if (typeof value === "string") {
+    return buildSiteInjectionResult(value);
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return buildSiteInjectionResult("unexpected_error");
+  }
+  const source = value;
+  return buildSiteInjectionResult(source.code ?? source.status, {
+    message: safeText(source.message).trim(),
+    strategy: safeText(source.strategy).trim(),
+    elapsedMs: Number.isFinite(Number(source.elapsedMs)) ? Number(source.elapsedMs) : void 0,
+    attempts: Array.isArray(source.attempts) ? source.attempts : void 0
+  });
+}
+function normalizeSiteResultsRecord(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return {};
   }
   return Object.fromEntries(
-    Object.entries(value).map(([key, entryValue]) => [safeText(key).trim(), safeText(entryValue).trim()]).filter(([key, entryValue]) => key && entryValue)
+    Object.entries(value).map(([siteId, result]) => [safeText(siteId).trim(), normalizeSiteInjectionResult(result)]).filter(([siteId]) => Boolean(siteId))
   );
 }
 function sortByDateDesc(items, field = "createdAt") {
@@ -309,6 +298,7 @@ async function setBroadcastCounter(value) {
 function buildFavoriteEntry(entry) {
   const createdAt = normalizeIsoDate(entry?.createdAt);
   const favoritedAt = normalizeIsoDate(entry?.favoritedAt, createdAt);
+  const usageCount = Math.max(0, Math.round(Number(entry?.usageCount) || 0));
   return {
     id: typeof entry?.id === "string" && entry.id.trim() ? entry.id.trim() : `fav-${Date.now()}`,
     sourceHistoryId: entry?.sourceHistoryId === null || entry?.sourceHistoryId === void 0 ? null : Number(entry.sourceHistoryId),
@@ -320,7 +310,9 @@ function buildFavoriteEntry(entry) {
     templateDefaults: normalizeTemplateDefaults(entry?.templateDefaults),
     tags: normalizeTags(entry?.tags),
     folder: safeText(entry?.folder).slice(0, 50),
-    pinned: normalizeBoolean(entry?.pinned, false)
+    pinned: normalizeBoolean(entry?.pinned, false),
+    usageCount,
+    lastUsedAt: normalizeNullableIsoDate(entry?.lastUsedAt)
   };
 }
 async function getPromptFavorites() {
@@ -369,13 +361,16 @@ function buildHistoryEntry(entry) {
   const source = asHistoryRecord(entry);
   const numericId = Number(source.id);
   const createdAt = normalizeIsoDate(source.createdAt);
-  const siteResults = normalizeStringRecord(source.siteResults);
+  const siteResults = normalizeSiteResultsRecord(source.siteResults);
   const siteResultKeys = normalizeSiteIdList(Object.keys(siteResults));
+  const derivedSubmittedSiteIds = siteResultKeys.filter(
+    (siteId) => normalizeResultCode(siteResults[siteId]?.code) === "submitted"
+  );
   const submittedSiteIds = normalizeSiteIdList(
-    Array.isArray(source.submittedSiteIds) ? source.submittedSiteIds : source.sentTo
+    Array.isArray(source.submittedSiteIds) ? source.submittedSiteIds : Array.isArray(source.sentTo) ? source.sentTo : derivedSubmittedSiteIds
   );
   const failedSiteIds = normalizeSiteIdList(
-    Array.isArray(source.failedSiteIds) ? source.failedSiteIds : siteResultKeys.filter((siteId) => !submittedSiteIds.includes(siteId))
+    Array.isArray(source.failedSiteIds) ? source.failedSiteIds : siteResultKeys.filter((siteId) => normalizeResultCode(siteResults[siteId]?.code) !== "submitted")
   );
   const requestedSiteIds = normalizeSiteIdList(
     Array.isArray(source.requestedSiteIds) ? source.requestedSiteIds : siteResultKeys.length > 0 ? siteResultKeys : submittedSiteIds
@@ -407,6 +402,173 @@ async function setPromptHistory(historyItems) {
   await writeLocal(LOCAL_STORAGE_KEYS.history, normalized);
   return normalized;
 }
+async function deletePromptHistoryItemsByIds(historyIds) {
+  const selectedIds = new Set(
+    safeArray(historyIds).map((historyId) => Number(historyId)).filter((historyId) => Number.isFinite(historyId))
+  );
+  const history = await getPromptHistory();
+  const nextHistory = history.filter((item) => !selectedIds.has(Number(item.id)));
+  await setPromptHistory(nextHistory);
+  return nextHistory;
+}
+async function deletePromptHistoryItemsBeforeDate(dateValue) {
+  const cutoffDate = typeof dateValue === "string" || dateValue instanceof Date ? new Date(dateValue) : /* @__PURE__ */ new Date("");
+  if (!Number.isFinite(cutoffDate.getTime())) {
+    return getPromptHistory();
+  }
+  const cutoffTime = cutoffDate.getTime();
+  const history = await getPromptHistory();
+  const nextHistory = history.filter((item) => {
+    const itemTime = Date.parse(item.createdAt);
+    return !Number.isFinite(itemTime) || itemTime >= cutoffTime;
+  });
+  await setPromptHistory(nextHistory);
+  return nextHistory;
+}
+
+// src/config/sites/builtins.ts
+var AI_SITES = Object.freeze([
+  {
+    id: "chatgpt",
+    name: "ChatGPT",
+    url: "https://chatgpt.com/",
+    hostname: "chatgpt.com",
+    inputSelector: "#prompt-textarea, div#prompt-textarea[contenteditable='true'], textarea[aria-label*='chatgpt' i], textarea[aria-label*='채팅' i]",
+    fallbackSelectors: [
+      "#prompt-textarea",
+      "div#prompt-textarea[contenteditable='true']",
+      "textarea[aria-label*='chatgpt' i]",
+      "textarea[aria-label*='채팅' i]",
+      "textarea.wcDTda_fallbackTextarea",
+      "div[contenteditable='true'][data-id='root']",
+      "main div[contenteditable='true']"
+    ],
+    inputType: "contenteditable",
+    submitSelector: "button[data-testid='send-button'], button[aria-label*='send' i], button[aria-label*='보내기' i]",
+    submitMethod: "click",
+    selectorCheckMode: "input-and-submit",
+    waitMs: 2e3,
+    fallback: true,
+    lastVerified: "2026-03",
+    verifiedVersion: "web-ui-mar-2026",
+    authSelectors: [
+      "form[action*='/auth']",
+      "input[name='email']",
+      "input[name='username']"
+    ]
+  },
+  {
+    id: "gemini",
+    name: "Gemini",
+    url: "https://gemini.google.com/app",
+    hostname: "gemini.google.com",
+    inputSelector: "div[contenteditable='true'][role='textbox'], div.ql-editor.textarea.new-input-ui[contenteditable='true'], div.ql-editor[contenteditable='true'][role='textbox']",
+    fallbackSelectors: [
+      "div[contenteditable='true'][role='textbox']",
+      "div.ql-editor.textarea.new-input-ui[contenteditable='true']",
+      "div.ql-editor[contenteditable='true'][role='textbox']",
+      "textarea, div[contenteditable='true']"
+    ],
+    inputType: "contenteditable",
+    submitSelector: "button.send-button, button[aria-label*='send' i], button[aria-label*='보내기' i]",
+    submitMethod: "click",
+    selectorCheckMode: "input-and-submit",
+    waitMs: 2500,
+    fallback: true,
+    lastVerified: "2026-04",
+    verifiedVersion: "gemini-app-apr-2026",
+    authSelectors: [
+      "input[type='email']",
+      "input[type='password']"
+    ]
+  },
+  {
+    id: "claude",
+    name: "Claude",
+    url: "https://claude.ai/new",
+    hostname: "claude.ai",
+    inputSelector: "div[contenteditable='true'][role='textbox'], div[contenteditable='true'][aria-label*='Claude' i], div[contenteditable='true'][aria-label*='prompt' i]",
+    fallbackSelectors: [
+      "div[contenteditable='true'][role='textbox']",
+      "div[contenteditable='true'][aria-label*='Claude' i]",
+      "div[contenteditable='true'][aria-label*='prompt' i]",
+      "div[contenteditable='true']",
+      "textarea"
+    ],
+    inputType: "contenteditable",
+    submitSelector: "button[aria-label='Send message'], button[aria-label*='send' i], button[aria-label*='submit' i], button[aria-label*='보내' i], button[aria-label*='전송' i]",
+    submitMethod: "click",
+    selectorCheckMode: "input-and-submit",
+    waitMs: 1500,
+    fallback: true,
+    lastVerified: "2026-04",
+    verifiedVersion: "claude-web-apr-2026",
+    authSelectors: [
+      "input#email",
+      "input[type='email']",
+      "input[type='password']",
+      "form[action*='login']"
+    ]
+  },
+  {
+    id: "grok",
+    name: "Grok",
+    url: "https://grok.com/",
+    hostname: "grok.com",
+    inputSelector: "div.tiptap.ProseMirror[contenteditable='true'], div.ProseMirror[contenteditable='true'][translate='no'], div.ProseMirror[contenteditable='true']",
+    fallbackSelectors: [
+      "div.tiptap.ProseMirror[contenteditable='true']",
+      "div.ProseMirror[contenteditable='true'][translate='no']",
+      "div.ProseMirror[contenteditable='true']",
+      "textarea[aria-label*='grok' i]",
+      "textarea[placeholder*='help' i]",
+      "textarea"
+    ],
+    inputType: "contenteditable",
+    submitSelector: "button[aria-label*='submit' i], button[aria-label*='제출' i]",
+    submitMethod: "click",
+    selectorCheckMode: "input-and-submit",
+    waitMs: 2e3,
+    fallback: true,
+    lastVerified: "2026-03",
+    verifiedVersion: "grok-web-mar-2026",
+    authSelectors: [
+      "input[autocomplete='username']",
+      "input[type='password']"
+    ]
+  },
+  {
+    id: "perplexity",
+    name: "Perplexity",
+    url: "https://www.perplexity.ai/",
+    hostname: "www.perplexity.ai",
+    hostnameAliases: ["perplexity.ai"],
+    inputSelector: "#ask-input[data-lexical-editor='true'][role='textbox']",
+    fallbackSelectors: [
+      "div#ask-input[data-lexical-editor='true'][role='textbox']",
+      "div#ask-input[contenteditable='true'][role='textbox']",
+      "#ask-input[contenteditable='true']",
+      "div[contenteditable='true'][role='textbox']",
+      "textarea[placeholder*='Ask'][data-testid='search-input']",
+      "textarea[placeholder*='Ask']",
+      "textarea[placeholder*='질문']",
+      "textarea"
+    ],
+    inputType: "contenteditable",
+    submitSelector: "button[aria-label*='Submit'][type='submit'], button[type='submit'][aria-label*='검색'], button[aria-label*='submit' i], button[aria-label*='제출' i]",
+    submitMethod: "click",
+    selectorCheckMode: "input-only",
+    waitMs: 2e3,
+    fallback: true,
+    lastVerified: "2026-03",
+    verifiedVersion: "perplexity-web-mar-2026",
+    authSelectors: [
+      "input[type='email']",
+      "input[type='password']",
+      "button[data-testid='login-button']"
+    ]
+  }
+]);
 
 // src/shared/sites/constants.ts
 var SITE_STORAGE_KEYS = Object.freeze({
@@ -1087,6 +1249,7 @@ async function setTemplateVariableCache(cache) {
 }
 
 // src/shared/prompts/import-export.ts
+var CURRENT_EXPORT_VERSION = 4;
 async function containsOriginPermission(originPattern) {
   try {
     if (!chrome.permissions?.contains || !originPattern) {
@@ -1164,6 +1327,59 @@ async function repairImportedCustomSitesWithPermissions(rawSites) {
     requestedOrigins: [...requestedOrigins]
   };
 }
+function normalizeImportVersion(value) {
+  const version = Number(value);
+  if (!Number.isFinite(version) || version <= 0) {
+    return 1;
+  }
+  return Math.max(1, Math.floor(version));
+}
+function migrateV1ToV2(payload) {
+  return {
+    ...payload,
+    version: 2,
+    broadcastCounter: payload.broadcastCounter ?? 0
+  };
+}
+function migrateV2ToV3(payload) {
+  return {
+    ...payload,
+    version: 3,
+    builtInSiteStates: payload.builtInSiteStates ?? {},
+    builtInSiteOverrides: payload.builtInSiteOverrides ?? {}
+  };
+}
+function migrateV3ToV4(payload) {
+  return {
+    ...payload,
+    version: 4,
+    settings: normalizeSettings(payload.settings ?? DEFAULT_SETTINGS),
+    history: safeArray(payload.history).map((entry) => buildHistoryEntry(entry)),
+    favorites: safeArray(payload.favorites).map((entry) => buildFavoriteEntry(entry))
+  };
+}
+function migrateImportData(rawValue) {
+  let payload = safeObject(rawValue);
+  const sourceVersion = normalizeImportVersion(payload.version);
+  let workingVersion = sourceVersion;
+  if (workingVersion < 2) {
+    payload = migrateV1ToV2(payload);
+    workingVersion = 2;
+  }
+  if (workingVersion < 3) {
+    payload = migrateV2ToV3(payload);
+    workingVersion = 3;
+  }
+  if (workingVersion < 4) {
+    payload = migrateV3ToV4(payload);
+    workingVersion = 4;
+  }
+  return {
+    migrated: payload,
+    sourceVersion,
+    targetVersion: CURRENT_EXPORT_VERSION
+  };
+}
 async function exportPromptData() {
   const [
     broadcastCounter,
@@ -1186,7 +1402,7 @@ async function exportPromptData() {
   ]);
   return {
     exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
-    version: 3,
+    version: CURRENT_EXPORT_VERSION,
     broadcastCounter,
     history,
     favorites,
@@ -1199,17 +1415,18 @@ async function exportPromptData() {
 }
 async function importPromptData(jsonString) {
   const parsed = JSON.parse(jsonString);
+  const { migrated, sourceVersion, targetVersion } = migrateImportData(parsed);
   const previousCustomSites = await getCustomSites();
-  const history = safeArray(parsed?.history).map((item) => buildHistoryEntry(item));
-  const favorites = safeArray(parsed?.favorites).map(
+  const history = safeArray(migrated?.history).map((item) => buildHistoryEntry(item));
+  const favorites = safeArray(migrated?.favorites).map(
     (item) => buildFavoriteEntry(item)
   );
-  const importedBroadcastCounter = normalizeBroadcastCounter(parsed?.broadcastCounter);
-  const templateVariableCache = normalizeTemplateDefaults(parsed?.templateVariableCache);
-  const importedSettings = normalizeSettings(parsed?.settings ?? DEFAULT_SETTINGS);
-  const importedCustomSites = safeArray(parsed?.customSites);
-  const importedBuiltInSiteStates = safeObject(parsed?.builtInSiteStates);
-  const importedBuiltInSiteOverrides = safeObject(parsed?.builtInSiteOverrides);
+  const importedBroadcastCounter = normalizeBroadcastCounter(migrated?.broadcastCounter);
+  const templateVariableCache = normalizeTemplateDefaults(migrated?.templateVariableCache);
+  const importedSettings = normalizeSettings(migrated?.settings ?? DEFAULT_SETTINGS);
+  const importedCustomSites = safeArray(migrated?.customSites);
+  const importedBuiltInSiteStates = safeObject(migrated?.builtInSiteStates);
+  const importedBuiltInSiteOverrides = safeObject(migrated?.builtInSiteOverrides);
   const historyLimit = importedSettings.historyLimit;
   const normalizedHistory = [];
   for (const item of sortByDateDesc(history).slice(0, historyLimit)) {
@@ -1249,9 +1466,12 @@ async function importPromptData(jsonString) {
     builtInSiteStates: builtInStateImport.normalized,
     builtInSiteOverrides: builtInOverrideImport.normalized,
     importSummary: {
+      version: targetVersion,
+      migratedFromVersion: sourceVersion,
       customSites: {
         importedCount: importedCustomSites.length,
         acceptedIds: customSiteImport.acceptedSites.map((site) => site.id),
+        acceptedNames: customSiteImport.acceptedSites.map((site) => site.name),
         rejected: customSiteImport.rejectedSites,
         rewrittenIds: customSiteImport.rewrittenIds,
         deniedOrigins: customSiteImport.deniedOrigins
@@ -1594,6 +1814,7 @@ var t = {
   },
   history: {
     emptyFiltered: msg("options_history_empty_filtered"),
+    tableSelect: msg("options_table_select") || "Select",
     tableDate: msg("options_table_date"),
     tablePrompt: msg("options_table_prompt"),
     tableServices: msg("options_table_services"),
@@ -1601,7 +1822,15 @@ var t = {
     allServices: msg("options_filter_all_services"),
     pageInfo: (current, total) => msg("options_page_info", [String(current), String(total)]),
     exportSuccess: msg("options_settings_export_success"),
-    exportFailed: msg("options_settings_export_failed")
+    exportFailed: msg("options_settings_export_failed"),
+    selectAllLabel: msg("options_history_select_all") || "Select page",
+    deleteSelected: msg("options_history_delete_selected") || "Delete selected",
+    deleteFiltered: msg("options_history_delete_filtered") || "Delete filtered",
+    deleteOlderThan: (days) => msg("options_history_delete_older_than", [String(days)]) || `Delete older than ${days}d`,
+    deleteSelectedConfirm: msg("options_history_delete_selected_confirm") || "Delete the selected history items?",
+    deleteFilteredConfirm: (count) => msg("options_history_delete_filtered_confirm", [String(count)]) || `Delete ${count} filtered history item(s)?`,
+    deleteOlderConfirm: (days) => msg("options_history_delete_older_confirm", [String(days)]) || `Delete items older than ${days} days?`,
+    deleteSuccess: msg("options_history_delete_success") || "History deleted."
   },
   services: {
     inputType: msg("options_service_input_type"),
@@ -1623,8 +1852,32 @@ var t = {
     importFailed: msg("options_settings_import_failed"),
     shortcutsOpenFailed: msg("options_settings_shortcuts_open_failed"),
     waitSaved: msg("options_wait_saved") || "Wait time saved.",
+    waitMultiplierTitle: msg("options_settings_wait_multiplier_title") || "Wait multiplier",
+    waitMultiplierValue: (value) => msg("options_settings_wait_multiplier_value", [String(Number(value).toFixed(1))]) || `${Number(value).toFixed(1)}x`,
     reuseTabsTitle: msg("options_settings_reuse_tabs_title") || "Reuse current-window AI tabs",
-    reuseTabsDesc: msg("options_settings_reuse_tabs_desc") || "When enabled, matching open AI tabs are reused before opening a new one."
+    reuseTabsDesc: msg("options_settings_reuse_tabs_desc") || "When enabled, matching open AI tabs are reused before opening a new one.",
+    importReportTitle: msg("options_import_report_title") || "Import Details",
+    importReportDesc: msg("options_import_report_desc") || "Review the imported items and any rejections.",
+    importReportVersion: msg("options_import_report_version") || "Version",
+    importReportAccepted: msg("options_import_report_accepted") || "Accepted services",
+    importReportRewritten: msg("options_import_report_rewritten") || "Rewritten IDs",
+    importReportBuiltins: msg("options_import_report_builtins") || "Built-in adjustments",
+    importReportRejected: msg("options_import_report_rejected") || "Rejected services",
+    importReportRejectedEmpty: msg("options_import_report_rejected_empty") || "No rejected services.",
+    importRejectReason: (reason) => msg(`popup_import_reject_${reason}`) || reason,
+    resultCodeLabels: {
+      submitted: msg("result_code_submitted") || "Submitted",
+      selector_timeout: msg("result_code_selector_timeout") || "Selector timeout",
+      auth_required: msg("result_code_auth_required") || "Login required",
+      submit_failed: msg("result_code_submit_failed") || "Submit failed",
+      strategy_exhausted: msg("result_code_strategy_exhausted") || "Injection failed",
+      permission_denied: msg("result_code_permission_denied") || "Permission denied",
+      tab_create_failed: msg("result_code_tab_create_failed") || "Tab open failed",
+      tab_closed: msg("result_code_tab_closed") || "Tab closed",
+      injection_timeout: msg("result_code_injection_timeout") || "Injection timeout",
+      cancelled: msg("result_code_cancelled") || "Cancelled",
+      unexpected_error: msg("result_code_unexpected_error") || "Unexpected error"
+    }
   },
   statuses: {
     submitted: msg("options_status_complete"),
@@ -1647,6 +1900,8 @@ var state = {
   settings: { ...DEFAULT_SETTINGS },
   activeSection: "dashboard",
   historyPage: 1,
+  selectedHistoryIds: /* @__PURE__ */ new Set(),
+  pendingImportSummary: null,
   filters: {
     service: "all",
     dateFrom: "",
@@ -1654,64 +1909,72 @@ var state = {
   }
 };
 
-// src/options/app/bootstrap.ts
-var PAGE_SIZE = 10;
-var navButtons = [...document.querySelectorAll(".nav-button")];
-var pageSections = [...document.querySelectorAll(".page-section")];
-var pageStatus = document.getElementById("page-status");
-var toastHost = document.getElementById("toast-host");
-var dashboardCards = document.getElementById("dashboard-cards");
-var serviceDonut = document.getElementById("service-donut");
-var dailyBarChart = document.getElementById("daily-bar-chart");
-var historyServiceFilter = document.getElementById("history-service-filter");
-var historyDateFrom = document.getElementById("history-date-from");
-var historyDateTo = document.getElementById("history-date-to");
-var historyExportCsv = document.getElementById("history-export-csv");
-var historyTableWrap = document.getElementById("history-table-wrap");
-var historyPrevPage = document.getElementById("history-prev-page");
-var historyNextPage = document.getElementById("history-next-page");
-var historyPageInfo = document.getElementById("history-page-info");
-var servicesGrid = document.getElementById("services-grid");
-var historyLimitSlider = document.getElementById("history-limit-slider");
-var historyLimitValue = document.getElementById("history-limit-value");
-var autoCloseToggle = document.getElementById("auto-close-toggle");
-var desktopNotificationToggle = document.getElementById("desktop-notification-toggle");
-var reuseTabsToggle = document.getElementById("reuse-tabs-toggle");
-var reuseTabsSettingTitle = document.getElementById("reuse-tabs-setting-title");
-var reuseTabsSettingDesc = document.getElementById("reuse-tabs-setting-desc");
-var shortcutList = document.getElementById("shortcut-list");
-var openShortcutsBtn = document.getElementById("open-shortcuts-btn");
-var settingsResetData = document.getElementById("settings-reset-data");
-var settingsExportJson = document.getElementById("settings-export-json");
-var settingsImportJson = document.getElementById("settings-import-json");
-var settingsImportJsonInput = document.getElementById("settings-import-json-input");
-var historyModal = document.getElementById("history-modal");
-var historyModalClose = document.getElementById("history-modal-close");
-var historyModalMeta = document.getElementById("history-modal-meta");
-var historyModalServices = document.getElementById("history-modal-services");
-var historyModalText = document.getElementById("history-modal-text");
-function setStatus(text, type = "") {
-  pageStatus.textContent = text;
-  pageStatus.className = `status-line ${type}`.trim();
-}
-function showAppToast(input, type = "info", duration = 3e3) {
-  return showToast(input, type, duration);
-}
-function showConfirmToast(message, onConfirm) {
-  showAppToast({
-    message,
-    type: "warning",
-    duration: -1,
-    actions: [
-      {
-        label: msg("common_confirm") || "Confirm",
-        onClick: () => {
-          void onConfirm();
-        }
-      }
-    ]
-  });
-}
+// src/options/app/dom.ts
+var optionsDom = {
+  navigation: {
+    navButtons: [...document.querySelectorAll(".nav-button")],
+    pageSections: [...document.querySelectorAll(".page-section")],
+    pageStatus: document.getElementById("page-status")
+  },
+  dashboard: {
+    dashboardCards: document.getElementById("dashboard-cards"),
+    serviceDonut: document.getElementById("service-donut"),
+    dailyBarChart: document.getElementById("daily-bar-chart")
+  },
+  history: {
+    historyServiceFilter: document.getElementById("history-service-filter"),
+    historyDateFrom: document.getElementById("history-date-from"),
+    historyDateTo: document.getElementById("history-date-to"),
+    historyExportCsv: document.getElementById("history-export-csv"),
+    historyTableWrap: document.getElementById("history-table-wrap"),
+    historySelectAll: document.getElementById("history-select-all"),
+    historySelectAllLabel: document.getElementById("history-select-all-label"),
+    historyDeleteSelected: document.getElementById("history-delete-selected"),
+    historyDeleteFiltered: document.getElementById("history-delete-filtered"),
+    historyDelete7d: document.getElementById("history-delete-7d"),
+    historyDelete30d: document.getElementById("history-delete-30d"),
+    historyDelete90d: document.getElementById("history-delete-90d"),
+    historyPrevPage: document.getElementById("history-prev-page"),
+    historyNextPage: document.getElementById("history-next-page"),
+    historyPageInfo: document.getElementById("history-page-info")
+  },
+  services: {
+    servicesGrid: document.getElementById("services-grid")
+  },
+  settings: {
+    historyLimitSlider: document.getElementById("history-limit-slider"),
+    historyLimitValue: document.getElementById("history-limit-value"),
+    autoCloseToggle: document.getElementById("auto-close-toggle"),
+    desktopNotificationToggle: document.getElementById("desktop-notification-toggle"),
+    reuseTabsToggle: document.getElementById("reuse-tabs-toggle"),
+    reuseTabsSettingTitle: document.getElementById("reuse-tabs-setting-title"),
+    reuseTabsSettingDesc: document.getElementById("reuse-tabs-setting-desc"),
+    waitMultiplierSettingTitle: document.getElementById("wait-multiplier-setting-title"),
+    waitMultiplierSlider: document.getElementById("wait-multiplier-slider"),
+    waitMultiplierSettingValue: document.getElementById("wait-multiplier-setting-value"),
+    shortcutList: document.getElementById("shortcut-list"),
+    openShortcutsBtn: document.getElementById("open-shortcuts-btn"),
+    settingsResetData: document.getElementById("settings-reset-data"),
+    settingsExportJson: document.getElementById("settings-export-json"),
+    settingsImportJson: document.getElementById("settings-import-json"),
+    settingsImportJsonInput: document.getElementById("settings-import-json-input")
+  },
+  modals: {
+    historyModal: document.getElementById("history-modal"),
+    historyModalClose: document.getElementById("history-modal-close"),
+    historyModalMeta: document.getElementById("history-modal-meta"),
+    historyModalServices: document.getElementById("history-modal-services"),
+    historyModalText: document.getElementById("history-modal-text"),
+    importReportModal: document.getElementById("import-report-modal"),
+    importReportModalClose: document.getElementById("import-report-modal-close"),
+    importReportModalTitle: document.getElementById("import-report-modal-title"),
+    importReportModalDesc: document.getElementById("import-report-modal-desc"),
+    importReportBody: document.getElementById("import-report-body")
+  },
+  toastHost: document.getElementById("toast-host")
+};
+
+// src/options/app/helpers.ts
 function buildImportSummaryText(summary, { short = false } = {}) {
   const acceptedCount = summary?.customSites?.acceptedIds?.length ?? 0;
   const rejectedCount = summary?.customSites?.rejected?.length ?? 0;
@@ -1776,8 +2039,8 @@ function previewText(text, maxLength = 60) {
   const collapsed = String(text ?? "").replace(/\s+/g, " ").trim();
   return collapsed.length <= maxLength ? collapsed || "-" : `${collapsed.slice(0, maxLength)}...`;
 }
-function getSiteLabel(siteId) {
-  return state.runtimeSites.find((site) => site.id === siteId)?.name ?? AI_SITES.find((site) => site.id === siteId)?.name ?? siteId;
+function getSiteLabel(siteId, runtimeSites = []) {
+  return runtimeSites.find((site) => site.id === siteId)?.name ?? AI_SITES.find((site) => site.id === siteId)?.name ?? siteId;
 }
 function getRequestedServices(entry) {
   const siteResultKeys = Object.keys(entry.siteResults ?? {});
@@ -1804,11 +2067,139 @@ function getStatusInfo(status) {
       return { label: status || t.statuses.unknown, className: "" };
   }
 }
-function buildBadgeMarkup(siteId) {
-  return `<span class="badge">${escapeHTML(getSiteLabel(siteId))}</span>`;
+function buildBadgeMarkup(siteId, runtimeSites = []) {
+  return `<span class="badge">${escapeHTML(getSiteLabel(siteId, runtimeSites))}</span>`;
 }
 function createEmptyState(message) {
   return `<div class="empty-state">${escapeHTML(message)}</div>`;
+}
+function buildImportReportMarkup(summary) {
+  if (!summary) {
+    return "";
+  }
+  const rejectedRows = (summary.customSites?.rejected ?? []).map((entry) => {
+    const origins = Array.isArray(entry?.origins) && entry.origins.length > 0 ? `<div class="helper">${escapeHTML(entry.origins.join(", "))}</div>` : "";
+    return `
+      <div class="settings-control">
+        <strong>${escapeHTML(entry?.name ?? entry?.id ?? "-")}</strong>
+        <div>${escapeHTML(t.settings.importRejectReason(entry?.reason ?? "unknown"))}</div>
+        ${origins}
+      </div>
+    `;
+  }).join("");
+  return `
+    <div class="settings-control">
+      <strong>${escapeHTML(t.settings.importReportVersion)}</strong>
+      <div>${escapeHTML(`v${summary.version} (from v${summary.migratedFromVersion})`)}</div>
+    </div>
+    <div class="settings-control">
+      <strong>${escapeHTML(t.settings.importReportAccepted)}</strong>
+      <div>${escapeHTML(summary.customSites?.acceptedNames?.join(", ") || "-")}</div>
+    </div>
+    <div class="settings-control">
+      <strong>${escapeHTML(t.settings.importReportRewritten)}</strong>
+      <div>${escapeHTML(summary.customSites?.rewrittenIds?.join(", ") || "-")}</div>
+    </div>
+    <div class="settings-control">
+      <strong>${escapeHTML(t.settings.importReportBuiltins)}</strong>
+      <div>${escapeHTML([
+    ...summary.builtInSiteOverrides?.adjustedIds ?? [],
+    ...summary.builtInSiteOverrides?.droppedIds ?? [],
+    ...summary.builtInSiteStates?.droppedIds ?? []
+  ].join(", ") || "-")}</div>
+    </div>
+    <div class="settings-control">
+      <strong>${escapeHTML(t.settings.importReportRejected)}</strong>
+      ${rejectedRows || `<div class="helper">${escapeHTML(t.settings.importReportRejectedEmpty)}</div>`}
+    </div>
+  `;
+}
+
+// src/options/app/bootstrap.ts
+var PAGE_SIZE = 10;
+var { navButtons, pageSections, pageStatus } = optionsDom.navigation;
+var { dashboardCards, serviceDonut, dailyBarChart } = optionsDom.dashboard;
+var {
+  historyServiceFilter,
+  historyDateFrom,
+  historyDateTo,
+  historyExportCsv,
+  historyTableWrap,
+  historySelectAll,
+  historySelectAllLabel,
+  historyDeleteSelected,
+  historyDeleteFiltered,
+  historyDelete7d,
+  historyDelete30d,
+  historyDelete90d,
+  historyPrevPage,
+  historyNextPage,
+  historyPageInfo
+} = optionsDom.history;
+var { servicesGrid } = optionsDom.services;
+var {
+  historyLimitSlider,
+  historyLimitValue,
+  autoCloseToggle,
+  desktopNotificationToggle,
+  reuseTabsToggle,
+  reuseTabsSettingTitle,
+  reuseTabsSettingDesc,
+  waitMultiplierSettingTitle,
+  waitMultiplierSlider,
+  waitMultiplierSettingValue,
+  shortcutList,
+  openShortcutsBtn,
+  settingsResetData,
+  settingsExportJson,
+  settingsImportJson,
+  settingsImportJsonInput
+} = optionsDom.settings;
+var {
+  historyModal,
+  historyModalClose,
+  historyModalMeta,
+  historyModalServices,
+  historyModalText,
+  importReportModal,
+  importReportModalClose,
+  importReportModalTitle,
+  importReportModalDesc,
+  importReportBody
+} = optionsDom.modals;
+var { toastHost } = optionsDom;
+function setStatus(text, type = "") {
+  pageStatus.textContent = text;
+  pageStatus.className = `status-line ${type}`.trim();
+}
+function showAppToast(input, type = "info", duration = 3e3) {
+  return showToast(input, type, duration);
+}
+function showConfirmToast(message, onConfirm) {
+  showAppToast({
+    message,
+    type: "warning",
+    duration: -1,
+    actions: [
+      {
+        label: msg("common_confirm") || "Confirm",
+        onClick: () => {
+          void onConfirm();
+        }
+      }
+    ]
+  });
+}
+function openImportReportModal(summary) {
+  state.pendingImportSummary = summary;
+  importReportModalTitle.textContent = t.settings.importReportTitle;
+  importReportModalDesc.textContent = t.settings.importReportDesc;
+  importReportBody.innerHTML = buildImportReportMarkup(summary);
+  importReportModal.hidden = false;
+}
+function closeImportReportModal() {
+  state.pendingImportSummary = null;
+  importReportModal.hidden = true;
 }
 function polarToCartesian(cx, cy, radius, angle) {
   const radian = (angle - 90) * Math.PI / 180;
@@ -1914,7 +2305,7 @@ function buildDashboardMetrics(history) {
   const averagePromptLength = history.length > 0 ? Math.round(totalPromptLength / history.length) : 0;
   const donutItems = [...serviceCounts.entries()].sort((left, right) => right[1] - left[1]).map(([siteId, count]) => ({
     id: siteId,
-    label: getSiteLabel(siteId),
+    label: getSiteLabel(siteId, state.runtimeSites),
     count
   }));
   const dailyCounts = [];
@@ -1931,7 +2322,7 @@ function buildDashboardMetrics(history) {
   }
   return {
     totalTransmissions: history.length,
-    mostUsedService: mostUsed ? getSiteLabel(mostUsed[0]) : "-",
+    mostUsedService: mostUsed ? getSiteLabel(mostUsed[0], state.runtimeSites) : "-",
     weekCount,
     averagePromptLength,
     donutItems,
@@ -1974,12 +2365,21 @@ function filteredHistory() {
     return matchesService && matchesFrom && matchesTo;
   });
 }
+function syncHistorySelectionState() {
+  const availableIds = new Set(state.history.map((entry) => Number(entry.id)));
+  state.selectedHistoryIds = new Set(
+    [...state.selectedHistoryIds].filter((historyId) => availableIds.has(Number(historyId)))
+  );
+}
 function renderHistoryTable() {
+  syncHistorySelectionState();
   const history = filteredHistory();
   const pageCount = Math.max(1, Math.ceil(history.length / PAGE_SIZE));
   state.historyPage = Math.min(state.historyPage, pageCount);
   const startIndex = (state.historyPage - 1) * PAGE_SIZE;
   const currentPageRows = history.slice(startIndex, startIndex + PAGE_SIZE);
+  const currentPageIds = currentPageRows.map((entry) => Number(entry.id));
+  const allCurrentPageSelected = currentPageIds.length > 0 && currentPageIds.every((historyId) => state.selectedHistoryIds.has(historyId));
   if (currentPageRows.length === 0) {
     historyTableWrap.innerHTML = createEmptyState(t.history.emptyFiltered);
   } else {
@@ -1987,6 +2387,7 @@ function renderHistoryTable() {
       <table>
         <thead>
           <tr>
+            <th>${escapeHTML(t.history.tableSelect)}</th>
             <th>${escapeHTML(t.history.tableDate)}</th>
             <th>${escapeHTML(t.history.tablePrompt)}</th>
             <th>${escapeHTML(t.history.tableServices)}</th>
@@ -1998,9 +2399,10 @@ function renderHistoryTable() {
       const status = getStatusInfo(entry.status);
       return `
                 <tr class="table-row-button" data-history-id="${entry.id}">
+                  <td><input type="checkbox" data-history-select="${entry.id}" ${state.selectedHistoryIds.has(Number(entry.id)) ? "checked" : ""} /></td>
                   <td>${escapeHTML(formatDateTime(entry.createdAt))}</td>
                   <td>${escapeHTML(previewText(entry.text))}</td>
-                  <td><div class="service-badges">${getRequestedServices(entry).map((siteId) => buildBadgeMarkup(siteId)).join("")}</div></td>
+                  <td><div class="service-badges">${getRequestedServices(entry).map((siteId) => buildBadgeMarkup(siteId, state.runtimeSites)).join("")}</div></td>
                   <td><span class="status-pill ${status.className}">${escapeHTML(status.label)}</span></td>
                 </tr>
               `;
@@ -2012,6 +2414,9 @@ function renderHistoryTable() {
   historyPageInfo.textContent = t.history.pageInfo(state.historyPage, pageCount);
   historyPrevPage.disabled = state.historyPage <= 1;
   historyNextPage.disabled = state.historyPage >= pageCount;
+  historySelectAll.checked = allCurrentPageSelected;
+  historyDeleteSelected.disabled = state.selectedHistoryIds.size === 0;
+  historyDeleteFiltered.disabled = history.length === 0;
 }
 function renderServiceFilterOptions() {
   historyServiceFilter.innerHTML = [
@@ -2066,6 +2471,15 @@ function applySettingsToControls() {
   reuseTabsToggle.checked = state.settings.reuseExistingTabs;
   reuseTabsSettingTitle.textContent = t.settings.reuseTabsTitle;
   reuseTabsSettingDesc.textContent = t.settings.reuseTabsDesc;
+  waitMultiplierSettingTitle.textContent = t.settings.waitMultiplierTitle;
+  waitMultiplierSlider.value = String(state.settings.waitMsMultiplier);
+  waitMultiplierSettingValue.textContent = t.settings.waitMultiplierValue(state.settings.waitMsMultiplier);
+  historySelectAllLabel.textContent = t.history.selectAllLabel;
+  historyDeleteSelected.textContent = t.history.deleteSelected;
+  historyDeleteFiltered.textContent = t.history.deleteFiltered;
+  historyDelete7d.textContent = t.history.deleteOlderThan(7);
+  historyDelete30d.textContent = t.history.deleteOlderThan(30);
+  historyDelete90d.textContent = t.history.deleteOlderThan(90);
 }
 function buildResultComparisonMarkup(entry) {
   const requested = getRequestedServices(entry);
@@ -2078,11 +2492,12 @@ function buildResultComparisonMarkup(entry) {
     const name = site?.name ?? siteId;
     const color = site?.color ?? "#888";
     const icon = site?.icon ?? siteId.slice(0, 2).toUpperCase();
-    const rawStatus = siteResults[siteId] ?? (submitted.has(siteId) ? "submitted" : failed.has(siteId) ? "failed" : "unknown");
+    const result = siteResults[siteId];
+    const rawStatus = normalizeResultCode(result?.code ?? (submitted.has(siteId) ? "submitted" : failed.has(siteId) ? "unexpected_error" : "unknown"));
     const isOk = rawStatus === "submitted";
     const isFailed = rawStatus !== "submitted" && rawStatus !== "unknown";
     const statusEmoji = isOk ? "✅" : isFailed ? "❌" : "⏳";
-    const statusLabel = isOk ? msg("options_status_complete") || "Completed" : isFailed ? rawStatus === "login_required" ? msg("toast_login_required", [name]) || `Login required` : rawStatus.replace(/_/g, " ") : msg("options_status_unknown") || "Unknown";
+    const statusLabel = isOk ? msg("options_status_complete") || "Completed" : isFailed ? t.settings.resultCodeLabels[rawStatus] || rawStatus.replace(/_/g, " ") : msg("options_status_unknown") || "Unknown";
     const siteUrl = site?.url ?? "#";
     return `
       <div class="result-compare-row">
@@ -2109,7 +2524,7 @@ function openHistoryModal(historyId) {
   }
   const status = getStatusInfo(entry.status);
   historyModalMeta.textContent = `${formatDateTime(entry.createdAt)} · ${status.label}`;
-  historyModalServices.innerHTML = getRequestedServices(entry).map((siteId) => buildBadgeMarkup(siteId)).join("");
+  historyModalServices.innerHTML = getRequestedServices(entry).map((siteId) => buildBadgeMarkup(siteId, state.runtimeSites)).join("");
   historyModalText.textContent = entry.text;
   let comparisonEl = document.getElementById("history-modal-comparison");
   if (!comparisonEl) {
@@ -2155,6 +2570,7 @@ async function loadData() {
     getRuntimeSites()
   ]);
   state.history = history;
+  state.selectedHistoryIds.clear();
   state.runtimeSites = runtimeSites;
   state.settings = settings;
   renderServiceFilterOptions();
@@ -2187,10 +2603,15 @@ async function saveSiteWaitMs(siteId, waitMs) {
 function switchSection(sectionId) {
   state.activeSection = sectionId;
   navButtons.forEach((button) => {
-    button.classList.toggle("active", button.dataset.section === sectionId);
+    const active = button.dataset.section === sectionId;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
   });
   pageSections.forEach((section) => {
-    section.classList.toggle("active", section.id === `section-${sectionId}`);
+    const active = section.id === `section-${sectionId}`;
+    section.classList.toggle("active", active);
+    section.hidden = !active;
   });
 }
 function downloadBlob(filename, content, type) {
@@ -2225,6 +2646,30 @@ function exportFilteredHistoryAsCsv() {
   );
   setStatus(t.history.exportSuccess, "success");
   showAppToast(t.history.exportSuccess, "success", 1800);
+}
+async function refreshHistoryAfterMutation() {
+  state.history = await getPromptHistory();
+  syncHistorySelectionState();
+  renderDashboard();
+  renderHistoryTable();
+  renderServicesSection();
+}
+async function deleteSelectedHistoryRows(historyIds) {
+  await deletePromptHistoryItemsByIds(historyIds);
+  historyIds.forEach((historyId) => state.selectedHistoryIds.delete(Number(historyId)));
+  await refreshHistoryAfterMutation();
+  setStatus(t.history.deleteSuccess, "success");
+  showAppToast(t.history.deleteSuccess, "success", 1800);
+}
+async function deleteHistoryOlderThanDays(days) {
+  const cutoff = /* @__PURE__ */ new Date();
+  cutoff.setHours(0, 0, 0, 0);
+  cutoff.setDate(cutoff.getDate() - days);
+  await deletePromptHistoryItemsBeforeDate(cutoff);
+  state.selectedHistoryIds.clear();
+  await refreshHistoryAfterMutation();
+  setStatus(t.history.deleteSuccess, "success");
+  showAppToast(t.history.deleteSuccess, "success", 1800);
 }
 async function resetAllData() {
   const response = await chrome.runtime.sendMessage({ action: "resetAllData" });
@@ -2261,6 +2706,20 @@ function bindEvents() {
     renderHistoryTable();
   });
   historyExportCsv.addEventListener("click", exportFilteredHistoryAsCsv);
+  historySelectAll.addEventListener("change", (event) => {
+    const history = filteredHistory();
+    const startIndex = (state.historyPage - 1) * PAGE_SIZE;
+    const currentPageRows = history.slice(startIndex, startIndex + PAGE_SIZE);
+    const checked = Boolean(event.target.checked);
+    currentPageRows.forEach((entry) => {
+      if (checked) {
+        state.selectedHistoryIds.add(Number(entry.id));
+      } else {
+        state.selectedHistoryIds.delete(Number(entry.id));
+      }
+    });
+    renderHistoryTable();
+  });
   historyPrevPage.addEventListener("click", () => {
     state.historyPage = Math.max(1, state.historyPage - 1);
     renderHistoryTable();
@@ -2270,6 +2729,17 @@ function bindEvents() {
     renderHistoryTable();
   });
   historyTableWrap.addEventListener("click", (event) => {
+    const checkbox = event.target.closest("[data-history-select]");
+    if (checkbox) {
+      const historyId = Number(checkbox.dataset.historySelect);
+      if (checkbox.checked) {
+        state.selectedHistoryIds.add(historyId);
+      } else {
+        state.selectedHistoryIds.delete(historyId);
+      }
+      renderHistoryTable();
+      return;
+    }
     const row = event.target.closest("[data-history-id]");
     if (row) {
       openHistoryModal(row.dataset.historyId);
@@ -2280,6 +2750,32 @@ function bindEvents() {
     if (event.target === historyModal) {
       closeHistoryModal();
     }
+  });
+  historyDeleteSelected.addEventListener("click", () => {
+    showConfirmToast(t.history.deleteSelectedConfirm, async () => {
+      await deleteSelectedHistoryRows([...state.selectedHistoryIds]);
+    });
+  });
+  historyDeleteFiltered.addEventListener("click", () => {
+    const historyIds = filteredHistory().map((entry) => Number(entry.id));
+    showConfirmToast(t.history.deleteFilteredConfirm(historyIds.length), async () => {
+      await deleteSelectedHistoryRows(historyIds);
+    });
+  });
+  historyDelete7d.addEventListener("click", () => {
+    showConfirmToast(t.history.deleteOlderConfirm(7), async () => {
+      await deleteHistoryOlderThanDays(7);
+    });
+  });
+  historyDelete30d.addEventListener("click", () => {
+    showConfirmToast(t.history.deleteOlderConfirm(30), async () => {
+      await deleteHistoryOlderThanDays(30);
+    });
+  });
+  historyDelete90d.addEventListener("click", () => {
+    showConfirmToast(t.history.deleteOlderConfirm(90), async () => {
+      await deleteHistoryOlderThanDays(90);
+    });
   });
   historyLimitSlider.addEventListener("input", (event) => {
     historyLimitValue.textContent = t.settings.historyLimitValue(event.target.value);
@@ -2306,6 +2802,16 @@ function bindEvents() {
   reuseTabsToggle.addEventListener("change", (event) => {
     void saveSettings({ reuseExistingTabs: event.target.checked }).catch((error) => {
       console.error("[AI Prompt Broadcaster] Failed to save tab reuse setting.", error);
+      setStatus(error?.message ?? t.saveFailed, "error");
+      showAppToast(error?.message ?? t.saveFailed, "error", 3e3);
+    });
+  });
+  waitMultiplierSlider.addEventListener("input", (event) => {
+    waitMultiplierSettingValue.textContent = t.settings.waitMultiplierValue(event.target.value);
+  });
+  waitMultiplierSlider.addEventListener("change", (event) => {
+    void saveSettings({ waitMsMultiplier: Number(event.target.value) }).catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to save wait multiplier.", error);
       setStatus(error?.message ?? t.saveFailed, "error");
       showAppToast(error?.message ?? t.saveFailed, "error", 3e3);
     });
@@ -2358,12 +2864,19 @@ function bindEvents() {
       await loadData();
       setStatus(buildImportSummaryText(result.importSummary), "success");
       showAppToast(buildImportSummaryText(result.importSummary, { short: true }), "success", 2600);
+      openImportReportModal(result.importSummary);
     } catch (error) {
       console.error("[AI Prompt Broadcaster] Failed to import JSON.", error);
       setStatus(error?.message ?? t.settings.importFailed, "error");
       showAppToast(error?.message ?? t.settings.importFailed, "error", 3e3);
     } finally {
       settingsImportJsonInput.value = "";
+    }
+  });
+  importReportModalClose.addEventListener("click", closeImportReportModal);
+  importReportModal.addEventListener("click", (event) => {
+    if (event.target === importReportModal) {
+      closeImportReportModal();
     }
   });
   servicesGrid.addEventListener("input", (event) => {
@@ -2410,6 +2923,7 @@ async function init() {
     initToastRoot(toastHost);
     renderServiceFilterOptions();
     bindEvents();
+    switchSection(state.activeSection);
     await renderShortcutList();
     await loadData();
   } catch (error) {

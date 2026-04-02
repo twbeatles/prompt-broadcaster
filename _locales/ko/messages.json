@@ -927,5 +927,197 @@
   },
   "template_var_random_label": {
     "message": "랜덤 숫자 (1–1000)"
+  },
+  "popup_favorite_duplicated": {
+    "message": "즐겨찾기를 복제했습니다."
+  },
+  "popup_favorite_duplicate": {
+    "message": "복제"
+  },
+  "popup_favorite_duplicate_prefix": {
+    "message": "[복사]"
+  },
+  "popup_history_resend": {
+    "message": "재전송"
+  },
+  "popup_history_sort_latest": {
+    "message": "최신순"
+  },
+  "popup_history_sort_oldest": {
+    "message": "오래된순"
+  },
+  "popup_history_sort_most_success": {
+    "message": "성공 많은순"
+  },
+  "popup_history_sort_most_failure": {
+    "message": "실패 많은순"
+  },
+  "popup_favorite_sort_recent_used": {
+    "message": "최근 사용순"
+  },
+  "popup_favorite_sort_usage_count": {
+    "message": "사용 횟수순"
+  },
+  "popup_favorite_sort_title": {
+    "message": "제목순"
+  },
+  "popup_favorite_sort_created_at": {
+    "message": "생성일순"
+  },
+  "popup_wait_multiplier_label": {
+    "message": "대기시간 배율"
+  },
+  "popup_wait_multiplier_value": {
+    "message": "$1$x"
+  },
+  "popup_resend_modal_title": {
+    "message": "히스토리 재전송"
+  },
+  "popup_resend_modal_desc": {
+    "message": "이 프롬프트를 다시 보낼 서비스를 선택하세요."
+  },
+  "popup_resend_modal_cancel": {
+    "message": "취소"
+  },
+  "popup_resend_modal_confirm": {
+    "message": "재전송"
+  },
+  "popup_resend_site_unavailable": {
+    "message": "사용 불가"
+  },
+  "popup_import_report_title": {
+    "message": "가져오기 상세"
+  },
+  "popup_import_report_desc": {
+    "message": "이번 가져오기에서 적용, 재작성, 거부된 항목을 확인하세요."
+  },
+  "popup_import_report_close": {
+    "message": "닫기"
+  },
+  "popup_import_report_version": {
+    "message": "버전"
+  },
+  "popup_import_report_accepted": {
+    "message": "적용된 서비스"
+  },
+  "popup_import_report_rewritten": {
+    "message": "재작성된 ID"
+  },
+  "popup_import_report_builtins": {
+    "message": "기본 서비스 보정"
+  },
+  "popup_import_report_rejected": {
+    "message": "거부된 서비스"
+  },
+  "popup_import_report_rejected_empty": {
+    "message": "거부된 서비스가 없습니다."
+  },
+  "popup_import_reject_permission_denied": {
+    "message": "권한 거부"
+  },
+  "popup_import_reject_validation_failed": {
+    "message": "잘못된 설정"
+  },
+  "popup_import_reject_duplicate_id": {
+    "message": "중복 ID"
+  },
+  "popup_import_reject_unknown": {
+    "message": "알 수 없는 사유"
+  },
+  "popup_aria_selected": {
+    "message": "선택됨"
+  },
+  "popup_aria_not_selected": {
+    "message": "선택 안 됨"
+  },
+  "options_table_select": {
+    "message": "선택"
+  },
+  "options_history_select_all": {
+    "message": "현재 페이지 선택"
+  },
+  "options_history_delete_selected": {
+    "message": "선택 삭제"
+  },
+  "options_history_delete_filtered": {
+    "message": "필터 결과 삭제"
+  },
+  "options_history_delete_older_than": {
+    "message": "$1$일 이전 삭제"
+  },
+  "options_history_delete_selected_confirm": {
+    "message": "선택한 히스토리 항목을 삭제할까요?"
+  },
+  "options_history_delete_filtered_confirm": {
+    "message": "필터링된 히스토리 $1개를 삭제할까요?"
+  },
+  "options_history_delete_older_confirm": {
+    "message": "$1일보다 오래된 항목을 삭제할까요?"
+  },
+  "options_history_delete_success": {
+    "message": "히스토리를 삭제했습니다."
+  },
+  "options_settings_wait_multiplier_title": {
+    "message": "대기시간 배율"
+  },
+  "options_settings_wait_multiplier_value": {
+    "message": "$1$x"
+  },
+  "options_import_report_title": {
+    "message": "가져오기 상세"
+  },
+  "options_import_report_desc": {
+    "message": "가져온 항목과 거부된 항목을 확인하세요."
+  },
+  "options_import_report_version": {
+    "message": "버전"
+  },
+  "options_import_report_accepted": {
+    "message": "적용된 서비스"
+  },
+  "options_import_report_rewritten": {
+    "message": "재작성된 ID"
+  },
+  "options_import_report_builtins": {
+    "message": "기본 서비스 보정"
+  },
+  "options_import_report_rejected": {
+    "message": "거부된 서비스"
+  },
+  "options_import_report_rejected_empty": {
+    "message": "거부된 서비스가 없습니다."
+  },
+  "result_code_submitted": {
+    "message": "전송 완료"
+  },
+  "result_code_selector_timeout": {
+    "message": "셀렉터 시간 초과"
+  },
+  "result_code_auth_required": {
+    "message": "로그인 필요"
+  },
+  "result_code_submit_failed": {
+    "message": "제출 실패"
+  },
+  "result_code_strategy_exhausted": {
+    "message": "주입 실패"
+  },
+  "result_code_permission_denied": {
+    "message": "권한 거부"
+  },
+  "result_code_tab_create_failed": {
+    "message": "탭 열기 실패"
+  },
+  "result_code_tab_closed": {
+    "message": "탭 닫힘"
+  },
+  "result_code_injection_timeout": {
+    "message": "주입 시간 초과"
+  },
+  "result_code_cancelled": {
+    "message": "취소됨"
+  },
+  "result_code_unexpected_error": {
+    "message": "예상치 못한 오류"
   }
 }

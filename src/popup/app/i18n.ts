@@ -1,5 +1,5 @@
 // @ts-nocheck
-const uiLanguage = chrome.i18n.getUILanguage().toLowerCase();
+export const uiLanguage = chrome.i18n.getUILanguage().toLowerCase();
 export const isKorean = uiLanguage === "ko" || uiLanguage.startsWith("ko-");
 
 export function msg(key, substitutions) {
@@ -61,6 +61,9 @@ export const t = {
   favoriteSaved: msg("popup_favorite_saved"),
   historyDeleted: msg("popup_history_deleted"),
   favoriteDeleted: msg("popup_favorite_deleted"),
+  favoriteDuplicated: msg("popup_favorite_duplicated") || "Favorite duplicated.",
+  favoriteDuplicate: msg("popup_favorite_duplicate") || "Duplicate",
+  favoriteDuplicatePrefix: msg("popup_favorite_duplicate_prefix") || "[Copy]",
   titlePlaceholder: msg("popup_title_placeholder"),
   titleSaved: msg("popup_title_saved"),
   settingsTitle: msg("popup_settings_title"),
@@ -71,6 +74,7 @@ export const t = {
   importJson: msg("settings_import"),
   clearHistoryConfirm: msg("popup_clear_history_confirm"),
   historyCleared: msg("popup_history_cleared"),
+  historyResend: msg("popup_history_resend") || "Resend",
   importSuccess: msg("popup_import_success"),
   importFailed: msg("popup_import_failed"),
   exportSuccess: msg("popup_export_success"),
@@ -159,6 +163,33 @@ export const t = {
   toastPromptEmpty: msg("toast_prompt_empty") || msg("popup_warn_empty") || "Please enter a prompt.",
   toastNoService: msg("toast_no_service") || "Please select at least one service.",
   toastSelectorFailed: (name) => msg("toast_selector_failed", [String(name)]) || `${name} selector was not found.`,
+  historySortLatest: msg("popup_history_sort_latest") || "Latest",
+  historySortOldest: msg("popup_history_sort_oldest") || "Oldest",
+  historySortMostSuccess: msg("popup_history_sort_most_success") || "Most success",
+  historySortMostFailure: msg("popup_history_sort_most_failure") || "Most failure",
+  favoriteSortRecentUsed: msg("popup_favorite_sort_recent_used") || "Recent use",
+  favoriteSortUsageCount: msg("popup_favorite_sort_usage_count") || "Usage count",
+  favoriteSortTitle: msg("popup_favorite_sort_title") || "Title",
+  favoriteSortCreatedAt: msg("popup_favorite_sort_created_at") || "Created date",
+  waitMultiplierLabel: msg("popup_wait_multiplier_label") || "Wait multiplier",
+  waitMultiplierValue: (value) => msg("popup_wait_multiplier_value", [String(Number(value).toFixed(1))]) || `${Number(value).toFixed(1)}x`,
+  resendModalTitle: msg("popup_resend_modal_title") || "Resend History Item",
+  resendModalDesc: msg("popup_resend_modal_desc") || "Choose which services to resend this prompt to.",
+  resendModalCancel: msg("popup_resend_modal_cancel") || "Cancel",
+  resendModalConfirm: msg("popup_resend_modal_confirm") || "Resend",
+  resendSiteUnavailable: msg("popup_resend_site_unavailable") || "Unavailable",
+  importReportTitle: msg("popup_import_report_title") || "Import Details",
+  importReportDesc: msg("popup_import_report_desc") || "Review accepted, rewritten, and rejected items from this import.",
+  importReportClose: msg("popup_import_report_close") || "Close",
+  importReportVersion: msg("popup_import_report_version") || "Version",
+  importReportAccepted: msg("popup_import_report_accepted") || "Accepted services",
+  importReportRewritten: msg("popup_import_report_rewritten") || "Rewritten IDs",
+  importReportBuiltins: msg("popup_import_report_builtins") || "Built-in adjustments",
+  importReportRejected: msg("popup_import_report_rejected") || "Rejected services",
+  importReportRejectedEmpty: msg("popup_import_report_rejected_empty") || "No rejected services.",
+  importRejectReason: (reason) => msg(`popup_import_reject_${reason}`) || reason,
+  ariaSelected: msg("popup_aria_selected") || "selected",
+  ariaNotSelected: msg("popup_aria_not_selected") || "not selected",
   reuseTabsLabel:
     msg("popup_reuse_tabs_label") || "Reuse open AI tabs in the current window by default",
   reuseTabsDescEnabled:
@@ -185,6 +216,19 @@ export const t = {
     msg("popup_open_tabs_ready") || "Ready",
   openTabsLoading:
     msg("popup_open_tabs_loading") || "Loading",
+  resultCodeLabels: {
+    submitted: msg("result_code_submitted") || "Submitted",
+    selector_timeout: msg("result_code_selector_timeout") || "Selector timeout",
+    auth_required: msg("result_code_auth_required") || "Login required",
+    submit_failed: msg("result_code_submit_failed") || "Submit failed",
+    strategy_exhausted: msg("result_code_strategy_exhausted") || "Injection failed",
+    permission_denied: msg("result_code_permission_denied") || "Permission denied",
+    tab_create_failed: msg("result_code_tab_create_failed") || "Tab open failed",
+    tab_closed: msg("result_code_tab_closed") || "Tab closed",
+    injection_timeout: msg("result_code_injection_timeout") || "Injection timeout",
+    cancelled: msg("result_code_cancelled") || "Cancelled",
+    unexpected_error: msg("result_code_unexpected_error") || "Unexpected error",
+  },
 };
 
 export function getUnknownErrorText() {

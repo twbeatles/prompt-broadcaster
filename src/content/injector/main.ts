@@ -21,6 +21,19 @@ interface InjectorConfig {
   authSelectors?: string[];
   submitSelector?: string;
   submitMethod?: string;
+  submitTimeoutMs?: number;
+  submitRetryCount?: number;
+  strategyOrder?: string[];
+}
+
+interface InjectStrategy {
+  name: string;
+  run: () => boolean;
+}
+
+interface InjectionStrategyAttempt {
+  name: string;
+  success: boolean;
 }
 
 interface InjectResult {
@@ -31,6 +44,7 @@ interface InjectResult {
   inputType?: string;
   elapsedMs?: number;
   error?: string;
+  attempts?: InjectionStrategyAttempt[];
 }
 
 declare global {
@@ -59,11 +73,43 @@ function buildInjectionKey(prompt: string, config: InjectorConfig): string {
   ].join("\n");
 }
 
+function orderStrategies(strategies: InjectStrategy[], preferredNames: unknown): InjectStrategy[] {
+  const requestedNames = Array.isArray(preferredNames)
+    ? preferredNames
+      .map((name) => (typeof name === "string" ? name.trim() : ""))
+      .filter(Boolean)
+    : [];
+
+  if (requestedNames.length === 0) {
+    return strategies;
+  }
+
+  const byName = new Map(strategies.map((strategy) => [strategy.name, strategy]));
+  const ordered: InjectStrategy[] = [];
+
+  requestedNames.forEach((name) => {
+    const strategy = byName.get(name);
+    if (strategy && !ordered.includes(strategy)) {
+      ordered.push(strategy);
+    }
+  });
+
+  strategies.forEach((strategy) => {
+    if (!ordered.includes(strategy)) {
+      ordered.push(strategy);
+    }
+  });
+
+  return ordered;
+}
+
 async function performInjectPrompt(prompt: string, config: InjectorConfig): Promise<InjectResult> {
+  const attempts: InjectionStrategyAttempt[] = [];
+
   try {
     const serviceName = config?.name ?? "AI service";
     if (isLikelyAuthPage(config)) {
-      return { status: "login_required" };
+      return { status: "auth_required" };
     }
 
     if ((config?.waitMs ?? 0) > 0) {
@@ -88,7 +134,7 @@ async function performInjectPrompt(prompt: string, config: InjectorConfig): Prom
         copied,
       });
 
-      return { status: "selector_failed", copied };
+      return { status: "selector_timeout", copied, attempts };
     }
 
     const { element, selector, elapsedMs } = match;
@@ -106,7 +152,7 @@ async function performInjectPrompt(prompt: string, config: InjectorConfig): Prom
                 : "textarea";
 
     const lexicalEditor = resolvedInputType === "contenteditable" && isLexicalEditorElement(element);
-    const strategies = resolvedInputType === "contenteditable"
+    const defaultStrategies = resolvedInputType === "contenteditable"
       ? lexicalEditor
         ? [
             { name: "lexicalEditorState", run: () => strategyLexicalEditorState(element, prompt) },
@@ -122,6 +168,8 @@ async function performInjectPrompt(prompt: string, config: InjectorConfig): Prom
           { name: "paste", run: () => strategyPasteEvent(element, prompt) },
         ];
 
+    const strategies = orderStrategies(defaultStrategies, config?.strategyOrder);
+
     let usedStrategy = "";
     let injected = false;
 
@@ -131,6 +179,10 @@ async function performInjectPrompt(prompt: string, config: InjectorConfig): Prom
       }
 
       const success = strategy.run();
+      attempts.push({
+        name: strategy.name,
+        success,
+      });
       log(`${serviceName} strategy ${strategy.name} ${success ? "succeeded" : "failed"}`);
       if (success) {
         usedStrategy = strategy.name;
@@ -146,7 +198,7 @@ async function performInjectPrompt(prompt: string, config: InjectorConfig): Prom
         serviceId: config?.id,
         copied,
       });
-      return { status: "fallback_required", copied };
+      return { status: "strategy_exhausted", copied, attempts };
     }
 
     log(`✅ ${serviceName} 주입 성공 (셀렉터: ${selector}, 대기: ${elapsedMs}ms, 전략: ${usedStrategy})`);
@@ -159,7 +211,7 @@ async function performInjectPrompt(prompt: string, config: InjectorConfig): Prom
     });
 
     if (!(await submitPrompt(element, config))) {
-      return { status: "submit_failed" };
+      return { status: "submit_failed", selector, strategy: usedStrategy, inputType: resolvedInputType, elapsedMs, attempts };
     }
 
     return {
@@ -168,6 +220,7 @@ async function performInjectPrompt(prompt: string, config: InjectorConfig): Prom
       strategy: usedStrategy,
       inputType: resolvedInputType,
       elapsedMs,
+      attempts,
     };
   } catch (error) {
     logError("injectPrompt failed", error);
@@ -178,9 +231,10 @@ async function performInjectPrompt(prompt: string, config: InjectorConfig): Prom
       copied,
     });
     return {
-      status: "failed",
+      status: "unexpected_error",
       copied,
       error: error instanceof Error ? error.message : String(error),
+      attempts,
     };
   }
 }
@@ -188,7 +242,7 @@ async function performInjectPrompt(prompt: string, config: InjectorConfig): Prom
 async function submitOnlyPrompt(config: InjectorConfig): Promise<InjectResult> {
   try {
     if (isLikelyAuthPage(config)) {
-      return { status: "login_required" };
+      return { status: "auth_required" };
     }
 
     if ((config?.waitMs ?? 0) > 0) {
@@ -199,7 +253,7 @@ async function submitOnlyPrompt(config: InjectorConfig): Promise<InjectResult> {
     const match = await waitForElement(selectorCandidates, Math.max((config?.waitMs ?? 0) + 6000, 8000));
 
     if (!match?.element) {
-      return { status: "selector_failed" };
+      return { status: "selector_timeout" };
     }
 
     const { element, selector, elapsedMs } = match;
@@ -212,12 +266,14 @@ async function submitOnlyPrompt(config: InjectorConfig): Promise<InjectResult> {
       selector,
       strategy: "submitOnly",
       elapsedMs,
+      attempts: [],
     };
   } catch (error) {
     logError("submitOnlyPrompt failed", error);
     return {
-      status: "failed",
+      status: "unexpected_error",
       error: error instanceof Error ? error.message : String(error),
+      attempts: [],
     };
   }
 }

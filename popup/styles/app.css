@@ -1553,3 +1553,35 @@ select {
     background: rgba(255, 255, 255, 0.05);
   }
 }
+
+.compact-select {
+  min-width: 116px;
+  max-width: 140px;
+  flex: 0 0 auto;
+}
+
+.import-report-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.import-report-row {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.import-report-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-soft);
+}
+
+@media (prefers-color-scheme: dark) {
+  .import-report-row {
+    background: rgba(255, 255, 255, 0.04);
+  }
+}

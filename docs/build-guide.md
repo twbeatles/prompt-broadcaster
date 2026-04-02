@@ -78,10 +78,12 @@ The smoke flow loads local fixtures from `qa/fixtures/` and validates the built 
 - alias-based custom-service permission requests and cleanup of unused optional origins
 - built-in override import repair for `click` configurations with empty selectors
 - `broadcastCounter` export/import/reset consistency
+- import migration and export `version: 4` normalization
 - favorites search matching title, tags, and folders
 - per-service override template resolution and retry prompt preservation
 - CSV export escaping for spreadsheet formula-leading values
-- pending broadcast state accumulation across sequential site completions
+- pending broadcast state accumulation across sequential site completions with structured `siteResults`
+- adaptive strategy-stat accumulation for injector attempts
 - reusable-tab preflight filtering for auth/settings/non-input tabs
 - reset helper cleanup across local and session runtime state
 
@@ -157,10 +159,11 @@ The generated ZIP contains the built extension from `dist/` only.
    For Perplexity specifically, confirm that the prompt is inserted once into `#ask-input[data-lexical-editor='true']` and that submission still succeeds through the standard submit path
 10. Verify that a per-service prompt override with template variables resolves correctly and that retry reuses the originally rendered prompt even after editing the popup text
 11. Add, import, delete, and reset a custom service and confirm optional host permissions are granted and cleaned up only for the required origins
-12. Confirm that cancelling a broadcast leaves reused tabs open and closes only newly opened tabs
-13. Trigger **Reset data** and confirm it clears both local prompt data and in-memory/session runtime state
-14. Run the packaging script for your platform
-15. Upload the generated ZIP to Chrome Web Store or attach it to a GitHub release
+12. Confirm that popup sorting, favorite duplication, resend-service selection, and import-report modals all behave correctly
+13. Confirm that cancelling a broadcast leaves reused tabs open and closes only newly opened tabs
+14. Trigger **Reset data** and confirm it clears both local prompt data and in-memory/session runtime state, including strategy stats
+15. Run the packaging script for your platform
+16. Upload the generated ZIP to Chrome Web Store or attach it to a GitHub release
 
 ## Chrome Web Store Release Checklist
 

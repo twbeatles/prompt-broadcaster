@@ -1,7 +1,7 @@
 # AI Prompt Broadcaster - 프로젝트 구조 분석
 
-> 기준일: 2026-03-31
-> 최종 업데이트: 2026-04-01 (권한 모델, import 검증, counter 수명주기, 검색, resolvedPrompt/reset/preflight, QA 보강 반영)
+> 기준일: 2026-04-02
+> 최종 업데이트: 2026-04-02 (심층 분석 기반 UX/데이터/런타임 구현 + UI 모듈 분리 리팩토링 반영)
 > 분석 범위: 전체 소스코드, 빌드 시스템, 데이터 흐름, UI 구조
 
 ---
@@ -38,7 +38,8 @@ prompt-broadcaster/
 │   ├── background/
 │   │   ├── app/
 │   │   │   ├── bootstrap.ts      # 서비스 워커 오케스트레이션 핵심
-│   │   │   └── constants.ts      # 런타임 상수
+│   │   │   ├── constants.ts      # 런타임 상수
+│   │   │   └── injection-helpers.ts # timeout/selector/result helper
 │   │   └── main.ts               # 얇은 엔트리포인트
 │   ├── config/
 │   │   ├── sites/
@@ -74,6 +75,8 @@ prompt-broadcaster/
 │   ├── options/
 │   │   ├── app/
 │   │   │   ├── bootstrap.ts      # 대시보드 & 설정 페이지 조립
+│   │   │   ├── dom.ts            # options DOM 레지스트리
+│   │   │   ├── helpers.ts        # 포맷/마크업 helper
 │   │   │   ├── i18n.ts
 │   │   │   └── state.ts
 │   │   ├── main.ts               # 얇은 엔트리포인트
@@ -82,7 +85,11 @@ prompt-broadcaster/
 │   ├── popup/
 │   │   ├── app/
 │   │   │   ├── bootstrap.ts      # 팝업 UI 조립
+│   │   │   ├── dom.ts            # popup DOM 레지스트리
+│   │   │   ├── helpers.ts        # 포맷/유틸 helper
 │   │   │   ├── i18n.ts
+│   │   │   ├── list-markup.ts    # 히스토리/즐겨찾기 마크업
+│   │   │   ├── sorting.ts        # 정렬 전략
 │   │   │   └── state.ts
 │   │   ├── main.ts               # 얇은 엔트리포인트
 │   │   └── ui/
@@ -94,7 +101,7 @@ prompt-broadcaster/
 │       ├── i18n/
 │       │   └── messages.ts       # i18n 헬퍼
 │       ├── prompts/              # 히스토리·즐겨찾기·설정·import/export
-│       ├── runtime-state/        # lastBroadcast, 토스트, 셀렉터 경고
+│       ├── runtime-state/        # lastBroadcast, 토스트, 셀렉터 경고, 전략 통계
 │       ├── sites/                # 내장/오버라이드/커스텀 사이트 병합
 │       ├── stores/
 │       │   ├── sites-store.ts    # compatibility barrel
@@ -220,9 +227,17 @@ prompt-broadcaster/
   submittedSiteIds: string[]   // 실제 주입 성공한 서비스
   failedSiteIds: string[]      // 실패한 서비스
   sentTo: string[]             // deprecated, submittedSiteIds 미러
-  siteResults: Record<string, string>
+  siteResults: Record<string, SiteInjectionResult>
   status: string
   createdAt: string
+}
+```
+
+**즐겨찾기 추가 메타:**
+```typescript
+{
+  usageCount: number
+  lastUsedAt: string | null
 }
 ```
 
@@ -233,6 +248,9 @@ prompt-broadcaster/
   autoClosePopup: boolean
   desktopNotifications: boolean
   reuseExistingTabs: boolean
+  waitMsMultiplier: number    // 0.5~3.0, 기본 1.0
+  historySort: "latest" | "oldest" | "mostSuccess" | "mostFailure"
+  favoriteSort: "recentUsed" | "usageCount" | "title" | "createdAt"
 }
 ```
 
@@ -241,6 +259,7 @@ prompt-broadcaster/
 local 저장:
 - `failedSelectors` — 서비스별 셀렉터 실패 기록
 - `onboardingCompleted` — 온보딩 완료 여부
+- `strategyStats` — 사이트별 주입 전략 성공/실패 누적 통계
 
 session 저장:
 - `lastBroadcast` — 현재/최근 방송 진행 상황
@@ -250,6 +269,8 @@ session 저장:
 - `selectorAlerts` — 중복 selector alert 방지용 서명 캐시
 
 background는 위 session 상태를 메모리에도 캐시하고, 단일 mutation 체인으로 직렬화해 동시 완료/취소/리셋 상황에서 siteResults와 카운터가 유실되지 않도록 관리한다.
+
+`pendingBroadcasts` 레코드는 `openedTabIds`를 별도로 보관한다. 그래서 취소 시 현재 방송이 새로 연 탭만 닫고, 재사용한 기존 탭은 보존할 수 있다.
 
 ### 4.5 템플릿 유틸 (`src/shared/template/`)
 
@@ -351,12 +372,20 @@ Perplexity 예외:
 
 **주요 모달:**
 - **템플릿 모달** — 시스템 변수 미리보기 + 사용자 변수 입력
+- **재전송 모달** — 히스토리 재전송 시 서비스 재선택
+- **import 리포트 모달** — 거부 서비스, 권한 거부 origin, ID 재작성, built-in 보정 표시
 - **서비스 편집 모달** — 커스텀 서비스 추가/편집 (셀렉터, URL, 색상 등)
 
 **탭 타겟팅 옵션:**
 - 기본 라우팅 (설정에 따라)
 - 새 탭 강제
 - 특정 열린 탭 지정
+
+**팝업 UX 추가사항:**
+- 내부 단축키 (`Ctrl/Cmd+Enter`, `Ctrl/Cmd+Shift+Enter`, `Ctrl/Cmd+1..4`, `Esc`)
+- 히스토리/즐겨찾기 정렬 드롭다운
+- 즐겨찾기 복제, 사용량 기반 정렬
+- roving focus 기반 키보드 탐색
 
 ---
 
@@ -392,7 +421,9 @@ Perplexity 예외:
 1. **대시보드** — 서비스별 사용량 도넛 차트, 7일 활동 막대 차트, 지표 카드
 2. **히스토리** — 페이지네이션 테이블, 서비스/날짜 필터, CSV 내보내기
 3. **서비스** — 검사 그리드 (사용 횟수, 성공률, 마지막 검증일)
-4. **설정** — 히스토리 보존 한도, 자동 닫기, 알림, 탭 재사용, 단축키 안내, 데이터 관리
+4. **설정** — 히스토리 보존 한도, 자동 닫기, 알림, 탭 재사용, 전역 wait multiplier, 단축키 안내, 데이터 관리
+
+히스토리 섹션에는 체크박스 기반 bulk 삭제, 현재 필터 결과 삭제, `7/30/90일 이전 삭제` 빠른 액션이 추가돼 있다.
 
 ---
 
@@ -426,10 +457,12 @@ Perplexity 예외:
   - 커스텀 서비스 삭제/리셋 시 permission 회수
   - built-in override import 보정
   - `broadcastCounter` export/import/reset 정합성
+  - export `version: 4` 마이그레이션 정합성
   - 즐겨찾기 제목/태그/폴더 검색
   - 서비스별 override 템플릿 해석 및 retry prompt 보존
   - CSV export formula injection 방어
-  - pending broadcast state 누적 정합성
+  - pending broadcast state 누적 정합성 (구조화된 `siteResults`)
+  - 전략 통계 누적 정합성
   - reusable-tab preflight 필터링
   - reset helper의 local/session 동시 초기화
 
@@ -480,6 +513,7 @@ interface PromptHistoryItem {
   submittedSiteIds: string[];
   failedSiteIds: string[];
   sentTo: string[];             // legacy, submittedSiteIds 미러
+  siteResults: Record<string, SiteInjectionResult>;
   ...
 }
 
@@ -489,6 +523,8 @@ interface FavoritePrompt {
   title: string;
   text: string;
   templateDefaults: Record<string, string>;
+  usageCount: number;
+  lastUsedAt: string | null;
   ...
 }
 
@@ -500,7 +536,7 @@ interface LastBroadcastSummary {
   completed: number;
   submittedSiteIds: string[];
   failedSiteIds: string[];
-  siteResults: Record<string, string>;
+  siteResults: Record<string, SiteInjectionResult>;
   ...
 }
 ```
@@ -541,24 +577,71 @@ bash ./package.sh                    # 릴리즈 zip (macOS/Linux)
 | 설정 항목 추가 | `src/shared/prompts/` |
 | 새 문자열 추가 | `_locales/en/messages.json` + `_locales/ko/messages.json` |
 | 타입 정의 변경 | `src/shared/types/models.ts` |
-| 백그라운드 로직 | `src/background/app/bootstrap.ts` |
+| 백그라운드 로직 | `src/background/app/bootstrap.ts` + `src/background/app/injection-helpers.ts` |
 
 ---
 
 ## 15. 현재 구현된 기능 목록
 
+### 핵심 방송
 - [x] 다중 AI 서비스 동시 방송 (ChatGPT, Gemini, Claude, Grok, Perplexity)
 - [x] 탭 재사용 / 새 탭 / 특정 탭 지정
-- [x] 템플릿 변수 (시스템 + 사용자 정의)
-- [x] 한국어/영어 이중 언어
+- [x] reusable-tab preflight (auth/settings 경로, 입력 surface, submit 제어 존재 여부 3단 검증)
+- [x] 방송 취소 — 방송 중 열린 탭만 닫고, 재사용 탭은 보존
+
+### 프롬프트 & 템플릿
+- [x] 시스템 템플릿 변수 9개: `{{date}}`, `{{time}}`, `{{weekday}}`, `{{clipboard}}`, `{{url}}`, `{{title}}`, `{{selection}}`, `{{counter}}`, `{{random}}` (한국어 별칭 포함)
+- [x] 사용자 정의 변수 입력 모달
+- [x] 서비스별 프롬프트 오버라이드 (per-service override)
+- [x] 히스토리 & 즐겨찾기 (태그·폴더·핀 시스템)
+- [x] JSON 내보내기/가져오기 (`version: 4`, 단계형 마이그레이션, 상세 import 리포트, `broadcastCounter` 포함)
+- [x] CSV 내보내기 (formula injection 방어)
+- [x] `{{counter}}` 팝업 미리보기 (`current + 1`), 실제 증가는 최소 1개 큐잉 시만
+- [x] 즐겨찾기 복제, usageCount/lastUsedAt 기록, 히스토리/즐겨찾기 정렬 옵션
+
+### DOM 주입
 - [x] 강건한 DOM 주입 (textarea, contenteditable, input)
-- [x] 클립보드 폴백
-- [x] 셀렉터 자가 진단
-- [x] 커스텀 서비스 추가
-- [x] 히스토리 & 즐겨찾기
-- [x] JSON 내보내기/가져오기
-- [x] 분석 대시보드 (차트 포함)
+- [x] 5가지 주입 전략 (native setter, execCommand, Lexical state, DOM 직접 조작, paste 이벤트)
+- [x] Perplexity Lexical editor 전용 경로 (`MAIN` world 텍스트 주입 + 기존 submit 유지)
+- [x] 제출 버튼 활성화 대기 폴링 (비동기 에디터 대응)
+- [x] 제출 실패 1회 재시도와 구조화된 결과 코드
+- [x] 클립보드 폴백 (주입 실패 시)
+
+### 상태 & 운영성
+- [x] Background pending state 직렬 mutation 체인 (동시 완료/취소/리셋 안전)
+- [x] structured `SiteInjectionResult` + 사이트별 전략 통계 저장
+- [x] 셀렉터 자가 진단 (`ok` / `selector_missing` / `auth_page`)
+- [x] 셀렉터 경고 배지 + GitHub Issues 신고 버튼
+- [x] 커스텀 서비스 optional host permission 전체 관리 (추가/삭제/회수)
+- [x] built-in override import 보정 (`click + empty submitSelector` → 원본 셀렉터 유지)
+- [x] reset flow — background 주도, 진행 중 방송 취소 + local/session 동시 초기화
+
+### UI & UX
+- [x] 분석 대시보드 (도넛 차트, 7일 막대 차트, 지표 카드)
+- [x] 히스토리 상세 결과 비교 뷰 (옵션 페이지)
+- [x] 다크 모드, popup 내부 단축키, 접근성 tablist/tabpanel 구조
+- [x] 히스토리 재전송 서비스 선택 모달
+- [x] 옵션 히스토리 bulk 삭제 및 wait multiplier 제어
 - [x] 데스크탑 알림
 - [x] 우클릭 컨텍스트 메뉴
 - [x] 키보드 단축키 (Alt+Shift+P, Alt+Shift+S)
 - [x] 온보딩 페이지
+- [x] 한국어/영어 이중 언어
+
+---
+
+## 16. 고도화 방향 요약
+
+`FEATURE_ROADMAP.md`에 상세 구현 설계가 있다. 우선순위 요약:
+
+| 우선순위 | 기능 | 키 포인트 |
+|---|---|---|
+| ★★★ | **방송 예약** (Scheduled Broadcast) | `chrome.alarms` 기반, 서비스 워커 깨우기 패턴 |
+| ★★★ | **프롬프트 체인** (Chain Mode) | 즐겨찾기에 `ChainStep[]` 추가, 단계별 딜레이 |
+| ★★★ | **빠른 팔레트** (Quick Palette) | content script 오버레이, `Alt+Shift+F` 단축키 |
+| ★★☆ | **딜레이·순서 커스터마이징** | `waitMsMultiplier`, `siteOrder` in AppSettings |
+| ★★☆ | **히스토리 통계 강화** | 시간대 히트맵, 서비스 성공률 트렌드, 키워드 Top 10 |
+| ★★☆ | **신규 내장 서비스** | Copilot, Mistral, DeepSeek, HuggingChat |
+| ★☆☆ | **다국어 확장** | 일본어(`ja`), 중국어(`zh_CN`) 로케일 |
+
+새 기능 추가 시 필수 확인 항목은 `FEATURE_ROADMAP.md` 하단 "구현 시 공통 체크리스트" 참고.

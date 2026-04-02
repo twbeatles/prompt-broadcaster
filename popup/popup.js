@@ -218,14 +218,47 @@ var LOCAL_STORAGE_KEYS = Object.freeze({
 var DEFAULT_HISTORY_LIMIT = 50;
 var MIN_HISTORY_LIMIT = 10;
 var MAX_HISTORY_LIMIT = 200;
+var MIN_WAIT_MS_MULTIPLIER = 0.5;
+var MAX_WAIT_MS_MULTIPLIER = 3;
+var DEFAULT_WAIT_MS_MULTIPLIER = 1;
+var DEFAULT_HISTORY_SORT = "latest";
+var DEFAULT_FAVORITE_SORT = "recentUsed";
 var DEFAULT_SETTINGS = Object.freeze({
   historyLimit: DEFAULT_HISTORY_LIMIT,
   autoClosePopup: false,
   desktopNotifications: true,
-  reuseExistingTabs: true
+  reuseExistingTabs: true,
+  waitMsMultiplier: DEFAULT_WAIT_MS_MULTIPLIER,
+  historySort: DEFAULT_HISTORY_SORT,
+  favoriteSort: DEFAULT_FAVORITE_SORT
 });
 
 // src/shared/prompts/normalizers.ts
+var VALID_HISTORY_SORTS = /* @__PURE__ */ new Set([
+  "latest",
+  "oldest",
+  "mostSuccess",
+  "mostFailure"
+]);
+var VALID_FAVORITE_SORTS = /* @__PURE__ */ new Set([
+  "recentUsed",
+  "usageCount",
+  "title",
+  "createdAt"
+]);
+var VALID_RESULT_CODES = /* @__PURE__ */ new Set([
+  "submitted",
+  "selector_timeout",
+  "auth_required",
+  "submit_failed",
+  "strategy_exhausted",
+  "permission_denied",
+  "tab_create_failed",
+  "tab_closed",
+  "injection_timeout",
+  "cancelled",
+  "unexpected_error"
+]);
 function safeText(value) {
   return typeof value === "string" ? value : "";
 }
@@ -253,6 +286,13 @@ function normalizeIsoDate(value, fallback = (/* @__PURE__ */ new Date()).toISOSt
   }
   const time = Date.parse(value);
   return Number.isFinite(time) ? new Date(time).toISOString() : fallback;
+}
+function normalizeNullableIsoDate(value) {
+  if (typeof value !== "string" || !value.trim()) {
+    return null;
+  }
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? new Date(time).toISOString() : null;
 }
 function normalizeTemplateDefaults(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -282,6 +322,23 @@ function normalizeBroadcastCounter(value) {
   }
   return Math.max(0, Math.round(numericValue));
 }
+function normalizeWaitMsMultiplier(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return DEFAULT_WAIT_MS_MULTIPLIER;
+  }
+  const clamped = Math.min(
+    MAX_WAIT_MS_MULTIPLIER,
+    Math.max(MIN_WAIT_MS_MULTIPLIER, numericValue)
+  );
+  return Math.round(clamped * 10) / 10;
+}
+function normalizeHistorySort(value) {
+  return VALID_HISTORY_SORTS.has(value) ? value : DEFAULT_HISTORY_SORT;
+}
+function normalizeFavoriteSort(value) {
+  return VALID_FAVORITE_SORTS.has(value) ? value : DEFAULT_FAVORITE_SORT;
+}
 function normalizeSettings(value) {
   const settings = safeObject(value);
   return {
@@ -297,18 +354,93 @@ function normalizeSettings(value) {
     reuseExistingTabs: normalizeBoolean(
       settings.reuseExistingTabs,
       DEFAULT_SETTINGS.reuseExistingTabs
-    )
+    ),
+    waitMsMultiplier: normalizeWaitMsMultiplier(settings.waitMsMultiplier),
+    historySort: normalizeHistorySort(settings.historySort),
+    favoriteSort: normalizeFavoriteSort(settings.favoriteSort)
   };
 }
 function normalizeStatus(value) {
   return typeof value === "string" && value.trim() ? value.trim() : "submitted";
 }
-function normalizeStringRecord(value) {
+function normalizeResultCode(value) {
+  const normalized = safeText(value).trim();
+  if (VALID_RESULT_CODES.has(normalized)) {
+    return normalized;
+  }
+  switch (normalized) {
+    case "submitted":
+      return "submitted";
+    case "selector_failed":
+      return "selector_timeout";
+    case "login_required":
+    case "redirected_or_login_required":
+      return "auth_required";
+    case "submit_failed":
+      return "submit_failed";
+    case "fallback_required":
+      return "strategy_exhausted";
+    case "permission_denied":
+      return "permission_denied";
+    case "tab_create_failed":
+      return "tab_create_failed";
+    case "tab_closed":
+      return "tab_closed";
+    case "injection_timeout":
+    case "broadcast_stale":
+      return "injection_timeout";
+    case "cancelled":
+    case "reset":
+      return "cancelled";
+    case "failed":
+    case "injection_failed":
+    default:
+      return "unexpected_error";
+  }
+}
+function buildSiteInjectionResult(code, overrides = {}) {
+  const normalizedCode = normalizeResultCode(code);
+  const result = {
+    code: normalizedCode
+  };
+  if (typeof overrides.message === "string" && overrides.message.trim()) {
+    result.message = overrides.message.trim();
+  }
+  if (typeof overrides.strategy === "string" && overrides.strategy.trim()) {
+    result.strategy = overrides.strategy.trim();
+  }
+  if (Number.isFinite(Number(overrides.elapsedMs))) {
+    result.elapsedMs = Number(overrides.elapsedMs);
+  }
+  if (Array.isArray(overrides.attempts) && overrides.attempts.length > 0) {
+    result.attempts = overrides.attempts.map((attempt) => ({
+      name: safeText(attempt?.name).trim(),
+      success: Boolean(attempt?.success)
+    })).filter((attempt) => attempt.name);
+  }
+  return result;
+}
+function normalizeSiteInjectionResult(value) {
+  if (typeof value === "string") {
+    return buildSiteInjectionResult(value);
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return buildSiteInjectionResult("unexpected_error");
+  }
+  const source = value;
+  return buildSiteInjectionResult(source.code ?? source.status, {
+    message: safeText(source.message).trim(),
+    strategy: safeText(source.strategy).trim(),
+    elapsedMs: Number.isFinite(Number(source.elapsedMs)) ? Number(source.elapsedMs) : void 0,
+    attempts: Array.isArray(source.attempts) ? source.attempts : void 0
+  });
+}
+function normalizeSiteResultsRecord(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return {};
   }
   return Object.fromEntries(
-    Object.entries(value).map(([key, entryValue]) => [safeText(key).trim(), safeText(entryValue).trim()]).filter(([key, entryValue]) => key && entryValue)
+    Object.entries(value).map(([siteId, result]) => [safeText(siteId).trim(), normalizeSiteInjectionResult(result)]).filter(([siteId]) => Boolean(siteId))
   );
 }
 function sortByDateDesc(items, field = "createdAt") {
@@ -375,6 +507,7 @@ async function setBroadcastCounter(value) {
 function buildFavoriteEntry(entry) {
   const createdAt = normalizeIsoDate(entry?.createdAt);
   const favoritedAt = normalizeIsoDate(entry?.favoritedAt, createdAt);
+  const usageCount = Math.max(0, Math.round(Number(entry?.usageCount) || 0));
   return {
     id: typeof entry?.id === "string" && entry.id.trim() ? entry.id.trim() : `fav-${Date.now()}`,
     sourceHistoryId: entry?.sourceHistoryId === null || entry?.sourceHistoryId === void 0 ? null : Number(entry.sourceHistoryId),
@@ -386,7 +519,9 @@ function buildFavoriteEntry(entry) {
     templateDefaults: normalizeTemplateDefaults(entry?.templateDefaults),
     tags: normalizeTags(entry?.tags),
     folder: safeText(entry?.folder).slice(0, 50),
-    pinned: normalizeBoolean(entry?.pinned, false)
+    pinned: normalizeBoolean(entry?.pinned, false),
+    usageCount,
+    lastUsedAt: normalizeNullableIsoDate(entry?.lastUsedAt)
   };
 }
 async function getPromptFavorites() {
@@ -417,6 +552,23 @@ async function updateFavoriteMeta(favoriteId, { tags, folder, pinned } = {}) {
   });
   await setPromptFavorites(nextFavorites);
   return nextFavorites.find((item) => String(item.id) === String(favoriteId)) ?? null;
+}
+async function duplicateFavoriteItem(favoriteId, titlePrefix = "[Copy]") {
+  const favorites = await getPromptFavorites();
+  const source = favorites.find((item) => String(item.id) === String(favoriteId));
+  if (!source) {
+    return null;
+  }
+  const duplicated = buildFavoriteEntry({
+    ...source,
+    id: ensureUniqueStringId(favorites, `${source.id}-copy`),
+    title: source.title ? `${safeText(titlePrefix).trim() || "[Copy]"} ${source.title}`.trim() : safeText(titlePrefix).trim() || "[Copy]",
+    favoritedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    usageCount: 0,
+    lastUsedAt: null
+  });
+  await setPromptFavorites([duplicated, ...favorites]);
+  return duplicated;
 }
 async function addFavoriteFromHistory(historyItem) {
   const favorites = await getPromptFavorites();
@@ -451,10 +603,25 @@ async function createFavoritePrompt(entry) {
     sentTo: entry?.sentTo,
     createdAt: entry?.createdAt ?? (/* @__PURE__ */ new Date()).toISOString(),
     favoritedAt: (/* @__PURE__ */ new Date()).toISOString(),
-    templateDefaults: entry?.templateDefaults
+    templateDefaults: entry?.templateDefaults,
+    usageCount: entry?.usageCount,
+    lastUsedAt: entry?.lastUsedAt
   });
   await setPromptFavorites([favorite, ...favorites]);
   return favorite;
+}
+async function markFavoriteUsed(favoriteId) {
+  const favorites = await getPromptFavorites();
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const nextFavorites = favorites.map(
+    (item) => String(item.id) === String(favoriteId) ? {
+      ...item,
+      usageCount: Math.max(0, Math.round(Number(item.usageCount) || 0)) + 1,
+      lastUsedAt: now
+    } : item
+  );
+  await setPromptFavorites(nextFavorites);
+  return nextFavorites.find((item) => String(item.id) === String(favoriteId)) ?? null;
 }
 async function updateFavoriteTitle(favoriteId, title) {
   const favorites = await getPromptFavorites();
@@ -503,13 +670,16 @@ function buildHistoryEntry(entry) {
   const source = asHistoryRecord(entry);
   const numericId = Number(source.id);
   const createdAt = normalizeIsoDate(source.createdAt);
-  const siteResults = normalizeStringRecord(source.siteResults);
+  const siteResults = normalizeSiteResultsRecord(source.siteResults);
   const siteResultKeys = normalizeSiteIdList(Object.keys(siteResults));
+  const derivedSubmittedSiteIds = siteResultKeys.filter(
+    (siteId) => normalizeResultCode(siteResults[siteId]?.code) === "submitted"
+  );
   const submittedSiteIds = normalizeSiteIdList(
-    Array.isArray(source.submittedSiteIds) ? source.submittedSiteIds : source.sentTo
+    Array.isArray(source.submittedSiteIds) ? source.submittedSiteIds : Array.isArray(source.sentTo) ? source.sentTo : derivedSubmittedSiteIds
   );
   const failedSiteIds = normalizeSiteIdList(
-    Array.isArray(source.failedSiteIds) ? source.failedSiteIds : siteResultKeys.filter((siteId) => !submittedSiteIds.includes(siteId))
+    Array.isArray(source.failedSiteIds) ? source.failedSiteIds : siteResultKeys.filter((siteId) => normalizeResultCode(siteResults[siteId]?.code) !== "submitted")
   );
   const requestedSiteIds = normalizeSiteIdList(
     Array.isArray(source.requestedSiteIds) ? source.requestedSiteIds : siteResultKeys.length > 0 ? siteResultKeys : submittedSiteIds
@@ -587,11 +757,11 @@ var AI_SITES = Object.freeze([
     name: "Gemini",
     url: "https://gemini.google.com/app",
     hostname: "gemini.google.com",
-    inputSelector: "div.ql-editor.textarea.new-input-ui[contenteditable='true'], div.ql-editor[contenteditable='true'][role='textbox']",
+    inputSelector: "div[contenteditable='true'][role='textbox'], div.ql-editor.textarea.new-input-ui[contenteditable='true'], div.ql-editor[contenteditable='true'][role='textbox']",
     fallbackSelectors: [
+      "div[contenteditable='true'][role='textbox']",
       "div.ql-editor.textarea.new-input-ui[contenteditable='true']",
       "div.ql-editor[contenteditable='true'][role='textbox']",
-      "div[contenteditable='true'][role='textbox']",
       "textarea, div[contenteditable='true']"
     ],
     inputType: "contenteditable",
@@ -600,8 +770,8 @@ var AI_SITES = Object.freeze([
     selectorCheckMode: "input-and-submit",
     waitMs: 2500,
     fallback: true,
-    lastVerified: "2026-03",
-    verifiedVersion: "gemini-app-mar-2026",
+    lastVerified: "2026-04",
+    verifiedVersion: "gemini-app-apr-2026",
     authSelectors: [
       "input[type='email']",
       "input[type='password']"
@@ -612,10 +782,11 @@ var AI_SITES = Object.freeze([
     name: "Claude",
     url: "https://claude.ai/new",
     hostname: "claude.ai",
-    inputSelector: "div[contenteditable='true'][aria-label='Write your prompt to Claude'], div[contenteditable='true'][role='textbox']",
+    inputSelector: "div[contenteditable='true'][role='textbox'], div[contenteditable='true'][aria-label*='Claude' i], div[contenteditable='true'][aria-label*='prompt' i]",
     fallbackSelectors: [
-      "div[contenteditable='true'][aria-label='Write your prompt to Claude']",
       "div[contenteditable='true'][role='textbox']",
+      "div[contenteditable='true'][aria-label*='Claude' i]",
+      "div[contenteditable='true'][aria-label*='prompt' i]",
       "div[contenteditable='true']",
       "textarea"
     ],
@@ -625,8 +796,8 @@ var AI_SITES = Object.freeze([
     selectorCheckMode: "input-and-submit",
     waitMs: 1500,
     fallback: true,
-    lastVerified: "2026-03",
-    verifiedVersion: "claude-web-mar-2026",
+    lastVerified: "2026-04",
+    verifiedVersion: "claude-web-apr-2026",
     authSelectors: [
       "input#email",
       "input[type='email']",
@@ -1378,6 +1549,7 @@ async function updateTemplateVariableCache(partialCache) {
 }
 
 // src/shared/prompts/import-export.ts
+var CURRENT_EXPORT_VERSION = 4;
 async function containsOriginPermission(originPattern) {
   try {
     if (!chrome.permissions?.contains || !originPattern) {
@@ -1455,6 +1627,59 @@ async function repairImportedCustomSitesWithPermissions(rawSites) {
     requestedOrigins: [...requestedOrigins]
   };
 }
+function normalizeImportVersion(value) {
+  const version = Number(value);
+  if (!Number.isFinite(version) || version <= 0) {
+    return 1;
+  }
+  return Math.max(1, Math.floor(version));
+}
+function migrateV1ToV2(payload) {
+  return {
+    ...payload,
+    version: 2,
+    broadcastCounter: payload.broadcastCounter ?? 0
+  };
+}
+function migrateV2ToV3(payload) {
+  return {
+    ...payload,
+    version: 3,
+    builtInSiteStates: payload.builtInSiteStates ?? {},
+    builtInSiteOverrides: payload.builtInSiteOverrides ?? {}
+  };
+}
+function migrateV3ToV4(payload) {
+  return {
+    ...payload,
+    version: 4,
+    settings: normalizeSettings(payload.settings ?? DEFAULT_SETTINGS),
+    history: safeArray(payload.history).map((entry) => buildHistoryEntry(entry)),
+    favorites: safeArray(payload.favorites).map((entry) => buildFavoriteEntry(entry))
+  };
+}
+function migrateImportData(rawValue) {
+  let payload = safeObject(rawValue);
+  const sourceVersion = normalizeImportVersion(payload.version);
+  let workingVersion = sourceVersion;
+  if (workingVersion < 2) {
+    payload = migrateV1ToV2(payload);
+    workingVersion = 2;
+  }
+  if (workingVersion < 3) {
+    payload = migrateV2ToV3(payload);
+    workingVersion = 3;
+  }
+  if (workingVersion < 4) {
+    payload = migrateV3ToV4(payload);
+    workingVersion = 4;
+  }
+  return {
+    migrated: payload,
+    sourceVersion,
+    targetVersion: CURRENT_EXPORT_VERSION
+  };
+}
 async function exportPromptData() {
   const [
     broadcastCounter,
@@ -1477,7 +1702,7 @@ async function exportPromptData() {
   ]);
   return {
     exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
-    version: 3,
+    version: CURRENT_EXPORT_VERSION,
     broadcastCounter,
     history,
     favorites,
@@ -1490,17 +1715,18 @@ async function exportPromptData() {
 }
 async function importPromptData(jsonString) {
   const parsed = JSON.parse(jsonString);
+  const { migrated, sourceVersion, targetVersion } = migrateImportData(parsed);
   const previousCustomSites = await getCustomSites();
-  const history = safeArray(parsed?.history).map((item) => buildHistoryEntry(item));
-  const favorites = safeArray(parsed?.favorites).map(
+  const history = safeArray(migrated?.history).map((item) => buildHistoryEntry(item));
+  const favorites = safeArray(migrated?.favorites).map(
     (item) => buildFavoriteEntry(item)
   );
-  const importedBroadcastCounter = normalizeBroadcastCounter(parsed?.broadcastCounter);
-  const templateVariableCache = normalizeTemplateDefaults(parsed?.templateVariableCache);
-  const importedSettings = normalizeSettings(parsed?.settings ?? DEFAULT_SETTINGS);
-  const importedCustomSites = safeArray(parsed?.customSites);
-  const importedBuiltInSiteStates = safeObject(parsed?.builtInSiteStates);
-  const importedBuiltInSiteOverrides = safeObject(parsed?.builtInSiteOverrides);
+  const importedBroadcastCounter = normalizeBroadcastCounter(migrated?.broadcastCounter);
+  const templateVariableCache = normalizeTemplateDefaults(migrated?.templateVariableCache);
+  const importedSettings = normalizeSettings(migrated?.settings ?? DEFAULT_SETTINGS);
+  const importedCustomSites = safeArray(migrated?.customSites);
+  const importedBuiltInSiteStates = safeObject(migrated?.builtInSiteStates);
+  const importedBuiltInSiteOverrides = safeObject(migrated?.builtInSiteOverrides);
   const historyLimit = importedSettings.historyLimit;
   const normalizedHistory = [];
   for (const item of sortByDateDesc(history).slice(0, historyLimit)) {
@@ -1540,9 +1766,12 @@ async function importPromptData(jsonString) {
     builtInSiteStates: builtInStateImport.normalized,
     builtInSiteOverrides: builtInOverrideImport.normalized,
     importSummary: {
+      version: targetVersion,
+      migratedFromVersion: sourceVersion,
       customSites: {
         importedCount: importedCustomSites.length,
         acceptedIds: customSiteImport.acceptedSites.map((site) => site.id),
+        acceptedNames: customSiteImport.acceptedSites.map((site) => site.name),
         rejected: customSiteImport.rejectedSites,
         rewrittenIds: customSiteImport.rewrittenIds,
         deniedOrigins: customSiteImport.deniedOrigins
@@ -1583,7 +1812,8 @@ function matchesFavoriteSearch(item, query) {
 // src/shared/runtime-state/constants.ts
 var LOCAL_RUNTIME_KEYS = Object.freeze({
   failedSelectors: "failedSelectors",
-  onboardingCompleted: "onboardingCompleted"
+  onboardingCompleted: "onboardingCompleted",
+  strategyStats: "strategyStats"
 });
 var SESSION_RUNTIME_KEYS = Object.freeze({
   pendingUiToasts: "pendingUiToasts",
@@ -1640,7 +1870,6 @@ function normalizeLastBroadcast(value) {
   if (!isPlainObject2(value)) {
     return null;
   }
-  const siteResults = isPlainObject2(value.siteResults) ? value.siteResults : {};
   return {
     broadcastId: safeText3(value.broadcastId),
     status: safeText3(value.status) || "idle",
@@ -1650,9 +1879,7 @@ function normalizeLastBroadcast(value) {
     completed: Number.isFinite(Number(value.completed)) ? Number(value.completed) : 0,
     submittedSiteIds: normalizeArray(value.submittedSiteIds).map((siteId) => safeText3(siteId)).filter(Boolean),
     failedSiteIds: normalizeArray(value.failedSiteIds).map((siteId) => safeText3(siteId)).filter(Boolean),
-    siteResults: Object.fromEntries(
-      Object.entries(siteResults).map(([key, status]) => [safeText3(key), safeText3(status)]).filter(([key, status]) => key && status)
-    ),
+    siteResults: normalizeSiteResultsRecord(value.siteResults),
     startedAt: normalizeIsoDate2(value.startedAt),
     finishedAt: safeText3(value.finishedAt) ? normalizeIsoDate2(value.finishedAt) : ""
   };
@@ -1957,8 +2184,8 @@ function clearAllToasts() {
 }
 
 // src/popup/app/i18n.ts
-var uiLanguage2 = chrome.i18n.getUILanguage().toLowerCase();
-var isKorean = uiLanguage2 === "ko" || uiLanguage2.startsWith("ko-");
+var uiLanguage = chrome.i18n.getUILanguage().toLowerCase();
+var isKorean = uiLanguage === "ko" || uiLanguage.startsWith("ko-");
 function msg(key, substitutions) {
   return chrome.i18n.getMessage(key, substitutions) || "";
 }
@@ -2014,6 +2241,9 @@ var t = {
   favoriteSaved: msg("popup_favorite_saved"),
   historyDeleted: msg("popup_history_deleted"),
   favoriteDeleted: msg("popup_favorite_deleted"),
+  favoriteDuplicated: msg("popup_favorite_duplicated") || "Favorite duplicated.",
+  favoriteDuplicate: msg("popup_favorite_duplicate") || "Duplicate",
+  favoriteDuplicatePrefix: msg("popup_favorite_duplicate_prefix") || "[Copy]",
   titlePlaceholder: msg("popup_title_placeholder"),
   titleSaved: msg("popup_title_saved"),
   settingsTitle: msg("popup_settings_title"),
@@ -2024,6 +2254,7 @@ var t = {
   importJson: msg("settings_import"),
   clearHistoryConfirm: msg("popup_clear_history_confirm"),
   historyCleared: msg("popup_history_cleared"),
+  historyResend: msg("popup_history_resend") || "Resend",
   importSuccess: msg("popup_import_success"),
   importFailed: msg("popup_import_failed"),
   exportSuccess: msg("popup_export_success"),
@@ -2109,6 +2340,33 @@ var t = {
   toastPromptEmpty: msg("toast_prompt_empty") || msg("popup_warn_empty") || "Please enter a prompt.",
   toastNoService: msg("toast_no_service") || "Please select at least one service.",
   toastSelectorFailed: (name) => msg("toast_selector_failed", [String(name)]) || `${name} selector was not found.`,
+  historySortLatest: msg("popup_history_sort_latest") || "Latest",
+  historySortOldest: msg("popup_history_sort_oldest") || "Oldest",
+  historySortMostSuccess: msg("popup_history_sort_most_success") || "Most success",
+  historySortMostFailure: msg("popup_history_sort_most_failure") || "Most failure",
+  favoriteSortRecentUsed: msg("popup_favorite_sort_recent_used") || "Recent use",
+  favoriteSortUsageCount: msg("popup_favorite_sort_usage_count") || "Usage count",
+  favoriteSortTitle: msg("popup_favorite_sort_title") || "Title",
+  favoriteSortCreatedAt: msg("popup_favorite_sort_created_at") || "Created date",
+  waitMultiplierLabel: msg("popup_wait_multiplier_label") || "Wait multiplier",
+  waitMultiplierValue: (value) => msg("popup_wait_multiplier_value", [String(Number(value).toFixed(1))]) || `${Number(value).toFixed(1)}x`,
+  resendModalTitle: msg("popup_resend_modal_title") || "Resend History Item",
+  resendModalDesc: msg("popup_resend_modal_desc") || "Choose which services to resend this prompt to.",
+  resendModalCancel: msg("popup_resend_modal_cancel") || "Cancel",
+  resendModalConfirm: msg("popup_resend_modal_confirm") || "Resend",
+  resendSiteUnavailable: msg("popup_resend_site_unavailable") || "Unavailable",
+  importReportTitle: msg("popup_import_report_title") || "Import Details",
+  importReportDesc: msg("popup_import_report_desc") || "Review accepted, rewritten, and rejected items from this import.",
+  importReportClose: msg("popup_import_report_close") || "Close",
+  importReportVersion: msg("popup_import_report_version") || "Version",
+  importReportAccepted: msg("popup_import_report_accepted") || "Accepted services",
+  importReportRewritten: msg("popup_import_report_rewritten") || "Rewritten IDs",
+  importReportBuiltins: msg("popup_import_report_builtins") || "Built-in adjustments",
+  importReportRejected: msg("popup_import_report_rejected") || "Rejected services",
+  importReportRejectedEmpty: msg("popup_import_report_rejected_empty") || "No rejected services.",
+  importRejectReason: (reason) => msg(`popup_import_reject_${reason}`) || reason,
+  ariaSelected: msg("popup_aria_selected") || "selected",
+  ariaNotSelected: msg("popup_aria_not_selected") || "not selected",
   reuseTabsLabel: msg("popup_reuse_tabs_label") || "Reuse open AI tabs in the current window by default",
   reuseTabsDescEnabled: msg("popup_reuse_tabs_desc_enabled") || "When no tab is chosen explicitly, the broadcaster reuses a matching open AI tab before opening a new one.",
   reuseTabsDescDisabled: msg("popup_reuse_tabs_desc_disabled") || "When no tab is chosen explicitly, the broadcaster always opens a fresh tab.",
@@ -2121,7 +2379,20 @@ var t = {
   openTabsAlwaysNewDetail: msg("popup_open_tabs_always_new_detail") || "Ignore matching open tabs for this service only.",
   openTabsActive: msg("popup_open_tabs_active") || "Active",
   openTabsReady: msg("popup_open_tabs_ready") || "Ready",
-  openTabsLoading: msg("popup_open_tabs_loading") || "Loading"
+  openTabsLoading: msg("popup_open_tabs_loading") || "Loading",
+  resultCodeLabels: {
+    submitted: msg("result_code_submitted") || "Submitted",
+    selector_timeout: msg("result_code_selector_timeout") || "Selector timeout",
+    auth_required: msg("result_code_auth_required") || "Login required",
+    submit_failed: msg("result_code_submit_failed") || "Submit failed",
+    strategy_exhausted: msg("result_code_strategy_exhausted") || "Injection failed",
+    permission_denied: msg("result_code_permission_denied") || "Permission denied",
+    tab_create_failed: msg("result_code_tab_create_failed") || "Tab open failed",
+    tab_closed: msg("result_code_tab_closed") || "Tab closed",
+    injection_timeout: msg("result_code_injection_timeout") || "Injection timeout",
+    cancelled: msg("result_code_cancelled") || "Cancelled",
+    unexpected_error: msg("result_code_unexpected_error") || "Unexpected error"
+  }
 };
 function getUnknownErrorText() {
   return msg("popup_unknown_error");
@@ -2242,12 +2513,17 @@ var state = {
   favoritesFolderFilter: "",
   // 폴더 필터 (빈 문자열 = 전체)
   openMenuKey: null,
+  openModalId: null,
+  lastFocusedElement: null,
   favoriteSaveTimers: /* @__PURE__ */ new Map(),
   loadedTemplateDefaults: {},
   loadedFavoriteTitle: "",
+  loadedFavoriteId: "",
   templateVariableCache: {},
   pendingTemplateSend: null,
   pendingFavoriteSave: null,
+  pendingResendHistory: null,
+  pendingImportSummary: null,
   runtimeSites: [],
   serviceEditor: null,
   failedSelectors: /* @__PURE__ */ new Map(),
@@ -2261,112 +2537,526 @@ var state = {
   sitePromptOverrides: {},
   // siteId -> override prompt string
   openTabsWindowId: null,
-  openTabsRefreshTimer: null
+  openTabsRefreshTimer: null,
+  listKeyboardFocus: {
+    history: -1,
+    favorites: -1
+  }
 };
 
+// src/popup/app/dom.ts
+var popupDom = {
+  header: {
+    extTitle: document.getElementById("ext-title"),
+    extDesc: document.getElementById("ext-desc")
+  },
+  tabs: {
+    tabButtons: [...document.querySelectorAll(".tab-button")],
+    panels: [...document.querySelectorAll(".tab-panel")]
+  },
+  compose: {
+    promptInput: document.getElementById("prompt-input"),
+    promptCounter: document.getElementById("prompt-counter"),
+    clearPromptBtn: document.getElementById("clear-prompt-btn"),
+    templateSummary: document.getElementById("template-summary"),
+    templateSummaryLabel: document.getElementById("template-summary-label"),
+    templateChipList: document.getElementById("template-chip-list"),
+    sitesLabel: document.getElementById("sites-label"),
+    sitesContainer: document.getElementById("sites-container"),
+    toggleAllBtn: document.getElementById("toggle-all"),
+    saveFavoriteBtn: document.getElementById("save-favorite-btn"),
+    cancelSendBtn: document.getElementById("cancel-send-btn"),
+    sendBtn: document.getElementById("send-btn"),
+    statusMsg: document.getElementById("status-message")
+  },
+  history: {
+    historySearchInput: document.getElementById("history-search"),
+    historySortSelect: document.getElementById("history-sort"),
+    historyList: document.getElementById("history-list")
+  },
+  favorites: {
+    favoritesSearchInput: document.getElementById("favorites-search"),
+    favoritesSortSelect: document.getElementById("favorites-sort"),
+    favoritesList: document.getElementById("favorites-list")
+  },
+  settings: {
+    settingsTitle: document.getElementById("settings-title"),
+    settingsDesc: document.getElementById("settings-desc"),
+    reuseExistingTabsToggle: document.getElementById("reuse-existing-tabs-toggle"),
+    reuseExistingTabsLabel: document.getElementById("reuse-existing-tabs-label"),
+    reuseExistingTabsDesc: document.getElementById("reuse-existing-tabs-desc"),
+    openOptionsBtn: document.getElementById("open-options-btn"),
+    clearHistoryBtn: document.getElementById("clear-history-btn"),
+    exportJsonBtn: document.getElementById("export-json-btn"),
+    importJsonBtn: document.getElementById("import-json-btn"),
+    importJsonInput: document.getElementById("import-json-input"),
+    waitMultiplierLabel: document.getElementById("wait-multiplier-label"),
+    waitMultiplierRange: document.getElementById("wait-multiplier-range"),
+    waitMultiplierValue: document.getElementById("wait-multiplier-value")
+  },
+  serviceManagement: {
+    serviceManagementTitle: document.getElementById("service-management-title"),
+    serviceManagementDesc: document.getElementById("service-management-desc"),
+    addServiceBtn: document.getElementById("add-service-btn"),
+    resetSitesBtn: document.getElementById("reset-sites-btn"),
+    managedSitesList: document.getElementById("managed-sites-list"),
+    serviceEditor: document.getElementById("service-editor"),
+    serviceEditorTitle: document.getElementById("service-editor-title"),
+    serviceEditorDesc: document.getElementById("service-editor-desc"),
+    serviceNameLabel: document.getElementById("service-name-label"),
+    serviceNameInput: document.getElementById("service-name-input"),
+    serviceUrlLabel: document.getElementById("service-url-label"),
+    serviceUrlInput: document.getElementById("service-url-input"),
+    serviceInputSelectorLabel: document.getElementById("service-input-selector-label"),
+    serviceInputSelectorInput: document.getElementById("service-input-selector-input"),
+    testSelectorBtn: document.getElementById("test-selector-btn"),
+    serviceInputTypeLabel: document.getElementById("service-input-type-label"),
+    serviceSubmitSelectorLabel: document.getElementById("service-submit-selector-label"),
+    serviceSubmitSelectorInput: document.getElementById("service-submit-selector-input"),
+    serviceSubmitMethodLabel: document.getElementById("service-submit-method-label"),
+    serviceSubmitMethodSelect: document.getElementById("service-submit-method-select"),
+    serviceAdvancedTitle: document.getElementById("service-advanced-title"),
+    serviceFallbackSelectorsLabel: document.getElementById("service-fallback-selectors-label"),
+    serviceFallbackSelectorsInput: document.getElementById("service-fallback-selectors-input"),
+    serviceAuthSelectorsLabel: document.getElementById("service-auth-selectors-label"),
+    serviceAuthSelectorsInput: document.getElementById("service-auth-selectors-input"),
+    serviceHostnameAliasesLabel: document.getElementById("service-hostname-aliases-label"),
+    serviceHostnameAliasesInput: document.getElementById("service-hostname-aliases-input"),
+    serviceLastVerifiedLabel: document.getElementById("service-last-verified-label"),
+    serviceLastVerifiedInput: document.getElementById("service-last-verified-input"),
+    serviceVerifiedVersionLabel: document.getElementById("service-verified-version-label"),
+    serviceVerifiedVersionInput: document.getElementById("service-verified-version-input"),
+    serviceWaitLabel: document.getElementById("service-wait-label"),
+    serviceWaitRange: document.getElementById("service-wait-range"),
+    serviceWaitValue: document.getElementById("service-wait-value"),
+    serviceColorLabel: document.getElementById("service-color-label"),
+    serviceColorInput: document.getElementById("service-color-input"),
+    serviceIconLabel: document.getElementById("service-icon-label"),
+    serviceIconInput: document.getElementById("service-icon-input"),
+    serviceEnabledLabel: document.getElementById("service-enabled-label"),
+    serviceEnabledInput: document.getElementById("service-enabled-input"),
+    serviceTestResult: document.getElementById("service-test-result"),
+    serviceEditorError: document.getElementById("service-editor-error"),
+    serviceEditorCancel: document.getElementById("service-editor-cancel"),
+    serviceEditorSave: document.getElementById("service-editor-save")
+  },
+  modals: {
+    templateModal: document.getElementById("template-modal"),
+    templateModalTitle: document.getElementById("template-modal-title"),
+    templateModalDesc: document.getElementById("template-modal-desc"),
+    templateModalClose: document.getElementById("template-modal-close"),
+    templateModalSystemInfo: document.getElementById("template-modal-system-info"),
+    templateFields: document.getElementById("template-fields"),
+    templatePreviewLabel: document.getElementById("template-preview-label"),
+    templatePreview: document.getElementById("template-preview"),
+    templateModalError: document.getElementById("template-modal-error"),
+    templateModalCancel: document.getElementById("template-modal-cancel"),
+    templateModalConfirm: document.getElementById("template-modal-confirm"),
+    favoriteModal: document.getElementById("favorite-modal"),
+    favoriteModalTitle: document.getElementById("favorite-modal-title"),
+    favoriteModalDesc: document.getElementById("favorite-modal-desc"),
+    favoriteModalClose: document.getElementById("favorite-modal-close"),
+    favoriteTitleLabel: document.getElementById("favorite-title-label"),
+    favoriteTitleInput: document.getElementById("favorite-title-input"),
+    favoriteSaveDefaultsRow: document.getElementById("favorite-save-defaults-row"),
+    favoriteSaveDefaults: document.getElementById("favorite-save-defaults"),
+    favoriteSaveDefaultsLabel: document.getElementById("favorite-save-defaults-label"),
+    favoriteDefaultFieldsWrap: document.getElementById("favorite-default-fields-wrap"),
+    favoriteDefaultFieldsLabel: document.getElementById("favorite-default-fields-label"),
+    favoriteDefaultFields: document.getElementById("favorite-default-fields"),
+    favoriteModalError: document.getElementById("favorite-modal-error"),
+    favoriteModalCancel: document.getElementById("favorite-modal-cancel"),
+    favoriteModalConfirm: document.getElementById("favorite-modal-confirm"),
+    resendModal: document.getElementById("resend-modal"),
+    resendModalTitle: document.getElementById("resend-modal-title"),
+    resendModalDesc: document.getElementById("resend-modal-desc"),
+    resendModalSites: document.getElementById("resend-modal-sites"),
+    resendModalClose: document.getElementById("resend-modal-close"),
+    resendModalCancel: document.getElementById("resend-modal-cancel"),
+    resendModalConfirm: document.getElementById("resend-modal-confirm"),
+    importReportModal: document.getElementById("import-report-modal"),
+    importReportModalTitle: document.getElementById("import-report-modal-title"),
+    importReportModalDesc: document.getElementById("import-report-modal-desc"),
+    importReportBody: document.getElementById("import-report-body"),
+    importReportModalClose: document.getElementById("import-report-modal-close"),
+    importReportModalConfirm: document.getElementById("import-report-modal-confirm")
+  },
+  toastHost: document.getElementById("toast-host")
+};
+
+// src/popup/app/helpers.ts
+function escapeAttribute(value) {
+  return String(value ?? "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function escapeHtml(value) {
+  return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+function getSiteIcon(site) {
+  if (site?.icon) {
+    return site.icon;
+  }
+  return SITE_EMOJI[site?.id] ?? site?.name?.slice(0, 2)?.toUpperCase() ?? "AI";
+}
+function isTextEditingTarget(target) {
+  if (!target || !(target instanceof Element)) {
+    return false;
+  }
+  return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || target.isContentEditable;
+}
+function compareDateValues(leftValue, rightValue) {
+  const leftTime = Date.parse(String(leftValue ?? "")) || 0;
+  const rightTime = Date.parse(String(rightValue ?? "")) || 0;
+  return rightTime - leftTime;
+}
+function previewText(text, maxLength = 50) {
+  const collapsed = String(text).replace(/\s+/g, " ").trim();
+  if (collapsed.length <= maxLength) {
+    return collapsed || "-";
+  }
+  return `${collapsed.slice(0, maxLength)}...`;
+}
+function formatDate(isoString) {
+  try {
+    return new Intl.DateTimeFormat(isKorean ? "ko-KR" : "en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    }).format(new Date(isoString));
+  } catch (_error) {
+    return isoString;
+  }
+}
+function normalizeSiteIdList2(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return Array.from(
+    new Set(
+      value.filter((entry) => typeof entry === "string" && entry.trim()).map((entry) => entry.trim())
+    )
+  );
+}
+function joinMultilineValues(values) {
+  return Array.isArray(values) ? values.join("\n") : "";
+}
+function splitMultilineValues(value) {
+  return String(value ?? "").split(/\r?\n/g).map((entry) => entry.trim()).filter(Boolean);
+}
+
+// src/popup/app/list-markup.ts
+function buildEmptyState(message) {
+  return `
+    <div class="empty-state">
+      <div>${escapeHtml(message)}</div>
+      <button class="empty-action" type="button" data-switch-tab="compose">${escapeHtml(t.emptyActionCompose)}</button>
+    </div>
+  `;
+}
+function getHistorySelectedSiteIds(item) {
+  return normalizeSiteIdList2(
+    Array.isArray(item?.requestedSiteIds) && item.requestedSiteIds.length > 0 ? item.requestedSiteIds : item?.sentTo
+  );
+}
+function renderServiceBadges(siteIds = [], runtimeSites = []) {
+  return siteIds.map((siteId) => {
+    const site = runtimeSites.find((entry) => entry.id === siteId);
+    const label = getSiteIcon(site) ?? siteId.slice(0, 2).toUpperCase();
+    return `<span class="service-badge">${escapeHtml(label)}</span>`;
+  }).join("");
+}
+function buildHistoryItemMarkup(item, { openMenuKey = null, runtimeSites = [] } = {}) {
+  const menuKey = `history:${item.id}`;
+  return `
+    <article class="prompt-item" data-history-id="${item.id}" role="listitem">
+      <button class="prompt-main" type="button" data-load-history="${item.id}">
+        <div class="prompt-preview">${escapeHtml(previewText(item.text))}</div>
+        <div class="prompt-meta">
+          <div class="service-icons">${renderServiceBadges(getHistorySelectedSiteIds(item), runtimeSites)}</div>
+          <span>${escapeHtml(formatDate(item.createdAt))}</span>
+        </div>
+      </button>
+      <div class="prompt-actions">
+        <button class="menu-button" type="button" aria-haspopup="menu" aria-expanded="${openMenuKey === menuKey ? "true" : "false"}" aria-label="${escapeAttribute(t.menuMore)}" data-toggle-menu="${escapeAttribute(menuKey)}">...</button>
+        <div class="item-menu ${openMenuKey === menuKey ? "open" : ""}">
+          <button class="menu-item" type="button" data-action="resend-history" data-history-id="${item.id}">${escapeHtml(t.historyResend)}</button>
+          <button class="menu-item" type="button" data-action="favorite" data-history-id="${item.id}">${escapeHtml(t.addFavorite)}</button>
+          <button class="menu-item danger" type="button" data-action="delete-history" data-history-id="${item.id}">${escapeHtml(t.delete)}</button>
+        </div>
+      </div>
+    </article>
+  `;
+}
+function buildFavoriteTagsMarkup(item) {
+  const tags = Array.isArray(item.tags) ? item.tags : [];
+  const folder = typeof item.folder === "string" && item.folder.trim() ? item.folder.trim() : "";
+  const pinIcon = item.pinned ? `<span class="fav-pin-icon" title="${escapeHtml(msg("popup_favorite_pinned") || "Pinned")}">📌</span>` : "";
+  const folderBadge = folder ? `<span class="fav-folder-badge" data-filter-folder="${escapeAttribute(folder)}">📁 ${escapeHtml(folder)}</span>` : "";
+  const tagChips = tags.map(
+    (tag) => `<span class="fav-tag-chip" data-filter-tag="${escapeAttribute(tag)}">#${escapeHtml(tag)}</span>`
+  ).join("");
+  if (!pinIcon && !folderBadge && !tagChips) {
+    return "";
+  }
+  return `<div class="fav-meta-row">${pinIcon}${folderBadge}${tagChips}</div>`;
+}
+function buildFavoriteItemMarkup(item, { openMenuKey = null, runtimeSites = [] } = {}) {
+  const menuKey = `favorite:${item.id}`;
+  const safeFavoriteId = escapeAttribute(item.id);
+  const pinLabel = item.pinned ? msg("popup_favorite_unpin") || "Unpin" : msg("popup_favorite_pin") || "Pin";
+  return `
+    <article class="prompt-item${item.pinned ? " pinned-item" : ""}" data-favorite-id="${safeFavoriteId}" role="listitem">
+      <div class="favorite-title-row">
+        <span class="favorite-star">${escapeHtml(t.favoriteStar)}</span>
+        <input
+          class="favorite-title-input"
+          type="text"
+          data-favorite-title="${safeFavoriteId}"
+          value="${escapeAttribute(item.title)}"
+          placeholder="${escapeAttribute(t.titlePlaceholder)}"
+        />
+      </div>
+      ${buildFavoriteTagsMarkup(item)}
+      <button class="prompt-main" type="button" data-load-favorite="${safeFavoriteId}">
+        <div class="prompt-preview">${escapeHtml(previewText(item.text))}</div>
+        <div class="prompt-meta">
+          <div class="service-icons">${renderServiceBadges(item.sentTo, runtimeSites)}</div>
+          <span>${escapeHtml(formatDate(item.createdAt))}</span>
+        </div>
+      </button>
+      <div class="prompt-actions">
+        <button class="menu-button" type="button" aria-haspopup="menu" aria-expanded="${openMenuKey === menuKey ? "true" : "false"}" aria-label="${escapeAttribute(t.menuMore)}" data-toggle-menu="${escapeAttribute(menuKey)}">...</button>
+        <div class="item-menu ${openMenuKey === menuKey ? "open" : ""}">
+          <button class="menu-item" type="button" data-action="duplicate-favorite" data-favorite-id="${safeFavoriteId}">${escapeHtml(t.favoriteDuplicate)}</button>
+          <button class="menu-item" type="button" data-action="edit-favorite-tags" data-favorite-id="${safeFavoriteId}">${escapeHtml(msg("popup_favorite_edit_tags") || "Edit tags & folder")}</button>
+          <button class="menu-item" type="button" data-action="toggle-pin-favorite" data-favorite-id="${safeFavoriteId}">${escapeHtml(pinLabel)}</button>
+          <button class="menu-item danger" type="button" data-action="delete-favorite" data-favorite-id="${safeFavoriteId}">${escapeHtml(t.delete)}</button>
+        </div>
+      </div>
+    </article>
+  `;
+}
+function buildImportReportMarkup(summary) {
+  if (!summary) {
+    return "";
+  }
+  const rejectedRows = (summary.customSites?.rejected ?? []).map((entry) => {
+    const origins = Array.isArray(entry?.origins) && entry.origins.length > 0 ? `<div class="helper-text">${escapeHtml(entry.origins.join(", "))}</div>` : "";
+    return `
+      <div class="import-report-row">
+        <strong>${escapeHtml(entry?.name ?? entry?.id ?? "-")}</strong>
+        <div>${escapeHtml(t.importRejectReason(entry?.reason ?? "unknown"))}</div>
+        ${origins}
+      </div>
+    `;
+  }).join("");
+  return `
+    <div class="import-report-grid">
+      <div class="import-report-row"><strong>${escapeHtml(t.importReportVersion)}</strong><div>${escapeHtml(`v${summary.version} (from v${summary.migratedFromVersion})`)}</div></div>
+      <div class="import-report-row"><strong>${escapeHtml(t.importReportAccepted)}</strong><div>${escapeHtml(String(summary.customSites?.acceptedNames?.join(", ") || "-"))}</div></div>
+      <div class="import-report-row"><strong>${escapeHtml(t.importReportRewritten)}</strong><div>${escapeHtml(String(summary.customSites?.rewrittenIds?.join(", ") || "-"))}</div></div>
+      <div class="import-report-row"><strong>${escapeHtml(t.importReportBuiltins)}</strong><div>${escapeHtml([
+    ...summary.builtInSiteOverrides?.adjustedIds ?? [],
+    ...summary.builtInSiteOverrides?.droppedIds ?? [],
+    ...summary.builtInSiteStates?.droppedIds ?? []
+  ].join(", ") || "-")}</div></div>
+      <div class="import-report-section-title">${escapeHtml(t.importReportRejected)}</div>
+      ${rejectedRows || `<div class="helper-text">${escapeHtml(t.importReportRejectedEmpty)}</div>`}
+    </div>
+  `;
+}
+
+// src/popup/app/sorting.ts
+function getHistorySortOptions() {
+  return [
+    { value: "latest", label: t.historySortLatest },
+    { value: "oldest", label: t.historySortOldest },
+    { value: "mostSuccess", label: t.historySortMostSuccess },
+    { value: "mostFailure", label: t.historySortMostFailure }
+  ];
+}
+function getFavoriteSortOptions() {
+  return [
+    { value: "recentUsed", label: t.favoriteSortRecentUsed },
+    { value: "usageCount", label: t.favoriteSortUsageCount },
+    { value: "title", label: t.favoriteSortTitle },
+    { value: "createdAt", label: t.favoriteSortCreatedAt }
+  ];
+}
+function compareFavoriteTitle(left, right) {
+  return String(left?.title ?? "").localeCompare(String(right?.title ?? ""), isKorean ? "ko" : "en", {
+    sensitivity: "base"
+  });
+}
+function sortHistoryItemsForDisplay(items, historySort = "latest") {
+  const nextItems = [...items];
+  switch (historySort) {
+    case "oldest":
+      return nextItems.sort((left, right) => compareDateValues(right.createdAt, left.createdAt));
+    case "mostSuccess":
+      return nextItems.sort((left, right) => {
+        const leftCount = Array.isArray(left?.submittedSiteIds) ? left.submittedSiteIds.length : 0;
+        const rightCount = Array.isArray(right?.submittedSiteIds) ? right.submittedSiteIds.length : 0;
+        return rightCount - leftCount || compareDateValues(left.createdAt, right.createdAt);
+      });
+    case "mostFailure":
+      return nextItems.sort((left, right) => {
+        const leftCount = Array.isArray(left?.failedSiteIds) ? left.failedSiteIds.length : 0;
+        const rightCount = Array.isArray(right?.failedSiteIds) ? right.failedSiteIds.length : 0;
+        return rightCount - leftCount || compareDateValues(left.createdAt, right.createdAt);
+      });
+    case "latest":
+    default:
+      return nextItems.sort((left, right) => compareDateValues(left.createdAt, right.createdAt));
+  }
+}
+function sortFavoriteItemsForDisplay(items, favoriteSort = "recentUsed") {
+  const nextItems = [...items];
+  nextItems.sort((left, right) => {
+    if (left.pinned && !right.pinned) {
+      return -1;
+    }
+    if (!left.pinned && right.pinned) {
+      return 1;
+    }
+    switch (favoriteSort) {
+      case "usageCount":
+        return (Number(right?.usageCount) || 0) - (Number(left?.usageCount) || 0) || compareDateValues(left.lastUsedAt ?? left.favoritedAt, right.lastUsedAt ?? right.favoritedAt);
+      case "title":
+        return compareFavoriteTitle(left, right) || compareDateValues(left.favoritedAt, right.favoritedAt);
+      case "createdAt":
+        return compareDateValues(left.createdAt, right.createdAt);
+      case "recentUsed":
+      default:
+        return compareDateValues(left.lastUsedAt ?? left.favoritedAt, right.lastUsedAt ?? right.favoritedAt);
+    }
+  });
+  return nextItems;
+}
+
 // src/popup/app/bootstrap.ts
-var extTitle = document.getElementById("ext-title");
-var extDesc = document.getElementById("ext-desc");
-var tabButtons = [...document.querySelectorAll(".tab-button")];
-var panels = [...document.querySelectorAll(".tab-panel")];
-var promptInput = document.getElementById("prompt-input");
-var promptCounter = document.getElementById("prompt-counter");
-var clearPromptBtn = document.getElementById("clear-prompt-btn");
-var templateSummary = document.getElementById("template-summary");
-var templateSummaryLabel = document.getElementById("template-summary-label");
-var templateChipList = document.getElementById("template-chip-list");
-var sitesLabel = document.getElementById("sites-label");
-var sitesContainer = document.getElementById("sites-container");
-var toggleAllBtn = document.getElementById("toggle-all");
-var saveFavoriteBtn = document.getElementById("save-favorite-btn");
-var cancelSendBtn = document.getElementById("cancel-send-btn");
-var sendBtn = document.getElementById("send-btn");
-var statusMsg = document.getElementById("status-message");
-var historySearchInput = document.getElementById("history-search");
-var favoritesSearchInput = document.getElementById("favorites-search");
-var historyList = document.getElementById("history-list");
-var favoritesList = document.getElementById("favorites-list");
-var settingsTitle = document.getElementById("settings-title");
-var settingsDesc = document.getElementById("settings-desc");
-var reuseExistingTabsToggle = document.getElementById("reuse-existing-tabs-toggle");
-var reuseExistingTabsLabel = document.getElementById("reuse-existing-tabs-label");
-var reuseExistingTabsDesc = document.getElementById("reuse-existing-tabs-desc");
-var openOptionsBtn = document.getElementById("open-options-btn");
-var clearHistoryBtn = document.getElementById("clear-history-btn");
-var exportJsonBtn = document.getElementById("export-json-btn");
-var importJsonBtn = document.getElementById("import-json-btn");
-var importJsonInput = document.getElementById("import-json-input");
-var serviceManagementTitle = document.getElementById("service-management-title");
-var serviceManagementDesc = document.getElementById("service-management-desc");
-var addServiceBtn = document.getElementById("add-service-btn");
-var resetSitesBtn = document.getElementById("reset-sites-btn");
-var managedSitesList = document.getElementById("managed-sites-list");
-var serviceEditor = document.getElementById("service-editor");
-var serviceEditorTitle = document.getElementById("service-editor-title");
-var serviceEditorDesc = document.getElementById("service-editor-desc");
-var serviceNameLabel = document.getElementById("service-name-label");
-var serviceNameInput = document.getElementById("service-name-input");
-var serviceUrlLabel = document.getElementById("service-url-label");
-var serviceUrlInput = document.getElementById("service-url-input");
-var serviceInputSelectorLabel = document.getElementById("service-input-selector-label");
-var serviceInputSelectorInput = document.getElementById("service-input-selector-input");
-var testSelectorBtn = document.getElementById("test-selector-btn");
-var serviceInputTypeLabel = document.getElementById("service-input-type-label");
-var serviceSubmitSelectorLabel = document.getElementById("service-submit-selector-label");
-var serviceSubmitSelectorInput = document.getElementById("service-submit-selector-input");
-var serviceSubmitMethodLabel = document.getElementById("service-submit-method-label");
-var serviceSubmitMethodSelect = document.getElementById("service-submit-method-select");
-var serviceAdvancedTitle = document.getElementById("service-advanced-title");
-var serviceFallbackSelectorsLabel = document.getElementById("service-fallback-selectors-label");
-var serviceFallbackSelectorsInput = document.getElementById("service-fallback-selectors-input");
-var serviceAuthSelectorsLabel = document.getElementById("service-auth-selectors-label");
-var serviceAuthSelectorsInput = document.getElementById("service-auth-selectors-input");
-var serviceHostnameAliasesLabel = document.getElementById("service-hostname-aliases-label");
-var serviceHostnameAliasesInput = document.getElementById("service-hostname-aliases-input");
-var serviceLastVerifiedLabel = document.getElementById("service-last-verified-label");
-var serviceLastVerifiedInput = document.getElementById("service-last-verified-input");
-var serviceVerifiedVersionLabel = document.getElementById("service-verified-version-label");
-var serviceVerifiedVersionInput = document.getElementById("service-verified-version-input");
-var serviceWaitLabel = document.getElementById("service-wait-label");
-var serviceWaitRange = document.getElementById("service-wait-range");
-var serviceWaitValue = document.getElementById("service-wait-value");
-var serviceColorLabel = document.getElementById("service-color-label");
-var serviceColorInput = document.getElementById("service-color-input");
-var serviceIconLabel = document.getElementById("service-icon-label");
-var serviceIconInput = document.getElementById("service-icon-input");
-var serviceEnabledLabel = document.getElementById("service-enabled-label");
-var serviceEnabledInput = document.getElementById("service-enabled-input");
-var serviceTestResult = document.getElementById("service-test-result");
-var serviceEditorError = document.getElementById("service-editor-error");
-var serviceEditorCancel = document.getElementById("service-editor-cancel");
-var serviceEditorSave = document.getElementById("service-editor-save");
-var toastHost = document.getElementById("toast-host");
-var templateModal = document.getElementById("template-modal");
-var templateModalTitle = document.getElementById("template-modal-title");
-var templateModalDesc = document.getElementById("template-modal-desc");
-var templateModalClose = document.getElementById("template-modal-close");
-var templateModalSystemInfo = document.getElementById("template-modal-system-info");
-var templateFields = document.getElementById("template-fields");
-var templatePreviewLabel = document.getElementById("template-preview-label");
-var templatePreview = document.getElementById("template-preview");
-var templateModalError = document.getElementById("template-modal-error");
-var templateModalCancel = document.getElementById("template-modal-cancel");
-var templateModalConfirm = document.getElementById("template-modal-confirm");
-var favoriteModal = document.getElementById("favorite-modal");
-var favoriteModalTitle = document.getElementById("favorite-modal-title");
-var favoriteModalDesc = document.getElementById("favorite-modal-desc");
-var favoriteModalClose = document.getElementById("favorite-modal-close");
-var favoriteTitleLabel = document.getElementById("favorite-title-label");
-var favoriteTitleInput = document.getElementById("favorite-title-input");
-var favoriteSaveDefaultsRow = document.getElementById("favorite-save-defaults-row");
-var favoriteSaveDefaults = document.getElementById("favorite-save-defaults");
-var favoriteSaveDefaultsLabel = document.getElementById("favorite-save-defaults-label");
-var favoriteDefaultFieldsWrap = document.getElementById("favorite-default-fields-wrap");
-var favoriteDefaultFieldsLabel = document.getElementById("favorite-default-fields-label");
-var favoriteDefaultFields = document.getElementById("favorite-default-fields");
-var favoriteModalError = document.getElementById("favorite-modal-error");
-var favoriteModalCancel = document.getElementById("favorite-modal-cancel");
-var favoriteModalConfirm = document.getElementById("favorite-modal-confirm");
+var { extTitle, extDesc } = popupDom.header;
+var { tabButtons, panels } = popupDom.tabs;
+var {
+  promptInput,
+  promptCounter,
+  clearPromptBtn,
+  templateSummary,
+  templateSummaryLabel,
+  templateChipList,
+  sitesLabel,
+  sitesContainer,
+  toggleAllBtn,
+  saveFavoriteBtn,
+  cancelSendBtn,
+  sendBtn,
+  statusMsg
+} = popupDom.compose;
+var { historySearchInput, historySortSelect, historyList } = popupDom.history;
+var { favoritesSearchInput, favoritesSortSelect, favoritesList } = popupDom.favorites;
+var {
+  settingsTitle,
+  settingsDesc,
+  reuseExistingTabsToggle,
+  reuseExistingTabsLabel,
+  reuseExistingTabsDesc,
+  openOptionsBtn,
+  clearHistoryBtn,
+  exportJsonBtn,
+  importJsonBtn,
+  importJsonInput,
+  waitMultiplierLabel,
+  waitMultiplierRange,
+  waitMultiplierValue
+} = popupDom.settings;
+var {
+  serviceManagementTitle,
+  serviceManagementDesc,
+  addServiceBtn,
+  resetSitesBtn,
+  managedSitesList,
+  serviceEditor,
+  serviceEditorTitle,
+  serviceEditorDesc,
+  serviceNameLabel,
+  serviceNameInput,
+  serviceUrlLabel,
+  serviceUrlInput,
+  serviceInputSelectorLabel,
+  serviceInputSelectorInput,
+  testSelectorBtn,
+  serviceInputTypeLabel,
+  serviceSubmitSelectorLabel,
+  serviceSubmitSelectorInput,
+  serviceSubmitMethodLabel,
+  serviceSubmitMethodSelect,
+  serviceAdvancedTitle,
+  serviceFallbackSelectorsLabel,
+  serviceFallbackSelectorsInput,
+  serviceAuthSelectorsLabel,
+  serviceAuthSelectorsInput,
+  serviceHostnameAliasesLabel,
+  serviceHostnameAliasesInput,
+  serviceLastVerifiedLabel,
+  serviceLastVerifiedInput,
+  serviceVerifiedVersionLabel,
+  serviceVerifiedVersionInput,
+  serviceWaitLabel,
+  serviceWaitRange,
+  serviceWaitValue,
+  serviceColorLabel,
+  serviceColorInput,
+  serviceIconLabel,
+  serviceIconInput,
+  serviceEnabledLabel,
+  serviceEnabledInput,
+  serviceTestResult,
+  serviceEditorError,
+  serviceEditorCancel,
+  serviceEditorSave
+} = popupDom.serviceManagement;
+var {
+  templateModal,
+  templateModalTitle,
+  templateModalDesc,
+  templateModalClose,
+  templateModalSystemInfo,
+  templateFields,
+  templatePreviewLabel,
+  templatePreview,
+  templateModalError,
+  templateModalCancel,
+  templateModalConfirm,
+  favoriteModal,
+  favoriteModalTitle,
+  favoriteModalDesc,
+  favoriteModalClose,
+  favoriteTitleLabel,
+  favoriteTitleInput,
+  favoriteSaveDefaultsRow,
+  favoriteSaveDefaults,
+  favoriteSaveDefaultsLabel,
+  favoriteDefaultFieldsWrap,
+  favoriteDefaultFieldsLabel,
+  favoriteDefaultFields,
+  favoriteModalError,
+  favoriteModalCancel,
+  favoriteModalConfirm,
+  resendModal,
+  resendModalTitle,
+  resendModalDesc,
+  resendModalSites,
+  resendModalClose,
+  resendModalCancel,
+  resendModalConfirm,
+  importReportModal,
+  importReportModalTitle,
+  importReportModalDesc,
+  importReportBody,
+  importReportModalClose,
+  importReportModalConfirm
+} = popupDom.modals;
+var { toastHost } = popupDom;
 function setStatus(text, type = "") {
   statusMsg.textContent = text;
   statusMsg.className = type;
@@ -2423,18 +3113,6 @@ function buildBroadcastToastSignature(summary) {
     (summary?.failedSiteIds ?? []).join(",")
   ].join("|");
 }
-function escapeAttribute(value) {
-  return String(value ?? "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-function escapeHtml(value) {
-  return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-}
-function getSiteIcon(site) {
-  if (site?.icon) {
-    return site.icon;
-  }
-  return SITE_EMOJI[site?.id] ?? site?.name?.slice(0, 2)?.toUpperCase() ?? "AI";
-}
 function getEnabledSites() {
   return state.runtimeSites.filter((site) => site.enabled);
 }
@@ -2468,6 +3146,89 @@ function getDefaultTargetModeLabel() {
 }
 function getDefaultSiteTargetSelection() {
   return "default";
+}
+function renderSortControls() {
+  historySortSelect.innerHTML = getHistorySortOptions().map((option) => `<option value="${escapeAttribute(option.value)}">${escapeHtml(option.label)}</option>`).join("");
+  favoritesSortSelect.innerHTML = getFavoriteSortOptions().map((option) => `<option value="${escapeAttribute(option.value)}">${escapeHtml(option.label)}</option>`).join("");
+  historySortSelect.value = state.settings.historySort;
+  favoritesSortSelect.value = state.settings.favoriteSort;
+}
+function getFocusableElements(root) {
+  return [...root.querySelectorAll(
+    "button:not([disabled]), [href], input:not([disabled]):not([type='hidden']), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])"
+  )].filter((element) => !element.hidden && element.getAttribute("aria-hidden") !== "true");
+}
+function openOverlay(overlay, initialFocus = null) {
+  if (!overlay) {
+    return;
+  }
+  state.lastFocusedElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  overlay.hidden = false;
+  state.openModalId = overlay.id;
+  window.requestAnimationFrame(() => {
+    const fallbackTarget = getFocusableElements(overlay)[0] ?? overlay.querySelector(".modal-card");
+    (initialFocus ?? fallbackTarget)?.focus?.();
+  });
+}
+function closeOverlay(overlay) {
+  if (!overlay) {
+    return;
+  }
+  overlay.hidden = true;
+  if (state.openModalId === overlay.id) {
+    state.openModalId = null;
+  }
+  if (state.lastFocusedElement?.focus) {
+    state.lastFocusedElement.focus();
+  }
+  state.lastFocusedElement = null;
+}
+function getOpenOverlay() {
+  return [importReportModal, resendModal, favoriteModal, templateModal].find((overlay) => overlay && !overlay.hidden) ?? null;
+}
+function closeActiveOverlayOrMenu() {
+  const overlay = getOpenOverlay();
+  if (overlay === importReportModal) {
+    closeOverlay(importReportModal);
+    return true;
+  }
+  if (overlay === resendModal) {
+    closeOverlay(resendModal);
+    state.pendingResendHistory = null;
+    return true;
+  }
+  if (overlay === favoriteModal) {
+    hideFavoriteModal();
+    return true;
+  }
+  if (overlay === templateModal) {
+    hideTemplateModal();
+    return true;
+  }
+  if (state.openMenuKey) {
+    state.openMenuKey = null;
+    renderLists();
+    return true;
+  }
+  return false;
+}
+function trapModalFocus(event) {
+  if (event.key !== "Tab") {
+    return;
+  }
+  const overlay = getOpenOverlay();
+  if (!overlay) {
+    return;
+  }
+  const focusable = getFocusableElements(overlay);
+  if (focusable.length === 0) {
+    event.preventDefault();
+    return;
+  }
+  const currentIndex = focusable.indexOf(document.activeElement);
+  const nextIndex = event.shiftKey ? currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1 : currentIndex === -1 || currentIndex >= focusable.length - 1 ? 0 : currentIndex + 1;
+  event.preventDefault();
+  focusable[nextIndex]?.focus?.();
 }
 function syncSiteTargetSelections() {
   const enabledSiteIds = new Set(getEnabledSites().map((site) => site.id));
@@ -2509,55 +3270,8 @@ function applyDynamicPromptPlaceholder() {
   const nextPlaceholder = placeholderVariants[Math.floor(Math.random() * placeholderVariants.length)] || t.placeholder;
   promptInput.setAttribute("placeholder", nextPlaceholder);
 }
-function previewText(text, maxLength = 50) {
-  const collapsed = String(text).replace(/\s+/g, " ").trim();
-  if (collapsed.length <= maxLength) {
-    return collapsed || "-";
-  }
-  return `${collapsed.slice(0, maxLength)}...`;
-}
-function formatDate(isoString) {
-  try {
-    return new Intl.DateTimeFormat(isKorean ? "ko-KR" : "en-US", {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit"
-    }).format(new Date(isoString));
-  } catch (_error) {
-    return isoString;
-  }
-}
-function normalizeSiteIdList2(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return Array.from(
-    new Set(
-      value.filter((entry) => typeof entry === "string" && entry.trim()).map((entry) => entry.trim())
-    )
-  );
-}
-function getHistorySelectedSiteIds(item) {
-  return normalizeSiteIdList2(
-    Array.isArray(item?.requestedSiteIds) && item.requestedSiteIds.length > 0 ? item.requestedSiteIds : item?.sentTo
-  );
-}
 function getTemplateDisplayName(name) {
   return getTemplateVariableDisplayName(name, uiLanguage);
-}
-function joinMultilineValues(values) {
-  return Array.isArray(values) ? values.join("\n") : "";
-}
-function splitMultilineValues(value) {
-  return String(value ?? "").split(/\r?\n/g).map((entry) => entry.trim()).filter(Boolean);
-}
-function renderServiceBadges(siteIds = []) {
-  return siteIds.map((siteId) => {
-    const site = state.runtimeSites.find((entry) => entry.id === siteId);
-    const label = getSiteIcon(site) ?? siteId.slice(0, 2).toUpperCase();
-    return `<span class="service-badge">${escapeHtml(label)}</span>`;
-  }).join("");
 }
 function allCheckboxes() {
   return [...sitesContainer.querySelectorAll("input[type='checkbox']")];
@@ -2575,28 +3289,27 @@ function applySiteSelection(sentTo) {
   allCheckboxes().forEach((checkbox) => {
     const shouldCheck = selected.size === 0 ? checkbox.checked : selected.has(checkbox.value);
     checkbox.checked = shouldCheck;
-    checkbox.closest(".site-card")?.classList.toggle("checked", shouldCheck);
+    const card = checkbox.closest(".site-card");
+    card?.classList.toggle("checked", shouldCheck);
+    card?.setAttribute("aria-selected", String(shouldCheck));
   });
   syncToggleAllLabel();
 }
 function switchTab(tabId) {
   state.activeTab = tabId;
   tabButtons.forEach((button) => {
-    button.classList.toggle("active", button.dataset.tab === tabId);
+    const active = button.dataset.tab === tabId;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
   });
   panels.forEach((panel) => {
-    panel.classList.toggle("active", panel.dataset.panel === tabId);
+    const active = panel.dataset.panel === tabId;
+    panel.classList.toggle("active", active);
+    panel.hidden = !active;
   });
   state.openMenuKey = null;
   renderLists();
-}
-function buildEmptyState(message) {
-  return `
-    <div class="empty-state">
-      <div>${escapeHtml(message)}</div>
-      <button class="empty-action" type="button" data-switch-tab="compose">${escapeHtml(t.emptyActionCompose)}</button>
-    </div>
-  `;
 }
 function filterItems(items, query) {
   const normalizedQuery = query.trim().toLowerCase();
@@ -2607,82 +3320,21 @@ function filterItems(items, query) {
     (item) => String(item.text).toLowerCase().includes(normalizedQuery)
   );
 }
-function buildHistoryItemMarkup(item) {
-  const menuKey = `history:${item.id}`;
-  return `
-    <article class="prompt-item" data-history-id="${item.id}">
-      <button class="prompt-main" type="button" data-load-history="${item.id}">
-        <div class="prompt-preview">${escapeHtml(previewText(item.text))}</div>
-        <div class="prompt-meta">
-          <div class="service-icons">${renderServiceBadges(getHistorySelectedSiteIds(item))}</div>
-          <span>${escapeHtml(formatDate(item.createdAt))}</span>
-        </div>
-      </button>
-      <div class="prompt-actions">
-        <button class="menu-button" type="button" aria-label="${escapeAttribute(t.menuMore)}" data-toggle-menu="${escapeAttribute(menuKey)}">...</button>
-        <div class="item-menu ${state.openMenuKey === menuKey ? "open" : ""}">
-          <button class="menu-item" type="button" data-action="favorite" data-history-id="${item.id}">${escapeHtml(t.addFavorite)}</button>
-          <button class="menu-item danger" type="button" data-action="delete-history" data-history-id="${item.id}">${escapeHtml(t.delete)}</button>
-        </div>
-      </div>
-    </article>
-  `;
-}
-function buildFavoriteTagsMarkup(item) {
-  const tags = Array.isArray(item.tags) ? item.tags : [];
-  const folder = typeof item.folder === "string" && item.folder.trim() ? item.folder.trim() : "";
-  const pinIcon = item.pinned ? `<span class="fav-pin-icon" title="${escapeHtml(msg("popup_favorite_pinned") || "Pinned")}">📌</span>` : "";
-  const folderBadge = folder ? `<span class="fav-folder-badge" data-filter-folder="${escapeAttribute(folder)}">📁 ${escapeHtml(folder)}</span>` : "";
-  const tagChips = tags.map(
-    (tag) => `<span class="fav-tag-chip" data-filter-tag="${escapeAttribute(tag)}">#${escapeHtml(tag)}</span>`
-  ).join("");
-  if (!pinIcon && !folderBadge && !tagChips) return "";
-  return `<div class="fav-meta-row">${pinIcon}${folderBadge}${tagChips}</div>`;
-}
-function buildFavoriteItemMarkup(item) {
-  const menuKey = `favorite:${item.id}`;
-  const safeFavoriteId = escapeAttribute(item.id);
-  const pinLabel = item.pinned ? msg("popup_favorite_unpin") || "Unpin" : msg("popup_favorite_pin") || "Pin";
-  return `
-    <article class="prompt-item${item.pinned ? " pinned-item" : ""}" data-favorite-id="${safeFavoriteId}">
-      <div class="favorite-title-row">
-        <span class="favorite-star">${escapeHtml(t.favoriteStar)}</span>
-        <input
-          class="favorite-title-input"
-          type="text"
-          data-favorite-title="${safeFavoriteId}"
-          value="${escapeAttribute(item.title)}"
-          placeholder="${escapeAttribute(t.titlePlaceholder)}"
-        />
-      </div>
-      ${buildFavoriteTagsMarkup(item)}
-      <button class="prompt-main" type="button" data-load-favorite="${safeFavoriteId}">
-        <div class="prompt-preview">${escapeHtml(previewText(item.text))}</div>
-        <div class="prompt-meta">
-          <div class="service-icons">${renderServiceBadges(item.sentTo)}</div>
-          <span>${escapeHtml(formatDate(item.createdAt))}</span>
-        </div>
-      </button>
-      <div class="prompt-actions">
-        <button class="menu-button" type="button" aria-label="${escapeAttribute(t.menuMore)}" data-toggle-menu="${escapeAttribute(menuKey)}">...</button>
-        <div class="item-menu ${state.openMenuKey === menuKey ? "open" : ""}">
-          <button class="menu-item" type="button" data-action="edit-favorite-tags" data-favorite-id="${safeFavoriteId}">${escapeHtml(msg("popup_favorite_edit_tags") || "Edit tags & folder")}</button>
-          <button class="menu-item" type="button" data-action="toggle-pin-favorite" data-favorite-id="${safeFavoriteId}">${escapeHtml(pinLabel)}</button>
-          <button class="menu-item danger" type="button" data-action="delete-favorite" data-favorite-id="${safeFavoriteId}">${escapeHtml(t.delete)}</button>
-        </div>
-      </div>
-    </article>
-  `;
-}
 function renderHistoryList() {
-  const items = filterItems(state.history, state.historySearch);
+  const items = sortHistoryItemsForDisplay(
+    filterItems(state.history, state.historySearch),
+    state.settings.historySort
+  );
   if (items.length === 0) {
     historyList.innerHTML = buildEmptyState(
       state.historySearch ? t.noSearchResults : t.historyEmpty
     );
     return;
   }
-  historyList.innerHTML = items.map((item) => buildHistoryItemMarkup(item)).join("");
+  historyList.innerHTML = items.map((item) => buildHistoryItemMarkup(item, {
+    openMenuKey: state.openMenuKey,
+    runtimeSites: state.runtimeSites
+  })).join("");
 }
 function getUniqueFavoriteTags() {
   const tagSet = /* @__PURE__ */ new Set();
@@ -2732,11 +3384,7 @@ function filterFavoriteItems(items) {
   if (state.favoritesFolderFilter) {
     filtered = filtered.filter((item) => (item.folder ?? "").trim() === state.favoritesFolderFilter);
   }
-  return [...filtered].sort((a, b) => {
-    if (a.pinned && !b.pinned) return -1;
-    if (!a.pinned && b.pinned) return 1;
-    return 0;
-  });
+  return sortFavoriteItemsForDisplay(filtered, state.settings.favoriteSort);
 }
 function renderFavoritesList() {
   renderFavoritesFilterBar();
@@ -2747,7 +3395,10 @@ function renderFavoritesList() {
     );
     return;
   }
-  favoritesList.innerHTML = items.map((item) => buildFavoriteItemMarkup(item)).join("");
+  favoritesList.innerHTML = items.map((item) => buildFavoriteItemMarkup(item, {
+    openMenuKey: state.openMenuKey,
+    runtimeSites: state.runtimeSites
+  })).join("");
 }
 function renderLists() {
   renderHistoryList();
@@ -2832,6 +3483,10 @@ function applySettingsToControls() {
   reuseExistingTabsToggle.checked = Boolean(state.settings.reuseExistingTabs);
   reuseExistingTabsLabel.textContent = t.reuseTabsLabel;
   reuseExistingTabsDesc.textContent = state.settings.reuseExistingTabs ? t.reuseTabsDescEnabled : t.reuseTabsDescDisabled;
+  waitMultiplierLabel.textContent = t.waitMultiplierLabel;
+  waitMultiplierRange.value = String(state.settings.waitMsMultiplier);
+  waitMultiplierValue.textContent = t.waitMultiplierValue(state.settings.waitMsMultiplier);
+  renderSortControls();
 }
 function buildComposerBroadcastTargets(siteIds = [], basePrompt = promptInput.value) {
   return normalizeSiteIdList2(siteIds).map((siteId) => {
@@ -2952,6 +3607,7 @@ async function refreshStoredData() {
 function setLoadedTemplateContext(item) {
   state.loadedTemplateDefaults = item && item.templateDefaults && typeof item.templateDefaults === "object" ? { ...item.templateDefaults } : {};
   state.loadedFavoriteTitle = typeof item?.title === "string" ? item.title : "";
+  state.loadedFavoriteId = typeof item?.id === "string" ? item.id : "";
 }
 function loadPromptIntoComposer(item) {
   promptInput.value = item.text;
@@ -2973,7 +3629,8 @@ function setCardStatesFromBroadcast(summary) {
   }
   summary.siteIds.forEach((siteId) => {
     const status = summary.siteResults?.[siteId];
-    if (status === "submitted") {
+    const code = normalizeResultCode(status?.code ?? status);
+    if (code === "submitted") {
       setSiteCardState(siteId, "sent");
       return;
     }
@@ -3198,13 +3855,13 @@ async function sendResolvedPrompt(mainPrompt, targets) {
 }
 function hideTemplateModal() {
   state.pendingTemplateSend = null;
-  templateModal.hidden = true;
+  closeOverlay(templateModal);
   templateModalError.hidden = true;
   templateModalError.textContent = "";
 }
 function hideFavoriteModal() {
   state.pendingFavoriteSave = null;
-  favoriteModal.hidden = true;
+  closeOverlay(favoriteModal);
   favoriteModalError.hidden = true;
   favoriteModalError.textContent = "";
   favoriteTitleInput.value = "";
@@ -3218,9 +3875,120 @@ function dismissFavoriteModal(event) {
   event?.stopPropagation?.();
   hideFavoriteModal();
 }
+function hideResendModal() {
+  state.pendingResendHistory = null;
+  closeOverlay(resendModal);
+}
+function openResendModal(historyItem) {
+  state.pendingResendHistory = historyItem;
+  resendModalTitle.textContent = t.resendModalTitle;
+  resendModalDesc.textContent = t.resendModalDesc;
+  resendModalCancel.textContent = t.resendModalCancel;
+  resendModalConfirm.textContent = t.resendModalConfirm;
+  const requestedSiteIds = getHistorySelectedSiteIds(historyItem);
+  const availableSiteIds = new Set(getEnabledSites().map((site) => site.id));
+  resendModalSites.innerHTML = requestedSiteIds.map((siteId) => {
+    const site = state.runtimeSites.find((entry) => entry.id === siteId);
+    const disabled = !availableSiteIds.has(siteId);
+    return `
+      <label class="checkbox-row">
+        <input type="checkbox" value="${escapeAttribute(siteId)}" data-resend-site="${escapeAttribute(siteId)}" ${disabled ? "disabled" : "checked"} />
+        <span>${escapeHtml(site?.name ?? siteId)}${disabled ? ` (${escapeHtml(t.resendSiteUnavailable)})` : ""}</span>
+      </label>
+    `;
+  }).join("");
+  openOverlay(resendModal, resendModalSites.querySelector("input:not([disabled])"));
+}
+async function confirmResendModal() {
+  const historyItem = state.pendingResendHistory;
+  if (!historyItem) {
+    return;
+  }
+  const selectedSiteIds = [...resendModalSites.querySelectorAll("[data-resend-site]:checked")].map((checkbox) => checkbox.value).filter(Boolean);
+  if (selectedSiteIds.length === 0) {
+    setStatus(t.warnNoSite, "error");
+    return;
+  }
+  hideResendModal();
+  await sendResolvedPrompt(historyItem.text, selectedSiteIds.map((siteId) => ({ id: siteId })));
+}
+function openImportReportModal(summary) {
+  state.pendingImportSummary = summary;
+  importReportModalTitle.textContent = t.importReportTitle;
+  importReportModalDesc.textContent = t.importReportDesc;
+  importReportModalConfirm.textContent = t.importReportClose;
+  importReportBody.innerHTML = buildImportReportMarkup(summary);
+  openOverlay(importReportModal, importReportModalClose);
+}
+function hideImportReportModal() {
+  state.pendingImportSummary = null;
+  closeOverlay(importReportModal);
+}
+function getPromptButtonsForActiveTab() {
+  if (state.activeTab === "history") {
+    return [...historyList.querySelectorAll("[data-load-history]")];
+  }
+  if (state.activeTab === "favorites") {
+    return [...favoritesList.querySelectorAll("[data-load-favorite]")];
+  }
+  return [];
+}
+function focusAdjacentPromptButton(direction) {
+  const buttons = getPromptButtonsForActiveTab();
+  if (buttons.length === 0) {
+    return;
+  }
+  const currentIndex = buttons.findIndex((button) => button === document.activeElement);
+  const nextIndex = currentIndex === -1 ? direction > 0 ? 0 : buttons.length - 1 : (currentIndex + direction + buttons.length) % buttons.length;
+  buttons[nextIndex]?.focus?.();
+}
+async function handleGlobalShortcut(event) {
+  if (event.defaultPrevented) {
+    return;
+  }
+  const shortcutKey = event.key.toLowerCase();
+  const hasPrimaryModifier = event.ctrlKey || event.metaKey;
+  if (event.key === "Escape") {
+    if (closeActiveOverlayOrMenu()) {
+      event.preventDefault();
+    }
+    return;
+  }
+  if (getOpenOverlay()) {
+    return;
+  }
+  if (hasPrimaryModifier && event.shiftKey && event.key === "Enter") {
+    event.preventDefault();
+    await cancelCurrentBroadcast();
+    return;
+  }
+  if (hasPrimaryModifier && !event.shiftKey && event.key === "Enter") {
+    event.preventDefault();
+    await handleSend();
+    return;
+  }
+  if (hasPrimaryModifier && !event.shiftKey && ["1", "2", "3", "4"].includes(shortcutKey)) {
+    event.preventDefault();
+    switchTab(["compose", "history", "favorites", "settings"][Number(shortcutKey) - 1]);
+    return;
+  }
+  if (hasPrimaryModifier && !event.shiftKey && shortcutKey === "a" && state.activeTab === "compose" && !isTextEditingTarget(event.target)) {
+    event.preventDefault();
+    toggleAllBtn.click();
+    return;
+  }
+  if ((event.key === "ArrowDown" || event.key === "ArrowUp") && !isTextEditingTarget(event.target)) {
+    if (state.activeTab === "history" || state.activeTab === "favorites") {
+      event.preventDefault();
+      focusAdjacentPromptButton(event.key === "ArrowDown" ? 1 : -1);
+    }
+  }
+}
 function resetTransientModals() {
   hideTemplateModal();
   hideFavoriteModal();
+  hideResendModal();
+  hideImportReportModal();
 }
 function setTemplateModalError(message = "") {
   templateModalError.hidden = !message;
@@ -3301,6 +4069,17 @@ async function readClipboardTemplateValue() {
     };
   }
 }
+async function maybeMarkLoadedFavoriteAsUsed() {
+  if (!state.loadedFavoriteId) {
+    return;
+  }
+  try {
+    await markFavoriteUsed(state.loadedFavoriteId);
+    state.favorites = await getPromptFavorites();
+  } catch (error) {
+    console.error("[AI Prompt Broadcaster] Failed to update favorite usage.", error);
+  }
+}
 async function confirmTemplateModalSend() {
   const modalState = state.pendingTemplateSend;
   if (!modalState) {
@@ -3316,6 +4095,7 @@ async function confirmTemplateModalSend() {
   state.templateVariableCache = mergeTemplateSources(state.templateVariableCache, cachedValues);
   const resolvedTargets = buildResolvedBroadcastTargets(modalState.targets, previewState.values);
   hideTemplateModal();
+  await maybeMarkLoadedFavoriteAsUsed();
   await sendResolvedPrompt(modalState.prompt, resolvedTargets);
 }
 function buildTemplateSendPreviewStateV2() {
@@ -3388,6 +4168,7 @@ function renderTemplateModalV2() {
 async function openTemplateModalV2(prompt, targets) {
   const variables = detectTemplateVariablesForTargets2(targets);
   if (variables.length === 0) {
+    await maybeMarkLoadedFavoriteAsUsed();
     await sendResolvedPrompt(prompt, buildResolvedBroadcastTargets(targets));
     return;
   }
@@ -3417,7 +4198,7 @@ async function openTemplateModalV2(prompt, targets) {
     systemValues
   };
   renderTemplateModalV2();
-  templateModal.hidden = false;
+  openOverlay(templateModal, templateFields.querySelector("input") ?? templateModalConfirm);
 }
 function renderFavoriteDefaultFields() {
   const modalState = state.pendingFavoriteSave;
@@ -3490,11 +4271,8 @@ async function openFavoriteModal() {
   };
   setFavoriteModalError("");
   renderFavoriteModal();
-  favoriteModal.hidden = false;
-  window.requestAnimationFrame(() => {
-    favoriteTitleInput.focus();
-    favoriteTitleInput.select();
-  });
+  openOverlay(favoriteModal, favoriteTitleInput);
+  window.requestAnimationFrame(() => favoriteTitleInput.select());
 }
 async function confirmFavoriteSave() {
   const modalState = state.pendingFavoriteSave;
@@ -3533,6 +4311,8 @@ function renderTabLabels() {
   settingsDesc.textContent = t.settingsDesc;
   reuseExistingTabsLabel.textContent = t.reuseTabsLabel;
   reuseExistingTabsDesc.textContent = state.settings.reuseExistingTabs ? t.reuseTabsDescEnabled : t.reuseTabsDescDisabled;
+  waitMultiplierLabel.textContent = t.waitMultiplierLabel;
+  waitMultiplierValue.textContent = t.waitMultiplierValue(state.settings.waitMsMultiplier);
   openOptionsBtn.textContent = t.openOptions;
   clearHistoryBtn.textContent = t.clearHistory;
   exportJsonBtn.textContent = t.exportJson;
@@ -3561,6 +4341,13 @@ function renderTabLabels() {
   serviceEnabledLabel.textContent = t.serviceFieldEnabled;
   serviceEditorCancel.textContent = t.serviceEditorCancel;
   serviceEditorSave.textContent = t.serviceEditorSave;
+  resendModalTitle.textContent = t.resendModalTitle;
+  resendModalDesc.textContent = t.resendModalDesc;
+  resendModalCancel.textContent = t.resendModalCancel;
+  resendModalConfirm.textContent = t.resendModalConfirm;
+  importReportModalTitle.textContent = t.importReportTitle;
+  importReportModalDesc.textContent = t.importReportDesc;
+  importReportModalConfirm.textContent = t.importReportClose;
   tabButtons.forEach((button) => {
     button.textContent = t.tabs[button.dataset.tab];
   });
@@ -3575,6 +4362,8 @@ function renderSiteCheckboxesPanel() {
     card.className = "site-card checked";
     card.dataset.siteId = site.id;
     card.style.setProperty("--site-color", site.color || "#c24f2e");
+    card.setAttribute("role", "option");
+    card.tabIndex = 0;
     const mainRow = document.createElement("label");
     mainRow.className = "site-card-main";
     mainRow.htmlFor = `site-${site.id}`;
@@ -3596,7 +4385,21 @@ function renderSiteCheckboxesPanel() {
     }
     checkbox.addEventListener("change", () => {
       card.classList.toggle("checked", checkbox.checked);
+      card.setAttribute("aria-selected", String(checkbox.checked));
+      card.setAttribute(
+        "aria-label",
+        `${getRuntimeSiteLabel(site.id)} ${checkbox.checked ? t.ariaSelected : t.ariaNotSelected}`
+      );
       syncToggleAllLabel();
+      renderTemplateSummary();
+    });
+    card.addEventListener("keydown", (event) => {
+      if (event.key !== " " && event.key !== "Enter") {
+        return;
+      }
+      event.preventDefault();
+      checkbox.checked = !checkbox.checked;
+      checkbox.dispatchEvent(new Event("change", { bubbles: true }));
     });
     const siteStatus = document.createElement("span");
     siteStatus.className = "site-status";
@@ -3607,6 +4410,11 @@ function renderSiteCheckboxesPanel() {
     warningIcon.textContent = selectorWarning ? "!" : "";
     mainRow.append(checkbox, siteIcon, siteName, warningIcon, siteStatus);
     card.classList.toggle("checked", checkbox.checked);
+    card.setAttribute("aria-selected", String(checkbox.checked));
+    card.setAttribute(
+      "aria-label",
+      `${getRuntimeSiteLabel(site.id)} ${checkbox.checked ? t.ariaSelected : t.ariaNotSelected}`
+    );
     card.appendChild(mainRow);
     const openTabs = getOpenSiteTabs(site.id);
     const selectedTarget = state.siteTargetSelections?.[site.id] ?? getDefaultSiteTargetSelection();
@@ -3990,6 +4798,12 @@ async function handleHistoryAction(action, historyId) {
     showAppToast(t.favoriteAdded, "success", 2200);
     return;
   }
+  if (action === "resend-history") {
+    state.openMenuKey = null;
+    renderHistoryList();
+    openResendModal(item);
+    return;
+  }
   if (action === "delete-history") {
     await deletePromptHistoryItem(historyId);
     state.history = await getPromptHistory();
@@ -4025,6 +4839,14 @@ async function handleFavoriteAction(action, favoriteId) {
     state.openMenuKey = null;
     openFavoriteTagsModal(item);
     return;
+  }
+  if (action === "duplicate-favorite") {
+    await duplicateFavoriteItem(favoriteId, t.favoriteDuplicatePrefix);
+    state.favorites = await getPromptFavorites();
+    state.openMenuKey = null;
+    renderFavoritesList();
+    setStatus(t.favoriteDuplicated, "success");
+    showAppToast(t.favoriteDuplicated, "success", 2200);
   }
 }
 function openFavoriteTagsModal(item) {
@@ -4117,6 +4939,9 @@ function bindGlobalEvents() {
   });
   clearPromptBtn.addEventListener("click", () => {
     promptInput.value = "";
+    state.loadedFavoriteId = "";
+    state.loadedFavoriteTitle = "";
+    state.loadedTemplateDefaults = {};
     updatePromptCounter();
     autoResizePromptInput();
     renderTemplateSummary();
@@ -4171,9 +4996,33 @@ function bindGlobalEvents() {
     state.historySearch = event.target.value;
     renderHistoryList();
   });
+  historySortSelect.addEventListener("change", (event) => {
+    const nextValue = event.target.value;
+    state.settings = {
+      ...state.settings,
+      historySort: nextValue
+    };
+    renderHistoryList();
+    void updateAppSettings({ historySort: nextValue }).catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to save history sort.", error);
+      setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
+    });
+  });
   favoritesSearchInput.addEventListener("input", (event) => {
     state.favoritesSearch = event.target.value;
     renderFavoritesList();
+  });
+  favoritesSortSelect.addEventListener("change", (event) => {
+    const nextValue = event.target.value;
+    state.settings = {
+      ...state.settings,
+      favoriteSort: nextValue
+    };
+    renderFavoritesList();
+    void updateAppSettings({ favoriteSort: nextValue }).catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to save favorite sort.", error);
+      setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
+    });
   });
   document.querySelector("[data-panel='favorites']")?.addEventListener("click", (event) => {
     const chip = event.target.closest("[data-filter-tag],[data-filter-folder],[data-filter-all]");
@@ -4329,6 +5178,22 @@ function bindGlobalEvents() {
       showAppToast(t.error(error?.message ?? getUnknownErrorText()), "error", 3200);
     });
   });
+  waitMultiplierRange.addEventListener("input", (event) => {
+    waitMultiplierValue.textContent = t.waitMultiplierValue(Number(event.target.value));
+  });
+  waitMultiplierRange.addEventListener("change", (event) => {
+    const nextValue = Number(event.target.value);
+    state.settings = {
+      ...state.settings,
+      waitMsMultiplier: nextValue
+    };
+    applySettingsToControls();
+    void updateAppSettings({ waitMsMultiplier: nextValue }).catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to save wait multiplier.", error);
+      setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
+      showAppToast(t.error(error?.message ?? getUnknownErrorText()), "error", 3200);
+    });
+  });
   openOptionsBtn.addEventListener("click", () => {
     void chrome.runtime.openOptionsPage().catch((error) => {
       console.error("[AI Prompt Broadcaster] Failed to open options page.", error);
@@ -4367,6 +5232,7 @@ function bindGlobalEvents() {
       await refreshStoredData();
       setStatus(buildImportSummaryText(result.importSummary), "success");
       showAppToast(buildImportSummaryText(result.importSummary, { short: true }), "success", 2600);
+      openImportReportModal(result.importSummary);
     } catch (error) {
       setStatus(t.importFailed, "error");
       console.error("[AI Prompt Broadcaster] JSON import failed.", error);
@@ -4488,6 +5354,32 @@ function bindGlobalEvents() {
       setFavoriteModalError(t.error(error?.message ?? getUnknownErrorText()));
     });
   });
+  resendModalClose.addEventListener("click", hideResendModal);
+  resendModalCancel.addEventListener("click", hideResendModal);
+  resendModal.addEventListener("click", (event) => {
+    if (event.target === resendModal) {
+      hideResendModal();
+    }
+  });
+  resendModalConfirm.addEventListener("click", () => {
+    void confirmResendModal().catch((error) => {
+      console.error("[AI Prompt Broadcaster] Resend modal confirm failed.", error);
+      setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
+    });
+  });
+  importReportModalClose.addEventListener("click", hideImportReportModal);
+  importReportModalConfirm.addEventListener("click", hideImportReportModal);
+  importReportModal.addEventListener("click", (event) => {
+    if (event.target === importReportModal) {
+      hideImportReportModal();
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    trapModalFocus(event);
+    void handleGlobalShortcut(event).catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to handle popup shortcut.", error);
+    });
+  });
   chrome.tabs.onCreated.addListener(() => {
     scheduleOpenSiteTabsRefresh();
   });
@@ -4530,6 +5422,7 @@ async function init() {
     initToastRoot(toastHost);
     renderTabLabels();
     bindGlobalEvents();
+    switchTab(state.activeTab);
     syncToggleAllLabel();
     await loadStoredData();
     await chrome.runtime.sendMessage({ action: "popupOpened" }).catch(() => null);

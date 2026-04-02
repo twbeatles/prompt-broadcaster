@@ -1,6 +1,6 @@
 # AI Prompt Broadcaster Privacy Policy
 
-Last updated: 2026-03-31
+Last updated: 2026-04-02
 
 ## Korean
 
@@ -36,6 +36,8 @@ AI Prompt Broadcaster(이하 "확장 프로그램")는 사용자가 입력하거
 - 템플릿 변수 캐시
 - 앱 설정값
 - 셀렉터 오류 기록 및 최근 브로드캐스트 상태
+- 서비스별 전송 결과 코드와 최근 import 요약
+- 서비스별 주입 전략 통계(`strategyStats`)
 
 #### 탭 및 서비스 메타데이터
 
@@ -73,9 +75,11 @@ AI Prompt Broadcaster(이하 "확장 프로그램")는 사용자가 입력하거
   - 사용자 정의 서비스 설정
   - 앱 설정
   - 셀렉터 실패 기록
+  - 서비스별 전략 통계
 - `chrome.storage.session`
   - 최근 브로드캐스트 상태
   - 일시적인 UI 토스트 상태
+  - import 직후 표시할 일시적 UI 상태
 
 이 데이터는 확장 프로그램 기능 제공을 위해 사용자 기기 안에만 저장되며, 확장 프로그램이 개발자 서버로 별도 전송하지 않습니다.
 
@@ -185,6 +189,8 @@ The extension may handle the following categories of data only as needed for its
 - template variable cache
 - app settings
 - selector failure records and recent broadcast status
+- per-service result codes and recent import summaries
+- per-service injector strategy statistics (`strategyStats`)
 
 #### Tab and service metadata
 
@@ -222,9 +228,11 @@ The following data may be stored only in the user's browser:
   - custom service settings
   - app settings
   - selector failure records
+  - per-service strategy statistics
 - `chrome.storage.session`
   - recent broadcast state
   - transient UI toast state
+  - transient state used to surface import-report UI
 
 This data remains in the user's browser environment and is not transmitted by the extension to a developer-controlled server.
 

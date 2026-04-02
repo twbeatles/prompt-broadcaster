@@ -1,10 +1,11 @@
 import { LOCAL_STORAGE_KEYS } from "./constants";
 import {
   ensureUniqueNumericId,
+  normalizeResultCode,
   normalizeIsoDate,
+  normalizeSiteResultsRecord,
   normalizeSiteIdList,
   normalizeStatus,
-  normalizeStringRecord,
   safeArray,
   safeText,
   sortByDateDesc,
@@ -23,15 +24,22 @@ export function buildHistoryEntry(entry: unknown): PromptHistoryItem {
   const source = asHistoryRecord(entry);
   const numericId = Number(source.id);
   const createdAt = normalizeIsoDate(source.createdAt);
-  const siteResults = normalizeStringRecord(source.siteResults);
+  const siteResults = normalizeSiteResultsRecord(source.siteResults);
   const siteResultKeys = normalizeSiteIdList(Object.keys(siteResults));
+  const derivedSubmittedSiteIds = siteResultKeys.filter(
+    (siteId) => normalizeResultCode(siteResults[siteId]?.code) === "submitted"
+  );
   const submittedSiteIds = normalizeSiteIdList(
-    Array.isArray(source.submittedSiteIds) ? source.submittedSiteIds : source.sentTo
+    Array.isArray(source.submittedSiteIds)
+      ? source.submittedSiteIds
+      : Array.isArray(source.sentTo)
+        ? source.sentTo
+        : derivedSubmittedSiteIds
   );
   const failedSiteIds = normalizeSiteIdList(
     Array.isArray(source.failedSiteIds)
       ? source.failedSiteIds
-      : siteResultKeys.filter((siteId) => !submittedSiteIds.includes(siteId))
+      : siteResultKeys.filter((siteId) => normalizeResultCode(siteResults[siteId]?.code) !== "submitted")
   );
   const requestedSiteIds = normalizeSiteIdList(
     Array.isArray(source.requestedSiteIds)
@@ -87,6 +95,35 @@ export async function appendPromptHistory(entry: unknown): Promise<PromptHistory
 export async function deletePromptHistoryItem(historyId: number | string) {
   const history = await getPromptHistory();
   const nextHistory = history.filter((item) => Number(item.id) !== Number(historyId));
+  await setPromptHistory(nextHistory);
+  return nextHistory;
+}
+
+export async function deletePromptHistoryItemsByIds(historyIds: Array<number | string>) {
+  const selectedIds = new Set(
+    safeArray(historyIds).map((historyId) => Number(historyId)).filter((historyId) => Number.isFinite(historyId))
+  );
+  const history = await getPromptHistory();
+  const nextHistory = history.filter((item) => !selectedIds.has(Number(item.id)));
+  await setPromptHistory(nextHistory);
+  return nextHistory;
+}
+
+export async function deletePromptHistoryItemsBeforeDate(dateValue: string | Date) {
+  const cutoffDate = typeof dateValue === "string" || dateValue instanceof Date
+    ? new Date(dateValue)
+    : new Date("");
+
+  if (!Number.isFinite(cutoffDate.getTime())) {
+    return getPromptHistory();
+  }
+
+  const cutoffTime = cutoffDate.getTime();
+  const history = await getPromptHistory();
+  const nextHistory = history.filter((item) => {
+    const itemTime = Date.parse(item.createdAt);
+    return !Number.isFinite(itemTime) || itemTime >= cutoffTime;
+  });
   await setPromptHistory(nextHistory);
   return nextHistory;
 }

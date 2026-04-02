@@ -3,6 +3,8 @@ import { findElementsDeep, logError, sleep } from "./dom";
 export interface SubmitConfigLike {
   submitMethod?: string;
   submitSelector?: string;
+  submitTimeoutMs?: number;
+  submitRetryCount?: number;
 }
 
 const SUBMIT_BUTTON_WAIT_TIMEOUT_MS = 5000;
@@ -40,9 +42,13 @@ function pickSubmitButtonCandidate(candidates: Element[], referenceElement?: Ele
   })[0] ?? null;
 }
 
-export async function submitByClick(selector: string, referenceElement?: Element | null): Promise<boolean> {
+export async function submitByClick(
+  selector: string,
+  referenceElement?: Element | null,
+  timeoutMs = SUBMIT_BUTTON_WAIT_TIMEOUT_MS
+): Promise<boolean> {
   try {
-    const deadline = performance.now() + SUBMIT_BUTTON_WAIT_TIMEOUT_MS;
+    const deadline = performance.now() + Math.max(Number(timeoutMs) || 0, SUBMIT_BUTTON_POLL_INTERVAL_MS);
 
     while (true) {
       const candidates = findElementsDeep(selector, document, {
@@ -95,13 +101,34 @@ export async function submitPrompt(
   element: Element,
   config: SubmitConfigLike | null | undefined,
 ): Promise<boolean> {
-  if (config?.submitMethod === "click") {
-    return config?.submitSelector ? submitByClick(config.submitSelector, element) : submitByEnter(element, false);
+  const retryCount = Math.max(0, Math.round(Number(config?.submitRetryCount) || 0));
+  const submitTimeoutMs = Number(config?.submitTimeoutMs);
+  const timeoutMs = Number.isFinite(submitTimeoutMs)
+    ? submitTimeoutMs
+    : SUBMIT_BUTTON_WAIT_TIMEOUT_MS;
+
+  for (let attemptIndex = 0; attemptIndex <= retryCount; attemptIndex += 1) {
+    let submitted = false;
+    const method = config?.submitMethod;
+
+    if (method === "click") {
+      submitted = config?.submitSelector
+        ? await submitByClick(config.submitSelector, element, timeoutMs)
+        : submitByEnter(element, false);
+    } else if (method === "shift+enter") {
+      submitted = submitByEnter(element, true);
+    } else {
+      submitted = submitByEnter(element, false);
+    }
+
+    if (submitted) {
+      return true;
+    }
+
+    if (attemptIndex < retryCount) {
+      await sleep(250);
+    }
   }
 
-  if (config?.submitMethod === "shift+enter") {
-    return submitByEnter(element, true);
-  }
-
-  return submitByEnter(element, false);
+  return false;
 }

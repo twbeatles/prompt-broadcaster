@@ -55,12 +55,15 @@ To package a release zip:
 ### Logic
 - `src/shared/sites/`: built-in, override, and custom site merging
 - `src/shared/prompts/`: history, favorites, template cache, broadcast counter, import/export, and settings
-- `src/shared/runtime-state/`: last broadcast, UI toasts, and selector warning state
+- `src/shared/runtime-state/`: last broadcast, UI toasts, selector warning state, and strategy stats
 - `src/shared/template/`: template detection and rendering
 - `src/popup/app/bootstrap.ts`: popup orchestration
+- `src/popup/app/dom.ts`, `helpers.ts`, `sorting.ts`, `list-markup.ts`: popup DOM registry and pure UI helpers
 - `src/popup/app/i18n.ts`, `src/popup/app/state.ts`: popup state and copy
 - `src/options/app/bootstrap.ts`: options orchestration
+- `src/options/app/dom.ts`, `src/options/app/helpers.ts`: options DOM registry and pure view helpers
 - `src/background/app/bootstrap.ts`: service worker orchestration
+- `src/background/app/injection-helpers.ts`: timeout scaling, selector normalization, result mapping, adaptive strategy ordering
 - `src/content/selector-checker/` and `src/content/selection/`: modular content helpers split by runtime, DOM, and reporting concerns
 
 ### i18n
@@ -98,9 +101,11 @@ Popup scans the main prompt and every enabled per-service override together, res
 - Deleting custom services, resetting service settings, or replacing imported custom services should remove unused optional host permissions.
 
 ### Import/export and counter semantics
-- JSON export/import currently uses `version: 3` and includes `broadcastCounter`.
+- JSON export now writes `version: 4` and import migrates older payloads through `v1 -> v2 -> v3 -> v4`.
 - `{{counter}}` preview uses `current + 1`, but the stored counter only increments when at least one target site is successfully queued.
-- Reset-data flows should clear `broadcastCounter` together with history, favorites, template cache, site data, and session runtime state such as `pendingBroadcasts`, `pendingInjections`, `pendingUiToasts`, and `lastBroadcast`.
+- History and last-broadcast records store structured `siteResults` (`SiteInjectionResult`) instead of plain status strings.
+- Favorites also keep `usageCount` and `lastUsedAt`, and `appSettings` includes `waitMsMultiplier`, `historySort`, and `favoriteSort`.
+- Reset-data flows should clear `broadcastCounter`, `strategyStats`, history, favorites, template cache, site data, and session runtime state such as `pendingBroadcasts`, `pendingInjections`, `pendingUiToasts`, and `lastBroadcast`.
 - CSV exports are built through `src/shared/export/csv.ts`, which quotes cells and prefixes formula-leading values with `'`.
 
 ### Background state consistency
@@ -109,6 +114,11 @@ Popup scans the main prompt and every enabled per-service override together, res
 
 ### Popup reopening fallback
 When `chrome.action.openPopup()` fails because Chrome has no active browser window, the background worker stores `lastPrompt`, tries to focus an existing browser window, and finally opens `popup/popup.html` in a standalone popup window.
+
+### Popup behavior additions
+- Popup supports internal shortcuts for send, cancel, tab switching, modal dismissal, and list keyboard navigation.
+- History replay now opens a service-selection modal before resend.
+- Popup and options both show a detailed import report after JSON import.
 
 ### Selector checker
 Runs on supported pages and reports `ok`, `selector_missing`, or `auth_page` back to the background worker.
@@ -146,10 +156,12 @@ Smoke coverage includes:
 - custom-site optional permission cleanup and alias-origin handling
 - built-in override import repair for invalid `click` + empty selector combinations
 - `broadcastCounter` export/import/reset lifecycle
+- import migration to export `version: 4`
 - favorites search across title, text, tags, and folders
 - per-service override template resolution and retry prompt preservation
 - CSV export formula escaping
-- pending broadcast result accumulation
+- pending broadcast result accumulation with structured `siteResults`
+- adaptive strategy-stat accumulation
 - reusable-tab preflight filtering
 - reset helper cleanup across local and session state
 

@@ -18,10 +18,13 @@
 
 # Claude Code session files
 .claude/
+.codex/
 
 # Test artifacts
 /playwright-report/
 /test-results/
+/coverage/
+*.tsbuildinfo
 
 # OS files
 .DS_Store

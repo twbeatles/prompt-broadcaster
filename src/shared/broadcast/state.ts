@@ -1,7 +1,9 @@
 import type {
   LastBroadcastSummary,
   PendingBroadcastRecord,
+  SiteInjectionResult,
 } from "../types/models";
+import { buildSiteInjectionResult, normalizeSiteInjectionResult, normalizeResultCode } from "../prompts";
 
 function clonePendingBroadcastRecord(record: PendingBroadcastRecord): PendingBroadcastRecord {
   return {
@@ -10,6 +12,7 @@ function clonePendingBroadcastRecord(record: PendingBroadcastRecord): PendingBro
     submittedSiteIds: [...(record.submittedSiteIds ?? [])],
     failedSiteIds: [...(record.failedSiteIds ?? [])],
     siteResults: { ...(record.siteResults ?? {}) },
+    openedTabIds: [...(record.openedTabIds ?? [])],
   };
 }
 
@@ -68,7 +71,7 @@ export function getUnresolvedPendingBroadcastSiteIds(
 export function applyPendingBroadcastSiteResult(
   record: PendingBroadcastRecord | null | undefined,
   siteId: string,
-  status: string,
+  resultInput: SiteInjectionResult | string,
   now = new Date().toISOString()
 ) {
   if (!record) {
@@ -97,13 +100,16 @@ export function applyPendingBroadcastSiteResult(
   }
 
   const nextRecord = clonePendingBroadcastRecord(record);
+  const normalizedResult = typeof resultInput === "string"
+    ? buildSiteInjectionResult(resultInput)
+    : normalizeSiteInjectionResult(resultInput);
   nextRecord.siteResults = {
     ...(nextRecord.siteResults ?? {}),
-    [normalizedSiteId]: status,
+    [normalizedSiteId]: normalizedResult,
   };
   nextRecord.completed = Object.keys(nextRecord.siteResults).length;
 
-  if (status === "submitted") {
+  if (normalizeResultCode(normalizedResult.code) === "submitted") {
     nextRecord.submittedSiteIds = Array.from(
       new Set([...(nextRecord.submittedSiteIds ?? []), normalizedSiteId])
     );

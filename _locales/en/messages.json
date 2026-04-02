@@ -927,5 +927,197 @@
   },
   "template_var_random_label": {
     "message": "Random number (1–1000)"
+  },
+  "popup_favorite_duplicated": {
+    "message": "Favorite duplicated."
+  },
+  "popup_favorite_duplicate": {
+    "message": "Duplicate"
+  },
+  "popup_favorite_duplicate_prefix": {
+    "message": "[Copy]"
+  },
+  "popup_history_resend": {
+    "message": "Resend"
+  },
+  "popup_history_sort_latest": {
+    "message": "Latest"
+  },
+  "popup_history_sort_oldest": {
+    "message": "Oldest"
+  },
+  "popup_history_sort_most_success": {
+    "message": "Most success"
+  },
+  "popup_history_sort_most_failure": {
+    "message": "Most failure"
+  },
+  "popup_favorite_sort_recent_used": {
+    "message": "Recent use"
+  },
+  "popup_favorite_sort_usage_count": {
+    "message": "Usage count"
+  },
+  "popup_favorite_sort_title": {
+    "message": "Title"
+  },
+  "popup_favorite_sort_created_at": {
+    "message": "Created date"
+  },
+  "popup_wait_multiplier_label": {
+    "message": "Wait multiplier"
+  },
+  "popup_wait_multiplier_value": {
+    "message": "$1$x"
+  },
+  "popup_resend_modal_title": {
+    "message": "Resend History Item"
+  },
+  "popup_resend_modal_desc": {
+    "message": "Choose which services to resend this prompt to."
+  },
+  "popup_resend_modal_cancel": {
+    "message": "Cancel"
+  },
+  "popup_resend_modal_confirm": {
+    "message": "Resend"
+  },
+  "popup_resend_site_unavailable": {
+    "message": "Unavailable"
+  },
+  "popup_import_report_title": {
+    "message": "Import Details"
+  },
+  "popup_import_report_desc": {
+    "message": "Review accepted, rewritten, and rejected items from this import."
+  },
+  "popup_import_report_close": {
+    "message": "Close"
+  },
+  "popup_import_report_version": {
+    "message": "Version"
+  },
+  "popup_import_report_accepted": {
+    "message": "Accepted services"
+  },
+  "popup_import_report_rewritten": {
+    "message": "Rewritten IDs"
+  },
+  "popup_import_report_builtins": {
+    "message": "Built-in adjustments"
+  },
+  "popup_import_report_rejected": {
+    "message": "Rejected services"
+  },
+  "popup_import_report_rejected_empty": {
+    "message": "No rejected services."
+  },
+  "popup_import_reject_permission_denied": {
+    "message": "Permission denied"
+  },
+  "popup_import_reject_validation_failed": {
+    "message": "Invalid configuration"
+  },
+  "popup_import_reject_duplicate_id": {
+    "message": "Duplicate ID"
+  },
+  "popup_import_reject_unknown": {
+    "message": "Unknown reason"
+  },
+  "popup_aria_selected": {
+    "message": "selected"
+  },
+  "popup_aria_not_selected": {
+    "message": "not selected"
+  },
+  "options_table_select": {
+    "message": "Select"
+  },
+  "options_history_select_all": {
+    "message": "Select page"
+  },
+  "options_history_delete_selected": {
+    "message": "Delete selected"
+  },
+  "options_history_delete_filtered": {
+    "message": "Delete filtered"
+  },
+  "options_history_delete_older_than": {
+    "message": "Delete older than $1$d"
+  },
+  "options_history_delete_selected_confirm": {
+    "message": "Delete the selected history items?"
+  },
+  "options_history_delete_filtered_confirm": {
+    "message": "Delete $1 filtered history item(s)?"
+  },
+  "options_history_delete_older_confirm": {
+    "message": "Delete items older than $1 days?"
+  },
+  "options_history_delete_success": {
+    "message": "History deleted."
+  },
+  "options_settings_wait_multiplier_title": {
+    "message": "Wait multiplier"
+  },
+  "options_settings_wait_multiplier_value": {
+    "message": "$1$x"
+  },
+  "options_import_report_title": {
+    "message": "Import Details"
+  },
+  "options_import_report_desc": {
+    "message": "Review the imported items and any rejections."
+  },
+  "options_import_report_version": {
+    "message": "Version"
+  },
+  "options_import_report_accepted": {
+    "message": "Accepted services"
+  },
+  "options_import_report_rewritten": {
+    "message": "Rewritten IDs"
+  },
+  "options_import_report_builtins": {
+    "message": "Built-in adjustments"
+  },
+  "options_import_report_rejected": {
+    "message": "Rejected services"
+  },
+  "options_import_report_rejected_empty": {
+    "message": "No rejected services."
+  },
+  "result_code_submitted": {
+    "message": "Submitted"
+  },
+  "result_code_selector_timeout": {
+    "message": "Selector timeout"
+  },
+  "result_code_auth_required": {
+    "message": "Login required"
+  },
+  "result_code_submit_failed": {
+    "message": "Submit failed"
+  },
+  "result_code_strategy_exhausted": {
+    "message": "Injection failed"
+  },
+  "result_code_permission_denied": {
+    "message": "Permission denied"
+  },
+  "result_code_tab_create_failed": {
+    "message": "Tab open failed"
+  },
+  "result_code_tab_closed": {
+    "message": "Tab closed"
+  },
+  "result_code_injection_timeout": {
+    "message": "Injection timeout"
+  },
+  "result_code_cancelled": {
+    "message": "Cancelled"
+  },
+  "result_code_unexpected_error": {
+    "message": "Unexpected error"
   }
 }

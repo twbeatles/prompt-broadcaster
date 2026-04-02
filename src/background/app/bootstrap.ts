@@ -11,6 +11,7 @@ import {
   appendPromptHistory,
   getAppSettings,
   getBroadcastCounter,
+  normalizeResultCode,
   setBroadcastCounter,
 } from "../../shared/prompts";
 import {
@@ -18,8 +19,10 @@ import {
   enqueueUiToast,
   getLastBroadcast,
   markFailedSelector,
+  recordStrategyAttempts,
   resetPersistedExtensionState,
   setLastBroadcast,
+  getStrategyStats,
 } from "../../shared/runtime-state";
 import {
   getEnabledRuntimeSites,
@@ -50,6 +53,17 @@ import {
   TAB_LOAD_READY_TIMEOUT_MS,
   TAB_POST_SUBMIT_SETTLE_MS,
 } from "./constants";
+import {
+  buildInjectionConfig,
+  buildPreferredStrategyOrder,
+  buildSiteResult,
+  getSiteResultCode,
+  normalizeSelectorEntries,
+  scaleTimeout,
+} from "./injection-helpers";
+
+const DEFAULT_SUBMIT_BUTTON_WAIT_TIMEOUT_MS = 5000;
+const DEFAULT_SUBMIT_RETRY_COUNT = 1;
 
 const activeInjections = new Set();
 const queuedInjectionTabIds = new Set();
@@ -83,112 +97,6 @@ function sleep(ms) {
 
 function clonePlainValue(value) {
   return value ? JSON.parse(JSON.stringify(value)) : value;
-}
-
-function splitSelectorList(selectorGroup) {
-  const source = typeof selectorGroup === "string" ? selectorGroup.trim() : "";
-  if (!source) {
-    return [];
-  }
-
-  const parts = [];
-  let current = "";
-  let bracketDepth = 0;
-  let parenDepth = 0;
-  let quote = null;
-  let escaping = false;
-
-  for (const character of source) {
-    current += character;
-
-    if (escaping) {
-      escaping = false;
-      continue;
-    }
-
-    if (character === "\\") {
-      escaping = true;
-      continue;
-    }
-
-    if (quote) {
-      if (character === quote) {
-        quote = null;
-      }
-      continue;
-    }
-
-    if (character === "'" || character === "\"") {
-      quote = character;
-      continue;
-    }
-
-    if (character === "[") {
-      bracketDepth += 1;
-      continue;
-    }
-
-    if (character === "]") {
-      bracketDepth = Math.max(0, bracketDepth - 1);
-      continue;
-    }
-
-    if (character === "(") {
-      parenDepth += 1;
-      continue;
-    }
-
-    if (character === ")") {
-      parenDepth = Math.max(0, parenDepth - 1);
-      continue;
-    }
-
-    if (character === "," && bracketDepth === 0 && parenDepth === 0) {
-      current = current.slice(0, -1);
-      const normalized = current.trim();
-      if (normalized) {
-        parts.push(normalized);
-      }
-      current = "";
-    }
-  }
-
-  const trailing = current.trim();
-  if (trailing) {
-    parts.push(trailing);
-  }
-
-  return parts;
-}
-
-function normalizeSelectorEntries(selectors = []) {
-  return (Array.isArray(selectors) ? selectors : [])
-    .filter((selector) => typeof selector === "string" && selector.trim())
-    .flatMap((selector) => splitSelectorList(selector))
-    .filter((selector, index, entries) => entries.indexOf(selector) === index);
-}
-
-function buildInjectionConfig(site) {
-  return {
-    id: site?.id ?? "",
-    name: site?.name ?? "",
-    url: site?.url ?? "",
-    hostname: site?.hostname ?? "",
-    hostnameAliases: Array.isArray(site?.hostnameAliases) ? site.hostnameAliases : [],
-    inputSelector: site?.inputSelector ?? "",
-    fallbackSelectors: Array.isArray(site?.fallbackSelectors) ? site.fallbackSelectors : [],
-    inputType: site?.inputType ?? "textarea",
-    submitSelector: site?.submitSelector ?? "",
-    submitMethod: site?.submitMethod ?? "enter",
-    selectorCheckMode: site?.selectorCheckMode ?? "input-and-submit",
-    waitMs: Number.isFinite(site?.waitMs) ? site.waitMs : 0,
-    fallback: site?.fallback !== false,
-    authSelectors: Array.isArray(site?.authSelectors) ? site.authSelectors : [],
-    lastVerified: site?.lastVerified ?? "",
-    verifiedVersion: site?.verifiedVersion ?? "",
-    isCustom: Boolean(site?.isCustom),
-    permissionPatterns: Array.isArray(site?.permissionPatterns) ? site.permissionPatterns : [],
-  };
 }
 
 function normalizePrompt(value) {
@@ -1613,6 +1521,7 @@ async function createPendingBroadcast(prompt, sites) {
     status: "sending",
     originTabId: originContext?.tabId ?? null,
     originWindowId: originContext?.windowId ?? null,
+    openedTabIds: [],
   };
 
   await queueBackgroundStateMutation((state) => {
@@ -1713,7 +1622,11 @@ async function maybeCreateBroadcastNotification(summary) {
   }
 }
 
-async function recordBroadcastSiteResult(broadcastId, siteId, status) {
+async function recordBroadcastSiteResult(broadcastId, siteId, resultInput) {
+  const result = typeof resultInput === "string"
+    ? buildSiteResult(resultInput)
+    : buildSiteResult(resultInput?.code ?? resultInput, resultInput ?? {});
+
   try {
     const mutationResult = await queueBackgroundStateMutation((state) => {
       const record = state.pendingBroadcasts[broadcastId];
@@ -1731,7 +1644,7 @@ async function recordBroadcastSiteResult(broadcastId, siteId, status) {
         };
       }
 
-      const mutation = applyBroadcastSiteResultMutation(record, siteId, status, nowIso());
+      const mutation = applyBroadcastSiteResultMutation(record, siteId, result, nowIso());
       if (mutation.nextRecord) {
         state.pendingBroadcasts[broadcastId] = mutation.nextRecord;
       } else {
@@ -1764,11 +1677,11 @@ async function recordBroadcastSiteResult(broadcastId, siteId, status) {
           id: Date.now(),
           text: completedRecord.prompt,
           requestedSiteIds: completedRecord.siteIds,
-          submittedSiteIds: completedRecord.submittedSiteIds,
-          failedSiteIds: completedRecord.failedSiteIds,
-          sentTo: completedRecord.submittedSiteIds,
-          createdAt: completedRecord.startedAt,
-          status: summary.status,
+        submittedSiteIds: completedRecord.submittedSiteIds,
+        failedSiteIds: completedRecord.failedSiteIds,
+        sentTo: completedRecord.submittedSiteIds,
+        createdAt: completedRecord.startedAt,
+        status: summary.status,
           siteResults: completedRecord.siteResults,
         });
 
@@ -1782,7 +1695,7 @@ async function recordBroadcastSiteResult(broadcastId, siteId, status) {
       console.error("[AI Prompt Broadcaster] Broadcast completion side effect failed.", {
         broadcastId,
         siteId,
-        status,
+        result,
         sideEffectError,
       });
     }
@@ -1792,7 +1705,7 @@ async function recordBroadcastSiteResult(broadcastId, siteId, status) {
     console.error("[AI Prompt Broadcaster] Failed to record broadcast site result.", {
       broadcastId,
       siteId,
-      status,
+      result,
       error,
     });
     return null;
@@ -1814,6 +1727,13 @@ async function cancelBroadcast(broadcastId, reason = "cancelled") {
   );
 
   const pendingSiteIds = new Set();
+  const tabsToClose = new Set(
+    Array.isArray(recordBeforeCancel?.openedTabIds)
+      ? recordBeforeCancel.openedTabIds
+        .map((tabId) => Number(tabId))
+        .filter((tabId) => Number.isFinite(tabId))
+      : []
+  );
   for (const [tabIdKey, job] of matchingJobs) {
     const tabId = Number(tabIdKey);
     if (job?.siteId) {
@@ -1822,25 +1742,29 @@ async function cancelBroadcast(broadcastId, reason = "cancelled") {
 
     await removePendingInjection(tabId);
     activeInjections.delete(tabId);
+
+    if (job?.closeOnCancel !== false && Number.isFinite(tabId)) {
+      tabsToClose.add(tabId);
+    }
   }
 
   let lastSummary = null;
-  lastSummary = (await finalizeBroadcastSites(normalizedBroadcastId, [...pendingSiteIds], reason)) ?? lastSummary;
+  lastSummary = (await finalizeBroadcastSites(
+    normalizedBroadcastId,
+    [...pendingSiteIds],
+    buildSiteResult(reason === "reset" ? "cancelled" : reason)
+  )) ?? lastSummary;
 
   const refreshedPendingBroadcasts = await getPendingBroadcasts();
   const record = refreshedPendingBroadcasts[normalizedBroadcastId];
   const unresolvedSiteIds = getUnresolvedBroadcastSiteIds(record).filter((siteId) => !pendingSiteIds.has(siteId));
-  lastSummary = (await finalizeBroadcastSites(normalizedBroadcastId, unresolvedSiteIds, reason)) ?? lastSummary;
+  lastSummary = (await finalizeBroadcastSites(
+    normalizedBroadcastId,
+    unresolvedSiteIds,
+    buildSiteResult(reason === "reset" ? "cancelled" : reason)
+  )) ?? lastSummary;
 
-  await Promise.all(
-    matchingJobs.map(async ([tabIdKey, job]) => {
-      if (job?.closeOnCancel === false) {
-        return;
-      }
-
-      await closeTabQuietly(Number(tabIdKey));
-    })
-  );
+  await Promise.all([...tabsToClose].map(async (tabId) => closeTabQuietly(Number(tabId))));
 
   await restoreBroadcastFocus(recordBeforeCancel);
 
@@ -1906,8 +1830,8 @@ async function reconcilePendingBroadcasts() {
   }
 }
 
-async function injectIntoTab(tabId, prompt, site) {
-  const config = buildInjectionConfig(site);
+async function injectIntoTab(tabId, prompt, site, runtimeOverrides = {}) {
+  const config = buildInjectionConfig(site, runtimeOverrides);
 
   if (site?.id === "perplexity") {
     const [executionResult] = await chrome.scripting.executeScript({
@@ -2167,16 +2091,18 @@ async function injectIntoTab(tabId, prompt, site) {
         const startedAt = performance.now();
         const match = await waitForPromptMatch(Math.max((Number(injectedConfig?.waitMs) || 0) + 6000, 8000));
         if (!match?.element) {
-          return { status: "selector_failed" };
+          return { status: "selector_timeout", attempts: [] };
         }
 
         const { element, selector } = match;
         let strategy = "mainWorldExecCommand";
         let injected = false;
+        const attempts = [];
 
         if (element instanceof HTMLElement && element.dataset.lexicalEditor === "true") {
           injected = setLexicalText(element, injectedPrompt);
           strategy = "mainWorldLexical";
+          attempts.push({ name: strategy, success: injected });
         }
 
         if (!injected && element instanceof HTMLElement) {
@@ -2186,10 +2112,11 @@ async function injectIntoTab(tabId, prompt, site) {
           injected =
             Boolean(inserted) ||
             normalizeText(element.innerText ?? element.textContent ?? "") === normalizeText(injectedPrompt);
+          attempts.push({ name: "mainWorldExecCommand", success: injected });
         }
 
         if (!injected) {
-          return { status: "failed", selector, strategy };
+          return { status: "strategy_exhausted", selector, strategy, attempts };
         }
 
         return {
@@ -2198,6 +2125,7 @@ async function injectIntoTab(tabId, prompt, site) {
           strategy,
           inputType: "contenteditable",
           elapsedMs: Math.round(performance.now() - startedAt),
+          attempts,
         };
       },
       args: [prompt, config],
@@ -2234,10 +2162,18 @@ async function injectIntoTab(tabId, prompt, site) {
         strategy: injectionResult.strategy ?? submitResult.strategy,
         inputType: injectionResult.inputType ?? submitResult.inputType,
         elapsedMs: injectionResult.elapsedMs ?? submitResult.elapsedMs,
+        attempts: injectionResult.attempts ?? submitResult.attempts ?? [],
       };
     }
 
-    return submitResult ?? injectionResult;
+    return {
+      ...(submitResult ?? injectionResult),
+      selector: injectionResult?.selector ?? submitResult?.selector,
+      strategy: injectionResult?.strategy ?? submitResult?.strategy,
+      inputType: injectionResult?.inputType ?? submitResult?.inputType,
+      elapsedMs: injectionResult?.elapsedMs ?? submitResult?.elapsedMs,
+      attempts: injectionResult?.attempts ?? submitResult?.attempts ?? [],
+    };
   }
 
   await chrome.scripting.executeScript({
@@ -2277,7 +2213,7 @@ function isSameSiteOrigin(tabUrl, site) {
 
 async function handlePendingInjectionTimeout(tabId, job, reason = "timeout") {
   const siteName = job?.site?.name ?? job?.siteId ?? "AI service";
-  await recordBroadcastSiteResult(job.broadcastId, job.siteId, "injection_timeout");
+  await recordBroadcastSiteResult(job.broadcastId, job.siteId, buildSiteResult("injection_timeout"));
   await removePendingInjection(tabId);
   activeInjections.delete(tabId);
 
@@ -2326,7 +2262,21 @@ async function processPendingInjectionNow(tabId, tab) {
   );
 
   try {
-    await waitForTabInteractionReady(tabId);
+    const settings = await getAppSettings();
+    const waitMsMultiplier = Number(settings?.waitMsMultiplier) || 1;
+    const strategyStats = await getStrategyStats();
+    const runtimeOverrides = {
+      waitMsMultiplier,
+      strategyOrder: buildPreferredStrategyOrder(job.siteId, strategyStats),
+      submitTimeoutMs: scaleTimeout(DEFAULT_SUBMIT_BUTTON_WAIT_TIMEOUT_MS, waitMsMultiplier),
+      submitRetryCount: DEFAULT_SUBMIT_RETRY_COUNT,
+    };
+
+    const ready = await waitForTabInteractionReady(tabId, scaleTimeout(TAB_LOAD_READY_TIMEOUT_MS, waitMsMultiplier));
+    if (!ready) {
+      await handlePendingInjectionTimeout(tabId, job, "tab_not_ready");
+      return;
+    }
     const currentTab = await chrome.tabs.get(tabId);
     const currentUrl = currentTab?.url ?? "";
 
@@ -2347,7 +2297,7 @@ async function processPendingInjectionNow(tabId, tab) {
     }
 
     if (!isSameSiteOrigin(currentUrl, job.site)) {
-      await recordBroadcastSiteResult(job.broadcastId, job.siteId, "redirected_or_login_required");
+      await recordBroadcastSiteResult(job.broadcastId, job.siteId, buildSiteResult("auth_required"));
       await enqueueUiToast({
         message:
           getI18nMessage("toast_login_required", [job.site.name]) ||
@@ -2358,16 +2308,27 @@ async function processPendingInjectionNow(tabId, tab) {
       return;
     }
 
-    const result = await injectIntoTab(tabId, job.prompt, job.site);
-    const finalStatus = result?.status === "submitted" ? "submitted" : result?.status || "failed";
+    const result = await injectIntoTab(tabId, job.prompt, job.site, {
+      ...runtimeOverrides,
+      waitMs: scaleTimeout(Number(job.site?.waitMs) || 0, waitMsMultiplier),
+    });
+    if (Array.isArray(result?.attempts) && result.attempts.length > 0) {
+      await recordStrategyAttempts(job.siteId, result.attempts);
+    }
+    const finalCode = normalizeResultCode(result?.status);
 
-    if (finalStatus === "submitted") {
+    if (finalCode === "submitted") {
       await sleep(TAB_POST_SUBMIT_SETTLE_MS);
     }
 
-    await recordBroadcastSiteResult(job.broadcastId, job.siteId, finalStatus);
+    await recordBroadcastSiteResult(job.broadcastId, job.siteId, buildSiteResult(finalCode, {
+      message: result?.error ?? "",
+      strategy: result?.strategy,
+      elapsedMs: result?.elapsedMs,
+      attempts: result?.attempts,
+    }));
 
-    if (finalStatus === "login_required") {
+    if (finalCode === "auth_required") {
       await enqueueUiToast({
         message:
           getI18nMessage("toast_login_required", [job.site.name]) ||
@@ -2381,7 +2342,9 @@ async function processPendingInjectionNow(tabId, tab) {
       tabId,
       error,
     });
-    await recordBroadcastSiteResult(job.broadcastId, job.siteId, "injection_failed");
+    await recordBroadcastSiteResult(job.broadcastId, job.siteId, buildSiteResult("unexpected_error", {
+      message: error?.message ?? String(error),
+    }));
     await enqueueUiToast({
       message:
         getI18nMessage("toast_injection_failed", [job.site.name]) ||
@@ -2558,6 +2521,21 @@ async function handleBroadcastMessage(message) {
         createdAt: Date.now(),
         closeOnCancel: !reusableTab,
       });
+
+      if (!reusableTab) {
+        await queueBackgroundStateMutation((state) => {
+          const record = state.pendingBroadcasts[broadcast.id];
+          if (!record) {
+            return null;
+          }
+
+          record.openedTabIds = Array.from(
+            new Set([...(Array.isArray(record.openedTabIds) ? record.openedTabIds : []), targetTab.id])
+          );
+          state.pendingBroadcasts[broadcast.id] = record;
+          return clonePlainValue(record.openedTabIds);
+        });
+      }
 
       queuedSiteCount += 1;
 

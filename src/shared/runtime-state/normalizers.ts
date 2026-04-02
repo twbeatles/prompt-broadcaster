@@ -4,6 +4,7 @@ import type {
   UiToast,
   UiToastAction,
 } from "../types/models";
+import { normalizeSiteResultsRecord } from "../prompts";
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -69,8 +70,6 @@ export function normalizeLastBroadcast(value: unknown): LastBroadcastSummary | n
     return null;
   }
 
-  const siteResults = isPlainObject(value.siteResults) ? value.siteResults : {};
-
   return {
     broadcastId: safeText(value.broadcastId),
     status: safeText(value.status) || "idle",
@@ -86,11 +85,7 @@ export function normalizeLastBroadcast(value: unknown): LastBroadcastSummary | n
     failedSiteIds: normalizeArray(value.failedSiteIds)
       .map((siteId) => safeText(siteId))
       .filter(Boolean),
-    siteResults: Object.fromEntries(
-      Object.entries(siteResults)
-        .map(([key, status]) => [safeText(key), safeText(status)])
-        .filter(([key, status]) => key && status)
-    ),
+    siteResults: normalizeSiteResultsRecord(value.siteResults),
     startedAt: normalizeIsoDate(value.startedAt),
     finishedAt: safeText(value.finishedAt) ? normalizeIsoDate(value.finishedAt) : "",
   };

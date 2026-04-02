@@ -16,16 +16,16 @@
           <p id="ext-desc" data-i18n="ext_description">One prompt, many AI tabs.</p>
         </div>
       </div>
-      <nav class="tab-bar" aria-label="Popup sections" data-i18n-aria-label="popup_sections_aria">
-        <button class="tab-button active" type="button" data-tab="compose" data-i18n="tab_write"></button>
-        <button class="tab-button" type="button" data-tab="history" data-i18n="tab_history"></button>
-        <button class="tab-button" type="button" data-tab="favorites" data-i18n="tab_favorites"></button>
-        <button class="tab-button" type="button" data-tab="settings" data-i18n="tab_settings"></button>
+      <nav class="tab-bar" role="tablist" aria-label="Popup sections" data-i18n-aria-label="popup_sections_aria">
+        <button id="tab-compose" class="tab-button active" type="button" role="tab" aria-selected="true" aria-controls="panel-compose" data-tab="compose" data-i18n="tab_write"></button>
+        <button id="tab-history" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-history" data-tab="history" data-i18n="tab_history"></button>
+        <button id="tab-favorites" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-favorites" data-tab="favorites" data-i18n="tab_favorites"></button>
+        <button id="tab-settings" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="panel-settings" data-tab="settings" data-i18n="tab_settings"></button>
       </nav>
     </header>
 
     <main class="panel-stack">
-      <section class="tab-panel active" data-panel="compose">
+      <section id="panel-compose" class="tab-panel active" data-panel="compose" role="tabpanel" aria-labelledby="tab-compose" tabindex="0">
         <div class="prompt-toolbar">
           <span id="prompt-counter" class="helper-text">0 / 2000</span>
           <button id="clear-prompt-btn" class="ghost-button small-button" type="button"></button>
@@ -43,7 +43,7 @@
             <span id="sites-label" data-i18n="popup_sites_label"></span>
             <button id="toggle-all" class="ghost-button" type="button" data-i18n="popup_select_all"></button>
           </div>
-          <div id="sites-container" class="sites-grid"></div>
+          <div id="sites-container" class="sites-grid" role="listbox" aria-multiselectable="true"></div>
         </div>
 
         <div class="compose-actions">
@@ -53,21 +53,23 @@
         </div>
       </section>
 
-      <section class="tab-panel" data-panel="history">
+      <section id="panel-history" class="tab-panel" data-panel="history" role="tabpanel" aria-labelledby="tab-history" tabindex="0">
         <div class="panel-toolbar">
           <input id="history-search" class="search-input" type="search" data-i18n-placeholder="popup_history_search" />
+          <select id="history-sort" class="search-input compact-select" aria-label="History sort"></select>
         </div>
-        <div id="history-list" class="prompt-list"></div>
+        <div id="history-list" class="prompt-list" role="list"></div>
       </section>
 
-      <section class="tab-panel" data-panel="favorites">
+      <section id="panel-favorites" class="tab-panel" data-panel="favorites" role="tabpanel" aria-labelledby="tab-favorites" tabindex="0">
         <div class="panel-toolbar">
           <input id="favorites-search" class="search-input" type="search" data-i18n-placeholder="popup_favorites_search" />
+          <select id="favorites-sort" class="search-input compact-select" aria-label="Favorites sort"></select>
         </div>
-        <div id="favorites-list" class="prompt-list"></div>
+        <div id="favorites-list" class="prompt-list" role="list"></div>
       </section>
 
-      <section class="tab-panel" data-panel="settings">
+      <section id="panel-settings" class="tab-panel" data-panel="settings" role="tabpanel" aria-labelledby="tab-settings" tabindex="0">
         <div class="settings-group">
           <h2 id="settings-title" data-i18n="popup_settings_title"></h2>
           <p id="settings-desc" class="helper-text" data-i18n="popup_settings_description"></p>
@@ -79,6 +81,16 @@
             <span id="reuse-existing-tabs-label"></span>
           </label>
           <p id="reuse-existing-tabs-desc" class="helper-text"></p>
+        </div>
+
+        <div class="settings-group">
+          <label class="field-stack" for="wait-multiplier-range">
+            <span id="wait-multiplier-label"></span>
+            <div class="range-row">
+              <input id="wait-multiplier-range" type="range" min="0.5" max="3" step="0.1" value="1" />
+              <span id="wait-multiplier-value" class="helper-text">1.0x</span>
+            </div>
+          </label>
         </div>
 
         <div class="settings-actions">
@@ -233,7 +245,7 @@
     </main>
 
     <footer class="app-footer">
-      <div id="status-message" role="status" aria-live="polite"></div>
+      <div id="status-message" role="status" aria-live="polite" aria-atomic="true"></div>
       <div id="toast-host" aria-live="polite" aria-atomic="true"></div>
     </footer>
   </div>
@@ -301,6 +313,39 @@
       <div class="modal-actions">
         <button id="favorite-modal-cancel" class="ghost-button" type="button" data-i18n="popup_favorite_modal_cancel" data-dismiss-favorite-modal></button>
         <button id="favorite-modal-confirm" class="primary-button" type="button" data-i18n="popup_favorite_modal_confirm"></button>
+      </div>
+    </div>
+  </div>
+
+  <div id="resend-modal" class="modal-overlay" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="resend-modal-title" aria-describedby="resend-modal-desc">
+      <div class="modal-header">
+        <div>
+          <h2 id="resend-modal-title"></h2>
+          <p id="resend-modal-desc" class="helper-text"></p>
+        </div>
+        <button id="resend-modal-close" class="icon-button" type="button" aria-label="Close" data-i18n-aria-label="common_close">×</button>
+      </div>
+      <div id="resend-modal-sites" class="modal-fields"></div>
+      <div class="modal-actions">
+        <button id="resend-modal-cancel" class="ghost-button" type="button"></button>
+        <button id="resend-modal-confirm" class="primary-button" type="button"></button>
+      </div>
+    </div>
+  </div>
+
+  <div id="import-report-modal" class="modal-overlay" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="import-report-modal-title">
+      <div class="modal-header">
+        <div>
+          <h2 id="import-report-modal-title"></h2>
+          <p id="import-report-modal-desc" class="helper-text"></p>
+        </div>
+        <button id="import-report-modal-close" class="icon-button" type="button" aria-label="Close" data-i18n-aria-label="common_close">×</button>
+      </div>
+      <div id="import-report-body" class="modal-fields"></div>
+      <div class="modal-actions">
+        <button id="import-report-modal-confirm" class="primary-button" type="button"></button>
       </div>
     </div>
   </div>

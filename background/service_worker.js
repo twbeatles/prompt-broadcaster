@@ -70,110 +70,6 @@ function pickBroadcastTargetPrompt(target, fallbackPrompt = "") {
   return String(fallbackPrompt ?? "");
 }
 
-// src/shared/broadcast/state.ts
-function clonePendingBroadcastRecord(record) {
-  return {
-    ...record,
-    siteIds: [...record.siteIds ?? []],
-    submittedSiteIds: [...record.submittedSiteIds ?? []],
-    failedSiteIds: [...record.failedSiteIds ?? []],
-    siteResults: { ...record.siteResults ?? {} }
-  };
-}
-function summarizePendingBroadcastStatus(record) {
-  if (!record) {
-    return "idle";
-  }
-  if (record.completed < record.total) {
-    return "sending";
-  }
-  if ((record.submittedSiteIds ?? []).length === 0) {
-    return "failed";
-  }
-  if ((record.failedSiteIds ?? []).length > 0) {
-    return "partial";
-  }
-  return "submitted";
-}
-function buildPendingBroadcastSummary(record, overrides = {}, now = (/* @__PURE__ */ new Date()).toISOString()) {
-  const status = summarizePendingBroadcastStatus(record);
-  return {
-    broadcastId: record.id,
-    status,
-    prompt: record.prompt,
-    siteIds: [...record.siteIds ?? []],
-    total: Number(record.total ?? 0),
-    completed: Number(record.completed ?? 0),
-    submittedSiteIds: [...record.submittedSiteIds ?? []],
-    failedSiteIds: [...record.failedSiteIds ?? []],
-    siteResults: { ...record.siteResults ?? {} },
-    startedAt: record.startedAt ?? now,
-    finishedAt: record.completed >= record.total && status !== "sending" ? now : "",
-    ...overrides
-  };
-}
-function getUnresolvedPendingBroadcastSiteIds(record) {
-  const siteResults = record?.siteResults ?? {};
-  return Array.isArray(record?.siteIds) ? record.siteIds.filter((siteId) => !siteResults?.[siteId]) : [];
-}
-function applyPendingBroadcastSiteResult(record, siteId, status, now = (/* @__PURE__ */ new Date()).toISOString()) {
-  if (!record) {
-    return {
-      summary: null,
-      nextRecord: null,
-      completedRecord: null
-    };
-  }
-  const normalizedSiteId = typeof siteId === "string" ? siteId.trim() : "";
-  if (!normalizedSiteId) {
-    return {
-      summary: buildPendingBroadcastSummary(record, {}, now),
-      nextRecord: clonePendingBroadcastRecord(record),
-      completedRecord: null
-    };
-  }
-  if (record.siteResults?.[normalizedSiteId]) {
-    return {
-      summary: buildPendingBroadcastSummary(record, {}, now),
-      nextRecord: clonePendingBroadcastRecord(record),
-      completedRecord: null
-    };
-  }
-  const nextRecord = clonePendingBroadcastRecord(record);
-  nextRecord.siteResults = {
-    ...nextRecord.siteResults ?? {},
-    [normalizedSiteId]: status
-  };
-  nextRecord.completed = Object.keys(nextRecord.siteResults).length;
-  if (status === "submitted") {
-    nextRecord.submittedSiteIds = Array.from(
-      /* @__PURE__ */ new Set([...nextRecord.submittedSiteIds ?? [], normalizedSiteId])
-    );
-  } else {
-    nextRecord.failedSiteIds = Array.from(
-      /* @__PURE__ */ new Set([...nextRecord.failedSiteIds ?? [], normalizedSiteId])
-    );
-  }
-  nextRecord.status = summarizePendingBroadcastStatus(nextRecord);
-  const summary = buildPendingBroadcastSummary(
-    nextRecord,
-    { finishedAt: nextRecord.status === "sending" ? "" : now },
-    now
-  );
-  if (nextRecord.completed >= nextRecord.total) {
-    return {
-      summary,
-      nextRecord: null,
-      completedRecord: nextRecord
-    };
-  }
-  return {
-    summary,
-    nextRecord,
-    completedRecord: null
-  };
-}
-
 // src/shared/prompts/constants.ts
 var LOCAL_STORAGE_KEYS = Object.freeze({
   history: "promptHistory",
@@ -185,14 +81,47 @@ var LOCAL_STORAGE_KEYS = Object.freeze({
 var DEFAULT_HISTORY_LIMIT = 50;
 var MIN_HISTORY_LIMIT = 10;
 var MAX_HISTORY_LIMIT = 200;
+var MIN_WAIT_MS_MULTIPLIER = 0.5;
+var MAX_WAIT_MS_MULTIPLIER = 3;
+var DEFAULT_WAIT_MS_MULTIPLIER = 1;
+var DEFAULT_HISTORY_SORT = "latest";
+var DEFAULT_FAVORITE_SORT = "recentUsed";
 var DEFAULT_SETTINGS = Object.freeze({
   historyLimit: DEFAULT_HISTORY_LIMIT,
   autoClosePopup: false,
   desktopNotifications: true,
-  reuseExistingTabs: true
+  reuseExistingTabs: true,
+  waitMsMultiplier: DEFAULT_WAIT_MS_MULTIPLIER,
+  historySort: DEFAULT_HISTORY_SORT,
+  favoriteSort: DEFAULT_FAVORITE_SORT
 });
 
 // src/shared/prompts/normalizers.ts
+var VALID_HISTORY_SORTS = /* @__PURE__ */ new Set([
+  "latest",
+  "oldest",
+  "mostSuccess",
+  "mostFailure"
+]);
+var VALID_FAVORITE_SORTS = /* @__PURE__ */ new Set([
+  "recentUsed",
+  "usageCount",
+  "title",
+  "createdAt"
+]);
+var VALID_RESULT_CODES = /* @__PURE__ */ new Set([
+  "submitted",
+  "selector_timeout",
+  "auth_required",
+  "submit_failed",
+  "strategy_exhausted",
+  "permission_denied",
+  "tab_create_failed",
+  "tab_closed",
+  "injection_timeout",
+  "cancelled",
+  "unexpected_error"
+]);
 function safeText(value) {
   return typeof value === "string" ? value : "";
 }
@@ -220,6 +149,13 @@ function normalizeIsoDate(value, fallback = (/* @__PURE__ */ new Date()).toISOSt
   }
   const time = Date.parse(value);
   return Number.isFinite(time) ? new Date(time).toISOString() : fallback;
+}
+function normalizeNullableIsoDate(value) {
+  if (typeof value !== "string" || !value.trim()) {
+    return null;
+  }
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? new Date(time).toISOString() : null;
 }
 function normalizeTemplateDefaults(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -249,6 +185,23 @@ function normalizeBroadcastCounter(value) {
   }
   return Math.max(0, Math.round(numericValue));
 }
+function normalizeWaitMsMultiplier(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return DEFAULT_WAIT_MS_MULTIPLIER;
+  }
+  const clamped = Math.min(
+    MAX_WAIT_MS_MULTIPLIER,
+    Math.max(MIN_WAIT_MS_MULTIPLIER, numericValue)
+  );
+  return Math.round(clamped * 10) / 10;
+}
+function normalizeHistorySort(value) {
+  return VALID_HISTORY_SORTS.has(value) ? value : DEFAULT_HISTORY_SORT;
+}
+function normalizeFavoriteSort(value) {
+  return VALID_FAVORITE_SORTS.has(value) ? value : DEFAULT_FAVORITE_SORT;
+}
 function normalizeSettings(value) {
   const settings = safeObject(value);
   return {
@@ -264,18 +217,93 @@ function normalizeSettings(value) {
     reuseExistingTabs: normalizeBoolean(
       settings.reuseExistingTabs,
       DEFAULT_SETTINGS.reuseExistingTabs
-    )
+    ),
+    waitMsMultiplier: normalizeWaitMsMultiplier(settings.waitMsMultiplier),
+    historySort: normalizeHistorySort(settings.historySort),
+    favoriteSort: normalizeFavoriteSort(settings.favoriteSort)
   };
 }
 function normalizeStatus(value) {
   return typeof value === "string" && value.trim() ? value.trim() : "submitted";
 }
-function normalizeStringRecord(value) {
+function normalizeResultCode(value) {
+  const normalized = safeText(value).trim();
+  if (VALID_RESULT_CODES.has(normalized)) {
+    return normalized;
+  }
+  switch (normalized) {
+    case "submitted":
+      return "submitted";
+    case "selector_failed":
+      return "selector_timeout";
+    case "login_required":
+    case "redirected_or_login_required":
+      return "auth_required";
+    case "submit_failed":
+      return "submit_failed";
+    case "fallback_required":
+      return "strategy_exhausted";
+    case "permission_denied":
+      return "permission_denied";
+    case "tab_create_failed":
+      return "tab_create_failed";
+    case "tab_closed":
+      return "tab_closed";
+    case "injection_timeout":
+    case "broadcast_stale":
+      return "injection_timeout";
+    case "cancelled":
+    case "reset":
+      return "cancelled";
+    case "failed":
+    case "injection_failed":
+    default:
+      return "unexpected_error";
+  }
+}
+function buildSiteInjectionResult(code, overrides = {}) {
+  const normalizedCode = normalizeResultCode(code);
+  const result = {
+    code: normalizedCode
+  };
+  if (typeof overrides.message === "string" && overrides.message.trim()) {
+    result.message = overrides.message.trim();
+  }
+  if (typeof overrides.strategy === "string" && overrides.strategy.trim()) {
+    result.strategy = overrides.strategy.trim();
+  }
+  if (Number.isFinite(Number(overrides.elapsedMs))) {
+    result.elapsedMs = Number(overrides.elapsedMs);
+  }
+  if (Array.isArray(overrides.attempts) && overrides.attempts.length > 0) {
+    result.attempts = overrides.attempts.map((attempt) => ({
+      name: safeText(attempt?.name).trim(),
+      success: Boolean(attempt?.success)
+    })).filter((attempt) => attempt.name);
+  }
+  return result;
+}
+function normalizeSiteInjectionResult(value) {
+  if (typeof value === "string") {
+    return buildSiteInjectionResult(value);
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return buildSiteInjectionResult("unexpected_error");
+  }
+  const source = value;
+  return buildSiteInjectionResult(source.code ?? source.status, {
+    message: safeText(source.message).trim(),
+    strategy: safeText(source.strategy).trim(),
+    elapsedMs: Number.isFinite(Number(source.elapsedMs)) ? Number(source.elapsedMs) : void 0,
+    attempts: Array.isArray(source.attempts) ? source.attempts : void 0
+  });
+}
+function normalizeSiteResultsRecord(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return {};
   }
   return Object.fromEntries(
-    Object.entries(value).map(([key, entryValue]) => [safeText(key).trim(), safeText(entryValue).trim()]).filter(([key, entryValue]) => key && entryValue)
+    Object.entries(value).map(([siteId, result]) => [safeText(siteId).trim(), normalizeSiteInjectionResult(result)]).filter(([siteId]) => Boolean(siteId))
   );
 }
 function sortByDateDesc(items, field = "createdAt") {
@@ -334,6 +362,7 @@ async function setBroadcastCounter(value) {
 function buildFavoriteEntry(entry) {
   const createdAt = normalizeIsoDate(entry?.createdAt);
   const favoritedAt = normalizeIsoDate(entry?.favoritedAt, createdAt);
+  const usageCount = Math.max(0, Math.round(Number(entry?.usageCount) || 0));
   return {
     id: typeof entry?.id === "string" && entry.id.trim() ? entry.id.trim() : `fav-${Date.now()}`,
     sourceHistoryId: entry?.sourceHistoryId === null || entry?.sourceHistoryId === void 0 ? null : Number(entry.sourceHistoryId),
@@ -345,7 +374,9 @@ function buildFavoriteEntry(entry) {
     templateDefaults: normalizeTemplateDefaults(entry?.templateDefaults),
     tags: normalizeTags(entry?.tags),
     folder: safeText(entry?.folder).slice(0, 50),
-    pinned: normalizeBoolean(entry?.pinned, false)
+    pinned: normalizeBoolean(entry?.pinned, false),
+    usageCount,
+    lastUsedAt: normalizeNullableIsoDate(entry?.lastUsedAt)
   };
 }
 async function setPromptFavorites(favoriteItems) {
@@ -380,13 +411,16 @@ function buildHistoryEntry(entry) {
   const source = asHistoryRecord(entry);
   const numericId = Number(source.id);
   const createdAt = normalizeIsoDate(source.createdAt);
-  const siteResults = normalizeStringRecord(source.siteResults);
+  const siteResults = normalizeSiteResultsRecord(source.siteResults);
   const siteResultKeys = normalizeSiteIdList(Object.keys(siteResults));
+  const derivedSubmittedSiteIds = siteResultKeys.filter(
+    (siteId) => normalizeResultCode(siteResults[siteId]?.code) === "submitted"
+  );
   const submittedSiteIds = normalizeSiteIdList(
-    Array.isArray(source.submittedSiteIds) ? source.submittedSiteIds : source.sentTo
+    Array.isArray(source.submittedSiteIds) ? source.submittedSiteIds : Array.isArray(source.sentTo) ? source.sentTo : derivedSubmittedSiteIds
   );
   const failedSiteIds = normalizeSiteIdList(
-    Array.isArray(source.failedSiteIds) ? source.failedSiteIds : siteResultKeys.filter((siteId) => !submittedSiteIds.includes(siteId))
+    Array.isArray(source.failedSiteIds) ? source.failedSiteIds : siteResultKeys.filter((siteId) => normalizeResultCode(siteResults[siteId]?.code) !== "submitted")
   );
   const requestedSiteIds = normalizeSiteIdList(
     Array.isArray(source.requestedSiteIds) ? source.requestedSiteIds : siteResultKeys.length > 0 ? siteResultKeys : submittedSiteIds
@@ -464,11 +498,11 @@ var AI_SITES = Object.freeze([
     name: "Gemini",
     url: "https://gemini.google.com/app",
     hostname: "gemini.google.com",
-    inputSelector: "div.ql-editor.textarea.new-input-ui[contenteditable='true'], div.ql-editor[contenteditable='true'][role='textbox']",
+    inputSelector: "div[contenteditable='true'][role='textbox'], div.ql-editor.textarea.new-input-ui[contenteditable='true'], div.ql-editor[contenteditable='true'][role='textbox']",
     fallbackSelectors: [
+      "div[contenteditable='true'][role='textbox']",
       "div.ql-editor.textarea.new-input-ui[contenteditable='true']",
       "div.ql-editor[contenteditable='true'][role='textbox']",
-      "div[contenteditable='true'][role='textbox']",
       "textarea, div[contenteditable='true']"
     ],
     inputType: "contenteditable",
@@ -477,8 +511,8 @@ var AI_SITES = Object.freeze([
     selectorCheckMode: "input-and-submit",
     waitMs: 2500,
     fallback: true,
-    lastVerified: "2026-03",
-    verifiedVersion: "gemini-app-mar-2026",
+    lastVerified: "2026-04",
+    verifiedVersion: "gemini-app-apr-2026",
     authSelectors: [
       "input[type='email']",
       "input[type='password']"
@@ -489,10 +523,11 @@ var AI_SITES = Object.freeze([
     name: "Claude",
     url: "https://claude.ai/new",
     hostname: "claude.ai",
-    inputSelector: "div[contenteditable='true'][aria-label='Write your prompt to Claude'], div[contenteditable='true'][role='textbox']",
+    inputSelector: "div[contenteditable='true'][role='textbox'], div[contenteditable='true'][aria-label*='Claude' i], div[contenteditable='true'][aria-label*='prompt' i]",
     fallbackSelectors: [
-      "div[contenteditable='true'][aria-label='Write your prompt to Claude']",
       "div[contenteditable='true'][role='textbox']",
+      "div[contenteditable='true'][aria-label*='Claude' i]",
+      "div[contenteditable='true'][aria-label*='prompt' i]",
       "div[contenteditable='true']",
       "textarea"
     ],
@@ -502,8 +537,8 @@ var AI_SITES = Object.freeze([
     selectorCheckMode: "input-and-submit",
     waitMs: 1500,
     fallback: true,
-    lastVerified: "2026-03",
-    verifiedVersion: "claude-web-mar-2026",
+    lastVerified: "2026-04",
+    verifiedVersion: "claude-web-apr-2026",
     authSelectors: [
       "input#email",
       "input[type='email']",
@@ -1092,10 +1127,117 @@ async function setTemplateVariableCache(cache) {
   return normalized;
 }
 
+// src/shared/broadcast/state.ts
+function clonePendingBroadcastRecord(record) {
+  return {
+    ...record,
+    siteIds: [...record.siteIds ?? []],
+    submittedSiteIds: [...record.submittedSiteIds ?? []],
+    failedSiteIds: [...record.failedSiteIds ?? []],
+    siteResults: { ...record.siteResults ?? {} },
+    openedTabIds: [...record.openedTabIds ?? []]
+  };
+}
+function summarizePendingBroadcastStatus(record) {
+  if (!record) {
+    return "idle";
+  }
+  if (record.completed < record.total) {
+    return "sending";
+  }
+  if ((record.submittedSiteIds ?? []).length === 0) {
+    return "failed";
+  }
+  if ((record.failedSiteIds ?? []).length > 0) {
+    return "partial";
+  }
+  return "submitted";
+}
+function buildPendingBroadcastSummary(record, overrides = {}, now = (/* @__PURE__ */ new Date()).toISOString()) {
+  const status = summarizePendingBroadcastStatus(record);
+  return {
+    broadcastId: record.id,
+    status,
+    prompt: record.prompt,
+    siteIds: [...record.siteIds ?? []],
+    total: Number(record.total ?? 0),
+    completed: Number(record.completed ?? 0),
+    submittedSiteIds: [...record.submittedSiteIds ?? []],
+    failedSiteIds: [...record.failedSiteIds ?? []],
+    siteResults: { ...record.siteResults ?? {} },
+    startedAt: record.startedAt ?? now,
+    finishedAt: record.completed >= record.total && status !== "sending" ? now : "",
+    ...overrides
+  };
+}
+function getUnresolvedPendingBroadcastSiteIds(record) {
+  const siteResults = record?.siteResults ?? {};
+  return Array.isArray(record?.siteIds) ? record.siteIds.filter((siteId) => !siteResults?.[siteId]) : [];
+}
+function applyPendingBroadcastSiteResult(record, siteId, resultInput, now = (/* @__PURE__ */ new Date()).toISOString()) {
+  if (!record) {
+    return {
+      summary: null,
+      nextRecord: null,
+      completedRecord: null
+    };
+  }
+  const normalizedSiteId = typeof siteId === "string" ? siteId.trim() : "";
+  if (!normalizedSiteId) {
+    return {
+      summary: buildPendingBroadcastSummary(record, {}, now),
+      nextRecord: clonePendingBroadcastRecord(record),
+      completedRecord: null
+    };
+  }
+  if (record.siteResults?.[normalizedSiteId]) {
+    return {
+      summary: buildPendingBroadcastSummary(record, {}, now),
+      nextRecord: clonePendingBroadcastRecord(record),
+      completedRecord: null
+    };
+  }
+  const nextRecord = clonePendingBroadcastRecord(record);
+  const normalizedResult = typeof resultInput === "string" ? buildSiteInjectionResult(resultInput) : normalizeSiteInjectionResult(resultInput);
+  nextRecord.siteResults = {
+    ...nextRecord.siteResults ?? {},
+    [normalizedSiteId]: normalizedResult
+  };
+  nextRecord.completed = Object.keys(nextRecord.siteResults).length;
+  if (normalizeResultCode(normalizedResult.code) === "submitted") {
+    nextRecord.submittedSiteIds = Array.from(
+      /* @__PURE__ */ new Set([...nextRecord.submittedSiteIds ?? [], normalizedSiteId])
+    );
+  } else {
+    nextRecord.failedSiteIds = Array.from(
+      /* @__PURE__ */ new Set([...nextRecord.failedSiteIds ?? [], normalizedSiteId])
+    );
+  }
+  nextRecord.status = summarizePendingBroadcastStatus(nextRecord);
+  const summary = buildPendingBroadcastSummary(
+    nextRecord,
+    { finishedAt: nextRecord.status === "sending" ? "" : now },
+    now
+  );
+  if (nextRecord.completed >= nextRecord.total) {
+    return {
+      summary,
+      nextRecord: null,
+      completedRecord: nextRecord
+    };
+  }
+  return {
+    summary,
+    nextRecord,
+    completedRecord: null
+  };
+}
+
 // src/shared/runtime-state/constants.ts
 var LOCAL_RUNTIME_KEYS = Object.freeze({
   failedSelectors: "failedSelectors",
-  onboardingCompleted: "onboardingCompleted"
+  onboardingCompleted: "onboardingCompleted",
+  strategyStats: "strategyStats"
 });
 var SESSION_RUNTIME_KEYS = Object.freeze({
   pendingUiToasts: "pendingUiToasts",
@@ -1155,7 +1297,6 @@ function normalizeLastBroadcast(value) {
   if (!isPlainObject2(value)) {
     return null;
   }
-  const siteResults = isPlainObject2(value.siteResults) ? value.siteResults : {};
   return {
     broadcastId: safeText3(value.broadcastId),
     status: safeText3(value.status) || "idle",
@@ -1165,9 +1306,7 @@ function normalizeLastBroadcast(value) {
     completed: Number.isFinite(Number(value.completed)) ? Number(value.completed) : 0,
     submittedSiteIds: normalizeArray(value.submittedSiteIds).map((siteId) => safeText3(siteId)).filter(Boolean),
     failedSiteIds: normalizeArray(value.failedSiteIds).map((siteId) => safeText3(siteId)).filter(Boolean),
-    siteResults: Object.fromEntries(
-      Object.entries(siteResults).map(([key, status]) => [safeText3(key), safeText3(status)]).filter(([key, status]) => key && status)
-    ),
+    siteResults: normalizeSiteResultsRecord(value.siteResults),
     startedAt: normalizeIsoDate2(value.startedAt),
     finishedAt: safeText3(value.finishedAt) ? normalizeIsoDate2(value.finishedAt) : ""
   };
@@ -1238,6 +1377,66 @@ async function setOnboardingCompleted2(completed) {
   return normalized;
 }
 
+// src/shared/runtime-state/strategy-stats.ts
+function normalizeCounterValue(value) {
+  return Math.max(0, Math.round(Number(value) || 0));
+}
+function normalizeStrategyStats(value) {
+  const root = safeObject(value);
+  return Object.fromEntries(
+    Object.entries(root).map(([siteId, siteValue]) => {
+      const siteStats = safeObject(siteValue);
+      const normalizedSiteStats = Object.fromEntries(
+        Object.entries(siteStats).map(([strategyName, counts]) => {
+          const normalizedCounts = safeObject(counts);
+          return [
+            String(strategyName).trim(),
+            {
+              success: normalizeCounterValue(normalizedCounts.success),
+              fail: normalizeCounterValue(normalizedCounts.fail)
+            }
+          ];
+        }).filter(([strategyName]) => strategyName)
+      );
+      return [String(siteId).trim(), normalizedSiteStats];
+    }).filter(([siteId]) => siteId)
+  );
+}
+async function getStrategyStats() {
+  const rawValue = await readStorage("local", LOCAL_RUNTIME_KEYS.strategyStats, {});
+  return normalizeStrategyStats(rawValue);
+}
+async function setStrategyStats(value) {
+  const normalized = normalizeStrategyStats(value);
+  await writeStorage("local", LOCAL_RUNTIME_KEYS.strategyStats, normalized);
+  return normalized;
+}
+async function recordStrategyAttempts(siteId, attempts) {
+  const normalizedSiteId = typeof siteId === "string" ? siteId.trim() : "";
+  if (!normalizedSiteId || !Array.isArray(attempts) || attempts.length === 0) {
+    return getStrategyStats();
+  }
+  const current = await getStrategyStats();
+  const siteStats = { ...current[normalizedSiteId] ?? {} };
+  attempts.forEach((attempt) => {
+    const name = typeof attempt?.name === "string" ? attempt.name.trim() : "";
+    if (!name) {
+      return;
+    }
+    const currentCounts = siteStats[name] ?? { success: 0, fail: 0 };
+    siteStats[name] = {
+      success: currentCounts.success + (attempt.success ? 1 : 0),
+      fail: currentCounts.fail + (attempt.success ? 0 : 1)
+    };
+  });
+  const nextStats = {
+    ...current,
+    [normalizedSiteId]: siteStats
+  };
+  await setStrategyStats(nextStats);
+  return nextStats;
+}
+
 // src/shared/runtime-state/ui-toasts.ts
 async function getPendingUiToasts() {
   const rawValue = await readStorage("session", SESSION_RUNTIME_KEYS.pendingUiToasts, []);
@@ -1276,6 +1475,7 @@ async function resetPersistedExtensionState(options = {}) {
     setPendingUiToasts([]),
     setLastBroadcast(null),
     setOnboardingCompleted2(false),
+    setStrategyStats({}),
     setAppSettings(DEFAULT_SETTINGS),
     resetSiteSettings(),
     localKeys.length > 0 ? chrome.storage.local.remove(localKeys) : Promise.resolve(),
@@ -1342,35 +1542,56 @@ var TAB_POST_SUBMIT_SETTLE_MS = 1400;
 var STANDALONE_POPUP_WIDTH = 460;
 var STANDALONE_POPUP_HEIGHT = 860;
 
-// src/background/app/bootstrap.ts
-var activeInjections = /* @__PURE__ */ new Set();
-var queuedInjectionTabIds = /* @__PURE__ */ new Set();
-var selectionCache = /* @__PURE__ */ new Map();
-var suppressedCompletedBroadcastIds = /* @__PURE__ */ new Set();
-var backgroundSessionState = {
-  loaded: false,
-  pendingInjections: {},
-  pendingBroadcasts: {},
-  selectorAlerts: {}
-};
-var lastNormalWindowId = null;
-var lastNormalTabId = null;
-var contextMenuRefreshChain = Promise.resolve();
-var injectionProcessChain = Promise.resolve();
-var backgroundStateMutationChain = Promise.resolve();
-function getI18nMessage(key, substitutions) {
-  return chrome.i18n.getMessage(key, substitutions) || "";
+// src/background/app/injection-helpers.ts
+function scaleTimeout(value, multiplier = 1) {
+  const numericValue = Number(value);
+  const numericMultiplier = Number(multiplier);
+  if (!Number.isFinite(numericValue)) {
+    return 0;
+  }
+  if (!Number.isFinite(numericMultiplier) || numericMultiplier <= 0) {
+    return Math.max(0, Math.round(numericValue));
+  }
+  return Math.max(0, Math.round(numericValue * numericMultiplier));
 }
-function nowIso() {
-  return (/* @__PURE__ */ new Date()).toISOString();
+function buildSiteResult(code, overrides = {}) {
+  return buildSiteInjectionResult(code, overrides);
 }
-function sleep(ms) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, Number.isFinite(ms) ? ms : 0);
+function getStrategySortScore(counter) {
+  const success = Number(counter?.success) || 0;
+  const fail = Number(counter?.fail) || 0;
+  const total = success + fail;
+  const hitRate = total > 0 ? success / total : -1;
+  return {
+    total,
+    hitRate,
+    success,
+    fail
+  };
+}
+function buildPreferredStrategyOrder(siteId, strategyStats) {
+  const siteStats = strategyStats?.[siteId] ?? {};
+  const knownStrategies = [
+    "lexicalEditorState",
+    "execCommand",
+    "directContenteditable",
+    "paste",
+    "nativeSetter"
+  ];
+  return [...knownStrategies].sort((left, right) => {
+    const leftScore = getStrategySortScore(siteStats[left]);
+    const rightScore = getStrategySortScore(siteStats[right]);
+    if (leftScore.hitRate !== rightScore.hitRate) {
+      return rightScore.hitRate - leftScore.hitRate;
+    }
+    if (leftScore.success !== rightScore.success) {
+      return rightScore.success - leftScore.success;
+    }
+    if (leftScore.fail !== rightScore.fail) {
+      return rightScore.fail - leftScore.fail;
+    }
+    return knownStrategies.indexOf(left) - knownStrategies.indexOf(right);
   });
-}
-function clonePlainValue(value) {
-  return value ? JSON.parse(JSON.stringify(value)) : value;
 }
 function splitSelectorList(selectorGroup) {
   const source = typeof selectorGroup === "string" ? selectorGroup.trim() : "";
@@ -1437,7 +1658,7 @@ function splitSelectorList(selectorGroup) {
 function normalizeSelectorEntries(selectors = []) {
   return (Array.isArray(selectors) ? selectors : []).filter((selector) => typeof selector === "string" && selector.trim()).flatMap((selector) => splitSelectorList(selector)).filter((selector, index, entries) => entries.indexOf(selector) === index);
 }
-function buildInjectionConfig(site) {
+function buildInjectionConfig(site, runtimeOverrides = {}) {
   return {
     id: site?.id ?? "",
     name: site?.name ?? "",
@@ -1456,8 +1677,45 @@ function buildInjectionConfig(site) {
     lastVerified: site?.lastVerified ?? "",
     verifiedVersion: site?.verifiedVersion ?? "",
     isCustom: Boolean(site?.isCustom),
-    permissionPatterns: Array.isArray(site?.permissionPatterns) ? site.permissionPatterns : []
+    permissionPatterns: Array.isArray(site?.permissionPatterns) ? site.permissionPatterns : [],
+    submitTimeoutMs: Number.isFinite(Number(runtimeOverrides?.submitTimeoutMs)) ? Number(runtimeOverrides.submitTimeoutMs) : void 0,
+    submitRetryCount: Number.isFinite(Number(runtimeOverrides?.submitRetryCount)) ? Number(runtimeOverrides.submitRetryCount) : void 0,
+    strategyOrder: Array.isArray(runtimeOverrides?.strategyOrder) ? runtimeOverrides.strategyOrder : [],
+    waitMsMultiplier: Number.isFinite(Number(runtimeOverrides?.waitMsMultiplier)) ? Number(runtimeOverrides.waitMsMultiplier) : void 0
   };
+}
+
+// src/background/app/bootstrap.ts
+var DEFAULT_SUBMIT_BUTTON_WAIT_TIMEOUT_MS = 5e3;
+var DEFAULT_SUBMIT_RETRY_COUNT = 1;
+var activeInjections = /* @__PURE__ */ new Set();
+var queuedInjectionTabIds = /* @__PURE__ */ new Set();
+var selectionCache = /* @__PURE__ */ new Map();
+var suppressedCompletedBroadcastIds = /* @__PURE__ */ new Set();
+var backgroundSessionState = {
+  loaded: false,
+  pendingInjections: {},
+  pendingBroadcasts: {},
+  selectorAlerts: {}
+};
+var lastNormalWindowId = null;
+var lastNormalTabId = null;
+var contextMenuRefreshChain = Promise.resolve();
+var injectionProcessChain = Promise.resolve();
+var backgroundStateMutationChain = Promise.resolve();
+function getI18nMessage(key, substitutions) {
+  return chrome.i18n.getMessage(key, substitutions) || "";
+}
+function nowIso() {
+  return (/* @__PURE__ */ new Date()).toISOString();
+}
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, Number.isFinite(ms) ? ms : 0);
+  });
+}
+function clonePlainValue(value) {
+  return value ? JSON.parse(JSON.stringify(value)) : value;
 }
 function normalizePrompt(value) {
   return typeof value === "string" ? value : "";
@@ -2595,7 +2853,8 @@ async function createPendingBroadcast(prompt, sites) {
     startedAt: nowIso(),
     status: "sending",
     originTabId: originContext?.tabId ?? null,
-    originWindowId: originContext?.windowId ?? null
+    originWindowId: originContext?.windowId ?? null,
+    openedTabIds: []
   };
   await queueBackgroundStateMutation((state) => {
     state.pendingBroadcasts[broadcastId] = record;
@@ -2672,7 +2931,8 @@ async function maybeCreateBroadcastNotification(summary) {
     console.error("[AI Prompt Broadcaster] Failed to create broadcast notification.", error);
   }
 }
-async function recordBroadcastSiteResult(broadcastId, siteId, status) {
+async function recordBroadcastSiteResult(broadcastId, siteId, resultInput) {
+  const result = typeof resultInput === "string" ? buildSiteResult(resultInput) : buildSiteResult(resultInput?.code ?? resultInput, resultInput ?? {});
   try {
     const mutationResult = await queueBackgroundStateMutation((state) => {
       const record = state.pendingBroadcasts[broadcastId];
@@ -2688,7 +2948,7 @@ async function recordBroadcastSiteResult(broadcastId, siteId, status) {
           completedRecord: null
         };
       }
-      const mutation = applyPendingBroadcastSiteResult(record, siteId, status, nowIso());
+      const mutation = applyPendingBroadcastSiteResult(record, siteId, result, nowIso());
       if (mutation.nextRecord) {
         state.pendingBroadcasts[broadcastId] = mutation.nextRecord;
       } else {
@@ -2732,7 +2992,7 @@ async function recordBroadcastSiteResult(broadcastId, siteId, status) {
       console.error("[AI Prompt Broadcaster] Broadcast completion side effect failed.", {
         broadcastId,
         siteId,
-        status,
+        result,
         sideEffectError
       });
     }
@@ -2741,7 +3001,7 @@ async function recordBroadcastSiteResult(broadcastId, siteId, status) {
     console.error("[AI Prompt Broadcaster] Failed to record broadcast site result.", {
       broadcastId,
       siteId,
-      status,
+      result,
       error
     });
     return null;
@@ -2759,6 +3019,9 @@ async function cancelBroadcast(broadcastId, reason = "cancelled") {
     ([, job]) => job?.broadcastId === normalizedBroadcastId
   );
   const pendingSiteIds = /* @__PURE__ */ new Set();
+  const tabsToClose = new Set(
+    Array.isArray(recordBeforeCancel?.openedTabIds) ? recordBeforeCancel.openedTabIds.map((tabId) => Number(tabId)).filter((tabId) => Number.isFinite(tabId)) : []
+  );
   for (const [tabIdKey, job] of matchingJobs) {
     const tabId = Number(tabIdKey);
     if (job?.siteId) {
@@ -2766,21 +3029,25 @@ async function cancelBroadcast(broadcastId, reason = "cancelled") {
     }
     await removePendingInjection(tabId);
     activeInjections.delete(tabId);
+    if (job?.closeOnCancel !== false && Number.isFinite(tabId)) {
+      tabsToClose.add(tabId);
+    }
   }
   let lastSummary = null;
-  lastSummary = await finalizeBroadcastSites(normalizedBroadcastId, [...pendingSiteIds], reason) ?? lastSummary;
+  lastSummary = await finalizeBroadcastSites(
+    normalizedBroadcastId,
+    [...pendingSiteIds],
+    buildSiteResult(reason === "reset" ? "cancelled" : reason)
+  ) ?? lastSummary;
   const refreshedPendingBroadcasts = await getPendingBroadcasts();
   const record = refreshedPendingBroadcasts[normalizedBroadcastId];
   const unresolvedSiteIds = getUnresolvedPendingBroadcastSiteIds(record).filter((siteId) => !pendingSiteIds.has(siteId));
-  lastSummary = await finalizeBroadcastSites(normalizedBroadcastId, unresolvedSiteIds, reason) ?? lastSummary;
-  await Promise.all(
-    matchingJobs.map(async ([tabIdKey, job]) => {
-      if (job?.closeOnCancel === false) {
-        return;
-      }
-      await closeTabQuietly(Number(tabIdKey));
-    })
-  );
+  lastSummary = await finalizeBroadcastSites(
+    normalizedBroadcastId,
+    unresolvedSiteIds,
+    buildSiteResult(reason === "reset" ? "cancelled" : reason)
+  ) ?? lastSummary;
+  await Promise.all([...tabsToClose].map(async (tabId) => closeTabQuietly(Number(tabId))));
   await restoreBroadcastFocus(recordBeforeCancel);
   const fallbackSummary = await getLastBroadcast();
   const summary = lastSummary ?? fallbackSummary;
@@ -2831,8 +3098,8 @@ async function reconcilePendingBroadcasts() {
     await finalizeBroadcastSites(broadcastId, unresolvedSiteIds, "injection_timeout");
   }
 }
-async function injectIntoTab(tabId, prompt, site) {
-  const config = buildInjectionConfig(site);
+async function injectIntoTab(tabId, prompt, site, runtimeOverrides = {}) {
+  const config = buildInjectionConfig(site, runtimeOverrides);
   if (site?.id === "perplexity") {
     const [executionResult2] = await chrome.scripting.executeScript({
       target: { tabId },
@@ -3028,30 +3295,34 @@ async function injectIntoTab(tabId, prompt, site) {
         const startedAt = performance.now();
         const match = await waitForPromptMatch(Math.max((Number(injectedConfig?.waitMs) || 0) + 6e3, 8e3));
         if (!match?.element) {
-          return { status: "selector_failed" };
+          return { status: "selector_timeout", attempts: [] };
         }
         const { element, selector } = match;
         let strategy = "mainWorldExecCommand";
         let injected = false;
+        const attempts = [];
         if (element instanceof HTMLElement && element.dataset.lexicalEditor === "true") {
           injected = setLexicalText(element, injectedPrompt);
           strategy = "mainWorldLexical";
+          attempts.push({ name: strategy, success: injected });
         }
         if (!injected && element instanceof HTMLElement) {
           element.focus();
           selectAllEditableContents(element);
           const inserted = document.execCommand("insertText", false, injectedPrompt);
           injected = Boolean(inserted) || normalizeText(element.innerText ?? element.textContent ?? "") === normalizeText(injectedPrompt);
+          attempts.push({ name: "mainWorldExecCommand", success: injected });
         }
         if (!injected) {
-          return { status: "failed", selector, strategy };
+          return { status: "strategy_exhausted", selector, strategy, attempts };
         }
         return {
           status: "injected",
           selector,
           strategy,
           inputType: "contenteditable",
-          elapsedMs: Math.round(performance.now() - startedAt)
+          elapsedMs: Math.round(performance.now() - startedAt),
+          attempts
         };
       },
       args: [prompt, config]
@@ -3082,10 +3353,18 @@ async function injectIntoTab(tabId, prompt, site) {
         selector: injectionResult.selector ?? submitResult.selector,
         strategy: injectionResult.strategy ?? submitResult.strategy,
         inputType: injectionResult.inputType ?? submitResult.inputType,
-        elapsedMs: injectionResult.elapsedMs ?? submitResult.elapsedMs
+        elapsedMs: injectionResult.elapsedMs ?? submitResult.elapsedMs,
+        attempts: injectionResult.attempts ?? submitResult.attempts ?? []
       };
     }
-    return submitResult ?? injectionResult;
+    return {
+      ...submitResult ?? injectionResult,
+      selector: injectionResult?.selector ?? submitResult?.selector,
+      strategy: injectionResult?.strategy ?? submitResult?.strategy,
+      inputType: injectionResult?.inputType ?? submitResult?.inputType,
+      elapsedMs: injectionResult?.elapsedMs ?? submitResult?.elapsedMs,
+      attempts: injectionResult?.attempts ?? submitResult?.attempts ?? []
+    };
   }
   await chrome.scripting.executeScript({
     target: { tabId },
@@ -3119,7 +3398,7 @@ function isSameSiteOrigin(tabUrl, site) {
 }
 async function handlePendingInjectionTimeout(tabId, job, reason = "timeout") {
   const siteName = job?.site?.name ?? job?.siteId ?? "AI service";
-  await recordBroadcastSiteResult(job.broadcastId, job.siteId, "injection_timeout");
+  await recordBroadcastSiteResult(job.broadcastId, job.siteId, buildSiteResult("injection_timeout"));
   await removePendingInjection(tabId);
   activeInjections.delete(tabId);
   await enqueueUiToast({
@@ -3158,7 +3437,20 @@ async function processPendingInjectionNow(tabId, tab) {
     } : null
   );
   try {
-    await waitForTabInteractionReady(tabId);
+    const settings = await getAppSettings();
+    const waitMsMultiplier = Number(settings?.waitMsMultiplier) || 1;
+    const strategyStats = await getStrategyStats();
+    const runtimeOverrides = {
+      waitMsMultiplier,
+      strategyOrder: buildPreferredStrategyOrder(job.siteId, strategyStats),
+      submitTimeoutMs: scaleTimeout(DEFAULT_SUBMIT_BUTTON_WAIT_TIMEOUT_MS, waitMsMultiplier),
+      submitRetryCount: DEFAULT_SUBMIT_RETRY_COUNT
+    };
+    const ready = await waitForTabInteractionReady(tabId, scaleTimeout(TAB_LOAD_READY_TIMEOUT_MS, waitMsMultiplier));
+    if (!ready) {
+      await handlePendingInjectionTimeout(tabId, job, "tab_not_ready");
+      return;
+    }
     const currentTab = await chrome.tabs.get(tabId);
     const currentUrl = currentTab?.url ?? "";
     try {
@@ -3174,7 +3466,7 @@ async function processPendingInjectionNow(tabId, tab) {
       });
     }
     if (!isSameSiteOrigin(currentUrl, job.site)) {
-      await recordBroadcastSiteResult(job.broadcastId, job.siteId, "redirected_or_login_required");
+      await recordBroadcastSiteResult(job.broadcastId, job.siteId, buildSiteResult("auth_required"));
       await enqueueUiToast({
         message: getI18nMessage("toast_login_required", [job.site.name]) || `${job.site.name} requires login before sending.`,
         type: "warning",
@@ -3182,13 +3474,24 @@ async function processPendingInjectionNow(tabId, tab) {
       });
       return;
     }
-    const result = await injectIntoTab(tabId, job.prompt, job.site);
-    const finalStatus = result?.status === "submitted" ? "submitted" : result?.status || "failed";
-    if (finalStatus === "submitted") {
+    const result = await injectIntoTab(tabId, job.prompt, job.site, {
+      ...runtimeOverrides,
+      waitMs: scaleTimeout(Number(job.site?.waitMs) || 0, waitMsMultiplier)
+    });
+    if (Array.isArray(result?.attempts) && result.attempts.length > 0) {
+      await recordStrategyAttempts(job.siteId, result.attempts);
+    }
+    const finalCode = normalizeResultCode(result?.status);
+    if (finalCode === "submitted") {
       await sleep(TAB_POST_SUBMIT_SETTLE_MS);
     }
-    await recordBroadcastSiteResult(job.broadcastId, job.siteId, finalStatus);
-    if (finalStatus === "login_required") {
+    await recordBroadcastSiteResult(job.broadcastId, job.siteId, buildSiteResult(finalCode, {
+      message: result?.error ?? "",
+      strategy: result?.strategy,
+      elapsedMs: result?.elapsedMs,
+      attempts: result?.attempts
+    }));
+    if (finalCode === "auth_required") {
       await enqueueUiToast({
         message: getI18nMessage("toast_login_required", [job.site.name]) || `${job.site.name} requires login before sending.`,
         type: "warning",
@@ -3200,7 +3503,9 @@ async function processPendingInjectionNow(tabId, tab) {
       tabId,
       error
     });
-    await recordBroadcastSiteResult(job.broadcastId, job.siteId, "injection_failed");
+    await recordBroadcastSiteResult(job.broadcastId, job.siteId, buildSiteResult("unexpected_error", {
+      message: error?.message ?? String(error)
+    }));
     await enqueueUiToast({
       message: getI18nMessage("toast_injection_failed", [job.site.name]) || `${job.site.name} automatic injection failed.`,
       type: "error",
@@ -3341,6 +3646,19 @@ async function handleBroadcastMessage(message) {
         createdAt: Date.now(),
         closeOnCancel: !reusableTab
       });
+      if (!reusableTab) {
+        await queueBackgroundStateMutation((state) => {
+          const record = state.pendingBroadcasts[broadcast.id];
+          if (!record) {
+            return null;
+          }
+          record.openedTabIds = Array.from(
+            /* @__PURE__ */ new Set([...Array.isArray(record.openedTabIds) ? record.openedTabIds : [], targetTab.id])
+          );
+          state.pendingBroadcasts[broadcast.id] = record;
+          return clonePlainValue(record.openedTabIds);
+        });
+      }
       queuedSiteCount += 1;
       if (reusableTab) {
         reusedTabSiteIds.push(site.id);

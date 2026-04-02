@@ -17,12 +17,17 @@ export const state = {
   favoritesTagFilter: "",      // 태그 필터 (빈 문자열 = 전체)
   favoritesFolderFilter: "",   // 폴더 필터 (빈 문자열 = 전체)
   openMenuKey: null,
+  openModalId: null,
+  lastFocusedElement: null,
   favoriteSaveTimers: new Map(),
   loadedTemplateDefaults: {},
   loadedFavoriteTitle: "",
+  loadedFavoriteId: "",
   templateVariableCache: {},
   pendingTemplateSend: null,
   pendingFavoriteSave: null,
+  pendingResendHistory: null,
+  pendingImportSummary: null,
   runtimeSites: [],
   serviceEditor: null,
   failedSelectors: new Map(),
@@ -36,4 +41,8 @@ export const state = {
   sitePromptOverrides: {},    // siteId -> override prompt string
   openTabsWindowId: null,
   openTabsRefreshTimer: null,
+  listKeyboardFocus: {
+    history: -1,
+    favorites: -1,
+  },
 };
