@@ -1,0 +1,88 @@
+/* ── Settings stack ── */
+.settings-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.settings-control {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.3);
+  transition: background var(--transition);
+}
+
+.settings-control:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+@media (prefers-color-scheme: dark) {
+  .settings-control {
+    background: rgba(255, 255, 255, 0.04);
+  }
+  .settings-control:hover {
+    background: rgba(255, 255, 255, 0.07);
+  }
+}
+
+.settings-control input[type="range"] {
+  border: 0;
+  accent-color: var(--accent);
+  background: transparent;
+  padding: 0;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.toggle-row input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+/* ── Buttons ── */
+.btn {
+  border: 1px solid var(--border);
+  background: var(--panel-strong);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 9px 14px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all var(--transition);
+}
+
+.btn:hover {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: color-mix(in srgb, var(--text-soft) 35%, transparent);
+  box-shadow: var(--shadow-sm);
+}
+
+@media (prefers-color-scheme: dark) {
+  .btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+  }
+}
+
+.btn.danger { color: var(--danger); }
+.btn.danger:hover {
+  background: rgba(181, 59, 59, 0.08);
+  border-color: rgba(181, 59, 59, 0.3);
+}
+
+

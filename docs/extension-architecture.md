@@ -2,14 +2,14 @@
 
 ## Overview
 
-AI Prompt Broadcaster is a Chrome Manifest V3 extension that can reuse an already-open AI tab in the current window or open a fresh tab per service, inject the prompt into the target page, and record the result in Chrome local/session storage.
+AI Prompt Broadcaster is a Chrome Manifest V3 extension that sends one prompt to multiple AI chat services, can reuse an already-open AI tab in the current window, and records execution state in Chrome local/session storage.
 
-The repository now uses a `src/ -> dist/` build pipeline:
+The repository uses a `src/ -> dist/` build pipeline:
 
 - `src/`: TypeScript source of truth
 - `dist/`: built extension bundle that Chrome actually loads
 - `manifest.json`: source manifest copied into `dist/manifest.json` during build
-- `src/*/main.ts`: thin composition roots that hand off to runtime-local modules
+- `src/*/main.ts`: thin composition roots that hand off to feature-oriented runtime modules
 
 For local development and QA, load `dist/` in `chrome://extensions`.
 
@@ -23,6 +23,17 @@ prompt-broadcaster/
 │   │   │   ├── bootstrap.ts
 │   │   │   ├── constants.ts
 │   │   │   └── injection-helpers.ts
+│   │   ├── commands/
+│   │   │   └── quick-palette.ts
+│   │   ├── context-menu/
+│   │   │   └── index.ts
+│   │   ├── messages/
+│   │   │   └── router.ts
+│   │   ├── popup/
+│   │   │   ├── favorites-workflow.ts
+│   │   │   └── launcher.ts
+│   │   ├── selection/
+│   │   │   └── runtime.ts
 │   │   └── main.ts
 │   ├── config/
 │   │   ├── sites/
@@ -31,53 +42,23 @@ prompt-broadcaster/
 │   │   └── sites.ts
 │   ├── content/
 │   │   ├── injector/
-│   │   │   ├── dom.ts
-│   │   │   ├── fallback.ts
-│   │   │   ├── main.ts
-│   │   │   ├── selectors.ts
-│   │   │   ├── strategies.ts
-│   │   │   └── submit.ts
+│   │   ├── palette/
 │   │   ├── selection/
-│   │   │   ├── helper.ts
-│   │   │   ├── main.ts
-│   │   │   ├── messages.ts
-│   │   │   ├── reader.ts
-│   │   │   └── tracker.ts
 │   │   └── selector-checker/
-│   │       ├── checks.ts
-│   │       ├── dom.ts
-│   │       ├── helper.ts
-│   │       ├── main.ts
-│   │       ├── report.ts
-│   │       └── runtime.ts
 │   ├── onboarding/
 │   │   ├── app/
-│   │   │   ├── bootstrap.ts
-│   │   │   ├── copy.ts
-│   │   │   ├── navigation.ts
-│   │   │   └── render.ts
-│   │   ├── helper.ts
 │   │   └── main.ts
 │   ├── options/
 │   │   ├── app/
-│   │   │   ├── bootstrap.ts
-│   │   │   ├── dom.ts
-│   │   │   ├── helpers.ts
-│   │   │   ├── i18n.ts
-│   │   │   └── state.ts
-│   │   ├── main.ts
-│   │   └── ui/charts.ts
+│   │   ├── core/
+│   │   ├── features/
+│   │   ├── ui/
+│   │   └── main.ts
 │   ├── popup/
 │   │   ├── app/
-│   │   │   ├── bootstrap.ts
-│   │   │   ├── dom.ts
-│   │   │   ├── helpers.ts
-│   │   │   ├── i18n.ts
-│   │   │   ├── list-markup.ts
-│   │   │   ├── sorting.ts
-│   │   │   └── state.ts
-│   │   ├── main.ts
-│   │   └── ui/toast.ts
+│   │   ├── features/
+│   │   ├── ui/
+│   │   └── main.ts
 │   └── shared/
 │       ├── broadcast/
 │       ├── chrome/
@@ -85,7 +66,6 @@ prompt-broadcaster/
 │       ├── i18n/
 │       ├── prompts/
 │       ├── runtime-state/
-│       │   └── strategy-stats.ts
 │       ├── sites/
 │       ├── stores/
 │       ├── template/
@@ -94,18 +74,23 @@ prompt-broadcaster/
 ├── popup/
 │   ├── popup.html
 │   ├── popup.css
-│   └── styles/app.css
+│   └── styles/
+│       ├── app.css
+│       └── partials/
 ├── options/
 │   ├── options.html
 │   ├── options.css
-│   └── styles/app.css
+│   └── styles/
+│       ├── app.css
+│       └── partials/
 ├── onboarding/
-│   ├── onboarding.html
-│   ├── onboarding.css
-│   └── styles/app.css
 ├── _locales/
 ├── icons/
-├── scripts/build.mjs
+├── qa/fixtures/
+├── scripts/
+│   ├── build.mjs
+│   ├── qa-smoke.mjs
+│   └── qa-smoke/
 ├── manifest.json
 └── dist/
 ```
@@ -116,7 +101,7 @@ prompt-broadcaster/
 
 - TypeScript for source authoring and type checks
 - esbuild for bundling runtime entrypoints
-- static asset copy step for manifest, HTML, CSS, locales, icons, and helper scripts
+- static asset copy for manifest, HTML, CSS, locales, icons, and helper assets
 
 ### Main Commands
 
@@ -127,8 +112,6 @@ npm run build
 npm run qa:smoke
 ```
 
-The output bundle is written to `dist/`.
-
 ### Runtime Entry Mapping
 
 | Source | Built output |
@@ -137,6 +120,7 @@ The output bundle is written to `dist/`.
 | `src/popup/main.ts` | `dist/popup/popup.js` |
 | `src/options/main.ts` | `dist/options/options.js` |
 | `src/content/injector/main.ts` | `dist/content/injector.js` |
+| `src/content/palette/main.ts` | `dist/content/palette.js` |
 | `src/content/selector-checker/main.ts` | `dist/content/selector_checker.js` |
 | `src/content/selection/main.ts` | `dist/content/selection.js` |
 | `src/onboarding/main.ts` | `dist/onboarding/onboarding.js` |
@@ -145,56 +129,59 @@ The output bundle is written to `dist/`.
 
 ### Background Service Worker
 
-Source: `src/background/main.ts` -> `src/background/app/bootstrap.ts`
+Entry: `src/background/main.ts` -> `src/background/app/bootstrap.ts`
 
 Responsibilities:
 
-- receive popup and content-script messages
-- resolve target routing, including specific reused tabs and forced new tabs
-- prefer site-level `resolvedPrompt` payloads over raw overrides when a prompt has already been rendered in the popup
+- register Chrome listeners and wire runtime dependencies
+- route popup/content/runtime messages through `src/background/messages/router.ts`
+- resolve tab routing, including reusable tabs, specific tab targets, and forced new tabs
 - open target tabs and track pending broadcasts
-- reconcile `chrome.storage.session` state after worker restarts
-- keep `pendingInjections`, `pendingBroadcasts`, and `selectorAlerts` mirrored in memory and updated through a serialized mutation chain
-- maintain action badge state
-- create Chrome notifications
-- reopen the UI through the toolbar popup when possible and fall back to a standalone popup window when no active browser window exists
-- handle commands and context menu actions
-- delegate timeout scaling, selector normalization, result-code mapping, and adaptive strategy-order calculation to `src/background/app/injection-helpers.ts`
+- maintain action badge state, notifications, selector alerts, and popup reopen flow
+- run favorite execution workflows through `src/background/popup/favorites-workflow.ts`
+- reconcile favorite schedules with `chrome.alarms`
+- launch or fall back to popup windows through `src/background/popup/launcher.ts`
+- handle quick palette command injection through `src/background/commands/quick-palette.ts`
+- delegate timeout scaling, selector normalization, result-code mapping, and adaptive strategy ordering to `src/background/app/injection-helpers.ts`
 
 ### Popup
 
-Source: `src/popup/main.ts` -> `src/popup/app/bootstrap.ts`
+Entry: `src/popup/main.ts` -> `src/popup/app/bootstrap.ts`
 
 Responsibilities:
 
 - compose and send prompts
-- discover currently open AI tabs in the active browser window
-- let each service use default routing, a specific tab, or a forced new tab
-- template variable detection and substitution
-- resolve per-service prompt overrides into a final `resolvedPrompt` before dispatch
-- system template alias support for both Korean and English keys
-- history and favorites UI
-- runtime site management UI
-- reusable-tab settings control
-- toast-based feedback
-- restore recent broadcast state and selector warnings
-- compose DOM access through `src/popup/app/dom.ts`
-- keep pure formatting, sorting, and list-markup helpers in `src/popup/app/helpers.ts`, `sorting.ts`, and `list-markup.ts`
-- support popup shortcuts, resend-service selection, favorite duplication, import reports, and keyboard roving focus
+- resolve template variables and per-service prompt overrides
+- list currently open AI tabs in the active browser window
+- manage history, favorites, resend, duplication, sorting, and import reports
+- host the integrated favorite editor for single favorites, chain favorites, and schedules
+- restore broadcast state and selector warning badges
+- enforce popup keyboard shortcuts, modal dismissal, and list roving focus
+
+Popup helper boundaries:
+
+- `src/popup/app/dom.ts`: DOM registry
+- `src/popup/app/helpers.ts`, `sorting.ts`, `list-markup.ts`: pure formatting and markup helpers
+- `src/popup/features/favorite-editor.ts`: modal state, chain steps, schedule fields, favorite run/edit actions
 
 ### Options Page
 
-Source: `src/options/main.ts` -> `src/options/app/bootstrap.ts`
+Entry: `src/options/main.ts` -> `src/options/app/bootstrap.ts`
 
 Responsibilities:
 
-- analytics dashboard
-- paginated history table
-- runtime service inspection and `waitMs` adjustment
-- data export/import and settings controls
-- background-driven reset flow and CSV export
-- bulk history deletion, import report modal, and wait-multiplier controls
-- compose DOM lookups and pure formatting helpers through `src/options/app/dom.ts` and `helpers.ts`
+- analytics dashboard and charts
+- paginated history table and detail modal
+- bulk deletion and CSV export
+- runtime service inspection and `waitMs` controls
+- import/export, reset-data, shortcut display, and general settings
+- scheduled-favorite list with toggle, `Run now`, and popup editor handoff
+
+Options helper boundaries:
+
+- `src/options/core/`: shared status, navigation, reload, and filter helpers
+- `src/options/features/`: dashboard, history, schedules, services, and settings sections
+- `src/options/ui/charts.ts`: chart rendering
 
 ### Content Injector
 
@@ -203,13 +190,11 @@ Source: `src/content/injector/`
 Responsibilities:
 
 - deep selector lookup with fallback selectors
-- comma-delimited selector groups are split into ordered candidates before lookup so exact selectors can win over broad textbox matches
-- visible and enabled element preference so hidden fallbacks do not win
-- synthetic input strategies for `textarea`, `input`, and `contenteditable`
-- Perplexity can bypass isolated-world editor limitations by writing Lexical state from the page `MAIN` world first
-- submit handling by click or keyboard
-- polling of click-submit buttons until they become enabled after async editor state updates
-- Perplexity keeps a submit-only entry point in the standard injector so the original click-submit behavior stays intact after MAIN-world text injection
+- ordered selector-group handling so exact selectors win over broad textbox matches
+- visible/enabled element preference
+- input strategies for `textarea`, `input`, and `contenteditable`
+- click, `Enter`, and `Shift+Enter` submit flows
+- delayed click-submit polling so async editors can enable the real submit button
 - clipboard fallback when automatic injection fails
 
 ### Selector Checker
@@ -220,10 +205,10 @@ Responsibilities:
 
 - verify configured selectors against the live page
 - report selector failures back to the background worker
-- clear stale selector warnings when a later report returns `ok`
-- help surface broken integrations before injection fails silently
+- detect dedicated auth/login pages
+- clear stale warnings when later checks recover
 
-Selector checker reports use these main statuses:
+Main statuses:
 
 - `ok`
 - `selector_missing`
@@ -236,7 +221,19 @@ Source: `src/content/selection/`
 Responsibilities:
 
 - read current page selection
-- cache selected text for commands and context menu flows
+- cache selected text for commands and context-menu flows
+
+### Quick Palette Overlay
+
+Source: `src/content/palette/main.ts`
+
+Responsibilities:
+
+- render a shadow-root overlay over the current page
+- search favorites by title, preview, folder, and tags
+- support arrow-key navigation, `Enter`, and `Escape`
+- request favorite execution from the background worker
+- close when the background asks for popup fallback or when the user dismisses it
 
 ## Configuration and Data Flow
 
@@ -251,17 +248,17 @@ Responsibilities:
 - default wait times
 - verification metadata
 
+`src/config/sites.ts` remains a compatibility barrel around the canonical `src/config/sites/` exports.
+
 ### Runtime Site Storage
 
 `src/shared/sites/` merges:
 
-- built-in site definitions from `src/config/sites/builtins.ts`
-- user overrides for built-in sites
+- built-in site definitions
+- user overrides for built-ins
 - custom user-added sites
 
-This merged view is used by popup, options, and background flows.
-
-Perplexity is normalized specially inside runtime site storage so `#ask-input[data-lexical-editor='true']` stays the first selector even when older built-in overrides exist in local storage.
+This merged view is used by popup, options, and background.
 
 Runtime site records can include:
 
@@ -272,31 +269,20 @@ Runtime site records can include:
 - `lastVerified`
 - `verifiedVersion`
 
-The background worker uses `hostname` plus `hostnameAliases` as an allowlist when resolving runtime tabs back to site definitions. Built-in services keep their default hostname, while custom services can extend the allowlist with aliases.
+Custom service permissions are derived from `url + hostnameAliases`. Save, import, and runtime execution checks are all-or-nothing for that required origin set.
 
-Popup tab targeting starts from that same hostname allowlist, then narrows reuse candidates through a lightweight preflight: non-auth/non-settings route, visible editable prompt surface, and required submit controls for click-submit services.
+### Prompt, Favorite, and Runtime State Storage
 
-Custom services also derive `permissionPatterns` from `url + hostnameAliases`. Popup save, JSON import, and background execution checks all require that full origin set. If any required origin is denied, the custom service is rejected as a whole. When custom services are deleted, reset, or replaced by import, unused optional host permissions are removed automatically.
-
-`authSelectors` are treated as dedicated auth indicators only when no visible prompt surface is currently available on the page. This prevents public landing pages with both a login link and an editor from being misclassified as auth-only.
-
-### Prompt and Runtime State Storage
-
-`src/shared/prompts/` and `src/shared/runtime-state/` keep the extension state consistent.
-
-Important storage keys:
+Important local-storage keys:
 
 - `promptHistory`
 - `promptFavorites`
 - `templateVariableCache`
 - `appSettings`
 - `broadcastCounter`
+- `failedSelectors`
 - `onboardingCompleted`
 - `strategyStats`
-
-Important local-storage keys:
-
-- `failedSelectors`
 
 Important session-storage keys:
 
@@ -305,67 +291,107 @@ Important session-storage keys:
 - `selectorAlerts`
 - `lastBroadcast`
 - `pendingUiToasts`
+- popup handoff intent state in `src/shared/runtime-state/popup-intent.ts`
 
-The background worker caches those session keys in memory and persists them through one serialized mutation queue so overlapping broadcast updates do not lose site results, counters, or selector-alert dedupe state.
+The background worker mirrors session keys in memory and updates them through a serialized mutation chain so overlapping completions and cancellations do not lose results.
 
 ### Prompt History Schema
 
-Prompt history entries are normalized in `src/shared/prompts/history-store.ts` and now keep three explicit service id arrays plus structured result objects:
+History entries are normalized in `src/shared/prompts/history-store.ts` and include:
 
-- `requestedSiteIds`: every service the user asked to target
-- `submittedSiteIds`: services that actually reached the submission step
-- `failedSiteIds`: services that failed before submission
-- `siteResults`: `Record<string, SiteInjectionResult>` with normalized result codes such as `submitted`, `selector_timeout`, `auth_required`, and `submit_failed`
+- `requestedSiteIds`
+- `submittedSiteIds`
+- `failedSiteIds`
+- `sentTo` as a backward-compatible mirror of `submittedSiteIds`
+- `siteResults: Record<string, SiteInjectionResult>`
+- optional favorite/chain metadata:
+  - `originFavoriteId`
+  - `chainRunId`
+  - `chainStepIndex`
+  - `chainStepCount`
+  - `trigger`
 
-The legacy `sentTo` field is still stored and exported for backward compatibility, and mirrors `submittedSiteIds`.
+### Favorite Schema
 
-Popup and options flows should read `requestedSiteIds` first when reconstructing the original broadcast target list.
+Favorites are normalized in `src/shared/prompts/favorites-store.ts` and include:
 
-`appSettings` also stores reusable-tab behavior and popup/options UX preferences, including:
+- `mode: "single" | "chain"`
+- `steps: ChainStep[]`
+- `scheduleEnabled`
+- `scheduledAt`
+- `scheduleRepeat`
+- `usageCount`
+- `lastUsedAt`
 
-- `reuseExistingTabs`
-- `waitMsMultiplier`
-- `historySort`
-- `favoriteSort`
+Chain favorites store ordered steps. Scheduled favorites use the same record as the single source of truth for `chrome.alarms`.
 
-### Broadcast Counter
+### Structured Result Codes
 
-`broadcastCounter` is stored in local storage and exported with prompt data JSON `version: 4`.
+`siteResults` store structured `SiteInjectionResult` objects with codes such as:
+
+- `submitted`
+- `selector_timeout`
+- `auth_required`
+- `submit_failed`
+- `strategy_exhausted`
+- `permission_denied`
+- `tab_create_failed`
+- `tab_closed`
+- `injection_timeout`
+- `cancelled`
+- `unexpected_error`
+
+### Broadcast Counter and Export Version
+
+`broadcastCounter` is stored in local storage and exported with prompt data JSON `version: 5`.
 
 - popup preview resolves `{{counter}}` as `current + 1`
 - the stored counter increments only when a broadcast queues at least one target site
-- import migrates older payloads (`v1 -> v2 -> v3 -> v4`) and normalizes missing legacy values to `0`
-- reset-data flows clear the counter together with the rest of the user data
+- import migrates older payloads through `v1 -> v2 -> v3 -> v4 -> v5`
+- reset-data clears the counter together with the rest of the user data
 
 ### Strategy Stats and Pending Tab Tracking
 
-- `strategyStats` is stored in local storage and records success/failure counts per injector strategy and site
-- pending broadcast records also keep `openedTabIds` so cancellation can close only tabs opened for the current broadcast
-- reused tabs are never added to that close set
+- `strategyStats` stores per-site success/failure counts for injector strategies
+- `pendingBroadcasts` also keep `openedTabIds`
+- cancellation closes only tabs opened for the current broadcast; reused tabs are preserved
 
-## High-Level Execution Flow
+## High-Level Execution Flows
 
-1. The user submits a prompt from the popup, a keyboard shortcut, or the context menu.
-2. Popup routing can specify default behavior, a forced new tab, or a specific already-open AI tab per service.
-3. Popup resolves template variables across the main prompt and any enabled per-service override, then includes a site-level `resolvedPrompt` in the broadcast payload when needed.
-4. The background worker resolves the final target for each service and queues them in the selected order.
-5. Each pending injection is recorded in `chrome.storage.session`.
-6. When a target tab is ready, the background worker focuses it, injects `content/injector.js`, and waits for the injection result before moving on to the next queued tab.
-7. The injector locates the input field, applies the prompt, and waits for click-submit buttons to become enabled when async editors defer their internal state updates.
-8. Perplexity is a special case: the background worker first writes the prompt from the page `MAIN` world so Lexical state stays consistent, then hands submission back to the standard injector submit path.
-9. Success or failure is written back into session/local state.
-10. Popup, options, badge state, and notifications reflect the latest result.
+### Standard Popup Broadcast
 
-If a broadcast is cancelled, the worker closes only tabs that were opened for that broadcast. Reused tabs are left open.
-If reset is requested, the worker cancels in-flight broadcasts first and then clears both local prompt data and session runtime state.
+1. The user submits a prompt from the popup.
+2. Popup resolves template variables across the main prompt and enabled per-service overrides.
+3. Popup sends a broadcast request with resolved targets.
+4. Background resolves routing, opens or reuses tabs, and records pending state.
+5. Injector writes the prompt, submits it, and reports a structured result.
+6. Background updates history, last-broadcast state, badge state, and notifications.
 
-## Popup Open Flow
+### Favorite Run / Chain Run
 
-When the background worker needs to reopen the UI, it first persists `lastPrompt` to local storage. It then tries `chrome.action.openPopup()`. If Chrome reports that there is no active browser window, the worker focuses an existing normal browser window and retries. If that still fails, it opens `popup/popup.html` in a standalone popup window so command and notification flows still surface the composer.
+1. A favorite run can start from popup, options, quick palette, or an alarm.
+2. Background validates whether all required template inputs are resolvable.
+3. For single favorites, background queues one broadcast.
+4. For chain favorites, background queues one step at a time and waits for completion before moving on.
+5. If any step result is not `submitted`, the remaining chain steps are skipped.
+
+### Scheduled Favorite Run
+
+1. Background reconciles alarms from favorite storage on startup, install, favorite edits, and imports.
+2. When `chrome.alarms` fires, background loads the favorite and validates scheduled-safe variables.
+3. One-time schedules clear themselves after execution.
+4. Repeating schedules compute the next `scheduledAt` and re-register the alarm.
+
+### Quick Palette
+
+1. `Alt+Shift+F` triggers the background quick-palette command.
+2. Background injects `content/palette.js` when the page supports content scripts.
+3. The overlay asks the background for favorite search state.
+4. Entering a favorite either runs it directly or falls back to popup handoff when additional inputs are required.
 
 ## Template Variable Flow
 
-System template variables are normalized through `src/shared/template/` with `src/shared/template-utils.ts` kept as a compatibility barrel.
+System template variables are normalized through `src/shared/template/`.
 
 Canonical system keys:
 
@@ -379,63 +405,59 @@ Canonical system keys:
 - `counter`
 - `random`
 
-Supported aliases:
+Korean aliases normalize to the same canonical keys. Detection, preview rendering, and final prompt rendering use the same normalization path.
 
-- Korean: `날짜`, `시간`, `요일`, `클립보드`, `주소`, `제목`, `선택`, `카운터`, `랜덤`
-- English: `date`, `time`, `weekday`, `clipboard`, `url`, `title`, `selection`, `counter`, `random`
+Scheduled favorites intentionally block variables that require live page context or clipboard access:
 
-Detection, preview rendering, and final prompt rendering all normalize aliases to canonical keys so mixed-language templates still resolve consistently.
-Per-service overrides use that same resolution flow, and retry actions reuse the previously resolved site prompt instead of re-rendering from current popup state.
+- `url`
+- `title`
+- `selection`
+- `clipboard`
 
 ## Local QA
 
-The repository includes a fixture-based smoke script at `scripts/qa-smoke.mjs`.
-
-It uses Playwright against local pages in `qa/fixtures/` and validates the built injector and selector checker bundles from `dist/`.
+The repository includes a fixture-based smoke runner at `scripts/qa-smoke.mjs` plus helpers in `scripts/qa-smoke/`. It validates the built bundles from `dist/` against local fixtures in `qa/fixtures/`.
 
 Current smoke coverage includes:
 
-- textarea plus click submit
-- contenteditable plus click submit
-- delayed contenteditable submit-button activation
-- input and textarea keyboard submit paths
-- fallback selector resolution
-- auth selector detection for selector-check flows
-- selector checker `input-only` mode for conditional-submit services
-- import repair for invalid and unauthorized custom service JSON
-- alias-based custom service optional permission handling
-- custom service permission cleanup after delete and reset
+- direct selector injection
+- fallback selector injection
+- visible element preference when hidden matches exist
+- delayed click-submit activation
+- `click`, `enter`, and `shift+enter` submission paths
+- selector checker `ok` and `auth_page` reporting
+- custom service permission cleanup and alias-origin handling
 - built-in override repair for invalid click-submit imports
 - `broadcastCounter` export/import/reset semantics
-- import migration to export `version: 4`
+- import migration to export `version: 5`
+- favorite chain/schedule field normalization for legacy imports
+- quick palette filtering and execution
 - favorites search across title, tags, and folders
 - per-service override template resolution and retry prompt preservation
-- CSV export escaping for spreadsheet formula-leading values
-- pending broadcast state accumulation across sequential site completions with structured `siteResults`
+- structured `siteResults` accumulation
 - adaptive strategy-stat accumulation
 - reusable-tab preflight rejection for auth/settings/non-input tabs
 - reset helper cleanup across local and session runtime state
-
-Full end-to-end open-tab discovery and explicit tab targeting still need a real Chrome window for manual verification, but the reusable-tab preflight helper is covered by the local smoke suite.
 
 ## i18n and Static Assets
 
 - Localized strings live in `_locales/ko/messages.json` and `_locales/en/messages.json`.
 - `manifest.json` uses `__MSG_*__` keys for extension metadata and command descriptions.
-- Popup and options pages resolve text through the shared i18n helpers and Chrome i18n API.
+- Popup and options text resolve through shared i18n helpers and Chrome i18n APIs.
 
 ## Packaging and Release
 
 For release packaging:
 
-- Windows: `powershell -ExecutionPolicy Bypass -File .\\package.ps1`
+- Windows: `powershell -ExecutionPolicy Bypass -File .\package.ps1`
 - Unix/macOS: `bash ./package.sh`
 
 Both scripts rebuild `dist/` and create a zip from `dist/` only.
 
 ## Notes for Contributors
 
-- Edit TypeScript sources in `src/`, not the built files in `dist/`.
+- Edit TypeScript sources in `src/`, not built files in `dist/`.
 - After any source change, run `npm run build`.
-- If you add a new built-in domain, update `manifest.json` host permissions and content script matches as needed.
-- If you add a new custom site flow, confirm optional host permission prompts still make sense for that domain.
+- If you add a new built-in domain, update `manifest.json` host permissions and content-script matches.
+- If you add a new custom-site flow, verify optional host permission prompts still make sense.
+- If you change popup or options structure, keep the DOM ids and runtime message contracts stable unless you update every caller.

@@ -42,7 +42,7 @@ import {
   setTemplateVariableCache,
 } from "./template-cache-store";
 
-const CURRENT_EXPORT_VERSION = 4;
+const CURRENT_EXPORT_VERSION = 5;
 
 async function containsOriginPermission(originPattern) {
   try {
@@ -178,6 +178,15 @@ function migrateV3ToV4(payload) {
   };
 }
 
+function migrateV4ToV5(payload) {
+  return {
+    ...payload,
+    version: 5,
+    history: safeArray(payload.history).map((entry) => buildHistoryEntry(entry)),
+    favorites: safeArray(payload.favorites).map((entry) => buildFavoriteEntry(entry)),
+  };
+}
+
 function migrateImportData(rawValue) {
   let payload = safeObject(rawValue);
   const sourceVersion = normalizeImportVersion(payload.version);
@@ -196,6 +205,11 @@ function migrateImportData(rawValue) {
   if (workingVersion < 4) {
     payload = migrateV3ToV4(payload);
     workingVersion = 4;
+  }
+
+  if (workingVersion < 5) {
+    payload = migrateV4ToV5(payload);
+    workingVersion = 5;
   }
 
   return {

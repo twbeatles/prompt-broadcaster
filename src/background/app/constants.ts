@@ -1,5 +1,6 @@
 // @ts-nocheck
 export const INJECTOR_SCRIPT_PATH = "content/injector.js";
+export const PALETTE_SCRIPT_PATH = "content/palette.js";
 export const SELECTOR_CHECKER_SCRIPT_PATH = "content/selector_checker.js";
 export const SELECTION_SCRIPT_PATH = "content/selection.js";
 export const ONBOARDING_URL = "onboarding/onboarding.html";
@@ -12,6 +13,7 @@ export const CONTEXT_MENU_ROOT_ID = "apb-root";
 export const CONTEXT_MENU_ALL_ID = "apb-send-all";
 export const CONTEXT_MENU_SITE_PREFIX = "apb-send-site:";
 export const CAPTURE_SELECTION_COMMAND = "capture-selected-text";
+export const QUICK_PALETTE_COMMAND = "quick-palette";
 export const RECONCILE_ALARM = "apb-reconcile";
 export const BADGE_CLEAR_ALARM = "apb-clear-badge";
 export const PENDING_TIMEOUT_MS = 60_000;

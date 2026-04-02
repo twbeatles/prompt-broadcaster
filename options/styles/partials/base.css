@@ -1,0 +1,68 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f5f1eb;
+  --panel: rgba(255, 255, 255, 0.82);
+  --panel-strong: #ffffff;
+  --border: rgba(92, 73, 47, 0.14);
+  --text: #221b15;
+  --text-soft: #786a5b;
+  --accent: #c24f2e;
+  --accent-soft: rgba(194, 79, 46, 0.12);
+  --success: #1f8f5f;
+  --warning: #b67f16;
+  --danger: #bc4444;
+  --shadow: 0 20px 42px rgba(72, 50, 31, 0.12);
+  --shadow-sm: 0 2px 8px rgba(72, 50, 31, 0.07);
+  --radius: 18px;
+  --transition: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #151210;
+    --panel: rgba(34, 28, 24, 0.88);
+    --panel-strong: #211a17;
+    --border: rgba(255, 237, 220, 0.12);
+    --text: #f8efe7;
+    --text-soft: #c7b6a4;
+    --accent: #ff7a4f;
+    --accent-soft: rgba(255, 122, 79, 0.14);
+    --success: #52d39a;
+    --warning: #f2bf55;
+    --danger: #ff8585;
+    --shadow: 0 24px 56px rgba(0, 0, 0, 0.28);
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.18);
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+
+[hidden] {
+  display: none !important;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--text-soft) 45%, transparent);
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(255, 201, 148, 0.2), transparent 32%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 24%),
+    var(--bg);
+  color: var(--text);
+  font: 14px/1.5 "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+}
+
+button, input, select, textarea { font: inherit; }
+
+

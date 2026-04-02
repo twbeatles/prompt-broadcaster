@@ -1,306 +1,35 @@
 import assert from "node:assert/strict";
-import { access } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
-import { pathToFileURL } from "node:url";
-import { build as esbuild } from "esbuild";
 import { chromium } from "playwright";
-
-const rootDir = process.cwd();
-const injectorPath = path.join(rootDir, "dist", "content", "injector.js");
-const selectorCheckerPath = path.join(rootDir, "dist", "content", "selector_checker.js");
-const fixturesDir = path.join(rootDir, "qa", "fixtures");
-const isHeaded = process.argv.includes("--headed");
-
-async function ensureFileExists(targetPath) {
-  try {
-    await access(targetPath);
-  } catch (error) {
-    throw new Error(`Required file is missing: ${targetPath}`);
-  }
-}
-
-function createChromeMock({ grantedOrigins = [], requestGrantsMissingOrigins = true } = {}) {
-  const localStorage = {};
-  const sessionStorage = {};
-  const alarms = {};
-  const granted = new Set(grantedOrigins);
-
-  function createStorageArea(store) {
-    return {
-      async get(key) {
-        if (typeof key === "string") {
-          return { [key]: store[key] };
-        }
-
-        if (Array.isArray(key)) {
-          return Object.fromEntries(key.map((entry) => [entry, store[entry]]));
-        }
-
-        if (key && typeof key === "object") {
-          return Object.fromEntries(
-            Object.entries(key).map(([entryKey, fallbackValue]) => [
-              entryKey,
-              store[entryKey] ?? fallbackValue,
-            ])
-          );
-        }
-
-        return { ...store };
-      },
-      async set(nextValue) {
-        Object.assign(store, nextValue ?? {});
-      },
-      async remove(key) {
-        const keys = Array.isArray(key) ? key : [key];
-        keys.forEach((entry) => {
-          delete store[entry];
-        });
-      },
-    };
-  }
-
-  return {
-    __getGrantedOrigins() {
-      return [...granted].sort();
-    },
-    __getStorage() {
-      return {
-        local: { ...localStorage },
-        session: { ...sessionStorage },
-      };
-    },
-    __getAlarms() {
-      return { ...alarms };
-    },
-    storage: {
-      local: createStorageArea(localStorage),
-      session: createStorageArea(sessionStorage),
-    },
-    permissions: {
-      async contains(permission) {
-        const origins = Array.isArray(permission?.origins) ? permission.origins : [];
-        return origins.every((origin) => granted.has(origin));
-      },
-      async request(permission) {
-        const origins = Array.isArray(permission?.origins) ? permission.origins : [];
-        if (!requestGrantsMissingOrigins) {
-          return false;
-        }
-
-        origins.forEach((origin) => granted.add(origin));
-        return true;
-      },
-      async remove(permission) {
-        const origins = Array.isArray(permission?.origins) ? permission.origins : [];
-        origins.forEach((origin) => granted.delete(origin));
-        return true;
-      },
-    },
-    i18n: {
-      getMessage() {
-        return "";
-      },
-    },
-    alarms: {
-      clear(name) {
-        const key = String(name ?? "");
-        const existed = Object.prototype.hasOwnProperty.call(alarms, key);
-        delete alarms[key];
-        return existed;
-      },
-      create(name, value) {
-        alarms[String(name ?? "")] = value ?? {};
-      },
-    },
-  };
-}
-
-async function loadBundledModule(relativeEntryPath, chromeMock) {
-  const result = await esbuild({
-    entryPoints: [path.join(rootDir, relativeEntryPath)],
-    bundle: true,
-    format: "esm",
-    platform: "browser",
-    target: "chrome120",
-    write: false,
-    legalComments: "none",
-    charset: "utf8",
-  });
-
-  globalThis.chrome = chromeMock;
-  const code = result.outputFiles[0]?.text ?? "";
-  return import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`);
-}
-
-function createFixtureUrl(relativePath) {
-  return pathToFileURL(path.join(fixturesDir, relativePath)).href;
-}
-
-async function installHarness(context) {
-  await context.addInitScript(() => {
-    window.__apbMessages = [];
-    window.__apbClipboard = "";
-    window.__apbMessageResponder = null;
-
-    const runtime = {
-      sendMessage: async (message, callback) => {
-        window.__apbMessages.push(message);
-
-        let response = { ok: true };
-        if (typeof window.__apbMessageResponder === "function") {
-          response = await window.__apbMessageResponder(message);
-        }
-
-        if (typeof callback === "function") {
-          callback(response);
-        }
-
-        return response;
-      },
-    };
-
-    window.chrome = {
-      ...(window.chrome ?? {}),
-      runtime: {
-        ...(window.chrome?.runtime ?? {}),
-        ...runtime,
-      },
-    };
-
-    const clipboard = {
-      writeText: async (text) => {
-        window.__apbClipboard = String(text ?? "");
-      },
-      readText: async () => window.__apbClipboard,
-    };
-
-    try {
-      Object.defineProperty(navigator, "clipboard", {
-        configurable: true,
-        value: clipboard,
-      });
-    } catch (_error) {
-      try {
-        navigator.clipboard = clipboard;
-      } catch (_clipboardError) {
-        // Ignore clipboard shim failures. Injection tests do not depend on clipboard fallback.
-      }
-    }
-
-    const execCommand = function execCommand(command, _showUi, value) {
-      const activeElement = document.activeElement;
-
-      if (command === "selectAll" || command === "copy") {
-        return true;
-      }
-
-      if (command !== "insertText") {
-        return false;
-      }
-
-      const nextValue = String(value ?? "");
-      if (activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement) {
-        activeElement.value = nextValue;
-        return true;
-      }
-
-      if (activeElement instanceof HTMLElement && activeElement.isContentEditable) {
-        activeElement.textContent = nextValue;
-        return true;
-      }
-
-      return false;
-    };
-
-    try {
-      Object.defineProperty(Document.prototype, "execCommand", {
-        configurable: true,
-        writable: true,
-        value: execCommand,
-      });
-    } catch (_error) {
-      // Ignore when the browser does not allow redefining execCommand.
-    }
-
-    try {
-      document.execCommand = execCommand;
-    } catch (_error) {
-      // Ignore when the browser does not allow setting execCommand directly.
-    }
-  });
-}
-
-async function openFixture(page, relativePath) {
-  await page.goto(createFixtureUrl(relativePath), { waitUntil: "load" });
-  await page.evaluate(() => {
-    window.__apbMessages = [];
-    window.__apbClipboard = "";
-    window.__apbMessageResponder = null;
-  });
-}
-
-async function loadInjector(page) {
-  await page.addScriptTag({ path: injectorPath });
-  await page.waitForFunction(() => typeof window.__aiPromptBroadcasterInjectPrompt === "function");
-}
-
-async function runInjector(page, prompt, config) {
-  return page.evaluate(
-    async ({ nextPrompt, nextConfig }) =>
-      window.__aiPromptBroadcasterInjectPrompt(nextPrompt, nextConfig),
-    { nextPrompt: prompt, nextConfig: config },
-  );
-}
-
-async function getFixtureState(page) {
-  return page.evaluate(() => window.fixtureState ?? {});
-}
-
-async function getRuntimeMessages(page) {
-  return page.evaluate(() => window.__apbMessages ?? []);
-}
-
-async function waitForRuntimeMessage(page, predicate, timeoutMs = 10000) {
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-    const messages = await getRuntimeMessages(page);
-    const match = messages.find(predicate);
-    if (match) {
-      return match;
-    }
-
-    await page.waitForTimeout(100);
-  }
-
-  throw new Error("Timed out waiting for runtime message.");
-}
-
-async function configureSelectorChecker(page, site) {
-  await page.evaluate((runtimeSite) => {
-    window.__apbMessages = [];
-    window.__apbMessageResponder = (message) => {
-      if (message?.action === "selector-check:init") {
-        return { ok: true, site: runtimeSite };
-      }
-
-      return { ok: true };
-    };
-  }, site);
-}
-
-async function runSelectorChecker(page) {
-  await page.addScriptTag({ path: selectorCheckerPath });
-}
+import {
+  injectorPath,
+  isHeaded,
+  palettePath,
+  selectorCheckerPath,
+} from "./qa-smoke/config.mjs";
+import { createChromeMock } from "./qa-smoke/chrome-mock.mjs";
+import { ensureFileExists, loadBundledModule } from "./qa-smoke/bundle-loader.mjs";
+import {
+  configureSelectorChecker,
+  getFixtureState,
+  getRuntimeMessages,
+  installHarness,
+  loadInjector,
+  loadPalette,
+  openFixture,
+  runInjector,
+  runSelectorChecker,
+  waitForRuntimeMessage,
+} from "./qa-smoke/playwright-harness.mjs";
 
 function sortStrings(values) {
   return [...values].sort();
 }
-
 async function main() {
   await Promise.all([
     ensureFileExists(injectorPath),
+    ensureFileExists(palettePath),
     ensureFileExists(selectorCheckerPath),
   ]);
 
@@ -581,6 +310,76 @@ async function main() {
     assert.equal(report.siteId, "selector-input-only");
   });
 
+  await runStep("quick palette filters favorites and executes the active result", async () => {
+    await openFixture(page, "textarea-click.html");
+    await page.evaluate(() => {
+      window.__apbMessages = [];
+      window.__apbMessageResponder = async (message) => {
+        if (message?.action === "quickPalette:getState") {
+          return {
+            ok: true,
+            favorites: [
+              {
+                id: "fav-alpha",
+                title: "Alpha Plan",
+                preview: "Launch checklist",
+                mode: "single",
+                tags: ["launch"],
+                folder: "Work",
+              },
+              {
+                id: "fav-beta",
+                title: "Beta Chain",
+                preview: "Review and summarize",
+                mode: "chain",
+                tags: ["review"],
+                folder: "Ops",
+              },
+            ],
+          };
+        }
+
+        if (message?.action === "quickPalette:execute") {
+          return { ok: true, favoriteId: message.favoriteId };
+        }
+
+        return { ok: true };
+      };
+    });
+    await loadPalette(page);
+    await page.evaluate(() => window.__apbDispatchRuntimeMessage({ action: "quickPalette:toggle" }));
+
+    await page.waitForFunction(() => {
+      const host = document.getElementById("apb-quick-palette-root");
+      return Boolean(host?.shadowRoot?.querySelector(".search"));
+    });
+
+    await page.evaluate(() => {
+      const root = document.getElementById("apb-quick-palette-root").shadowRoot;
+      const input = root.querySelector(".search");
+      input.value = "beta";
+      input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+    });
+
+    const filteredCount = await page.evaluate(() => {
+      const root = document.getElementById("apb-quick-palette-root").shadowRoot;
+      return root.querySelectorAll("[data-favorite-id]").length;
+    });
+    assert.equal(filteredCount, 1);
+
+    await page.evaluate(() => {
+      const root = document.getElementById("apb-quick-palette-root").shadowRoot;
+      root.querySelector(".search").dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true, composed: true }),
+      );
+    });
+
+    await page.waitForFunction(() => !document.getElementById("apb-quick-palette-root"));
+    const messages = await getRuntimeMessages(page);
+    assert.ok(messages.some((message) => message?.action === "quickPalette:getState"));
+    assert.ok(messages.some((message) => message?.action === "quickPalette:execute" && message.favoriteId === "fav-beta"));
+  });
+
   await browser.close();
 
   await runStep("custom site permission cleanup removes only unused origins", async () => {
@@ -775,7 +574,7 @@ async function main() {
     assert.equal(await module.getBroadcastCounter(), 1);
 
     const exported = await module.exportPromptData();
-    assert.equal(exported.version, 4);
+    assert.equal(exported.version, 5);
     assert.equal(exported.broadcastCounter, 1);
     assert.deepEqual(exported.settings, module.DEFAULT_SETTINGS);
 
@@ -786,14 +585,14 @@ async function main() {
     }));
     assert.equal(legacyImport.broadcastCounter, 0);
     assert.equal(await module.getBroadcastCounter(), 0);
-    assert.equal(legacyImport.importSummary.version, 4);
+    assert.equal(legacyImport.importSummary.version, 5);
     assert.equal(legacyImport.importSummary.migratedFromVersion, 2);
     assert.equal(legacyImport.settings.waitMsMultiplier, 1);
     assert.equal(legacyImport.settings.historySort, "latest");
     assert.equal(legacyImport.settings.favoriteSort, "recentUsed");
 
     const modernImport = await module.importPromptData(JSON.stringify({
-      version: 3,
+      version: 4,
       broadcastCounter: 4,
       favorites: [
         {
@@ -819,8 +618,8 @@ async function main() {
     }));
     assert.equal(modernImport.broadcastCounter, 4);
     assert.equal(await module.getBroadcastCounter(), 4);
-    assert.equal(modernImport.importSummary.version, 4);
-    assert.equal(modernImport.importSummary.migratedFromVersion, 3);
+    assert.equal(modernImport.importSummary.version, 5);
+    assert.equal(modernImport.importSummary.migratedFromVersion, 4);
     assert.equal(modernImport.settings.waitMsMultiplier, 1);
     assert.equal(modernImport.settings.historySort, "latest");
     assert.equal(modernImport.settings.favoriteSort, "recentUsed");
@@ -828,8 +627,17 @@ async function main() {
     assert.equal(modernImport.history[0].siteResults.claude.code, "selector_timeout");
     assert.deepEqual(modernImport.history[0].submittedSiteIds, ["chatgpt"]);
     assert.deepEqual(modernImport.history[0].failedSiteIds, ["claude"]);
+    assert.equal(modernImport.history[0].originFavoriteId ?? null, null);
+    assert.equal(modernImport.history[0].chainRunId ?? null, null);
+    assert.equal(modernImport.history[0].chainStepIndex ?? null, null);
+    assert.equal(modernImport.history[0].chainStepCount ?? null, null);
     assert.equal(modernImport.favorites[0].usageCount, 0);
     assert.equal(modernImport.favorites[0].lastUsedAt, null);
+    assert.equal(modernImport.favorites[0].mode, "single");
+    assert.deepEqual(modernImport.favorites[0].steps, []);
+    assert.equal(modernImport.favorites[0].scheduleEnabled, false);
+    assert.equal(modernImport.favorites[0].scheduledAt, null);
+    assert.equal(modernImport.favorites[0].scheduleRepeat, "none");
 
     assert.equal(
       module.matchesFavoriteSearch(
@@ -1120,6 +928,7 @@ async function main() {
       pendingInjections: { 1: { broadcastId: "broadcast-1" } },
       pendingBroadcasts: { "broadcast-1": { id: "broadcast-1" } },
       selectorAlerts: { signature: 1 },
+      popupFavoriteIntent: { type: "run", favoriteId: "fav-1" },
     });
     chromeMock.alarms.create("badge-clear", { when: 123 });
 
@@ -1154,6 +963,7 @@ async function main() {
     assert.equal(storage.session.pendingInjections, undefined);
     assert.equal(storage.session.pendingBroadcasts, undefined);
     assert.equal(storage.session.selectorAlerts, undefined);
+    assert.equal(storage.session.popupFavoriteIntent, undefined);
     assert.deepEqual(chromeMock.__getAlarms(), {});
   });
 
@@ -1171,3 +981,4 @@ main().catch((error) => {
   console.error("[AI Prompt Broadcaster] Smoke QA failed to start.", error);
   process.exitCode = 1;
 });
+

@@ -1,150 +1,111 @@
 # AI Prompt Broadcaster - 프로젝트 구조 분석
 
 > 기준일: 2026-04-02
-> 최종 업데이트: 2026-04-02 (심층 분석 기반 UX/데이터/런타임 구현 + UI 모듈 분리 리팩토링 반영)
+> 최종 업데이트: 2026-04-02 (예약/체인/빠른 팔레트, v5 데이터 모델, 기능 기준 모듈 분리 반영)
 > 분석 범위: 전체 소스코드, 빌드 시스템, 데이터 흐름, UI 구조
 
 ---
 
 ## 1. 프로젝트 개요
 
-Chrome Manifest V3 기반 확장 프로그램. 프롬프트 하나를 ChatGPT, Gemini, Claude, Grok, Perplexity 등 여러 AI 서비스에 동시에 전송한다. 백엔드/API 키 불필요 — `chrome.scripting.executeScript`로 각 서비스의 DOM에 직접 주입.
+Chrome Manifest V3 기반 확장 프로그램이다. 프롬프트 하나를 ChatGPT, Gemini, Claude, Grok, Perplexity 등 여러 AI 서비스에 동시에 전송하며, 백엔드나 API 키 없이 `chrome.scripting.executeScript`와 content script로 각 사이트 DOM에 직접 주입한다.
 
-**핵심 특징:**
-- 완전 클라이언트사이드 (서버 없음)
-- TypeScript + esbuild 빌드
-- 한국어/영어 이중 지원 (기본 로케일: 한국어)
-- 커스텀 AI 서비스 추가 가능
-- 히스토리·즐겨찾기·템플릿 변수·분석 대시보드 내장
-- 즐겨찾기 태그·폴더·핀 시스템
-- 서비스별 프롬프트 오버라이드
-- 확장 시스템 템플릿 변수 9개 (url, title, selection, counter, random 신규 포함)
-- 셀렉터 오류 GitHub 신고 버튼
-- 옵션 페이지 히스토리 상세 결과 비교 뷰
-- 커스텀 서비스 optional host permission 정리 및 자동 회수
-- built-in override import 검증 강화
-- `broadcastCounter` export/import/reset 정합성
-- site-level `resolvedPrompt`와 retry 일관성
-- background state 직렬화 및 reset 일원화
-- reusable-tab preflight와 CSV export 안전화
+현재 구현의 큰 축은 다음 4가지다.
+
+- 다중 AI 방송 + 재사용 탭/새 탭/특정 탭 라우팅
+- 템플릿 변수, 히스토리, 즐겨찾기, 커스텀 서비스 관리
+- 즐겨찾기 체인/예약/빠른 팔레트 기반 실행 확장
+- background/popup/options의 기능 기준 모듈 분리 리팩터링
 
 ---
 
-## 2. 디렉터리 구조
+## 2. 현재 디렉터리 구조
 
-```
+```text
 prompt-broadcaster/
-├── src/                          # TypeScript 소스 (수정은 여기서)
+├── src/
 │   ├── background/
 │   │   ├── app/
-│   │   │   ├── bootstrap.ts      # 서비스 워커 오케스트레이션 핵심
-│   │   │   ├── constants.ts      # 런타임 상수
-│   │   │   └── injection-helpers.ts # timeout/selector/result helper
-│   │   └── main.ts               # 얇은 엔트리포인트
+│   │   │   ├── bootstrap.ts
+│   │   │   ├── constants.ts
+│   │   │   └── injection-helpers.ts
+│   │   ├── commands/
+│   │   │   └── quick-palette.ts
+│   │   ├── context-menu/
+│   │   │   └── index.ts
+│   │   ├── messages/
+│   │   │   └── router.ts
+│   │   ├── popup/
+│   │   │   ├── favorites-workflow.ts
+│   │   │   └── launcher.ts
+│   │   ├── selection/
+│   │   │   └── runtime.ts
+│   │   └── main.ts
 │   ├── config/
 │   │   ├── sites/
-│   │   │   ├── builtins.ts       # 내장 AI 서비스 정의
-│   │   │   └── index.ts          # canonical export
-│   │   └── sites.ts              # 하위 호환 re-export
+│   │   │   ├── builtins.ts
+│   │   │   └── index.ts
+│   │   └── sites.ts
 │   ├── content/
-│   │   ├── injector/             # DOM 주입 로직
-│   │   │   ├── main.ts           # 주입 오케스트레이션
-│   │   │   ├── dom.ts            # DOM 유틸리티
-│   │   │   ├── fallback.ts       # 클립보드 폴백
-│   │   │   ├── selectors.ts      # 셀렉터 탐색
-│   │   │   ├── strategies.ts     # 텍스트 주입 전략
-│   │   │   └── submit.ts         # 제출 실행
-│   │   ├── selector-checker/     # 셀렉터 유효성 검사 (지원 페이지에서 실행)
-│   │   │   ├── checks.ts         # 체크 시나리오
-│   │   │   ├── dom.ts            # DOM 탐색
-│   │   │   ├── helper.ts         # 얇은 부트스트랩
-│   │   │   ├── report.ts         # 결과 보고
-│   │   │   └── runtime.ts        # 메시지 래퍼
-│   │   └── selection/            # 사용자 선택 텍스트 캡처
-│   │       ├── helper.ts         # 얇은 부트스트랩
-│   │       ├── messages.ts       # 런타임 메시지
-│   │       ├── reader.ts         # 선택 텍스트 읽기
-│   │       └── tracker.ts        # 이벤트 추적
+│   │   ├── injector/
+│   │   ├── palette/
+│   │   ├── selection/
+│   │   └── selector-checker/
 │   ├── onboarding/
-│   │   ├── app/
-│   │   │   ├── bootstrap.ts
-│   │   │   ├── copy.ts
-│   │   │   ├── navigation.ts
-│   │   │   └── render.ts
-│   │   └── main.ts               # 얇은 엔트리포인트
 │   ├── options/
 │   │   ├── app/
-│   │   │   ├── bootstrap.ts      # 대시보드 & 설정 페이지 조립
-│   │   │   ├── dom.ts            # options DOM 레지스트리
-│   │   │   ├── helpers.ts        # 포맷/마크업 helper
-│   │   │   ├── i18n.ts
-│   │   │   └── state.ts
-│   │   ├── main.ts               # 얇은 엔트리포인트
-│   │   └── ui/
-│   │       └── charts.ts         # 차트 렌더링
+│   │   ├── core/
+│   │   ├── features/
+│   │   ├── ui/
+│   │   └── main.ts
 │   ├── popup/
 │   │   ├── app/
-│   │   │   ├── bootstrap.ts      # 팝업 UI 조립
-│   │   │   ├── dom.ts            # popup DOM 레지스트리
-│   │   │   ├── helpers.ts        # 포맷/유틸 helper
-│   │   │   ├── i18n.ts
-│   │   │   ├── list-markup.ts    # 히스토리/즐겨찾기 마크업
-│   │   │   ├── sorting.ts        # 정렬 전략
-│   │   │   └── state.ts
-│   │   ├── main.ts               # 얇은 엔트리포인트
-│   │   └── ui/
-│   │       └── toast.ts          # 토스트 알림
+│   │   ├── features/
+│   │   ├── ui/
+│   │   └── main.ts
 │   └── shared/
-│       ├── chrome/               # Chrome API 래퍼
-│       ├── broadcast/            # resolved prompt / broadcast state helper
-│       ├── export/               # CSV 등 내보내기 helper
+│       ├── broadcast/
+│       ├── chrome/
+│       ├── export/
 │       ├── i18n/
-│       │   └── messages.ts       # i18n 헬퍼
-│       ├── prompts/              # 히스토리·즐겨찾기·설정·import/export
-│       ├── runtime-state/        # lastBroadcast, 토스트, 셀렉터 경고, 전략 통계
-│       ├── sites/                # 내장/오버라이드/커스텀 사이트 병합
+│       ├── prompts/
+│       ├── runtime-state/
+│       ├── sites/
 │       ├── stores/
-│       │   ├── sites-store.ts    # compatibility barrel
-│       │   ├── prompt-store.ts   # compatibility barrel
-│       │   └── runtime-state.ts  # compatibility barrel
-│       ├── security.ts           # URL 검증
-│       ├── template/             # 템플릿 변수 감지·렌더링
-│       ├── template-utils.ts     # compatibility barrel
+│       ├── template/
+│       ├── template-utils.ts
 │       └── types/
-│           ├── models.ts         # 핵심 TypeScript 인터페이스
-│           └── messages.ts       # 런타임 메시지 타입
-│
 ├── popup/
-│   ├── popup.html                # 팝업 마크업
+│   ├── popup.html
 │   └── styles/
-│       └── app.css               # 팝업 스타일
-│
+│       ├── app.css
+│       └── partials/
 ├── options/
-│   ├── options.html              # 대시보드 마크업
+│   ├── options.html
 │   └── styles/
-│       └── app.css               # 대시보드 스타일
-│
+│       ├── app.css
+│       └── partials/
 ├── onboarding/
-│   └── onboarding.html
-│
 ├── _locales/
-│   ├── en/messages.json          # 영어 문자열
-│   └── ko/messages.json          # 한국어 문자열
-│
-├── icons/                        # 확장 프로그램 아이콘
 ├── qa/
-│   └── fixtures/                 # Playwright 로컬 테스트 픽스처
+│   └── fixtures/
 ├── scripts/
-│   ├── build.mjs                 # esbuild 빌드 설정
-│   └── qa-smoke.mjs              # 스모크 테스트
-│
-├── dist/                         # 빌드 출력 (편집 금지)
-├── manifest.json                 # 확장 매니페스트
-├── package.json
-├── tsconfig.json
-├── CLAUDE.md                     # AI 어시스턴트 작업 가이드
-└── README.md
+│   ├── build.mjs
+│   ├── qa-smoke.mjs
+│   └── qa-smoke/
+├── manifest.json
+├── dist/
+├── README.md
+├── FEATURE_ROADMAP.md
+└── CLAUDE.md
 ```
+
+핵심 포인트:
+
+- `src/*/main.ts`는 얇은 엔트리포인트다.
+- 실제 런타임 책임은 `background/commands`, `background/popup`, `options/features`, `popup/features`처럼 기능 기준으로 나뉜다.
+- 스타일도 `popup/styles/partials`, `options/styles/partials`로 쪼개져 있다.
+- `src/config/sites.ts`는 하위 호환 re-export 역할만 한다.
 
 ---
 
@@ -156,492 +117,461 @@ prompt-broadcaster/
 | `src/popup/main.ts` | `dist/popup/popup.js` |
 | `src/options/main.ts` | `dist/options/options.js` |
 | `src/content/injector/main.ts` | `dist/content/injector.js` |
+| `src/content/palette/main.ts` | `dist/content/palette.js` |
 | `src/content/selector-checker/main.ts` | `dist/content/selector_checker.js` |
 | `src/content/selection/main.ts` | `dist/content/selection.js` |
 | `src/onboarding/main.ts` | `dist/onboarding/onboarding.js` |
-| `popup/styles/app.css` | `dist/popup/styles/app.css` |
-| `options/styles/app.css` | `dist/options/styles/app.css` |
 
-`src/*/main.ts`는 빌드 엔트리로 유지되지만, 실제 오케스트레이션은 각 런타임의 `app/bootstrap.ts`에 있다.
+루트의 `background/service_worker.js`, `popup/popup.js`, `options/options.js`, `content/*.js`는 모두 generated mirror이며, 수동 편집 대상이 아니다.
 
 ---
 
-## 4. 핵심 모듈 상세
+## 4. 주요 모듈 책임
 
-### 4.1 사이트 설정 (`src/config/sites/builtins.ts`)
+### 4.1 Background
 
-내장 5개 서비스 정의 (셀렉터 검증: 2026-03 기준):
+메인 조립 파일:
 
-| 서비스 | URL | 입력 타입 | 대기시간 |
-|---|---|---|---|
-| ChatGPT | `chatgpt.com` | contenteditable | 2000ms |
-| Gemini | `gemini.google.com` | contenteditable | 2500ms |
-| Claude | `claude.ai` | contenteditable | 1500ms |
-| Grok | `grok.com` | contenteditable | 2000ms |
-| Perplexity | `www.perplexity.ai` | contenteditable | 2000ms |
+- `src/background/app/bootstrap.ts`
 
-각 서비스 구조:
-```typescript
-{
-  inputSelector: string        // 주 입력 셀렉터
-  fallbackSelectors: string[]  // 폴백 셀렉터 목록
-  authSelectors: string[]      // 로그인 페이지 감지용
-  submitSelector: string       // 제출 버튼 셀렉터
-  submitMethod: "click" | "enter" | "shift+enter"
-  waitMs: number               // 주입 후 대기
-  lastVerified: string         // 마지막 검증 날짜
+세부 기능:
+
+- `src/background/messages/router.ts`
+  - runtime message action 라우팅
+- `src/background/popup/favorites-workflow.ts`
+  - 즐겨찾기 실행
+  - chain step 순차 실행
+  - schedule alarm reconcile / firing 처리
+  - popup handoff intent 저장
+- `src/background/popup/launcher.ts`
+  - toolbar popup 재오픈
+  - active browser window 부재 시 standalone popup fallback
+- `src/background/commands/quick-palette.ts`
+  - `Alt+Shift+F` command 처리
+  - 현재 탭에 palette bundle 주입
+- `src/background/context-menu/index.ts`
+  - 우클릭 메뉴 생성/갱신/실행
+- `src/background/selection/runtime.ts`
+  - 활성 탭 컨텍스트, 선택 텍스트 조회
+- `src/background/app/injection-helpers.ts`
+  - wait multiplier
+  - selector/result normalization
+  - adaptive strategy order 계산
+
+### 4.2 Popup
+
+메인 조립 파일:
+
+- `src/popup/app/bootstrap.ts`
+
+세부 기능:
+
+- `src/popup/app/dom.ts`
+  - DOM registry
+- `src/popup/app/helpers.ts`, `sorting.ts`, `list-markup.ts`
+  - pure formatting / markup
+- `src/popup/features/favorite-editor.ts`
+  - 즐겨찾기 통합 편집기
+  - single/chain mode 전환
+  - chain step 추가/삭제/순서 이동
+  - schedule fields 편집
+  - favorite `Run now` / `Edit`
+
+### 4.3 Options
+
+메인 조립 파일:
+
+- `src/options/app/bootstrap.ts`
+
+세부 기능:
+
+- `src/options/core/data.ts`
+  - 공통 데이터 로드/리로드
+- `src/options/core/navigation.ts`
+  - 섹션 이동
+- `src/options/core/status.ts`
+  - status/toast
+- `src/options/core/service-filter.ts`
+  - history service filter option 동기화
+- `src/options/features/dashboard.ts`
+  - 메트릭 카드/차트 데이터
+- `src/options/features/history.ts`
+  - 히스토리 필터, 페이지네이션, bulk delete, 상세 모달
+- `src/options/features/schedules.ts`
+  - 예약 즐겨찾기 목록, toggle, run-now, popup editor handoff
+- `src/options/features/services.ts`
+  - 서비스 카드 및 `waitMs` 편집
+- `src/options/features/settings.ts`
+  - import/export/reset/shortcut 표시
+- `src/options/ui/charts.ts`
+  - 차트 렌더링
+
+### 4.4 Content Scripts
+
+- `src/content/injector/`
+  - 실제 입력/제출 파이프라인
+- `src/content/selector-checker/`
+  - 셀렉터/인증 페이지 상태 보고
+- `src/content/selection/`
+  - 현재 페이지 선택 텍스트 추적
+- `src/content/palette/main.ts`
+  - shadow root 기반 quick palette overlay
+
+---
+
+## 5. 데이터 모델 핵심
+
+### 5.1 AppSettings
+
+```ts
+interface AppSettings {
+  historyLimit: number;
+  autoClosePopup: boolean;
+  desktopNotifications: boolean;
+  reuseExistingTabs: boolean;
+  waitMsMultiplier: number;
+  historySort: "latest" | "oldest" | "mostSuccess" | "mostFailure";
+  favoriteSort: "recentUsed" | "usageCount" | "title" | "createdAt";
 }
 ```
 
-### 4.2 사이트 스토어 (`src/shared/sites/`)
+### 5.2 FavoritePrompt
 
-3계층 병합으로 런타임 사이트 목록 생성:
-1. **내장 사이트** (불변 기본값)
-2. **내장 오버라이드** (사용자가 수정한 내장 셀렉터)
-3. **커스텀 사이트** (사용자 추가 서비스)
-
-런타임 사이트 (`RuntimeSite`) 추가 필드:
-- `enabled` — 활성화 여부
-- `color`, `icon` — 사용자 지정 표시
-- `isBuiltIn`, `isCustom`, `deletable`, `editable` — 관리 플래그
-- `permissionPatterns` — `url + hostnameAliases` 기준 선택적 호스트 권한 origin 목록
-
-커스텀 서비스는 저장, 수정, import 시 필요한 `permissionPatterns` 전체를 확인한다. 필요한 origin 중 하나라도 거부되면 해당 서비스는 부분 적용되지 않는다. 삭제, 리셋, import 교체 시 더 이상 쓰이지 않는 optional host permission은 자동 회수된다.
-
-### 4.3 프롬프트 스토어 (`src/shared/prompts/`)
-
-| 데이터 | 스토리지 키 | 구조 |
-|---|---|---|
-| 히스토리 | `promptHistory` | `PromptHistoryItem[]` |
-| 즐겨찾기 | `promptFavorites` | `FavoritePrompt[]` |
-| 앱 설정 | `appSettings` | `AppSettings` |
-| 템플릿 캐시 | `templateVariableCache` | `Record<string, string>` |
-| 방송 카운터 | `broadcastCounter` | `number` |
-
-**히스토리 아이템 주요 필드:**
-```typescript
-{
-  id: number
-  text: string
-  requestedSiteIds: string[]   // 사용자가 선택한 대상 (재전송 시 사용)
-  submittedSiteIds: string[]   // 실제 주입 성공한 서비스
-  failedSiteIds: string[]      // 실패한 서비스
-  sentTo: string[]             // deprecated, submittedSiteIds 미러
-  siteResults: Record<string, SiteInjectionResult>
-  status: string
-  createdAt: string
-}
-```
-
-**즐겨찾기 추가 메타:**
-```typescript
-{
-  usageCount: number
-  lastUsedAt: string | null
-}
-```
-
-**앱 설정:**
-```typescript
-{
-  historyLimit: number        // 10-200, 기본 50
-  autoClosePopup: boolean
-  desktopNotifications: boolean
-  reuseExistingTabs: boolean
-  waitMsMultiplier: number    // 0.5~3.0, 기본 1.0
-  historySort: "latest" | "oldest" | "mostSuccess" | "mostFailure"
-  favoriteSort: "recentUsed" | "usageCount" | "title" | "createdAt"
-}
-```
-
-### 4.4 런타임 상태 (`src/shared/runtime-state/`)
-
-local 저장:
-- `failedSelectors` — 서비스별 셀렉터 실패 기록
-- `onboardingCompleted` — 온보딩 완료 여부
-- `strategyStats` — 사이트별 주입 전략 성공/실패 누적 통계
-
-session 저장:
-- `lastBroadcast` — 현재/최근 방송 진행 상황
-- `pendingUiToasts` — 표시 대기 중인 알림 큐
-- `pendingInjections` — 탭별 주입 대기/진행 레코드
-- `pendingBroadcasts` — 방송별 집계 상태
-- `selectorAlerts` — 중복 selector alert 방지용 서명 캐시
-
-background는 위 session 상태를 메모리에도 캐시하고, 단일 mutation 체인으로 직렬화해 동시 완료/취소/리셋 상황에서 siteResults와 카운터가 유실되지 않도록 관리한다.
-
-`pendingBroadcasts` 레코드는 `openedTabIds`를 별도로 보관한다. 그래서 취소 시 현재 방송이 새로 연 탭만 닫고, 재사용한 기존 탭은 보존할 수 있다.
-
-### 4.5 템플릿 유틸 (`src/shared/template/`)
-
-**시스템 변수** (자동 치환):
-- `{{date}}` / `{{날짜}}` → YYYY-MM-DD
-- `{{time}}` / `{{시간}}` → HH:MM
-- `{{weekday}}` / `{{요일}}` → 요일명
-- `{{clipboard}}` / `{{클립보드}}` → 클립보드 내용
-- `{{url}}` / `{{주소}}` → 활성 일반 브라우저 탭 URL
-- `{{title}}` / `{{제목}}` → 활성 일반 브라우저 탭 제목
-- `{{selection}}` / `{{선택}}` → 활성 일반 브라우저 탭 선택 텍스트
-- `{{counter}}` / `{{카운터}}` → 최소 1개 타깃이 큐잉된 방송 누적 카운트
-- `{{random}}` / `{{랜덤}}` → 1~1000 랜덤 값
-
-**사용자 변수** — `{{임의이름}}` 형태면 팝업에서 입력 모달 표시
-
-`src/shared/template-utils.ts`는 현재 `src/shared/template/`를 재-export하는 compatibility barrel이다.
-
----
-
-## 5. 주요 데이터 흐름
-
-### 방송 흐름
-```
-사용자 → 팝업 열기
-  ↓
-팝업: 현재 창의 열린 AI 탭 검색
-  ↓
-사용자: 프롬프트 작성 + 서비스 선택
-  ↓ (템플릿 변수 있으면 모달)
-팝업: 메인 프롬프트 + 서비스별 override를 함께 스캔하고 site별 `resolvedPrompt` 계산
-  ↓
-팝업 → background: BroadcastMessage 전송
-  ↓
-background: 탭 결정 (재사용/새탭/지정탭)
-background: reuse 후보는 hostname 매칭 후 auth/settings path, 입력 surface, submit preflight까지 확인
-background: 대기열에 추가, 순차 처리
-  ↓
-background → 탭: content/injector.js 주입
-  ↓
-injector: 셀렉터 탐색 (주→폴백 순서)
-injector: 텍스트 주입
-injector: 제출 버튼 활성화 대기 → 클릭/키보드 제출
-  ↓
-injector → background: 결과 보고
-background: lastBroadcast 업데이트
-  ↓
-팝업: 상태 아이콘 갱신
-히스토리 항목 저장
-```
-
-retry는 현재 팝업 입력 상태를 다시 읽지 않고, 실패 시점에 저장된 `resolvedPrompt`를 그대로 재사용한다.
-Reset data는 options가 storage를 직접 지우지 않고 background에 `resetAllData`를 요청해 진행 중 broadcast cancel 후 local/session 상태를 함께 초기화한다.
-
-Perplexity 예외:
-- `#ask-input[data-lexical-editor='true']`를 최우선 selector로 강제
-- page-owned Lexical editor에 맞추기 위해 background가 `MAIN` world에서 텍스트만 주입
-- 발신은 기존 `content/injector.js`의 submit 경로를 그대로 사용
-
-### 메시지 프로토콜
-
-**팝업 → 백그라운드:**
-```typescript
-{
-  action: "broadcast",
-  prompt: string,
-  sites: Array<{
-    id?: string,
-    tabId?: number,
-    reuseExistingTab?: boolean,
-    openInNewTab?: boolean
-    promptOverride?: string,
-    resolvedPrompt?: string
-  }>
-}
-```
-
-추가 background action:
-- `resetAllData` — background 주도 전체 초기화
-- `getActiveTabContext` — 템플릿 시스템 변수용 현재 탭 정보 조회
-- `getBroadcastCounter` — `{{counter}}` 미리보기용 현재 값 조회
-
-**콘텐츠 스크립트 → 백그라운드:**
-- `selector-check:report` — 셀렉터 검증 결과
-- `injectSuccess` — 주입 성공
-- `injectFallback` — 실패 (클립보드에 복사됨)
-- `selectorFailed` — 셀렉터 없음
-- `selection:update` — 선택 텍스트 변경
-
----
-
-## 6. 팝업 UI 구조
-
-**탭 구성:**
-1. **작성 (Compose)** — 프롬프트 입력, 서비스 선택, 전송
-2. **히스토리** — 전송 기록 검색·관리·재전송
-3. **즐겨찾기** — 제목 붙은 템플릿 저장·관리
-4. **설정** — 탭 재사용, 내보내기, 커스텀 서비스 관리
-
-**주요 모달:**
-- **템플릿 모달** — 시스템 변수 미리보기 + 사용자 변수 입력
-- **재전송 모달** — 히스토리 재전송 시 서비스 재선택
-- **import 리포트 모달** — 거부 서비스, 권한 거부 origin, ID 재작성, built-in 보정 표시
-- **서비스 편집 모달** — 커스텀 서비스 추가/편집 (셀렉터, URL, 색상 등)
-
-**탭 타겟팅 옵션:**
-- 기본 라우팅 (설정에 따라)
-- 새 탭 강제
-- 특정 열린 탭 지정
-
-**팝업 UX 추가사항:**
-- 내부 단축키 (`Ctrl/Cmd+Enter`, `Ctrl/Cmd+Shift+Enter`, `Ctrl/Cmd+1..4`, `Esc`)
-- 히스토리/즐겨찾기 정렬 드롭다운
-- 즐겨찾기 복제, 사용량 기반 정렬
-- roving focus 기반 키보드 탐색
-
----
-
-## 7. 콘텐츠 주입 파이프라인
-
-```
-1. 인증 페이지 감지 (authSelectors)
-       ↓
-2. 셀렉터 탐색
-   주 셀렉터 → 폴백 셀렉터 1 → 폴백 셀렉터 2 → ...
-   쉼표로 연결된 selector 문자열도 우선순위 배열로 분해해 순서대로 검사
-   (숨겨진 요소보다 보이는 요소 우선)
-       ↓
-3. 텍스트 주입 전략 시도 (순서대로)
-   contenteditable: execCommand → DOM 조작 → paste 이벤트
-   textarea/input: native setter → paste 이벤트
-   Perplexity: `MAIN` world Lexical state 갱신 우선
-       ↓
-4. 제출 실행
-   click: 버튼 활성화될 때까지 폴링 → 클릭
-   keyboard: 포커스 → 키 이벤트 dispatch
-   Perplexity는 입력만 예외 경로를 타고 제출은 기존 submit 로직 유지
-       ↓
-5. 결과 보고 → 백그라운드
-```
-
-**폴백:** 주입 실패 시 클립보드에 복사 + 배너 표시
-
----
-
-## 8. 옵션 페이지 구조
-
-1. **대시보드** — 서비스별 사용량 도넛 차트, 7일 활동 막대 차트, 지표 카드
-2. **히스토리** — 페이지네이션 테이블, 서비스/날짜 필터, CSV 내보내기
-3. **서비스** — 검사 그리드 (사용 횟수, 성공률, 마지막 검증일)
-4. **설정** — 히스토리 보존 한도, 자동 닫기, 알림, 탭 재사용, 전역 wait multiplier, 단축키 안내, 데이터 관리
-
-히스토리 섹션에는 체크박스 기반 bulk 삭제, 현재 필터 결과 삭제, `7/30/90일 이전 삭제` 빠른 액션이 추가돼 있다.
-
----
-
-## 9. 권한 및 보안
-
-**manifest.json 권한:**
-- `activeTab`, `tabs`, `scripting`, `storage`
-- `notifications`, `contextMenus`, `alarms`
-- `clipboardWrite` (기본), `clipboardRead` (선택적)
-- 호스트 권한: chatgpt.com, gemini.google.com, claude.ai, grok.com, www.perplexity.ai, perplexity.ai
-
-**보안 조치:**
-- `src/shared/security.ts` — URL 검증 (http/https만 허용)
-- 매니페스트 CSP — unsafe-eval 금지
-- 클립보드 읽기는 명시적 권한 후 허용
-- 입력 셀렉터·텍스트 정규화 처리
-
----
-
-## 10. 테스트
-
-**스모크 QA (`qa/` + `scripts/qa-smoke.mjs`):**
-- Playwright로 로컬 픽스처 대상 실행
-- 테스트 항목:
-  - textarea / contenteditable 주입
-  - 폴백 셀렉터 동작
-  - 지연 제출 버튼 활성화
-  - click / enter / shift+enter 제출 방식
-  - 셀렉터 체커 `ok` / `auth_page` 보고
-  - alias hostname 기반 optional permission 검증
-  - 커스텀 서비스 삭제/리셋 시 permission 회수
-  - built-in override import 보정
-  - `broadcastCounter` export/import/reset 정합성
-  - export `version: 4` 마이그레이션 정합성
-  - 즐겨찾기 제목/태그/폴더 검색
-  - 서비스별 override 템플릿 해석 및 retry prompt 보존
-  - CSV export formula injection 방어
-  - pending broadcast state 누적 정합성 (구조화된 `siteResults`)
-  - 전략 통계 누적 정합성
-  - reusable-tab preflight 필터링
-  - reset helper의 local/session 동시 초기화
-
-```bash
-npx playwright install chromium
-npm run qa:smoke
-```
-
----
-
-## 11. i18n 구조
-
-- 기본 로케일: `ko` (한국어)
-- 키 네이밍: `section_component_detail` 패턴
-- 매니페스트: `__MSG_key__` 플레이스홀더
-- UI 요소: `data-i18n="key"` 속성
-- 런타임: `chrome.i18n.getMessage(key, substitutions)`
-
----
-
-## 12. 핵심 타입 요약
-
-```typescript
-// 입력 타입
-type InputType = "textarea" | "contenteditable" | "input";
-type SubmitMethod = "click" | "enter" | "shift+enter";
-
-// 사이트 설정 (내장 정의)
-interface SiteConfig { ... }
-
-// 런타임 사이트 (병합 결과)
-interface RuntimeSite extends SiteConfig {
-  enabled: boolean;
-  color: string;
-  icon: string;
-  isBuiltIn: boolean;
-  isCustom: boolean;
-  deletable: boolean;
-  editable: boolean;
-  permissionPatterns: string[];
-}
-
-// 히스토리 항목
-interface PromptHistoryItem {
-  id: number;
-  text: string;
-  requestedSiteIds: string[];   // 재전송 시 이것을 사용
-  submittedSiteIds: string[];
-  failedSiteIds: string[];
-  sentTo: string[];             // legacy, submittedSiteIds 미러
-  siteResults: Record<string, SiteInjectionResult>;
-  ...
-}
-
-// 즐겨찾기
+```ts
 interface FavoritePrompt {
   id: string;
   title: string;
   text: string;
+  sentTo: string[];
   templateDefaults: Record<string, string>;
+  tags: string[];
+  folder: string;
+  pinned: boolean;
   usageCount: number;
   lastUsedAt: string | null;
-  ...
+  mode: "single" | "chain";
+  steps: ChainStep[];
+  scheduleEnabled: boolean;
+  scheduledAt: string | null;
+  scheduleRepeat: "none" | "daily" | "weekday" | "weekly";
 }
+```
 
-// 현재 방송 상태
-interface LastBroadcastSummary {
-  broadcastId: string;
-  status: string;
-  total: number;
-  completed: number;
+### 5.3 PromptHistoryItem
+
+```ts
+interface PromptHistoryItem {
+  id: number;
+  text: string;
+  requestedSiteIds: string[];
   submittedSiteIds: string[];
   failedSiteIds: string[];
+  sentTo: string[];
   siteResults: Record<string, SiteInjectionResult>;
-  ...
+  originFavoriteId?: string | null;
+  chainRunId?: string | null;
+  chainStepIndex?: number | null;
+  chainStepCount?: number | null;
+  trigger?: "popup" | "scheduled" | "palette" | "options";
+}
+```
+
+### 5.4 SiteInjectionResult
+
+```ts
+type InjectionResultCode =
+  | "submitted"
+  | "selector_timeout"
+  | "auth_required"
+  | "submit_failed"
+  | "strategy_exhausted"
+  | "permission_denied"
+  | "tab_create_failed"
+  | "tab_closed"
+  | "injection_timeout"
+  | "cancelled"
+  | "unexpected_error";
+```
+
+구조:
+
+```ts
+interface SiteInjectionResult {
+  code: InjectionResultCode;
+  message?: string;
+  strategy?: string;
+  elapsedMs?: number;
+  attempts?: Array<{ name: string; success: boolean }>;
 }
 ```
 
 ---
 
-## 13. 빌드 시스템
+## 6. 저장소와 마이그레이션
 
-**도구:** esbuild (번들링), TypeScript (타입 검사)
+로컬 스토리지 주요 키:
 
-**엔트리포인트:**
-- background, popup, options, injector, selector-checker, selection, onboarding
+- `promptHistory`
+- `promptFavorites`
+- `templateVariableCache`
+- `appSettings`
+- `broadcastCounter`
+- `failedSelectors`
+- `onboardingCompleted`
+- `strategyStats`
 
-**주요 명령:**
-```bash
-npm install                          # 의존성 설치
-npm run build                        # dist/ 컴파일
-npm run rebuild                      # 클린 + 빌드
-npm run typecheck                    # 타입 검사 (emit 없음)
-npm run qa:smoke                     # 스모크 테스트
-powershell -ExecutionPolicy Bypass -File .\package.ps1   # 릴리즈 zip (Windows)
-bash ./package.sh                    # 릴리즈 zip (macOS/Linux)
+세션 스토리지 주요 키:
+
+- `pendingInjections`
+- `pendingBroadcasts`
+- `selectorAlerts`
+- `lastBroadcast`
+- `pendingUiToasts`
+- popup handoff intent (`src/shared/runtime-state/popup-intent.ts`)
+
+JSON export/import:
+
+- 현재 export version: `5`
+- 지원 migration: `v1 -> v2 -> v3 -> v4 -> v5`
+- `v5`에서 backfill 되는 대표 항목:
+  - favorite `mode`
+  - `steps`
+  - `scheduleEnabled`
+  - `scheduledAt`
+  - `scheduleRepeat`
+  - history chain metadata
+
+---
+
+## 7. 방송 실행 흐름
+
+### 7.1 일반 popup 방송
+
+```text
+Popup 입력
+  ↓
+템플릿 변수 탐지/해석
+  ↓
+site별 resolvedPrompt 생성
+  ↓
+background로 broadcast 요청
+  ↓
+탭 결정 (재사용 / 새 탭 / 특정 탭)
+  ↓
+content/injector.js 주입
+  ↓
+입력 + submit
+  ↓
+siteResults / history / lastBroadcast 업데이트
 ```
 
-> **주의:** 소스 수정 후 반드시 `npm run build` 실행 후 Chrome에서 테스트
+### 7.2 즐겨찾기 실행
+
+- popup `Run now`
+- options `Run now`
+- quick palette
+- `chrome.alarms`
+
+모두 background의 동일 favorite 실행 엔트리포인트를 사용한다.
+
+### 7.3 Chain favorite
+
+- step을 순서대로 실행
+- 각 step 전 `delayMs` 적용 가능
+- step별 `targetSiteIds`가 있으면 favorite 기본 `sentTo`를 override
+- 어떤 step이든 결과가 `submitted`가 아니면 즉시 중단
+
+### 7.4 Scheduled favorite
+
+- schedule source of truth는 `FavoritePrompt`
+- background가 startup/install/favorite update/import 이후 alarm reconcile
+- `none` 반복은 1회 실행 후 disable
+- `daily`, `weekday`, `weekly`는 다음 `scheduledAt` 갱신 후 재등록
+- `url/title/selection/clipboard`가 필요한 템플릿은 schedule 실행 시 block
+
+### 7.5 Quick palette
+
+- manifest command: `quick-palette`
+- 기본 단축키: `Alt+Shift+F`
+- background가 injectable tab이면 `content/palette.js`를 주입
+- overlay는 favorites만 검색
+- fully resolvable favorite면 즉시 실행
+- 추가 입력이 필요하면 popup handoff intent 저장 후 popup fallback
 
 ---
 
-## 14. 새 기능 추가 시 참고 포인트
+## 8. 주입 파이프라인
 
-| 목적 | 수정 파일 |
-|---|---|
-| 새 AI 서비스 추가 | `src/config/sites/builtins.ts` + `manifest.json` |
-| 팝업 UI 변경 | `src/popup/app/bootstrap.ts` + `popup/popup.html` + `popup/styles/app.css` |
-| 옵션 페이지 변경 | `src/options/app/bootstrap.ts` + `options/options.html` |
-| 주입 로직 변경 | `src/content/injector/` 하위 파일 |
-| 템플릿 변수 추가 | `src/shared/template/` |
-| 설정 항목 추가 | `src/shared/prompts/` |
-| 새 문자열 추가 | `_locales/en/messages.json` + `_locales/ko/messages.json` |
-| 타입 정의 변경 | `src/shared/types/models.ts` |
-| 백그라운드 로직 | `src/background/app/bootstrap.ts` + `src/background/app/injection-helpers.ts` |
+```text
+1. auth page 여부 확인
+2. input selector 탐색 (primary -> fallback)
+3. visible/enabled prompt surface 우선 선택
+4. input strategy 시도
+5. submit wait/poll 후 실행
+6. structured result 반환
+```
+
+핵심 구현 포인트:
+
+- `textarea`, `input`, `contenteditable` 지원
+- `click`, `enter`, `shift+enter` 제출 지원
+- Claude/Gemini는 언어 비의존 textbox/contenteditable 계열 fallback 우선 강화
+- Perplexity는 Lexical editor 특수 경로 유지
+- submit 실패 시 1회 재시도
+- adaptive strategy stats 저장
 
 ---
 
-## 15. 현재 구현된 기능 목록
+## 9. UI 구조 요약
+
+### Popup
+
+탭:
+
+1. Compose
+2. History
+3. Favorites
+4. Settings
+
+주요 UX:
+
+- `Ctrl/Cmd+Enter` 전송
+- `Ctrl/Cmd+Shift+Enter` 취소
+- `Ctrl/Cmd+1..4` 탭 전환
+- `Esc` 모달/메뉴 닫기
+- history/favorites roving focus
+- resend service-picker modal
+- import report modal
+- 통합 favorite editor
+
+### Options
+
+섹션:
+
+1. Dashboard
+2. History
+3. Schedules
+4. Services
+5. Settings
+
+주요 UX:
+
+- history checkbox bulk delete
+- 현재 필터 결과 전체 삭제
+- `7/30/90일 이전 삭제`
+- schedules toggle / run now / open in popup
+- service `waitMs` 편집
+- shortcut 목록 표시
+
+---
+
+## 10. 테스트 체계
+
+### 자동 검증
+
+```bash
+npm run typecheck
+npm run build
+npm run qa:smoke
+```
+
+### smoke coverage 핵심
+
+- selector injection / fallback
+- delayed submit enablement
+- `click` / `enter` / `shift+enter`
+- selector checker `ok` / `auth_page`
+- custom service permission cleanup
+- invalid built-in override import repair
+- `broadcastCounter` export/import/reset
+- export `version: 5` migration
+- favorite chain/schedule field backfill
+- quick palette filtering 및 실행
+- favorites search
+- structured `siteResults`
+- strategy stats accumulation
+- reusable-tab preflight
+- reset helper cleanup
+
+---
+
+## 11. 현재 구현 완료 상태
 
 ### 핵심 방송
-- [x] 다중 AI 서비스 동시 방송 (ChatGPT, Gemini, Claude, Grok, Perplexity)
-- [x] 탭 재사용 / 새 탭 / 특정 탭 지정
-- [x] reusable-tab preflight (auth/settings 경로, 입력 surface, submit 제어 존재 여부 3단 검증)
-- [x] 방송 취소 — 방송 중 열린 탭만 닫고, 재사용 탭은 보존
 
-### 프롬프트 & 템플릿
-- [x] 시스템 템플릿 변수 9개: `{{date}}`, `{{time}}`, `{{weekday}}`, `{{clipboard}}`, `{{url}}`, `{{title}}`, `{{selection}}`, `{{counter}}`, `{{random}}` (한국어 별칭 포함)
-- [x] 사용자 정의 변수 입력 모달
-- [x] 서비스별 프롬프트 오버라이드 (per-service override)
-- [x] 히스토리 & 즐겨찾기 (태그·폴더·핀 시스템)
-- [x] JSON 내보내기/가져오기 (`version: 4`, 단계형 마이그레이션, 상세 import 리포트, `broadcastCounter` 포함)
-- [x] CSV 내보내기 (formula injection 방어)
-- [x] `{{counter}}` 팝업 미리보기 (`current + 1`), 실제 증가는 최소 1개 큐잉 시만
-- [x] 즐겨찾기 복제, usageCount/lastUsedAt 기록, 히스토리/즐겨찾기 정렬 옵션
+- [x] 다중 AI 서비스 동시 방송
+- [x] 재사용 탭 / 새 탭 / 특정 탭 지정
+- [x] 취소 시 새로 연 탭만 닫고 재사용 탭은 유지
+- [x] reusable-tab preflight
 
-### DOM 주입
-- [x] 강건한 DOM 주입 (textarea, contenteditable, input)
-- [x] 5가지 주입 전략 (native setter, execCommand, Lexical state, DOM 직접 조작, paste 이벤트)
-- [x] Perplexity Lexical editor 전용 경로 (`MAIN` world 텍스트 주입 + 기존 submit 유지)
-- [x] 제출 버튼 활성화 대기 폴링 (비동기 에디터 대응)
-- [x] 제출 실패 1회 재시도와 구조화된 결과 코드
-- [x] 클립보드 폴백 (주입 실패 시)
+### 즐겨찾기/템플릿
 
-### 상태 & 운영성
-- [x] Background pending state 직렬 mutation 체인 (동시 완료/취소/리셋 안전)
-- [x] structured `SiteInjectionResult` + 사이트별 전략 통계 저장
-- [x] 셀렉터 자가 진단 (`ok` / `selector_missing` / `auth_page`)
-- [x] 셀렉터 경고 배지 + GitHub Issues 신고 버튼
-- [x] 커스텀 서비스 optional host permission 전체 관리 (추가/삭제/회수)
-- [x] built-in override import 보정 (`click + empty submitSelector` → 원본 셀렉터 유지)
-- [x] reset flow — background 주도, 진행 중 방송 취소 + local/session 동시 초기화
+- [x] 시스템 템플릿 변수 9개
+- [x] 사용자 변수 입력 모달
+- [x] per-service prompt override
+- [x] favorite tags / folder / pin / duplicate / sort
+- [x] chain favorite
+- [x] scheduled favorite
+- [x] options schedules surface
+- [x] quick palette
 
-### UI & UX
-- [x] 분석 대시보드 (도넛 차트, 7일 막대 차트, 지표 카드)
-- [x] 히스토리 상세 결과 비교 뷰 (옵션 페이지)
-- [x] 다크 모드, popup 내부 단축키, 접근성 tablist/tabpanel 구조
-- [x] 히스토리 재전송 서비스 선택 모달
-- [x] 옵션 히스토리 bulk 삭제 및 wait multiplier 제어
-- [x] 데스크탑 알림
-- [x] 우클릭 컨텍스트 메뉴
-- [x] 키보드 단축키 (Alt+Shift+P, Alt+Shift+S)
-- [x] 온보딩 페이지
-- [x] 한국어/영어 이중 언어
+### 데이터/운영성
+
+- [x] 구조화된 `siteResults`
+- [x] adaptive strategy stats
+- [x] import/export `v5`
+- [x] 상세 import 리포트
+- [x] background mutation chain
+- [x] reset-data 일원화
+
+### UI/문서화/리팩터링
+
+- [x] popup/options 기능 기준 모듈 분리
+- [x] CSS partial 분리
+- [x] qa smoke helper 분리
+- [x] 다크 모드/접근성 보강
+- [x] 한영 로케일
 
 ---
 
-## 16. 고도화 방향 요약
+## 12. 남은 로드맵 요약
 
-`FEATURE_ROADMAP.md`에 상세 구현 설계가 있다. 우선순위 요약:
+현재 `FEATURE_ROADMAP.md` 기준 남은 큰 범주는 다음이다.
 
-| 우선순위 | 기능 | 키 포인트 |
+| 우선순위 | 기능 | 메모 |
 |---|---|---|
-| ★★★ | **방송 예약** (Scheduled Broadcast) | `chrome.alarms` 기반, 서비스 워커 깨우기 패턴 |
-| ★★★ | **프롬프트 체인** (Chain Mode) | 즐겨찾기에 `ChainStep[]` 추가, 단계별 딜레이 |
-| ★★★ | **빠른 팔레트** (Quick Palette) | content script 오버레이, `Alt+Shift+F` 단축키 |
-| ★★☆ | **딜레이·순서 커스터마이징** | `waitMsMultiplier`, `siteOrder` in AppSettings |
-| ★★☆ | **히스토리 통계 강화** | 시간대 히트맵, 서비스 성공률 트렌드, 키워드 Top 10 |
-| ★★☆ | **신규 내장 서비스** | Copilot, Mistral, DeepSeek, HuggingChat |
-| ★☆☆ | **다국어 확장** | 일본어(`ja`), 중국어(`zh_CN`) 로케일 |
+| 2순위 | 방송 순서 커스터마이징 | `siteOrder` 미구현 |
+| 2순위 | 히스토리 통계 강화 | heatmap / trend / keyword 분석 미구현 |
+| 2순위 | 신규 내장 AI 서비스 | Copilot / Mistral / DeepSeek / HuggingChat 후보 |
+| 보류 | 다국어 확장 | `ja`, `zh_CN` 미구현 |
 
-새 기능 추가 시 필수 확인 항목은 `FEATURE_ROADMAP.md` 하단 "구현 시 공통 체크리스트" 참고.
+---
+
+## 13. 수정 포인트 빠른 가이드
+
+| 목적 | 우선 확인 파일 |
+|---|---|
+| built-in 사이트 추가 | `src/config/sites/builtins.ts`, `manifest.json` |
+| background 메시지/라우팅 수정 | `src/background/messages/router.ts`, `src/background/app/bootstrap.ts` |
+| favorite 실행/예약/체인 수정 | `src/background/popup/favorites-workflow.ts`, `src/popup/features/favorite-editor.ts` |
+| quick palette 수정 | `src/background/commands/quick-palette.ts`, `src/content/palette/main.ts` |
+| popup UI 수정 | `src/popup/app/bootstrap.ts`, `src/popup/app/*`, `popup/popup.html`, `popup/styles/partials/*` |
+| options UI 수정 | `src/options/app/bootstrap.ts`, `src/options/features/*`, `options/options.html`, `options/styles/partials/*` |
+| 템플릿 변수 수정 | `src/shared/template/` |
+| 타입 수정 | `src/shared/types/models.ts`, `src/shared/types/messages.ts` |
+| import/export 수정 | `src/shared/prompts/import-export.ts` |
+| smoke 테스트 수정 | `scripts/qa-smoke.mjs`, `scripts/qa-smoke/*` |
+
+---
+
+## 14. 결론
+
+이 프로젝트는 이제 단순한 "멀티 전송 확장"을 넘어, 다음 특성을 가진 상태다.
+
+- popup 중심 즉시 전송 도구
+- favorite 기반 자동화 도구
+- background 주도 예약/체인 실행 도구
+- quick palette를 통한 page-local 실행 도구
+- import/export와 runtime-state가 정리된 MV3 확장
+
+즉, 현재의 핵심 과제는 기능 추가 자체보다도 남은 운영성 고도화와 신규 서비스 확대에 가깝다.

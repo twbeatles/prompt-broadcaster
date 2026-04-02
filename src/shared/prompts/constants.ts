@@ -16,6 +16,8 @@ export const MAX_WAIT_MS_MULTIPLIER = 3.0;
 export const DEFAULT_WAIT_MS_MULTIPLIER = 1.0;
 export const DEFAULT_HISTORY_SORT = "latest";
 export const DEFAULT_FAVORITE_SORT = "recentUsed";
+export const DEFAULT_FAVORITE_MODE = "single";
+export const DEFAULT_SCHEDULE_REPEAT = "none";
 export const DEFAULT_SETTINGS = Object.freeze({
   historyLimit: DEFAULT_HISTORY_LIMIT,
   autoClosePopup: false,

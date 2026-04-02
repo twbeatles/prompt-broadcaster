@@ -4,6 +4,9 @@ export type SelectorCheckMode = "input-and-submit" | "input-only";
 export type TemplateVariableKind = "system" | "user";
 export type HistorySort = "latest" | "oldest" | "mostSuccess" | "mostFailure";
 export type FavoriteSort = "recentUsed" | "usageCount" | "title" | "createdAt";
+export type FavoriteMode = "single" | "chain";
+export type ScheduleRepeat = "none" | "daily" | "weekday" | "weekly";
+export type FavoriteExecutionTrigger = "popup" | "scheduled" | "palette" | "options";
 export type InjectionResultCode =
   | "submitted"
   | "selector_timeout"
@@ -83,6 +86,13 @@ export interface TemplateVariableDescriptor {
   kind: TemplateVariableKind;
 }
 
+export interface ChainStep {
+  id: string;
+  text: string;
+  delayMs: number;
+  targetSiteIds: string[];
+}
+
 export interface SiteConfig {
   id: string;
   name: string;
@@ -147,6 +157,11 @@ export interface PromptHistoryItem {
   createdAt: string;
   status: string;
   siteResults: Record<string, SiteInjectionResult>;
+  originFavoriteId?: string | null;
+  chainRunId?: string | null;
+  chainStepIndex?: number | null;
+  chainStepCount?: number | null;
+  trigger?: FavoriteExecutionTrigger;
 }
 
 export interface FavoritePrompt {
@@ -163,6 +178,11 @@ export interface FavoritePrompt {
   pinned: boolean;
   usageCount: number;
   lastUsedAt: string | null;
+  mode: FavoriteMode;
+  steps: ChainStep[];
+  scheduleEnabled: boolean;
+  scheduledAt: string | null;
+  scheduleRepeat: ScheduleRepeat;
 }
 
 export interface FailedSelectorRecord {
@@ -228,6 +248,19 @@ export interface PendingBroadcastRecord {
   originTabId?: number | null;
   originWindowId?: number | null;
   openedTabIds: number[];
+  originFavoriteId?: string | null;
+  chainRunId?: string | null;
+  chainStepIndex?: number | null;
+  chainStepCount?: number | null;
+  trigger?: FavoriteExecutionTrigger;
+}
+
+export interface PopupFavoriteIntent {
+  type: "edit" | "run";
+  favoriteId: string;
+  reason?: string;
+  source?: FavoriteExecutionTrigger | "options-edit";
+  createdAt: string;
 }
 
 export interface ReusableTabSurfaceSnapshot {

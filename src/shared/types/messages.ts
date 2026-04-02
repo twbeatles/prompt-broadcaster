@@ -68,6 +68,19 @@ export interface CancelBroadcastMessage {
   broadcastId: string;
 }
 
+export interface FavoriteRunMessage {
+  action: "favorite:run";
+  favoriteId: string;
+  trigger?: "popup" | "scheduled" | "palette" | "options";
+  allowPopupFallback?: boolean;
+}
+
+export interface FavoriteOpenEditorMessage {
+  action: "favorite:openEditor";
+  favoriteId: string;
+  source?: "options-edit" | "popup";
+}
+
 export interface GetActiveTabContextMessage {
   action: "getActiveTabContext";
 }
@@ -90,6 +103,19 @@ export interface SelectionUpdateMessage {
   text: string;
 }
 
+export interface QuickPaletteGetStateMessage {
+  action: "quickPalette:getState";
+}
+
+export interface QuickPaletteExecuteMessage {
+  action: "quickPalette:execute";
+  favoriteId: string;
+}
+
+export interface QuickPaletteCloseMessage {
+  action: "quickPalette:close";
+}
+
 export type RuntimeMessage =
   | BroadcastMessage
   | SelectorCheckInitMessage
@@ -101,8 +127,13 @@ export type RuntimeMessage =
   | PopupOpenedMessage
   | GetOpenAiTabsMessage
   | CancelBroadcastMessage
+  | FavoriteRunMessage
+  | FavoriteOpenEditorMessage
   | GetActiveTabContextMessage
   | GetBroadcastCounterMessage
   | ResetAllDataMessage
   | UiToastMessage
-  | SelectionUpdateMessage;
+  | SelectionUpdateMessage
+  | QuickPaletteGetStateMessage
+  | QuickPaletteExecuteMessage
+  | QuickPaletteCloseMessage;

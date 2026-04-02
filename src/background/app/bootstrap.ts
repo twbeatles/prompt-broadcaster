@@ -11,9 +11,20 @@ import {
   appendPromptHistory,
   getAppSettings,
   getBroadcastCounter,
+  getPromptFavorites,
+  getTemplateVariableCache,
+  markFavoriteUsed,
+  normalizeSiteIdList,
   normalizeResultCode,
   setBroadcastCounter,
+  updateFavoritePrompt,
 } from "../../shared/prompts";
+import {
+  SYSTEM_TEMPLATE_VARIABLES,
+  buildSystemTemplateValues,
+  detectTemplateVariables,
+  renderTemplatePrompt,
+} from "../../shared/template";
 import {
   clearFailedSelector,
   enqueueUiToast,
@@ -23,6 +34,7 @@ import {
   resetPersistedExtensionState,
   setLastBroadcast,
   getStrategyStats,
+  setPopupFavoriteIntent,
 } from "../../shared/runtime-state";
 import {
   getEnabledRuntimeSites,
@@ -40,10 +52,12 @@ import {
   KEEPALIVE_PERIOD_MINUTES,
   NOTIFICATION_ICON_PATH,
   ONBOARDING_URL,
+  PALETTE_SCRIPT_PATH,
   PENDING_BROADCASTS_KEY,
   PENDING_INJECTIONS_KEY,
   PENDING_TIMEOUT_MS,
   POPUP_PAGE_URL,
+  QUICK_PALETTE_COMMAND,
   RECONCILE_ALARM,
   SELECTOR_ALERTS_KEY,
   SELECTOR_CHECKER_SCRIPT_PATH,
@@ -61,12 +75,19 @@ import {
   normalizeSelectorEntries,
   scaleTimeout,
 } from "./injection-helpers";
+import { createPopupLauncher } from "../popup/launcher";
+import { createQuickPaletteCommand } from "../commands/quick-palette";
+import { createSelectionRuntime } from "../selection/runtime";
+import { createContextMenuController } from "../context-menu";
+import { createFavoriteWorkflow } from "../popup/favorites-workflow";
+import { registerRuntimeMessageRouter } from "../messages/router";
 
 const DEFAULT_SUBMIT_BUTTON_WAIT_TIMEOUT_MS = 5000;
 const DEFAULT_SUBMIT_RETRY_COUNT = 1;
 
 const activeInjections = new Set();
 const queuedInjectionTabIds = new Set();
+const broadcastCompletionWaiters = new Map();
 const selectionCache = new Map();
 const suppressedCompletedBroadcastIds = new Set();
 const backgroundSessionState = {
@@ -80,6 +101,13 @@ let lastNormalTabId = null;
 let contextMenuRefreshChain = Promise.resolve();
 let injectionProcessChain = Promise.resolve();
 let backgroundStateMutationChain = Promise.resolve();
+
+const SCHEDULED_VARIABLE_BLOCKLIST = new Set([
+  SYSTEM_TEMPLATE_VARIABLES.url,
+  SYSTEM_TEMPLATE_VARIABLES.title,
+  SYSTEM_TEMPLATE_VARIABLES.selection,
+  SYSTEM_TEMPLATE_VARIABLES.clipboard,
+]);
 
 function getI18nMessage(key, substitutions) {
   return chrome.i18n.getMessage(key, substitutions) || "";
@@ -101,6 +129,58 @@ function clonePlainValue(value) {
 
 function normalizePrompt(value) {
   return typeof value === "string" ? value : "";
+}
+
+function buildChainRunId() {
+  return typeof crypto?.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `chain-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function registerBroadcastCompletionWaiter(broadcastId) {
+  const normalizedBroadcastId =
+    typeof broadcastId === "string" ? broadcastId.trim() : "";
+  if (!normalizedBroadcastId) {
+    return Promise.resolve(null);
+  }
+
+  const existing = broadcastCompletionWaiters.get(normalizedBroadcastId);
+  if (existing?.promise) {
+    return existing.promise;
+  }
+
+  let resolvePromise = null;
+  const promise = new Promise((resolve) => {
+    resolvePromise = resolve;
+  });
+
+  broadcastCompletionWaiters.set(normalizedBroadcastId, {
+    promise,
+    resolve: resolvePromise,
+  });
+
+  return promise;
+}
+
+function resolveBroadcastCompletionWaiter(broadcastId, summary = null) {
+  const normalizedBroadcastId =
+    typeof broadcastId === "string" ? broadcastId.trim() : "";
+  if (!normalizedBroadcastId) {
+    return;
+  }
+
+  const existing = broadcastCompletionWaiters.get(normalizedBroadcastId);
+  if (!existing?.resolve) {
+    return;
+  }
+
+  existing.resolve(summary);
+  broadcastCompletionWaiters.delete(normalizedBroadcastId);
+}
+
+function getBroadcastTriggerLabel(trigger) {
+  const normalized = typeof trigger === "string" ? trigger.trim() : "";
+  return normalized || "popup";
 }
 
 async function rememberNormalTab(tab) {
@@ -863,178 +943,63 @@ async function getExplicitReusableTabForTarget(target) {
   }
 }
 
-async function storePromptForPopup(prompt) {
-  try {
-    await chrome.storage.local.set({ lastPrompt: prompt });
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to store prompt for popup.", error);
-  }
-}
+const { openPopupWithPrompt, openOnboardingPage } = createPopupLauncher();
+const {
+  getSelectedTextFromTab,
+  maybeInjectDynamicSelectorChecker,
+  handleSelectionUpdateMessage,
+} = createSelectionRuntime({
+  selectionCache,
+  getSiteForUrl,
+  isInjectableTabUrl,
+  isCustomSitePermissionGranted,
+});
+const { handleQuickPaletteCommand } = createQuickPaletteCommand({
+  getPreferredNormalActiveTab,
+  isInjectableTabUrl,
+  openPopupWithPrompt,
+});
+const {
+  getContextMenuTargetSiteIds,
+  createContextMenus,
+  handleContextMenuBroadcast,
+  handleCaptureSelectedTextCommand,
+} = createContextMenuController({
+  getI18nMessage,
+  getEnabledRuntimeSites,
+  getSitePermissionPatterns,
+  openPopupWithPrompt,
+  getSelectedTextFromTab,
+  isInjectableTabUrl,
+  handleBroadcastMessage,
+  getContextMenuRefreshChain: () => contextMenuRefreshChain,
+  setContextMenuRefreshChain: (value) => {
+    contextMenuRefreshChain = value;
+  },
+});
+const {
+  buildScheduleAlarmName,
+  parseScheduleAlarmFavoriteId,
+  reconcileFavoriteSchedules,
+  handleFavoriteScheduleAlarm,
+  handleFavoriteRunMessage,
+  handleFavoriteOpenEditorMessage,
+  handleQuickPaletteGetState,
+  handleQuickPaletteExecuteMessage,
+} = createFavoriteWorkflow({
+  getBroadcastTriggerLabel,
+  rememberNormalTab,
+  getPreferredNormalActiveTab,
+  isInjectableTabUrl,
+  getSelectedTextFromTab,
+  openPopupWithPrompt,
+  nowIso,
+  sleep,
+  buildChainRunId,
+  queueBroadcastRequest,
+  registerBroadcastCompletionWaiter,
+});
 
-async function tryOpenActionPopup() {
-  if (typeof chrome.action?.openPopup !== "function") {
-    return false;
-  }
-
-  try {
-    await chrome.action.openPopup();
-    return true;
-  } catch (error) {
-    console.warn("[AI Prompt Broadcaster] Action popup open failed; trying fallback.", error);
-    return false;
-  }
-}
-
-async function focusExistingBrowserWindow() {
-  try {
-    const windows = await chrome.windows.getAll({
-      windowTypes: ["normal"],
-    });
-    const targetWindow = windows.find((windowInfo) => Number.isFinite(windowInfo?.id));
-
-    if (!targetWindow?.id) {
-      return false;
-    }
-
-    await chrome.windows.update(targetWindow.id, { focused: true });
-    return true;
-  } catch (error) {
-    console.warn("[AI Prompt Broadcaster] Failed to focus an existing browser window.", error);
-    return false;
-  }
-}
-
-async function openStandalonePopupPage() {
-  try {
-    await chrome.windows.create({
-      url: chrome.runtime.getURL(POPUP_PAGE_URL),
-      type: "popup",
-      focused: true,
-      width: STANDALONE_POPUP_WIDTH,
-      height: STANDALONE_POPUP_HEIGHT,
-    });
-    return true;
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to open standalone popup page.", error);
-    return false;
-  }
-}
-
-async function openPopupWithPrompt(prompt = "") {
-  try {
-    if (typeof prompt === "string") {
-      await storePromptForPopup(prompt);
-    }
-
-    if (await tryOpenActionPopup()) {
-      return;
-    }
-
-    if (await focusExistingBrowserWindow()) {
-      if (await tryOpenActionPopup()) {
-        return;
-      }
-    }
-
-    if (!(await openStandalonePopupPage())) {
-      console.error("[AI Prompt Broadcaster] Failed to open extension popup.");
-    }
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to open extension popup.", error);
-  }
-}
-
-async function openOnboardingPage() {
-  try {
-    await chrome.tabs.create({ url: chrome.runtime.getURL(ONBOARDING_URL) });
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to open onboarding page.", error);
-  }
-}
-
-async function ensureSelectionScript(tabId) {
-  try {
-    await chrome.tabs.sendMessage(tabId, { action: "selection:ping" });
-    return true;
-  } catch (_error) {
-    try {
-      await chrome.scripting.executeScript({
-        target: { tabId },
-        files: [SELECTION_SCRIPT_PATH],
-      });
-      return true;
-    } catch (error) {
-      console.error("[AI Prompt Broadcaster] Failed to inject selection script.", {
-        tabId,
-        error,
-      });
-      return false;
-    }
-  }
-}
-
-async function ensureSelectorCheckerScript(tabId) {
-  try {
-    await chrome.tabs.sendMessage(tabId, { action: "selector-check:ping" });
-    return true;
-  } catch (_error) {
-    try {
-      await chrome.scripting.executeScript({
-        target: { tabId },
-        files: [SELECTOR_CHECKER_SCRIPT_PATH],
-      });
-      return true;
-    } catch (error) {
-      console.error("[AI Prompt Broadcaster] Failed to inject selector checker.", {
-        tabId,
-        error,
-      });
-      return false;
-    }
-  }
-}
-
-async function getSelectedTextFromTab(tabId) {
-  try {
-    const didInject = await ensureSelectionScript(tabId);
-    if (!didInject) {
-      return selectionCache.get(tabId) ?? "";
-    }
-
-    const response = await chrome.tabs.sendMessage(tabId, {
-      action: "selection:get-text",
-    });
-
-    return typeof response?.text === "string"
-      ? response.text.trim()
-      : selectionCache.get(tabId) ?? "";
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to read selected text from tab.", {
-      tabId,
-      error,
-    });
-    return selectionCache.get(tabId) ?? "";
-  }
-}
-
-async function maybeInjectDynamicSelectorChecker(tabId, tab) {
-  const tabUrl = typeof tab?.url === "string" ? tab.url : "";
-  if (!tabId || !isInjectableTabUrl(tabUrl)) {
-    return false;
-  }
-
-  const site = await getSiteForUrl(tabUrl);
-  if (!site?.isCustom || site.enabled === false) {
-    return false;
-  }
-
-  const granted = await isCustomSitePermissionGranted(site);
-  if (!granted) {
-    return false;
-  }
-
-  return ensureSelectorCheckerScript(tabId);
-}
 
 async function getPreferredInjectableNormalTab() {
   const tab = await getPreferredNormalActiveTab();
@@ -1296,164 +1261,6 @@ async function runServiceTestOnTab(tabId, draft) {
   };
 }
 
-async function getContextMenuTargetSiteIds(menuItemId) {
-  if (menuItemId === CONTEXT_MENU_ALL_ID) {
-    const enabledSites = await getEnabledRuntimeSites();
-    const allowedSites = (
-      await Promise.all(
-        enabledSites.map(async (site) => {
-          if (!site.isCustom || getSitePermissionPatterns(site).length === 0) {
-            return site;
-          }
-
-          const granted = await chrome.permissions.contains({
-            origins: getSitePermissionPatterns(site),
-          });
-          return granted ? site : null;
-        })
-      )
-    ).filter(Boolean);
-
-    return allowedSites.map((site) => site.id);
-  }
-
-  if (typeof menuItemId === "string" && menuItemId.startsWith(CONTEXT_MENU_SITE_PREFIX)) {
-    return [menuItemId.slice(CONTEXT_MENU_SITE_PREFIX.length)];
-  }
-
-  return [];
-}
-
-function removeAllContextMenus() {
-  return new Promise((resolve, reject) => {
-    chrome.contextMenus.removeAll(() => {
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
-        return;
-      }
-
-      resolve();
-    });
-  });
-}
-
-function createContextMenuItem(createProperties) {
-  return new Promise((resolve, reject) => {
-    chrome.contextMenus.create(createProperties, () => {
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message));
-        return;
-      }
-
-      resolve();
-    });
-  });
-}
-
-async function rebuildContextMenus() {
-  await removeAllContextMenus();
-
-  const enabledSites = await getEnabledRuntimeSites();
-  const menuSites = (
-    await Promise.all(
-      enabledSites.map(async (site) => {
-        if (!site.isCustom || getSitePermissionPatterns(site).length === 0) {
-          return site;
-        }
-
-        try {
-          const granted = await chrome.permissions.contains({
-            origins: getSitePermissionPatterns(site),
-          });
-          return granted ? site : null;
-        } catch (error) {
-          console.error("[AI Prompt Broadcaster] Failed to check custom site permission.", {
-            siteId: site.id,
-            error,
-          });
-          return null;
-        }
-      })
-    )
-  ).filter(Boolean);
-
-  await createContextMenuItem({
-    id: CONTEXT_MENU_ROOT_ID,
-    title: getI18nMessage("context_menu_root"),
-    contexts: ["selection"],
-  });
-
-  await createContextMenuItem({
-    id: CONTEXT_MENU_ALL_ID,
-    parentId: CONTEXT_MENU_ROOT_ID,
-    title: getI18nMessage("context_menu_send_all"),
-    contexts: ["selection"],
-  });
-
-  for (const site of menuSites) {
-    await createContextMenuItem({
-      id: `${CONTEXT_MENU_SITE_PREFIX}${site.id}`,
-      parentId: CONTEXT_MENU_ROOT_ID,
-      title: getI18nMessage("context_menu_send_to", [site.name]),
-      contexts: ["selection"],
-    });
-  }
-}
-
-function createContextMenus() {
-  contextMenuRefreshChain = contextMenuRefreshChain
-    .catch(() => undefined)
-    .then(() => rebuildContextMenus())
-    .catch((error) => {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message.includes("No SW")) {
-        return;
-      }
-
-      console.error("[AI Prompt Broadcaster] Failed to create context menus.", error);
-    });
-
-  return contextMenuRefreshChain;
-}
-
-async function handleContextMenuBroadcast(prompt, siteIds) {
-  if (!prompt.trim()) {
-    return;
-  }
-
-  try {
-    await handleBroadcastMessage({
-      action: "broadcast",
-      prompt,
-      sites: siteIds,
-    });
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Context menu broadcast failed.", {
-      siteIds,
-      error,
-    });
-  }
-}
-
-async function handleCaptureSelectedTextCommand() {
-  try {
-    const [activeTab] = await chrome.tabs.query({
-      active: true,
-      lastFocusedWindow: true,
-    });
-
-    if (!activeTab?.id || !isInjectableTabUrl(activeTab.url ?? "")) {
-      await openPopupWithPrompt("");
-      return;
-    }
-
-    const selectedText = await getSelectedTextFromTab(activeTab.id);
-    await openPopupWithPrompt(selectedText);
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Capture-selected-text command failed.", error);
-  }
-}
-
 async function clearBadge() {
   try {
     await chrome.action.setBadgeText({ text: "" });
@@ -1496,7 +1303,7 @@ async function syncLastBroadcast(summary) {
   await applyBadgeForBroadcast(summary);
 }
 
-async function createPendingBroadcast(prompt, sites) {
+async function createPendingBroadcast(prompt, sites, metadata = {}) {
   const pendingInjections = await getPendingInjections();
   if (Object.keys(pendingInjections).length > 0) {
     console.warn("[AI Prompt Broadcaster] Starting a new broadcast while pending tabs still exist.", pendingInjections);
@@ -1522,6 +1329,21 @@ async function createPendingBroadcast(prompt, sites) {
     originTabId: originContext?.tabId ?? null,
     originWindowId: originContext?.windowId ?? null,
     openedTabIds: [],
+    originFavoriteId:
+      typeof metadata.originFavoriteId === "string" && metadata.originFavoriteId.trim()
+        ? metadata.originFavoriteId.trim()
+        : null,
+    chainRunId:
+      typeof metadata.chainRunId === "string" && metadata.chainRunId.trim()
+        ? metadata.chainRunId.trim()
+        : null,
+    chainStepIndex: Number.isFinite(Number(metadata.chainStepIndex))
+      ? Math.max(0, Math.round(Number(metadata.chainStepIndex)))
+      : null,
+    chainStepCount: Number.isFinite(Number(metadata.chainStepCount))
+      ? Math.max(0, Math.round(Number(metadata.chainStepCount)))
+      : null,
+    trigger: getBroadcastTriggerLabel(metadata.trigger),
   };
 
   await queueBackgroundStateMutation((state) => {
@@ -1670,6 +1492,7 @@ async function recordBroadcastSiteResult(broadcastId, siteId, resultInput) {
 
         if (suppressCompletionEffects) {
           await syncLastBroadcast(summary);
+          resolveBroadcastCompletionWaiter(broadcastId, summary);
           return summary;
         }
 
@@ -1677,17 +1500,23 @@ async function recordBroadcastSiteResult(broadcastId, siteId, resultInput) {
           id: Date.now(),
           text: completedRecord.prompt,
           requestedSiteIds: completedRecord.siteIds,
-        submittedSiteIds: completedRecord.submittedSiteIds,
-        failedSiteIds: completedRecord.failedSiteIds,
-        sentTo: completedRecord.submittedSiteIds,
-        createdAt: completedRecord.startedAt,
-        status: summary.status,
+          submittedSiteIds: completedRecord.submittedSiteIds,
+          failedSiteIds: completedRecord.failedSiteIds,
+          sentTo: completedRecord.submittedSiteIds,
+          createdAt: completedRecord.startedAt,
+          status: summary.status,
           siteResults: completedRecord.siteResults,
+          originFavoriteId: completedRecord.originFavoriteId ?? null,
+          chainRunId: completedRecord.chainRunId ?? null,
+          chainStepIndex: completedRecord.chainStepIndex ?? null,
+          chainStepCount: completedRecord.chainStepCount ?? null,
+          trigger: completedRecord.trigger ?? "popup",
         });
 
         await syncLastBroadcast(summary);
         await restoreBroadcastFocus(completedRecord);
         await maybeCreateBroadcastNotification(summary);
+        resolveBroadcastCompletionWaiter(broadcastId, summary);
       } else {
         await syncLastBroadcast(summary);
       }
@@ -1785,6 +1614,7 @@ async function cancelBroadcast(broadcastId, reason = "cancelled") {
     });
   }
 
+  resolveBroadcastCompletionWaiter(normalizedBroadcastId, summary ?? null);
   return summary;
 }
 
@@ -2406,48 +2236,15 @@ async function initializeServiceWorker() {
   await ensureReconcileAlarm();
   await reconcilePendingInjections();
   await reconcilePendingBroadcasts();
+  await reconcileFavoriteSchedules();
 }
 
-function handleSelectionUpdateMessage(message, sender) {
-  try {
-    if (typeof sender?.tab?.id !== "number") {
-      return { ok: false };
-    }
-
-    const text = typeof message?.text === "string" ? message.text.trim() : "";
-    if (text) {
-      selectionCache.set(sender.tab.id, text);
-    } else {
-      selectionCache.delete(sender.tab.id);
-    }
-
-    return { ok: true };
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to store selection update.", error);
-    return {
-      ok: false,
-      error: error?.message ?? String(error),
-    };
-  }
-}
-
-async function handleBroadcastMessage(message) {
-  await reconcilePendingBroadcasts();
-
-  const prompt = normalizePrompt(message?.prompt).trim();
-  const selectedTargets = await resolveSelectedTargets(message?.sites);
+async function queueResolvedBroadcastRequest(prompt, selectedTargets, metadata = {}) {
   const selectedSites = selectedTargets.map((target) => target.site);
   let queuedSiteCount = 0;
 
-  if (!prompt) {
-    throw new Error("Prompt is required.");
-  }
-
-  if (selectedSites.length === 0) {
-    throw new Error("At least one target site is required.");
-  }
-
-  const broadcast = await createPendingBroadcast(prompt, selectedSites);
+  const broadcast = await createPendingBroadcast(prompt, selectedSites, metadata);
+  registerBroadcastCompletionWaiter(broadcast.id);
   const settings = await getAppSettings();
   const createdTabSiteIds = [];
   const reusedTabSiteIds = [];
@@ -2575,6 +2372,30 @@ async function handleBroadcastMessage(message) {
     broadcastId: broadcast.id,
     error: queuedSiteCount > 0 ? undefined : "No tabs could be queued.",
   };
+}
+
+async function queueBroadcastRequest(prompt, siteRefs, metadata = {}) {
+  await reconcilePendingBroadcasts();
+
+  const normalizedPrompt = normalizePrompt(prompt).trim();
+  const selectedTargets = await resolveSelectedTargets(siteRefs);
+  const selectedSites = selectedTargets.map((target) => target.site);
+
+  if (!normalizedPrompt) {
+    throw new Error("Prompt is required.");
+  }
+
+  if (selectedSites.length === 0) {
+    throw new Error("At least one target site is required.");
+  }
+
+  return queueResolvedBroadcastRequest(normalizedPrompt, selectedTargets, metadata);
+}
+
+async function handleBroadcastMessage(message) {
+  return queueBroadcastRequest(message?.prompt, message?.sites, {
+    trigger: "popup",
+  });
 }
 
 async function handleSelectorCheckInit(message) {
@@ -2822,135 +2643,90 @@ async function handleServiceTestRun(message) {
   }
 }
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  switch (message?.action) {
-    case "broadcast":
-      void handleBroadcastMessage(message)
-        .then((result) => sendResponse(result))
-        .catch((error) => {
-          console.error("[AI Prompt Broadcaster] Broadcast handling failed.", error);
-          sendResponse({
-            ok: false,
-            error: error?.message ?? String(error),
-          });
-        });
-      return true;
-    case "selector-check:init":
-      void handleSelectorCheckInit(message)
-        .then((result) => sendResponse(result))
-        .catch((error) => {
-          console.error("[AI Prompt Broadcaster] Selector check init failed.", error);
-          sendResponse({
-            ok: false,
-            error: error?.message ?? String(error),
-          });
-        });
-      return true;
-    case "selector-check:report":
-      void handleSelectorCheckReport(message)
-        .then((result) => sendResponse(result))
-        .catch((error) => {
-          console.error("[AI Prompt Broadcaster] Selector check report failed.", error);
-          sendResponse({
-            ok: false,
-            error: error?.message ?? String(error),
-          });
-        });
-      return true;
-    case "service-test:run":
-      void handleServiceTestRun(message)
-        .then((result) => sendResponse(result))
-        .catch((error) => {
-          console.error("[AI Prompt Broadcaster] Service test run failed.", error);
-          sendResponse({
-            ok: false,
-            error: error?.message ?? String(error),
-          });
-        });
-      return true;
-    case "selectorFailed":
-      void handleSelectorFailedMessage(message)
-        .then((result) => sendResponse(result))
-        .catch((error) => {
-          sendResponse({ ok: false, error: error?.message ?? String(error) });
-        });
-      return true;
-    case "injectSuccess":
-      void handleInjectSuccessMessage(message)
-        .then((result) => sendResponse(result))
-        .catch((error) => {
-          sendResponse({ ok: false, error: error?.message ?? String(error) });
-        });
-      return true;
-    case "injectFallback":
-      void handleInjectFallbackMessage(message)
-        .then((result) => sendResponse(result))
-        .catch((error) => {
-          sendResponse({ ok: false, error: error?.message ?? String(error) });
-        });
-      return true;
-    case "uiToast":
-      void handleUiToastMessage(message)
-        .then((result) => sendResponse(result))
-        .catch((error) => {
-          sendResponse({ ok: false, error: error?.message ?? String(error) });
-        });
-      return true;
-    case "popupOpened":
-      void handlePopupOpened()
-        .then((result) => sendResponse(result))
-        .catch((error) => {
-          sendResponse({ ok: false, error: error?.message ?? String(error) });
-        });
-      return true;
-    case "getOpenAiTabs":
-      void handleGetOpenAiTabsMessage(message)
-        .then((result) => sendResponse(result))
-        .catch((error) => {
-          sendResponse({ ok: false, error: error?.message ?? String(error) });
-        });
-      return true;
-    case "cancelBroadcast":
-      void handleCancelBroadcastMessage(message)
-        .then((result) => sendResponse(result))
-        .catch((error) => {
-          sendResponse({ ok: false, error: error?.message ?? String(error) });
-        });
-      return true;
-    case "resetAllData":
-      void resetAllExtensionData()
-        .then((result) => sendResponse(result))
-        .catch((error) => {
-          console.error("[AI Prompt Broadcaster] Reset-all-data failed.", error);
-          sendResponse({ ok: false, error: error?.message ?? String(error) });
-        });
-      return true;
-    case "getActiveTabContext":
-      void handleGetActiveTabContext()
-        .then((result) => sendResponse(result))
-        .catch((error) => {
-          sendResponse({ ok: false, url: "", title: "", selection: "", error: error?.message ?? String(error) });
-        });
-      return true;
-    case "getBroadcastCounter":
-      void getBroadcastCounter()
-        .then((counter) => sendResponse({ ok: true, counter }))
-        .catch((error) => {
-          sendResponse({ ok: false, counter: 0, error: error?.message ?? String(error) });
-        });
-      return true;
-    case "selection:update":
-      sendResponse(handleSelectionUpdateMessage(message, sender));
-      return false;
-    default:
-      return false;
-  }
+registerRuntimeMessageRouter({
+  broadcast: {
+    run: (message) => handleBroadcastMessage(message),
+    errorLabel: "[AI Prompt Broadcaster] Broadcast handling failed.",
+  },
+  "selector-check:init": {
+    run: (message) => handleSelectorCheckInit(message),
+    errorLabel: "[AI Prompt Broadcaster] Selector check init failed.",
+  },
+  "selector-check:report": {
+    run: (message) => handleSelectorCheckReport(message),
+    errorLabel: "[AI Prompt Broadcaster] Selector check report failed.",
+  },
+  "service-test:run": {
+    run: (message) => handleServiceTestRun(message),
+    errorLabel: "[AI Prompt Broadcaster] Service test run failed.",
+  },
+  selectorFailed: {
+    run: (message) => handleSelectorFailedMessage(message),
+  },
+  injectSuccess: {
+    run: (message) => handleInjectSuccessMessage(message),
+  },
+  injectFallback: {
+    run: (message) => handleInjectFallbackMessage(message),
+  },
+  uiToast: {
+    run: (message) => handleUiToastMessage(message),
+  },
+  popupOpened: {
+    run: () => handlePopupOpened(),
+  },
+  getOpenAiTabs: {
+    run: (message) => handleGetOpenAiTabsMessage(message),
+  },
+  cancelBroadcast: {
+    run: (message) => handleCancelBroadcastMessage(message),
+  },
+  "favorite:run": {
+    run: (message, sender) => handleFavoriteRunMessage(message, sender),
+  },
+  "favorite:openEditor": {
+    run: (message) => handleFavoriteOpenEditorMessage(message),
+  },
+  resetAllData: {
+    run: () => resetAllExtensionData(),
+    errorLabel: "[AI Prompt Broadcaster] Reset-all-data failed.",
+  },
+  getActiveTabContext: {
+    run: () => handleGetActiveTabContext(),
+    onError: (error, fallback) => ({
+      ...fallback,
+      url: "",
+      title: "",
+      selection: "",
+    }),
+  },
+  getBroadcastCounter: {
+    run: async () => ({ ok: true, counter: await getBroadcastCounter() }),
+    onError: (error, fallback) => ({
+      ...fallback,
+      counter: 0,
+    }),
+  },
+  "selection:update": {
+    sync: true,
+    run: (message, sender) => handleSelectionUpdateMessage(message, sender),
+  },
+  "quickPalette:getState": {
+    run: () => handleQuickPaletteGetState(),
+  },
+  "quickPalette:execute": {
+    run: (message, sender) => handleQuickPaletteExecuteMessage(message, sender),
+  },
+  "quickPalette:close": {
+    sync: true,
+    run: () => ({ ok: true }),
+  },
 });
 
 chrome.runtime.onInstalled.addListener(({ reason }) => {
   void (async () => {
     await createContextMenus();
-    await ensureReconcileAlarm();
+    await initializeServiceWorker();
 
     if (reason === "install") {
       await setOnboardingCompleted(false);
@@ -2966,6 +2742,11 @@ chrome.runtime.onStartup.addListener(() => {
 chrome.commands.onCommand.addListener((command) => {
   if (command === CAPTURE_SELECTION_COMMAND) {
     void handleCaptureSelectedTextCommand();
+    return;
+  }
+
+  if (command === QUICK_PALETTE_COMMAND) {
+    void handleQuickPaletteCommand();
   }
 });
 
@@ -3075,6 +2856,12 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 
   if (alarm.name === BADGE_CLEAR_ALARM) {
     void clearBadge();
+    return;
+  }
+
+  const favoriteId = parseScheduleAlarmFavoriteId(alarm.name);
+  if (favoriteId) {
+    void handleFavoriteScheduleAlarm(favoriteId);
   }
 });
 
@@ -3085,6 +2872,10 @@ chrome.notifications.onClicked.addListener(() => {
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName === "local" && (changes.customSites || changes.builtInSiteStates || changes.builtInSiteOverrides)) {
     void createContextMenus();
+  }
+
+  if (areaName === "local" && changes.promptFavorites) {
+    void reconcileFavoriteSchedules();
   }
 });
 

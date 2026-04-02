@@ -1,0 +1,451 @@
+/* ── Text inputs ── */
+#prompt-input,
+.search-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.6);
+  color: var(--text);
+  outline: none;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+@media (prefers-color-scheme: dark) {
+  #prompt-input,
+  .search-input {
+    background: rgba(255, 255, 255, 0.06);
+  }
+}
+
+#prompt-input {
+  word-break: keep-all;
+  min-height: 178px;
+  resize: vertical;
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.search-input {
+  padding: 9px 12px;
+}
+
+#prompt-input:focus,
+.search-input:focus,
+.favorite-title-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.textarea-input {
+  min-height: 80px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+/* ── Prompt toolbar ── */
+.prompt-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.small-button {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+#prompt-counter {
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-soft);
+}
+
+/* ── Template summary ── */
+.template-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 12px;
+  background: var(--accent-soft);
+}
+
+.template-summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.template-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.template-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.65);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.template-chip.system {
+  background: color-mix(in srgb, var(--accent-soft) 80%, rgba(255, 255, 255, 0.4));
+  border-color: color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.template-chip-kind {
+  color: var(--text-soft);
+  font-size: 10.5px;
+}
+
+
+/* ── Buttons ── */
+.primary-button,
+.ghost-button,
+.menu-button,
+.menu-item,
+.empty-action,
+.icon-button {
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.primary-button {
+  position: relative;
+  overflow: hidden;
+  border: 0;
+  background: linear-gradient(135deg, var(--accent), #f29d42);
+  color: #fff;
+  padding: 12px 16px;
+  font-weight: 700;
+  font-size: 13.5px;
+  letter-spacing: 0.01em;
+  box-shadow: 0 6px 20px rgba(194, 79, 46, 0.28);
+  transition: opacity var(--transition), transform var(--transition), box-shadow var(--transition);
+}
+
+.primary-button:hover:not(:disabled) {
+  opacity: 0.92;
+  box-shadow: 0 8px 24px rgba(194, 79, 46, 0.36);
+}
+
+.primary-button:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: 0 4px 14px rgba(194, 79, 46, 0.22);
+}
+
+.primary-button.loading {
+  color: transparent;
+  pointer-events: none;
+}
+
+.primary-button.loading::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 18px;
+  height: 18px;
+  border: 2.5px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: btn-spin 0.65s linear infinite;
+}
+
+@keyframes btn-spin {
+  to { transform: rotate(360deg); }
+}
+
+.ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.28);
+  transform: scale(0);
+  animation: ripple-expand 0.55s linear;
+  pointer-events: none;
+}
+
+@keyframes ripple-expand {
+  to { transform: scale(4); opacity: 0; }
+}
+
+.primary-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ghost-button,
+.menu-button,
+.empty-action,
+.icon-button {
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.45);
+  color: var(--text);
+  padding: 10px 12px;
+  transition: all var(--transition);
+}
+
+@media (prefers-color-scheme: dark) {
+  .ghost-button,
+  .menu-button,
+  .empty-action,
+  .icon-button {
+    background: rgba(255, 255, 255, 0.07);
+  }
+}
+
+.ghost-button:hover,
+.menu-button:hover,
+.empty-action:hover {
+  background: rgba(255, 255, 255, 0.75);
+  border-color: color-mix(in srgb, var(--text-soft) 35%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  .ghost-button:hover,
+  .menu-button:hover,
+  .empty-action:hover {
+    background: rgba(255, 255, 255, 0.14);
+  }
+}
+
+/* ── Compose actions ── */
+.compose-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.danger-button {
+  color: var(--danger);
+}
+
+
+/* ── Helper text ── */
+.helper-text {
+  color: var(--text-soft);
+  margin: 0;
+}
+
+/* ── Settings panel ── */
+.settings-group h2 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.settings-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.settings-toggle-row {
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.service-settings-group,
+.service-editor,
+.section-copy {
+  display: grid;
+  gap: 10px;
+}
+
+.section-row-start {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.managed-sites-list {
+  display: grid;
+  gap: 10px;
+}
+
+.managed-site-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.35);
+  transition: background var(--transition);
+}
+
+.managed-site-card:hover {
+  background: rgba(255, 255, 255, 0.55);
+}
+
+@media (prefers-color-scheme: dark) {
+  .managed-site-card {
+    background: rgba(255, 255, 255, 0.04);
+  }
+  .managed-site-card:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+}
+
+.managed-site-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.managed-site-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.managed-site-name-wrap {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.managed-site-name {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.managed-site-url {
+  color: var(--text-soft);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.managed-site-meta,
+.managed-site-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.managed-site-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.48);
+  font-size: 11.5px;
+  color: var(--text-soft);
+}
+
+.toggle-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.toggle-switch input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+.inline-form-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inline-form-row > .search-input {
+  flex: 1;
+}
+
+.inline-radio-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.inline-radio-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.42);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.inline-radio-option:hover {
+  background: rgba(255, 255, 255, 0.65);
+}
+
+.inline-radio-option input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.range-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.range-row input[type="range"] {
+  flex: 1;
+  accent-color: var(--accent);
+}
+
+.inline-field-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.color-input {
+  width: 100%;
+  height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.52);
+  cursor: pointer;
+}
+
+.service-editor {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.28);
+}
+
+@media (prefers-color-scheme: dark) {
+  .service-editor {
+    background: rgba(255, 255, 255, 0.04);
+  }
+}
+
+.managed-site-empty {
+  padding: 18px;
+  border: 1.5px dashed var(--border);
+  border-radius: 12px;
+  color: var(--text-soft);
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+

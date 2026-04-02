@@ -11,9 +11,13 @@ import {
 } from "./constants";
 import type {
   AppSettings,
+  ChainStep,
+  FavoriteExecutionTrigger,
+  FavoriteMode,
   FavoriteSort,
   HistorySort,
   InjectionResultCode,
+  ScheduleRepeat,
   SiteInjectionResult,
 } from "../types/models";
 
@@ -29,6 +33,20 @@ const VALID_FAVORITE_SORTS = new Set<FavoriteSort>([
   "usageCount",
   "title",
   "createdAt",
+]);
+
+const VALID_FAVORITE_MODES = new Set<FavoriteMode>(["single", "chain"]);
+const VALID_SCHEDULE_REPEATS = new Set<ScheduleRepeat>([
+  "none",
+  "daily",
+  "weekday",
+  "weekly",
+]);
+const VALID_EXECUTION_TRIGGERS = new Set<FavoriteExecutionTrigger>([
+  "popup",
+  "scheduled",
+  "palette",
+  "options",
 ]);
 
 const VALID_RESULT_CODES = new Set<InjectionResultCode>([
@@ -152,6 +170,26 @@ export function normalizeFavoriteSort(value: unknown): FavoriteSort {
   return VALID_FAVORITE_SORTS.has(value as FavoriteSort)
     ? (value as FavoriteSort)
     : DEFAULT_FAVORITE_SORT;
+}
+
+export function normalizeFavoriteMode(value: unknown): FavoriteMode {
+  return VALID_FAVORITE_MODES.has(value as FavoriteMode)
+    ? (value as FavoriteMode)
+    : "single";
+}
+
+export function normalizeScheduleRepeat(value: unknown): ScheduleRepeat {
+  return VALID_SCHEDULE_REPEATS.has(value as ScheduleRepeat)
+    ? (value as ScheduleRepeat)
+    : "none";
+}
+
+export function normalizeExecutionTrigger(
+  value: unknown
+): FavoriteExecutionTrigger | undefined {
+  return VALID_EXECUTION_TRIGGERS.has(value as FavoriteExecutionTrigger)
+    ? (value as FavoriteExecutionTrigger)
+    : undefined;
 }
 
 export function normalizeSettings(value: unknown): AppSettings {
@@ -339,4 +377,55 @@ export function normalizeTags(value: unknown) {
         .filter((tag) => tag.length > 0 && tag.length <= 30)
     )
   ).slice(0, 10);
+}
+
+export function createChainStepId(preferredId: unknown, fallbackIndex = 0) {
+  const trimmedId = safeText(preferredId).trim();
+  return trimmedId || `step-${Date.now()}-${fallbackIndex}`;
+}
+
+export function normalizeDelayMs(value: unknown) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.round(numericValue));
+}
+
+export function normalizeChainStep(
+  value: unknown,
+  fallback: Partial<ChainStep> = {},
+  index = 0
+): ChainStep {
+  const source = safeObject(value);
+  const fallbackTargets = Array.isArray(fallback.targetSiteIds) ? fallback.targetSiteIds : [];
+
+  return {
+    id: createChainStepId(source.id ?? fallback.id, index),
+    text: safeText(source.text ?? fallback.text),
+    delayMs: normalizeDelayMs(source.delayMs ?? fallback.delayMs),
+    targetSiteIds: normalizeSiteIdList(
+      Array.isArray(source.targetSiteIds) ? source.targetSiteIds : fallbackTargets
+    ),
+  };
+}
+
+export function normalizeChainSteps(
+  value: unknown,
+  fallback: Partial<ChainStep> = {}
+): ChainStep[] {
+  const source = safeArray(value)
+    .map((entry, index) => normalizeChainStep(entry, fallback, index))
+    .filter((entry) => entry.text.trim());
+
+  if (source.length > 0) {
+    return source;
+  }
+
+  if (safeText(fallback.text).trim()) {
+    return [normalizeChainStep(fallback, fallback, 0)];
+  }
+
+  return [];
 }

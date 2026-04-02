@@ -26,6 +26,7 @@ export const state = {
   templateVariableCache: {},
   pendingTemplateSend: null,
   pendingFavoriteSave: null,
+  pendingFavoriteRunReason: "",
   pendingResendHistory: null,
   pendingImportSummary: null,
   runtimeSites: [],

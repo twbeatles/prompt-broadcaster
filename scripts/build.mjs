@@ -16,6 +16,7 @@ const esmEntries = [
 
 const iifeEntries = [
   { entry: "src/content/injector/main.ts", out: "content/injector.js", globalName: "AIPromptBroadcasterInjectorBundle" },
+  { entry: "src/content/palette/main.ts", out: "content/palette.js", globalName: "AIPromptBroadcasterQuickPaletteBundle" },
   { entry: "src/content/selector-checker/main.ts", out: "content/selector_checker.js", globalName: "AIPromptBroadcasterSelectorCheckerBundle" },
   { entry: "src/content/selection/main.ts", out: "content/selection.js", globalName: "AIPromptBroadcasterSelectionBundle" },
 ];
@@ -23,6 +24,7 @@ const iifeEntries = [
 const generatedMirrorTargets = [
   "background/service_worker.js",
   "content/injector.js",
+  "content/palette.js",
   "content/selector_checker.js",
   "content/selection.js",
   "popup/popup.js",

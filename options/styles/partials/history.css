@@ -1,0 +1,110 @@
+/* ── Filter / toolbar row ── */
+.filter-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.filter-row input,
+.filter-row select {
+  border: 1px solid var(--border);
+  background: var(--panel-strong);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 9px 12px;
+  transition: border-color var(--transition), box-shadow var(--transition);
+  outline: none;
+}
+
+.filter-row input:focus,
+.filter-row select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+
+/* ── Table ── */
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th, td {
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+th {
+  color: var(--text-soft);
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.35);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+@media (prefers-color-scheme: dark) {
+  th {
+    background: rgba(255, 255, 255, 0.04);
+  }
+}
+
+tr:last-child td {
+  border-bottom: 0;
+}
+
+.table-row-button {
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.table-row-button:hover td {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+@media (prefers-color-scheme: dark) {
+  .table-row-button:hover td {
+    background: rgba(255, 255, 255, 0.05);
+  }
+}
+
+/* ── Pagination ── */
+.pagination {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+/* ── Badges & status pills ── */
+.service-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.badge, .status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--accent-soft);
+}
+
+.status-pill.success { color: var(--success); background: rgba(31, 143, 95, 0.1); }
+.status-pill.partial { color: var(--warning); background: rgba(194, 129, 17, 0.1); }
+.status-pill.failed  { color: var(--danger);  background: rgba(181, 59, 59, 0.1); }
+
+

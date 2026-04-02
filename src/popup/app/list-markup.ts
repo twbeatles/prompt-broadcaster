@@ -65,15 +65,24 @@ function buildFavoriteTagsMarkup(item) {
   const folder = typeof item.folder === "string" && item.folder.trim() ? item.folder.trim() : "";
   const pinIcon = item.pinned ? `<span class="fav-pin-icon" title="${escapeHtml(msg("popup_favorite_pinned") || "Pinned")}">📌</span>` : "";
   const folderBadge = folder ? `<span class="fav-folder-badge" data-filter-folder="${escapeAttribute(folder)}">📁 ${escapeHtml(folder)}</span>` : "";
+  const kindBadge = item?.mode === "chain"
+    ? `<span class="fav-type-badge chain">${escapeHtml(t.favoriteKindChain)}</span>`
+    : `<span class="fav-type-badge">${escapeHtml(t.favoriteKindSingle)}</span>`;
+  const scheduleBadge = item?.scheduleEnabled && item?.scheduledAt
+    ? `<span class="fav-schedule-badge">${escapeHtml(t.favoriteScheduledBadge)}</span>`
+    : "";
+  const stepCount = item?.mode === "chain" && Array.isArray(item?.steps) && item.steps.length > 0
+    ? `<span class="fav-step-count">${escapeHtml(t.favoriteStepCount(item.steps.length))}</span>`
+    : "";
   const tagChips = tags.map(
     (tag) => `<span class="fav-tag-chip" data-filter-tag="${escapeAttribute(tag)}">#${escapeHtml(tag)}</span>`
   ).join("");
 
-  if (!pinIcon && !folderBadge && !tagChips) {
+  if (!pinIcon && !folderBadge && !tagChips && !kindBadge && !scheduleBadge && !stepCount) {
     return "";
   }
 
-  return `<div class="fav-meta-row">${pinIcon}${folderBadge}${tagChips}</div>`;
+  return `<div class="fav-meta-row">${pinIcon}${kindBadge}${scheduleBadge}${stepCount}${folderBadge}${tagChips}</div>`;
 }
 
 export function buildFavoriteItemMarkup(item, { openMenuKey = null, runtimeSites = [] } = {}) {
@@ -82,6 +91,7 @@ export function buildFavoriteItemMarkup(item, { openMenuKey = null, runtimeSites
   const pinLabel = item.pinned
     ? (msg("popup_favorite_unpin") || "Unpin")
     : (msg("popup_favorite_pin") || "Pin");
+  const primaryAction = item?.mode === "chain" ? "edit-favorite" : "load-favorite";
 
   return `
     <article class="prompt-item${item.pinned ? " pinned-item" : ""}" data-favorite-id="${safeFavoriteId}" role="listitem">
@@ -96,7 +106,7 @@ export function buildFavoriteItemMarkup(item, { openMenuKey = null, runtimeSites
         />
       </div>
       ${buildFavoriteTagsMarkup(item)}
-      <button class="prompt-main" type="button" data-load-favorite="${safeFavoriteId}">
+      <button class="prompt-main" type="button" data-${primaryAction}="${safeFavoriteId}">
         <div class="prompt-preview">${escapeHtml(previewText(item.text))}</div>
         <div class="prompt-meta">
           <div class="service-icons">${renderServiceBadges(item.sentTo, runtimeSites)}</div>
@@ -106,8 +116,9 @@ export function buildFavoriteItemMarkup(item, { openMenuKey = null, runtimeSites
       <div class="prompt-actions">
         <button class="menu-button" type="button" aria-haspopup="menu" aria-expanded="${openMenuKey === menuKey ? "true" : "false"}" aria-label="${escapeAttribute(t.menuMore)}" data-toggle-menu="${escapeAttribute(menuKey)}">...</button>
         <div class="item-menu ${openMenuKey === menuKey ? "open" : ""}">
+          <button class="menu-item" type="button" data-action="run-favorite" data-favorite-id="${safeFavoriteId}">${escapeHtml(t.favoriteRunNow)}</button>
+          <button class="menu-item" type="button" data-action="edit-favorite" data-favorite-id="${safeFavoriteId}">${escapeHtml(t.favoriteEdit)}</button>
           <button class="menu-item" type="button" data-action="duplicate-favorite" data-favorite-id="${safeFavoriteId}">${escapeHtml(t.favoriteDuplicate)}</button>
-          <button class="menu-item" type="button" data-action="edit-favorite-tags" data-favorite-id="${safeFavoriteId}">${escapeHtml(msg("popup_favorite_edit_tags") || "Edit tags & folder")}</button>
           <button class="menu-item" type="button" data-action="toggle-pin-favorite" data-favorite-id="${safeFavoriteId}">${escapeHtml(pinLabel)}</button>
           <button class="menu-item danger" type="button" data-action="delete-favorite" data-favorite-id="${safeFavoriteId}">${escapeHtml(t.delete)}</button>
         </div>

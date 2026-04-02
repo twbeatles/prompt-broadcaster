@@ -1,0 +1,225 @@
+:root {
+  color-scheme: light dark;
+  --bg: #f4efe7;
+  --panel: rgba(255, 255, 255, 0.78);
+  --panel-strong: #ffffff;
+  --border: rgba(92, 73, 47, 0.18);
+  --text: #201a15;
+  --text-soft: #726658;
+  --accent: #c24f2e;
+  --accent-strong: #9e3f23;
+  --accent-soft: rgba(194, 79, 46, 0.12);
+  --success: #1f8f5f;
+  --warning: #c28111;
+  --danger: #b53b3b;
+  --shadow: 0 18px 40px rgba(79, 53, 31, 0.14);
+  --shadow-sm: 0 2px 8px rgba(79, 53, 31, 0.08);
+  --radius: 16px;
+  --transition: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #171311;
+    --panel: rgba(35, 28, 24, 0.86);
+    --panel-strong: #221b17;
+    --border: rgba(255, 233, 214, 0.12);
+    --text: #f8efe6;
+    --text-soft: #c6b5a4;
+    --accent: #ff7a4f;
+    --accent-strong: #ff5d27;
+    --accent-soft: rgba(255, 122, 79, 0.16);
+    --success: #57d39a;
+    --warning: #f2bf55;
+    --danger: #ff7b7b;
+    --shadow: 0 20px 48px rgba(0, 0, 0, 0.28);
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.2);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--text-soft) 45%, transparent);
+}
+
+body {
+  width: 420px;
+  min-height: 600px;
+  background:
+    radial-gradient(circle at top left, rgba(255, 196, 153, 0.32), transparent 42%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 18%),
+    var(--bg);
+  color: var(--text);
+  font: 13px/1.45 "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.app-shell {
+  min-height: 600px;
+  padding: 14px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ── Header ── */
+.app-header {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.brand-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-mark {
+  width: 40px;
+  height: 40px;
+  border-radius: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, var(--accent), #f3a24b);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  box-shadow: 0 4px 14px rgba(194, 79, 46, 0.35);
+  flex-shrink: 0;
+}
+
+#ext-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+#ext-desc {
+  margin: 3px 0 0;
+  font-size: 11.5px;
+  color: var(--text-soft);
+}
+
+/* ── Tab bar – segmented control ── */
+.tab-bar {
+  display: flex;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 12px;
+  padding: 3px;
+  gap: 2px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .tab-bar {
+    background: rgba(255, 255, 255, 0.06);
+  }
+}
+
+.tab-button {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text-soft);
+  border-radius: 9px;
+  padding: 7px 4px 6px;
+  cursor: pointer;
+  transition: all var(--transition);
+  font-size: 11px;
+  font-weight: 500;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  line-height: 1;
+}
+
+/* Tab icons via pseudo-element – not affected by textContent assignment */
+.tab-button::before {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.tab-button[data-tab="compose"]::before  { content: "✏"; }
+.tab-button[data-tab="history"]::before  { content: "☰"; }
+.tab-button[data-tab="favorites"]::before { content: "★"; }
+.tab-button[data-tab="settings"]::before { content: "⚙"; }
+
+.tab-button.active {
+  background: var(--panel-strong);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+}
+
+.tab-button:hover:not(.active) {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.35);
+}
+
+@media (prefers-color-scheme: dark) {
+  .tab-button:hover:not(.active) {
+    background: rgba(255, 255, 255, 0.1);
+  }
+}
+
+/* ── Panel stack ── */
+.panel-stack {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.tab-panel {
+  display: none;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  box-shadow: var(--shadow);
+  min-height: 0;
+  overflow: auto;
+}
+
+.tab-panel.active {
+  display: flex;
+}
+
+

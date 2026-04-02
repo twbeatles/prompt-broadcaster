@@ -3,6 +3,7 @@ import { DEFAULT_SETTINGS } from "../../shared/prompts";
 
 export const state = {
   history: [],
+  favorites: [],
   runtimeSites: [],
   settings: { ...DEFAULT_SETTINGS },
   activeSection: "dashboard",

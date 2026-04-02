@@ -6,7 +6,7 @@ Chrome Manifest V3 extension that injects one prompt into multiple AI chat servi
 No backend and no API keys are required. Prompts are injected directly into each service's DOM via `chrome.scripting.executeScript`.
 
 Source of truth: `src/` (TypeScript). Chrome loads the built output in `dist/`, and the root runtime JS files are generated mirrors refreshed by `npm run build`.
-`src/*/main.ts` files stay thin and delegate to runtime-local `app/bootstrap.ts` modules.
+`src/*/main.ts` files stay thin and delegate to feature-oriented runtime modules. The largest entrypoints are composition roots; background logic is further split into `commands/`, `context-menu/`, `messages/`, `popup/`, and `selection/`, while options and popup also use `core/`, `features/`, and CSS partial directories.
 
 ## Essential Commands
 
@@ -57,14 +57,25 @@ To package a release zip:
 - `src/shared/prompts/`: history, favorites, template cache, broadcast counter, import/export, and settings
 - `src/shared/runtime-state/`: last broadcast, UI toasts, selector warning state, and strategy stats
 - `src/shared/template/`: template detection and rendering
-- `src/popup/app/bootstrap.ts`: popup orchestration
+- `src/popup/app/bootstrap.ts`: popup orchestration and feature wiring
 - `src/popup/app/dom.ts`, `helpers.ts`, `sorting.ts`, `list-markup.ts`: popup DOM registry and pure UI helpers
 - `src/popup/app/i18n.ts`, `src/popup/app/state.ts`: popup state and copy
-- `src/options/app/bootstrap.ts`: options orchestration
-- `src/options/app/dom.ts`, `src/options/app/helpers.ts`: options DOM registry and pure view helpers
-- `src/background/app/bootstrap.ts`: service worker orchestration
+- `src/popup/features/favorite-editor.ts`: integrated favorite editor for single/chain/schedule flows
+- `src/options/app/bootstrap.ts`: options orchestration and section wiring
+- `src/options/core/`: shared status, navigation, data refresh, and filter helpers
+- `src/options/features/`: dashboard, history, schedules, services, and settings sections
+- `src/options/ui/charts.ts`: chart rendering
+- `src/background/app/bootstrap.ts`: service worker composition root
+- `src/background/commands/quick-palette.ts`: command handling and content-script injection for the page overlay
+- `src/background/context-menu/index.ts`: context-menu lifecycle
+- `src/background/messages/router.ts`: runtime message routing
+- `src/background/popup/launcher.ts`: popup/open-window fallback handling
+- `src/background/popup/favorites-workflow.ts`: favorite run, chain, and schedule workflow
+- `src/background/selection/runtime.ts`: active-tab selection helpers
 - `src/background/app/injection-helpers.ts`: timeout scaling, selector normalization, result mapping, adaptive strategy ordering
+- `src/content/palette/main.ts`: shadow-root quick palette overlay
 - `src/content/selector-checker/` and `src/content/selection/`: modular content helpers split by runtime, DOM, and reporting concerns
+- `scripts/qa-smoke.mjs` + `scripts/qa-smoke/`: local smoke runner and reusable fixtures/helpers
 
 ### i18n
 - `_locales/en/messages.json`
@@ -101,10 +112,11 @@ Popup scans the main prompt and every enabled per-service override together, res
 - Deleting custom services, resetting service settings, or replacing imported custom services should remove unused optional host permissions.
 
 ### Import/export and counter semantics
-- JSON export now writes `version: 4` and import migrates older payloads through `v1 -> v2 -> v3 -> v4`.
+- JSON export now writes `version: 5` and import migrates older payloads through `v1 -> v2 -> v3 -> v4 -> v5`.
 - `{{counter}}` preview uses `current + 1`, but the stored counter only increments when at least one target site is successfully queued.
 - History and last-broadcast records store structured `siteResults` (`SiteInjectionResult`) instead of plain status strings.
-- Favorites also keep `usageCount` and `lastUsedAt`, and `appSettings` includes `waitMsMultiplier`, `historySort`, and `favoriteSort`.
+- Favorites also keep `mode`, `steps`, `scheduleEnabled`, `scheduledAt`, `scheduleRepeat`, `usageCount`, and `lastUsedAt`, and `appSettings` includes `waitMsMultiplier`, `historySort`, and `favoriteSort`.
+- History rows can also store `originFavoriteId`, `chainRunId`, `chainStepIndex`, `chainStepCount`, and `trigger`.
 - Reset-data flows should clear `broadcastCounter`, `strategyStats`, history, favorites, template cache, site data, and session runtime state such as `pendingBroadcasts`, `pendingInjections`, `pendingUiToasts`, and `lastBroadcast`.
 - CSV exports are built through `src/shared/export/csv.ts`, which quotes cells and prefixes formula-leading values with `'`.
 
@@ -119,6 +131,10 @@ When `chrome.action.openPopup()` fails because Chrome has no active browser wind
 - Popup supports internal shortcuts for send, cancel, tab switching, modal dismissal, and list keyboard navigation.
 - History replay now opens a service-selection modal before resend.
 - Popup and options both show a detailed import report after JSON import.
+- The favorite editor handles both single favorites and chain/scheduled favorites.
+- Chain favorites stop immediately when any step result is not `submitted`.
+- Scheduled favorites are reconciled through `chrome.alarms`, and options exposes a dedicated `Schedules` section.
+- Quick palette uses `Alt+Shift+F` and falls back to popup handoff when additional inputs are required.
 
 ### Selector checker
 Runs on supported pages and reports `ok`, `selector_missing`, or `auth_page` back to the background worker.
@@ -156,7 +172,9 @@ Smoke coverage includes:
 - custom-site optional permission cleanup and alias-origin handling
 - built-in override import repair for invalid `click` + empty selector combinations
 - `broadcastCounter` export/import/reset lifecycle
-- import migration to export `version: 4`
+- import migration to export `version: 5`
+- quick palette filtering and execution handoff
+- favorite chain/schedule normalization for legacy imports
 - favorites search across title, text, tags, and folders
 - per-service override template resolution and retry prompt preservation
 - CSV export formula escaping

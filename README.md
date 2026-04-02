@@ -22,7 +22,7 @@
 
 백엔드나 API 키 없이, 사용자가 이미 로그인한 각 AI 웹앱의 DOM 입력창에 직접 프롬프트를 주입하는 방식으로 동작합니다.
 
-현재 소스 코드는 `src/` 아래 TypeScript 모듈로 관리됩니다. Chrome에는 `dist/` 산출물을 기본으로 로드하고, 루트 런타임 JS는 `npm run build`가 함께 동기화하는 generated mirror입니다. `src/*/main.ts`는 얇은 composition root이고, 실제 런타임 로직은 `app/`, `shared/prompts/`, `shared/sites/`, `shared/template/`, `shared/runtime-state/` 같은 기능 폴더로 나뉘어 있습니다.
+현재 소스 코드는 `src/` 아래 TypeScript 모듈로 관리됩니다. Chrome에는 `dist/` 산출물을 기본으로 로드하고, 루트 런타임 JS는 `npm run build`가 함께 동기화하는 generated mirror입니다. `src/*/main.ts`는 얇은 composition root로 유지되고, 실제 런타임은 `src/background/{commands,context-menu,messages,popup,selection}`, `src/options/{core,features}`, `src/popup/features`, `src/shared/*`, `scripts/qa-smoke/*`, `popup/styles/partials`, `options/styles/partials`처럼 기능 기준으로 분리되어 있습니다.
 
 빌드 및 패키징 절차는 [docs/build-guide.md](docs/build-guide.md), 현재 구조 설명은 [docs/extension-architecture.md](docs/extension-architecture.md)를 참고하세요.
 
@@ -31,11 +31,14 @@
 - **다크 모드 + 팝업 키보드 단축키** – `Ctrl/Cmd+Enter`, `Ctrl/Cmd+Shift+Enter`, `Ctrl/Cmd+1..4`, `Esc` 등 지원
 - 전송 성공 프롬프트 히스토리 자동 저장
 - 즐겨찾기 저장, 제목 편집, 제목/본문/태그/폴더 검색
+- **저장형 체인 즐겨찾기** – 단계별 지연시간과 단계별 대상 서비스 override를 가진 chain favorite 실행
+- **즐겨찾기 예약 실행** – one-time / daily / weekday / weekly 예약과 options `Schedules` 목록 제공
+- **빠른 팔레트** – `Alt+Shift+F`로 현재 페이지 위에서 즐겨찾기 검색 및 즉시 실행, 필요 시 popup 폴백
 - **즐겨찾기 태그·폴더·핀 시스템** – 태그와 폴더로 즐겨찾기를 분류하고, 중요 항목을 상단 고정
 - **즐겨찾기 복제 + 정렬 옵션** – 최근 사용순, 사용 횟수순, 제목순, 생성일순 정렬과 복제 저장 지원
 - **히스토리 재전송 선택 + 옵션 일괄 삭제** – 원래 대상 기준 재전송 모달, 선택 삭제, 7/30/90일 이전 빠른 삭제
 - **서비스별 프롬프트 오버라이드** – 서비스 카드마다 메인 프롬프트와 다른 별도 프롬프트를 지정 가능
-- 히스토리/즐겨찾기/템플릿 캐시/설정/서비스 구성을 JSON으로 내보내기 및 가져오기 (`v4`, `{{counter}}` 포함)
+- 히스토리/즐겨찾기/템플릿 캐시/설정/서비스 구성을 JSON으로 내보내기 및 가져오기 (`v5`, 체인/예약 메타와 `{{counter}}` 포함)
 - **상세 import 리포트 + 구조화된 전송 결과 코드** – 권한 거부/ID 재작성/built-in 보정 내역과 서비스별 결과 코드 표시
 - **확장 템플릿 변수** – `{{url}}`, `{{title}}`, `{{selection}}`, `{{counter}}`, `{{random}}` 등 9개 이상의 시스템 변수 지원
 - Chrome MV3 기반, 백엔드 없음
@@ -100,7 +103,9 @@ npm run build
 7. 선택한 서비스별 새 탭이 열리거나 재사용 탭이 선택되고, 각 사이트에서 자동 주입과 전송을 시도합니다.
 8. 실패한 경우 클립보드 복사 및 수동 전송 안내 배너가 표시됩니다.
 9. 히스토리 재전송 시에는 서비스 선택 모달에서 일부 서비스만 골라 다시 보낼 수 있습니다.
-10. 옵션 페이지 히스토리에서 각 전송 항목을 클릭하면 서비스별 성공/실패 결과를 한눈에 확인할 수 있습니다.
+10. 즐겨찾기는 단일 프롬프트뿐 아니라 chain favorite과 예약 favorite으로 저장할 수 있습니다.
+11. `Alt+Shift+F` 빠른 팔레트로 현재 페이지 위에서 즐겨찾기를 검색해 바로 실행할 수 있습니다.
+12. 옵션 페이지 히스토리에서 각 전송 항목을 클릭하면 서비스별 성공/실패 결과를 한눈에 확인할 수 있습니다.
 
 GIF 자리표시자: `docs/assets/usage-demo.gif`
 
@@ -143,6 +148,14 @@ GIF 자리표시자: `docs/assets/usage-demo.gif`
 - 즐겨찾기 검색창은 제목, 본문, 태그, 폴더명을 함께 검색합니다. `#태그명` 형태 검색도 지원합니다.
 - 즐겨찾기 정렬은 최근 사용순, 사용 횟수순, 제목순, 생성일순을 지원하며, pinned 그룹 내부에만 정렬이 적용됩니다.
 
+### 즐겨찾기 체인·예약·빠른 팔레트
+- 즐겨찾기 편집기에서 `Single` / `Chain` 모드를 전환할 수 있고, chain 모드에서는 단계 추가, 순서 이동, 단계별 지연시간, 단계별 대상 서비스 override를 설정할 수 있습니다.
+- chain favorite은 각 단계를 순차 실행하며, 한 단계라도 `submitted`가 아닌 결과가 나오면 즉시 중단됩니다.
+- 예약은 즐겨찾기 단위로 저장되며, `One time`, `Daily`, `Weekdays`, `Weekly` 반복 규칙을 지원합니다.
+- 예약 실행은 `{{date}}`, `{{time}}`, `{{weekday}}`, `{{random}}`, `{{counter}}`만 자동 해석합니다. `{{url}}`, `{{title}}`, `{{selection}}`, `{{clipboard}}`가 필요하면 해당 예약 실행은 실패 히스토리를 남기고 건너뜁니다.
+- 옵션 페이지 `Schedules` 섹션에서 예약된 즐겨찾기만 모아 보고, 활성화 토글, `Run now`, `Open in popup`을 사용할 수 있습니다.
+- `Alt+Shift+F` 빠른 팔레트는 shadow root 오버레이로 동작하며, 즉시 해석 가능한 즐겨찾기는 바로 실행하고 추가 입력이 필요하면 popup으로 handoff합니다.
+
 ### 팝업 단축키와 정렬
 - `Ctrl/Cmd+Enter`는 전송, `Ctrl/Cmd+Shift+Enter`는 현재 방송 취소입니다.
 - `Ctrl/Cmd+1..4`는 작성/히스토리/즐겨찾기/설정 탭을 전환합니다.
@@ -169,8 +182,9 @@ GIF 자리표시자: `docs/assets/usage-demo.gif`
 서비스별 결과는 문자열 한 개가 아니라 구조화된 결과 코드로 저장됩니다. 현재 주요 코드는 `submitted`, `selector_timeout`, `auth_required`, `submit_failed`, `strategy_exhausted`, `injection_timeout`, `cancelled`, `unexpected_error` 등입니다.
 
 ### 가져오기/내보내기와 상세 리포트
-- JSON export는 항상 `version: 4`로 기록됩니다.
-- import는 `v1 -> v2 -> v3 -> v4` 단계형 마이그레이션을 거쳐 기존 데이터를 정규화합니다.
+- JSON export는 항상 `version: 5`로 기록됩니다.
+- import는 `v1 -> v2 -> v3 -> v4 -> v5` 단계형 마이그레이션을 거쳐 기존 데이터를 정규화합니다.
+- `v5`에서는 즐겨찾기 `mode`, `steps`, `scheduleEnabled`, `scheduledAt`, `scheduleRepeat`, 히스토리 chain metadata까지 함께 정규화합니다.
 - popup과 options 모두 import 직후 상세 리포트 모달을 띄워 적용된 서비스, 거부된 서비스, 권한 거부 origin, ID 재작성, built-in 보정 내역을 보여줍니다.
 
 ### Reset data
@@ -237,7 +251,7 @@ MIT
 
 It works without a backend or API keys by injecting prompts directly into each AI web app's input surface after the target tab loads.
 
-The source of truth lives in `src/` as TypeScript modules. Chrome should load the built `dist/` output, and the root runtime JS files are generated mirrors refreshed by `npm run build`. The runtime entrypoints in `src/*/main.ts` stay intentionally thin, while shared logic is split into `shared/prompts/`, `shared/sites/`, `shared/template/`, and `shared/runtime-state/`.
+The source of truth lives in `src/` as TypeScript modules. Chrome should load the built `dist/` output, and the root runtime JS files are generated mirrors refreshed by `npm run build`. The runtime entrypoints in `src/*/main.ts` stay intentionally thin while the implementation is split by feature into modules such as `src/background/{commands,context-menu,messages,popup,selection}`, `src/options/{core,features}`, `src/popup/features`, `src/shared/*`, `scripts/qa-smoke/*`, and CSS partials under `popup/styles/partials` and `options/styles/partials`.
 
 For build and packaging steps, see [docs/build-guide.md](docs/build-guide.md). For the current architecture, see [docs/extension-architecture.md](docs/extension-architecture.md).
 
@@ -248,11 +262,14 @@ For build and packaging steps, see [docs/build-guide.md](docs/build-guide.md). F
 - Choose a specific open tab, force a new tab, or keep the default routing per service from the popup
 - Automatic prompt history for successful broadcasts
 - Favorites with editable titles and search across title, text, tags, and folders
+- **Saved chain favorites** — build multi-step favorites with per-step delay and target overrides
+- **Scheduled favorite runs** — store one-time or repeating schedules on favorites and manage them from the options `Schedules` surface
+- **Quick palette overlay** — press `Alt+Shift+F` to search favorites on the current page and run them immediately when all inputs are resolvable
 - **Favorites tag, folder, and pin system** — categorize saved prompts with tags and folders; pin important ones to the top
 - **Favorite duplication and sort controls** — duplicate saved prompts and sort by recent use, usage count, title, or creation date
 - **History resend selection and bulk delete tools** — choose a subset of the original services when replaying history and delete selected or aged entries from options
 - **Per-service prompt overrides** — assign a different prompt to individual service cards without changing the main prompt
-- JSON export/import for history, favorites, template cache, settings, and service configuration, including `broadcastCounter` and export `version: 4`
+- JSON export/import for history, favorites, template cache, settings, and service configuration, including `broadcastCounter` and export `version: 5`
 - History keeps requested, submitted, and failed service ids so partial broadcasts can be replayed accurately
 - **Detailed import reports and structured result codes** — popup/options show rejected services, rewritten ids, built-in adjustments, and service-level result codes
 - **Extended template variables** — 9+ system variables including `{{url}}`, `{{title}}`, `{{selection}}`, `{{counter}}`, and `{{random}}`
@@ -322,8 +339,10 @@ npm run build
 8. The extension reuses matching tabs in the current window when that setting is enabled, otherwise it opens fresh tabs.
 9. Tabs are focused and processed in sequence so prompt injection can run against focus-sensitive editors more reliably.
 10. If automatic injection fails, a fallback banner appears and the prompt is copied to the clipboard when possible.
-11. Replaying a history item opens a service picker so you can resend only a subset of the originally requested services.
-12. Open the options page and click any history entry to see a per-service result comparison (✅ / ❌ / ⏳) in the detail modal.
+11. Favorites can be saved as single prompts, scheduled runs, or multi-step chains.
+12. Press `Alt+Shift+F` to open the quick palette on the current page and search favorites without opening the popup first.
+13. Replaying a history item opens a service picker so you can resend only a subset of the originally requested services.
+14. Open the options page and click any history entry to see a per-service result comparison (✅ / ❌ / ⏳) in the detail modal.
 
 If a keyboard shortcut or notification tries to reopen the UI while Chrome has no active browser window, the extension stores the prompt first and falls back to a standalone popup window when needed.
 
@@ -365,6 +384,13 @@ Template prompts support both user-defined variables and built-in system variabl
 - The favorites search box matches title, body text, tags, and folder names. Queries like `#urgent` also match tags directly.
 - Favorite sorting supports recent use, usage count, title, and created date. Sorting is applied inside pinned and unpinned groups separately.
 
+### Favorite Chains, Schedules, and Quick Palette
+- The favorite editor supports `Single` and `Chain` modes. Chain favorites can add steps, reorder them, apply per-step delays, and override the target services for each step.
+- Chain execution is sequential. If any step finishes with a result other than `submitted`, the remaining steps are skipped.
+- Favorites can store one-time or repeating schedules (`daily`, `weekday`, `weekly`) and the options page exposes a dedicated `Schedules` section for toggle, `Run now`, and `Open in popup` actions.
+- Scheduled execution auto-resolves only `{{date}}`, `{{time}}`, `{{weekday}}`, `{{random}}`, and `{{counter}}`. Favorites that need `{{url}}`, `{{title}}`, `{{selection}}`, or `{{clipboard}}` are skipped and recorded as failed schedule runs.
+- The quick palette uses a shadow-root overlay on the current page. Fully resolvable favorites run immediately; favorites that still need popup input fall back through a popup handoff intent.
+
 ### Popup Shortcuts and Sorting
 - `Ctrl/Cmd+Enter` sends the current prompt, and `Ctrl/Cmd+Shift+Enter` cancels the active broadcast.
 - `Ctrl/Cmd+1..4` switches between Compose, History, Favorites, and Settings.
@@ -388,11 +414,13 @@ Each stored service result now uses a structured code rather than a free-form st
 - History entries now store `requestedSiteIds`, `submittedSiteIds`, and `failedSiteIds`.
 - The legacy `sentTo` field is still exported for backward compatibility and mirrors the submitted service ids.
 - Reloading a history entry or creating a favorite from it uses the requested service set first, so partially failed broadcasts can be retried with the original target list intact.
-- Favorite records also track `usageCount` and `lastUsedAt` so popup sorting can surface the most-used and most-recently-used entries.
+- Favorite records also track `mode`, `steps`, `scheduleEnabled`, `scheduledAt`, `scheduleRepeat`, `usageCount`, and `lastUsedAt`.
+- History rows can carry `originFavoriteId`, `chainRunId`, `chainStepIndex`, `chainStepCount`, and `trigger` so chain runs and scheduled executions remain traceable.
 
 ### Import / Export and Detailed Reports
-- JSON export always writes `version: 4`.
-- Import applies staged migrations from older payloads before normalizing settings, favorites, and history records.
+- JSON export always writes `version: 5`.
+- Import applies staged migrations from older payloads (`v1 -> v2 -> v3 -> v4 -> v5`) before normalizing settings, favorites, and history records.
+- `v5` backfills favorite chain/schedule fields and chain-related history metadata in addition to prior settings and result normalization.
 - Both popup and options show a detailed import report modal listing accepted services, rejected services, denied origins, rewritten ids, and built-in override adjustments.
 
 ### Custom Service Advanced Settings
@@ -465,7 +493,7 @@ Additional notes:
 - Run `npm run build` again after any source change so both `dist/` and the generated root runtime mirrors stay current.
 
 ### Local Smoke QA
-The repository includes Playwright-based local fixtures under `qa/fixtures/`.
+The repository includes Playwright-based local fixtures under `qa/fixtures/`, orchestrated by `scripts/qa-smoke.mjs` with helper modules under `scripts/qa-smoke/`.
 
 Run the local smoke flow with:
 
@@ -486,7 +514,9 @@ The smoke script verifies:
 - custom service permission cleanup for shared and unused origins
 - JSON import repair for alias-based custom service permissions and invalid built-in click-submit overrides
 - `broadcastCounter` export/import/reset semantics
-- import migration to export `version: 4` defaults
+- import migration to export `version: 5` defaults
+- quick palette filtering and execution handoff
+- favorite chain/schedule field normalization for legacy imports
 - favorites search across title, tags, and folders
 - per-service override template resolution and retry prompt preservation
 - CSV export escaping for spreadsheet formula-leading cells

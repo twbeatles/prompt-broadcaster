@@ -49,6 +49,12 @@
         "default": "Alt+Shift+S"
       },
       "description": "__MSG_command_capture_selected__"
+    },
+    "quick-palette": {
+      "suggested_key": {
+        "default": "Alt+Shift+F"
+      },
+      "description": "__MSG_command_quick_palette__"
     }
   },
   "options_page": "options/options.html",

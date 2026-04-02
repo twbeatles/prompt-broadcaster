@@ -246,6 +246,19 @@ var VALID_FAVORITE_SORTS = /* @__PURE__ */ new Set([
   "title",
   "createdAt"
 ]);
+var VALID_FAVORITE_MODES = /* @__PURE__ */ new Set(["single", "chain"]);
+var VALID_SCHEDULE_REPEATS = /* @__PURE__ */ new Set([
+  "none",
+  "daily",
+  "weekday",
+  "weekly"
+]);
+var VALID_EXECUTION_TRIGGERS = /* @__PURE__ */ new Set([
+  "popup",
+  "scheduled",
+  "palette",
+  "options"
+]);
 var VALID_RESULT_CODES = /* @__PURE__ */ new Set([
   "submitted",
   "selector_timeout",
@@ -338,6 +351,15 @@ function normalizeHistorySort(value) {
 }
 function normalizeFavoriteSort(value) {
   return VALID_FAVORITE_SORTS.has(value) ? value : DEFAULT_FAVORITE_SORT;
+}
+function normalizeFavoriteMode(value) {
+  return VALID_FAVORITE_MODES.has(value) ? value : "single";
+}
+function normalizeScheduleRepeat(value) {
+  return VALID_SCHEDULE_REPEATS.has(value) ? value : "none";
+}
+function normalizeExecutionTrigger(value) {
+  return VALID_EXECUTION_TRIGGERS.has(value) ? value : void 0;
 }
 function normalizeSettings(value) {
   const settings = safeObject(value);
@@ -478,6 +500,39 @@ function normalizeTags(value) {
     )
   ).slice(0, 10);
 }
+function createChainStepId(preferredId, fallbackIndex = 0) {
+  const trimmedId = safeText(preferredId).trim();
+  return trimmedId || `step-${Date.now()}-${fallbackIndex}`;
+}
+function normalizeDelayMs(value) {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return 0;
+  }
+  return Math.max(0, Math.round(numericValue));
+}
+function normalizeChainStep(value, fallback = {}, index = 0) {
+  const source = safeObject(value);
+  const fallbackTargets = Array.isArray(fallback.targetSiteIds) ? fallback.targetSiteIds : [];
+  return {
+    id: createChainStepId(source.id ?? fallback.id, index),
+    text: safeText(source.text ?? fallback.text),
+    delayMs: normalizeDelayMs(source.delayMs ?? fallback.delayMs),
+    targetSiteIds: normalizeSiteIdList(
+      Array.isArray(source.targetSiteIds) ? source.targetSiteIds : fallbackTargets
+    )
+  };
+}
+function normalizeChainSteps(value, fallback = {}) {
+  const source = safeArray(value).map((entry, index) => normalizeChainStep(entry, fallback, index)).filter((entry) => entry.text.trim());
+  if (source.length > 0) {
+    return source;
+  }
+  if (safeText(fallback.text).trim()) {
+    return [normalizeChainStep(fallback, fallback, 0)];
+  }
+  return [];
+}
 
 // src/shared/prompts/storage.ts
 async function readLocal(key, fallbackValue) {
@@ -505,15 +560,23 @@ async function setBroadcastCounter(value) {
 
 // src/shared/prompts/favorites-store.ts
 function buildFavoriteEntry(entry) {
+  const text = safeText(entry?.text);
+  const sentTo = normalizeSentTo(entry?.sentTo);
   const createdAt = normalizeIsoDate(entry?.createdAt);
   const favoritedAt = normalizeIsoDate(entry?.favoritedAt, createdAt);
   const usageCount = Math.max(0, Math.round(Number(entry?.usageCount) || 0));
+  const mode = normalizeFavoriteMode(entry?.mode);
+  const steps = mode === "chain" ? normalizeChainSteps(entry?.steps, {
+    text,
+    delayMs: 0,
+    targetSiteIds: sentTo
+  }) : [];
   return {
     id: typeof entry?.id === "string" && entry.id.trim() ? entry.id.trim() : `fav-${Date.now()}`,
     sourceHistoryId: entry?.sourceHistoryId === null || entry?.sourceHistoryId === void 0 ? null : Number(entry.sourceHistoryId),
     title: safeText(entry?.title),
-    text: safeText(entry?.text),
-    sentTo: normalizeSentTo(entry?.sentTo),
+    text,
+    sentTo,
     createdAt,
     favoritedAt,
     templateDefaults: normalizeTemplateDefaults(entry?.templateDefaults),
@@ -521,7 +584,12 @@ function buildFavoriteEntry(entry) {
     folder: safeText(entry?.folder).slice(0, 50),
     pinned: normalizeBoolean(entry?.pinned, false),
     usageCount,
-    lastUsedAt: normalizeNullableIsoDate(entry?.lastUsedAt)
+    lastUsedAt: normalizeNullableIsoDate(entry?.lastUsedAt),
+    mode,
+    steps,
+    scheduleEnabled: normalizeBoolean(entry?.scheduleEnabled, false),
+    scheduledAt: normalizeNullableIsoDate(entry?.scheduledAt),
+    scheduleRepeat: normalizeScheduleRepeat(entry?.scheduleRepeat)
   };
 }
 async function getPromptFavorites() {
@@ -553,6 +621,22 @@ async function updateFavoriteMeta(favoriteId, { tags, folder, pinned } = {}) {
   await setPromptFavorites(nextFavorites);
   return nextFavorites.find((item) => String(item.id) === String(favoriteId)) ?? null;
 }
+async function updateFavoritePrompt(favoriteId, patch = {}) {
+  const favorites = await getPromptFavorites();
+  const nextFavorites = favorites.map((item) => {
+    if (String(item.id) !== String(favoriteId)) {
+      return item;
+    }
+    return buildFavoriteEntry({
+      ...item,
+      ...patch ?? {},
+      id: item.id,
+      sourceHistoryId: item.sourceHistoryId
+    });
+  });
+  await setPromptFavorites(nextFavorites);
+  return nextFavorites.find((item) => String(item.id) === String(favoriteId)) ?? null;
+}
 async function duplicateFavoriteItem(favoriteId, titlePrefix = "[Copy]") {
   const favorites = await getPromptFavorites();
   const source = favorites.find((item) => String(item.id) === String(favoriteId));
@@ -565,7 +649,9 @@ async function duplicateFavoriteItem(favoriteId, titlePrefix = "[Copy]") {
     title: source.title ? `${safeText(titlePrefix).trim() || "[Copy]"} ${source.title}`.trim() : safeText(titlePrefix).trim() || "[Copy]",
     favoritedAt: (/* @__PURE__ */ new Date()).toISOString(),
     usageCount: 0,
-    lastUsedAt: null
+    lastUsedAt: null,
+    scheduleEnabled: false,
+    scheduledAt: null
   });
   await setPromptFavorites([duplicated, ...favorites]);
   return duplicated;
@@ -605,7 +691,12 @@ async function createFavoritePrompt(entry) {
     favoritedAt: (/* @__PURE__ */ new Date()).toISOString(),
     templateDefaults: entry?.templateDefaults,
     usageCount: entry?.usageCount,
-    lastUsedAt: entry?.lastUsedAt
+    lastUsedAt: entry?.lastUsedAt,
+    mode: entry?.mode,
+    steps: entry?.steps,
+    scheduleEnabled: entry?.scheduleEnabled,
+    scheduledAt: entry?.scheduledAt,
+    scheduleRepeat: entry?.scheduleRepeat
   });
   await setPromptFavorites([favorite, ...favorites]);
   return favorite;
@@ -693,7 +784,12 @@ function buildHistoryEntry(entry) {
     sentTo: submittedSiteIds,
     createdAt,
     status: normalizeStatus(source.status),
-    siteResults
+    siteResults,
+    originFavoriteId: source.originFavoriteId === null || source.originFavoriteId === void 0 ? null : safeText(source.originFavoriteId).trim() || null,
+    chainRunId: source.chainRunId === null || source.chainRunId === void 0 ? null : safeText(source.chainRunId).trim() || null,
+    chainStepIndex: source.chainStepIndex === null || source.chainStepIndex === void 0 ? null : Number.isFinite(Number(source.chainStepIndex)) ? Math.max(0, Math.round(Number(source.chainStepIndex))) : null,
+    chainStepCount: source.chainStepCount === null || source.chainStepCount === void 0 ? null : Number.isFinite(Number(source.chainStepCount)) ? Math.max(0, Math.round(Number(source.chainStepCount))) : null,
+    trigger: normalizeExecutionTrigger(source.trigger)
   };
 }
 async function getPromptHistory() {
@@ -1549,7 +1645,7 @@ async function updateTemplateVariableCache(partialCache) {
 }
 
 // src/shared/prompts/import-export.ts
-var CURRENT_EXPORT_VERSION = 4;
+var CURRENT_EXPORT_VERSION = 5;
 async function containsOriginPermission(originPattern) {
   try {
     if (!chrome.permissions?.contains || !originPattern) {
@@ -1658,6 +1754,14 @@ function migrateV3ToV4(payload) {
     favorites: safeArray(payload.favorites).map((entry) => buildFavoriteEntry(entry))
   };
 }
+function migrateV4ToV5(payload) {
+  return {
+    ...payload,
+    version: 5,
+    history: safeArray(payload.history).map((entry) => buildHistoryEntry(entry)),
+    favorites: safeArray(payload.favorites).map((entry) => buildFavoriteEntry(entry))
+  };
+}
 function migrateImportData(rawValue) {
   let payload = safeObject(rawValue);
   const sourceVersion = normalizeImportVersion(payload.version);
@@ -1673,6 +1777,10 @@ function migrateImportData(rawValue) {
   if (workingVersion < 4) {
     payload = migrateV3ToV4(payload);
     workingVersion = 4;
+  }
+  if (workingVersion < 5) {
+    payload = migrateV4ToV5(payload);
+    workingVersion = 5;
   }
   return {
     migrated: payload,
@@ -1817,7 +1925,8 @@ var LOCAL_RUNTIME_KEYS = Object.freeze({
 });
 var SESSION_RUNTIME_KEYS = Object.freeze({
   pendingUiToasts: "pendingUiToasts",
-  lastBroadcast: "lastBroadcast"
+  lastBroadcast: "lastBroadcast",
+  popupFavoriteIntent: "popupFavoriteIntent"
 });
 
 // src/shared/runtime-state/normalizers.ts
@@ -1896,6 +2005,12 @@ async function readStorage(area, key, fallbackValue) {
 async function writeStorage(area, key, value) {
   await getStorageArea(area).set({ [key]: value });
 }
+async function removeStorageKeys(area, keys) {
+  if (!Array.isArray(keys) || keys.length === 0) {
+    return;
+  }
+  await getStorageArea(area).remove(keys);
+}
 
 // src/shared/runtime-state/failed-selectors.ts
 async function getFailedSelectors() {
@@ -1907,6 +2022,44 @@ async function getFailedSelectors() {
 async function getLastBroadcast() {
   const value = await readStorage("session", SESSION_RUNTIME_KEYS.lastBroadcast, null);
   return normalizeLastBroadcast(value);
+}
+
+// src/shared/runtime-state/popup-intent.ts
+function normalizePopupFavoriteIntent(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const source = value;
+  const type = source.type === "run" ? "run" : source.type === "edit" ? "edit" : "";
+  const favoriteId = typeof source.favoriteId === "string" ? source.favoriteId.trim() : "";
+  if (!type || !favoriteId) {
+    return null;
+  }
+  return {
+    type,
+    favoriteId,
+    reason: typeof source.reason === "string" && source.reason.trim() ? source.reason.trim() : "",
+    source: source.source === "popup" || source.source === "scheduled" || source.source === "palette" || source.source === "options" || source.source === "options-edit" ? source.source : void 0,
+    createdAt: typeof source.createdAt === "string" && Number.isFinite(Date.parse(source.createdAt)) ? new Date(source.createdAt).toISOString() : (/* @__PURE__ */ new Date()).toISOString()
+  };
+}
+async function getPopupFavoriteIntent() {
+  const value = await readStorage("session", SESSION_RUNTIME_KEYS.popupFavoriteIntent, null);
+  return normalizePopupFavoriteIntent(value);
+}
+async function setPopupFavoriteIntent(intent) {
+  const normalized = normalizePopupFavoriteIntent(intent);
+  if (!normalized) {
+    await removeStorageKeys("session", [SESSION_RUNTIME_KEYS.popupFavoriteIntent]);
+    return null;
+  }
+  await writeStorage("session", SESSION_RUNTIME_KEYS.popupFavoriteIntent, normalized);
+  return normalized;
+}
+async function consumePopupFavoriteIntent() {
+  const current = await getPopupFavoriteIntent();
+  await setPopupFavoriteIntent(null);
+  return current;
 }
 
 // src/shared/runtime-state/ui-toasts.ts
@@ -2281,9 +2434,46 @@ var t = {
   favoriteModalDesc: msg("popup_favorite_modal_desc"),
   favoriteModalCancel: msg("popup_favorite_modal_cancel"),
   favoriteModalConfirm: msg("popup_favorite_modal_confirm"),
+  favoriteModalSaveChanges: msg("popup_favorite_modal_save_changes") || "Save changes",
+  favoriteEditTitle: msg("popup_favorite_edit_title") || "Edit favorite",
+  favoriteEditDesc: msg("popup_favorite_edit_desc") || "Update targets, defaults, chain steps, and schedule settings.",
   favoriteTitleLabel: msg("popup_favorite_title_label"),
+  favoriteModeLabel: msg("popup_favorite_mode_label") || "Favorite type",
+  favoriteModeSingle: msg("popup_favorite_mode_single") || "Single prompt",
+  favoriteModeChain: msg("popup_favorite_mode_chain") || "Chain",
+  favoriteTargetsLabel: msg("popup_favorite_targets_label") || "Default target services",
+  favoriteTagsLabel: msg("popup_favorite_tags_label") || "Tags",
+  favoriteFolderLabel: msg("popup_favorite_folder_label") || "Folder",
+  favoritePinnedLabel: msg("popup_favorite_pinned_label") || "Pin this favorite",
+  favoriteScheduleEnabledLabel: msg("popup_favorite_schedule_enabled_label") || "Enable scheduled run",
+  favoriteScheduledAtLabel: msg("popup_favorite_scheduled_at_label") || "Next run time",
+  favoriteScheduleRepeatLabel: msg("popup_favorite_schedule_repeat_label") || "Repeat",
+  favoriteScheduleRepeatNone: msg("popup_favorite_schedule_repeat_none") || "One time",
+  favoriteScheduleRepeatDaily: msg("popup_favorite_schedule_repeat_daily") || "Daily",
+  favoriteScheduleRepeatWeekday: msg("popup_favorite_schedule_repeat_weekday") || "Weekdays",
+  favoriteScheduleRepeatWeekly: msg("popup_favorite_schedule_repeat_weekly") || "Weekly",
   favoriteSaveDefaultsLabel: msg("popup_favorite_save_defaults_label"),
   favoriteDefaultsLabel: msg("popup_favorite_defaults_label"),
+  favoriteChainTitle: msg("popup_favorite_chain_title") || "Chain steps",
+  favoriteChainDesc: msg("popup_favorite_chain_desc") || "Each step runs in order and stops the chain if any step fails.",
+  favoriteChainAddStep: msg("popup_favorite_chain_add_step") || "Add step",
+  favoriteStepLabel: (index) => msg("popup_favorite_step_label", [String(index)]) || `Step ${index}`,
+  favoriteStepMoveUp: msg("popup_favorite_step_move_up") || "Move up",
+  favoriteStepMoveDown: msg("popup_favorite_step_move_down") || "Move down",
+  favoriteStepPromptLabel: msg("popup_favorite_step_prompt_label") || "Prompt",
+  favoriteStepDelayLabel: msg("popup_favorite_step_delay_label") || "Delay after previous step (ms)",
+  favoriteStepTargetsLabel: msg("popup_favorite_step_targets_label") || "Override targets",
+  favoriteStepTargetsHint: msg("popup_favorite_step_targets_hint") || "Leave empty to use the favorite default targets.",
+  favoriteRunNow: msg("popup_favorite_run_now") || "Run now",
+  favoriteRunQueued: msg("popup_favorite_run_queued") || "Favorite run queued.",
+  favoriteRunNeedsEditor: msg("popup_favorite_run_needs_editor") || "This favorite needs more input before it can run.",
+  favoriteScheduleDateRequired: msg("popup_favorite_schedule_date_required") || "Choose the next run time for this schedule.",
+  favoriteChainNeedsStep: msg("popup_favorite_chain_needs_step") || "Add at least one non-empty chain step.",
+  favoriteKindSingle: msg("popup_favorite_kind_single") || "Single",
+  favoriteKindChain: msg("popup_favorite_kind_chain") || "Chain",
+  favoriteScheduledBadge: msg("popup_favorite_scheduled_badge") || "Scheduled",
+  favoriteStepCount: (count) => msg("popup_favorite_step_count", [String(count)]) || `${count} steps`,
+  favoriteEdit: msg("popup_favorite_edit") || "Edit",
   clearPrompt: msg("popup_clear_prompt") || "Clear",
   promptCounter: (current, limit) => `${current} / ${limit}`,
   serviceManagementTitle: msg("popup_service_management_title") || "Service Management",
@@ -2522,6 +2712,7 @@ var state = {
   templateVariableCache: {},
   pendingTemplateSend: null,
   pendingFavoriteSave: null,
+  pendingFavoriteRunReason: "",
   pendingResendHistory: null,
   pendingImportSummary: null,
   runtimeSites: [],
@@ -2658,14 +2849,38 @@ var popupDom = {
     favoriteModalClose: document.getElementById("favorite-modal-close"),
     favoriteTitleLabel: document.getElementById("favorite-title-label"),
     favoriteTitleInput: document.getElementById("favorite-title-input"),
+    favoriteModeLabel: document.getElementById("favorite-mode-label"),
+    favoriteModeSelect: document.getElementById("favorite-mode-select"),
+    favoriteTargetsLabel: document.getElementById("favorite-targets-label"),
+    favoriteTargetsList: document.getElementById("favorite-targets-list"),
+    favoriteTagsLabel: document.getElementById("favorite-tags-label"),
+    favoriteTagsInput: document.getElementById("favorite-tags-input"),
+    favoriteFolderLabel: document.getElementById("favorite-folder-label"),
+    favoriteFolderInput: document.getElementById("favorite-folder-input"),
+    favoritePinnedInput: document.getElementById("favorite-pinned-input"),
+    favoritePinnedLabel: document.getElementById("favorite-pinned-label"),
+    favoriteScheduleEnabledRow: document.getElementById("favorite-schedule-enabled-row"),
+    favoriteScheduleEnabled: document.getElementById("favorite-schedule-enabled"),
+    favoriteScheduleEnabledLabel: document.getElementById("favorite-schedule-enabled-label"),
+    favoriteScheduleFields: document.getElementById("favorite-schedule-fields"),
+    favoriteScheduledAtLabel: document.getElementById("favorite-scheduled-at-label"),
+    favoriteScheduledAtInput: document.getElementById("favorite-scheduled-at-input"),
+    favoriteScheduleRepeatLabel: document.getElementById("favorite-schedule-repeat-label"),
+    favoriteScheduleRepeatSelect: document.getElementById("favorite-schedule-repeat-select"),
     favoriteSaveDefaultsRow: document.getElementById("favorite-save-defaults-row"),
     favoriteSaveDefaults: document.getElementById("favorite-save-defaults"),
     favoriteSaveDefaultsLabel: document.getElementById("favorite-save-defaults-label"),
     favoriteDefaultFieldsWrap: document.getElementById("favorite-default-fields-wrap"),
     favoriteDefaultFieldsLabel: document.getElementById("favorite-default-fields-label"),
     favoriteDefaultFields: document.getElementById("favorite-default-fields"),
+    favoriteChainWrap: document.getElementById("favorite-chain-wrap"),
+    favoriteChainTitle: document.getElementById("favorite-chain-title"),
+    favoriteChainDesc: document.getElementById("favorite-chain-desc"),
+    favoriteChainList: document.getElementById("favorite-chain-list"),
+    favoriteChainAddStep: document.getElementById("favorite-chain-add-step"),
     favoriteModalError: document.getElementById("favorite-modal-error"),
     favoriteModalCancel: document.getElementById("favorite-modal-cancel"),
+    favoriteModalRun: document.getElementById("favorite-modal-run"),
     favoriteModalConfirm: document.getElementById("favorite-modal-confirm"),
     resendModal: document.getElementById("resend-modal"),
     resendModalTitle: document.getElementById("resend-modal-title"),
@@ -2792,18 +3007,22 @@ function buildFavoriteTagsMarkup(item) {
   const folder = typeof item.folder === "string" && item.folder.trim() ? item.folder.trim() : "";
   const pinIcon = item.pinned ? `<span class="fav-pin-icon" title="${escapeHtml(msg("popup_favorite_pinned") || "Pinned")}">📌</span>` : "";
   const folderBadge = folder ? `<span class="fav-folder-badge" data-filter-folder="${escapeAttribute(folder)}">📁 ${escapeHtml(folder)}</span>` : "";
+  const kindBadge = item?.mode === "chain" ? `<span class="fav-type-badge chain">${escapeHtml(t.favoriteKindChain)}</span>` : `<span class="fav-type-badge">${escapeHtml(t.favoriteKindSingle)}</span>`;
+  const scheduleBadge = item?.scheduleEnabled && item?.scheduledAt ? `<span class="fav-schedule-badge">${escapeHtml(t.favoriteScheduledBadge)}</span>` : "";
+  const stepCount = item?.mode === "chain" && Array.isArray(item?.steps) && item.steps.length > 0 ? `<span class="fav-step-count">${escapeHtml(t.favoriteStepCount(item.steps.length))}</span>` : "";
   const tagChips = tags.map(
     (tag) => `<span class="fav-tag-chip" data-filter-tag="${escapeAttribute(tag)}">#${escapeHtml(tag)}</span>`
   ).join("");
-  if (!pinIcon && !folderBadge && !tagChips) {
+  if (!pinIcon && !folderBadge && !tagChips && !kindBadge && !scheduleBadge && !stepCount) {
     return "";
   }
-  return `<div class="fav-meta-row">${pinIcon}${folderBadge}${tagChips}</div>`;
+  return `<div class="fav-meta-row">${pinIcon}${kindBadge}${scheduleBadge}${stepCount}${folderBadge}${tagChips}</div>`;
 }
 function buildFavoriteItemMarkup(item, { openMenuKey = null, runtimeSites = [] } = {}) {
   const menuKey = `favorite:${item.id}`;
   const safeFavoriteId = escapeAttribute(item.id);
   const pinLabel = item.pinned ? msg("popup_favorite_unpin") || "Unpin" : msg("popup_favorite_pin") || "Pin";
+  const primaryAction = item?.mode === "chain" ? "edit-favorite" : "load-favorite";
   return `
     <article class="prompt-item${item.pinned ? " pinned-item" : ""}" data-favorite-id="${safeFavoriteId}" role="listitem">
       <div class="favorite-title-row">
@@ -2817,7 +3036,7 @@ function buildFavoriteItemMarkup(item, { openMenuKey = null, runtimeSites = [] }
         />
       </div>
       ${buildFavoriteTagsMarkup(item)}
-      <button class="prompt-main" type="button" data-load-favorite="${safeFavoriteId}">
+      <button class="prompt-main" type="button" data-${primaryAction}="${safeFavoriteId}">
         <div class="prompt-preview">${escapeHtml(previewText(item.text))}</div>
         <div class="prompt-meta">
           <div class="service-icons">${renderServiceBadges(item.sentTo, runtimeSites)}</div>
@@ -2827,8 +3046,9 @@ function buildFavoriteItemMarkup(item, { openMenuKey = null, runtimeSites = [] }
       <div class="prompt-actions">
         <button class="menu-button" type="button" aria-haspopup="menu" aria-expanded="${openMenuKey === menuKey ? "true" : "false"}" aria-label="${escapeAttribute(t.menuMore)}" data-toggle-menu="${escapeAttribute(menuKey)}">...</button>
         <div class="item-menu ${openMenuKey === menuKey ? "open" : ""}">
+          <button class="menu-item" type="button" data-action="run-favorite" data-favorite-id="${safeFavoriteId}">${escapeHtml(t.favoriteRunNow)}</button>
+          <button class="menu-item" type="button" data-action="edit-favorite" data-favorite-id="${safeFavoriteId}">${escapeHtml(t.favoriteEdit)}</button>
           <button class="menu-item" type="button" data-action="duplicate-favorite" data-favorite-id="${safeFavoriteId}">${escapeHtml(t.favoriteDuplicate)}</button>
-          <button class="menu-item" type="button" data-action="edit-favorite-tags" data-favorite-id="${safeFavoriteId}">${escapeHtml(msg("popup_favorite_edit_tags") || "Edit tags & folder")}</button>
           <button class="menu-item" type="button" data-action="toggle-pin-favorite" data-favorite-id="${safeFavoriteId}">${escapeHtml(pinLabel)}</button>
           <button class="menu-item danger" type="button" data-action="delete-favorite" data-favorite-id="${safeFavoriteId}">${escapeHtml(t.delete)}</button>
         </div>
@@ -2934,11 +3154,683 @@ function sortFavoriteItemsForDisplay(items, favoriteSort = "recentUsed") {
   return nextItems;
 }
 
+// src/popup/features/favorite-editor.ts
+var { promptInput } = popupDom.compose;
+var {
+  favoriteModal,
+  favoriteModalTitle,
+  favoriteModalDesc,
+  favoriteModalClose,
+  favoriteTitleLabel,
+  favoriteTitleInput,
+  favoriteModeLabel,
+  favoriteModeSelect,
+  favoriteTargetsLabel,
+  favoriteTargetsList,
+  favoriteTagsLabel,
+  favoriteTagsInput,
+  favoriteFolderLabel,
+  favoriteFolderInput,
+  favoritePinnedInput,
+  favoritePinnedLabel,
+  favoriteScheduleEnabled,
+  favoriteScheduleEnabledLabel,
+  favoriteScheduleFields,
+  favoriteScheduledAtLabel,
+  favoriteScheduledAtInput,
+  favoriteScheduleRepeatLabel,
+  favoriteScheduleRepeatSelect,
+  favoriteSaveDefaults,
+  favoriteSaveDefaultsLabel,
+  favoriteSaveDefaultsRow,
+  favoriteDefaultFieldsWrap,
+  favoriteDefaultFieldsLabel,
+  favoriteDefaultFields,
+  favoriteChainWrap,
+  favoriteChainTitle,
+  favoriteChainDesc,
+  favoriteChainList,
+  favoriteChainAddStep,
+  favoriteModalError,
+  favoriteModalCancel,
+  favoriteModalRun,
+  favoriteModalConfirm
+} = popupDom.modals;
+function compactVariableValues(values) {
+  return Object.fromEntries(
+    Object.entries(values ?? {}).map(([name, value]) => [String(name), String(value ?? "")]).filter(([, value]) => value.trim())
+  );
+}
+function mergeTemplateSources(...sources) {
+  return Object.assign({}, ...sources.filter(Boolean));
+}
+function createFavoriteEditorFeature(deps) {
+  const {
+    checkedSiteIds: checkedSiteIds2,
+    getEnabledSites: getEnabledSites2,
+    getRuntimeSiteLabel: getRuntimeSiteLabel2,
+    refreshStoredData: refreshStoredData2,
+    setStatus: setStatus2,
+    showAppToast: showAppToast2,
+    getUnknownErrorText: getUnknownErrorText2,
+    openOverlay: openOverlay2,
+    closeOverlay: closeOverlay2
+  } = deps;
+  function createFavoriteEditorStep(text = "", targetSiteIds = [], delayMs = 0, preferredId = "") {
+    return {
+      id: typeof preferredId === "string" && preferredId.trim() ? preferredId.trim() : `step-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      text: String(text ?? ""),
+      delayMs: Math.max(0, Math.round(Number(delayMs) || 0)),
+      targetSiteIds: normalizeSiteIdList2(targetSiteIds)
+    };
+  }
+  function toLocalDateTimeInputValue(isoString = "") {
+    const time = Date.parse(String(isoString ?? ""));
+    if (!Number.isFinite(time)) {
+      return "";
+    }
+    const date = new Date(time);
+    const pad = (value) => String(value).padStart(2, "0");
+    return [
+      date.getFullYear(),
+      pad(date.getMonth() + 1),
+      pad(date.getDate())
+    ].join("-") + `T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+  function toIsoDateTime(value = "") {
+    const trimmed = String(value ?? "").trim();
+    if (!trimmed) {
+      return null;
+    }
+    const parsed = Date.parse(trimmed);
+    return Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+  }
+  function collectFavoriteEditorVariables(modalState) {
+    const templates = modalState.mode === "chain" ? modalState.steps.map((step) => step.text) : [modalState.prompt];
+    const seen = /* @__PURE__ */ new Set();
+    return templates.flatMap((template) => detectTemplateVariables(template)).filter((variable) => variable.kind === "user").filter((variable) => {
+      if (seen.has(variable.name)) {
+        return false;
+      }
+      seen.add(variable.name);
+      return true;
+    });
+  }
+  function syncFavoriteEditorVariables(modalState) {
+    const variables = collectFavoriteEditorVariables(modalState);
+    const nextDefaults = {};
+    variables.forEach((variable) => {
+      nextDefaults[variable.name] = modalState.defaultValues?.[variable.name] ?? "";
+    });
+    modalState.variables = variables;
+    modalState.defaultValues = nextDefaults;
+    if (variables.length === 0) {
+      modalState.saveDefaults = false;
+    }
+  }
+  function buildFavoriteTargetChecklist(selectedSiteIds = [], { stepId = "" } = {}) {
+    const selected = new Set(normalizeSiteIdList2(selectedSiteIds));
+    return getEnabledSites2().map((site) => {
+      const checked = selected.has(site.id);
+      const attributeName = stepId ? "data-favorite-step-target" : "data-favorite-target";
+      return `
+          <label class="checkbox-chip">
+            <input
+              type="checkbox"
+              ${attributeName}="${escapeAttribute(stepId || site.id)}"
+              data-site-id="${escapeAttribute(site.id)}"
+              ${checked ? "checked" : ""}
+            />
+            <span>${escapeHtml(getRuntimeSiteLabel2(site.id))}</span>
+          </label>
+        `;
+    }).join("");
+  }
+  function renderFavoriteTargets() {
+    const modalState = state.pendingFavoriteSave;
+    if (!modalState) {
+      favoriteTargetsList.innerHTML = "";
+      return;
+    }
+    favoriteTargetsList.innerHTML = buildFavoriteTargetChecklist(modalState.sites);
+  }
+  function renderFavoriteChainList() {
+    const modalState = state.pendingFavoriteSave;
+    if (!modalState || modalState.mode !== "chain") {
+      favoriteChainList.innerHTML = "";
+      favoriteChainWrap.hidden = true;
+      return;
+    }
+    favoriteChainWrap.hidden = false;
+    favoriteChainList.innerHTML = modalState.steps.map((step, index) => `
+        <article class="favorite-step-card" data-favorite-step-id="${escapeAttribute(step.id)}">
+          <div class="section-row section-row-start">
+            <strong>${escapeHtml(t.favoriteStepLabel(index + 1))}</strong>
+            <div class="favorite-step-actions">
+              <button class="ghost-button small-button" type="button" data-favorite-step-move="${escapeAttribute(step.id)}" data-direction="up" ${index === 0 ? "disabled" : ""}>${escapeHtml(t.favoriteStepMoveUp)}</button>
+              <button class="ghost-button small-button" type="button" data-favorite-step-move="${escapeAttribute(step.id)}" data-direction="down" ${index === modalState.steps.length - 1 ? "disabled" : ""}>${escapeHtml(t.favoriteStepMoveDown)}</button>
+              <button class="ghost-button danger-button small-button" type="button" data-favorite-step-delete="${escapeAttribute(step.id)}">${escapeHtml(t.delete)}</button>
+            </div>
+          </div>
+          <label class="field-stack">
+            <span>${escapeHtml(t.favoriteStepPromptLabel)}</span>
+            <textarea class="search-input textarea-input" rows="3" data-favorite-step-text="${escapeAttribute(step.id)}">${escapeHtml(step.text)}</textarea>
+          </label>
+          <label class="field-stack">
+            <span>${escapeHtml(t.favoriteStepDelayLabel)}</span>
+            <input class="search-input" type="number" min="0" step="100" data-favorite-step-delay="${escapeAttribute(step.id)}" value="${escapeAttribute(String(step.delayMs))}" />
+          </label>
+          <div class="modal-section">
+            <div class="section-row section-row-start">
+              <strong>${escapeHtml(t.favoriteStepTargetsLabel)}</strong>
+            </div>
+            <div class="favorite-targets-list">
+              ${buildFavoriteTargetChecklist(step.targetSiteIds, { stepId: step.id })}
+            </div>
+            <p class="helper-text">${escapeHtml(t.favoriteStepTargetsHint)}</p>
+          </div>
+        </article>
+      `).join("");
+  }
+  function renderFavoriteDefaultFields() {
+    const modalState = state.pendingFavoriteSave;
+    if (!modalState) {
+      favoriteDefaultFieldsWrap.hidden = true;
+      favoriteDefaultFields.innerHTML = "";
+      return;
+    }
+    const showDefaults = modalState.variables.length > 0 && modalState.saveDefaults;
+    favoriteDefaultFieldsWrap.hidden = !showDefaults;
+    if (!showDefaults) {
+      favoriteDefaultFields.innerHTML = "";
+      return;
+    }
+    favoriteDefaultFields.innerHTML = modalState.variables.map((variable) => {
+      const value = modalState.defaultValues[variable.name] ?? "";
+      return `
+          <label class="field-stack">
+            <span>${escapeHtml(variable.name)}</span>
+            <input
+              class="search-input"
+              type="text"
+              data-favorite-default-input="${escapeAttribute(variable.name)}"
+              value="${escapeAttribute(value)}"
+              placeholder="${escapeAttribute(t.templateFieldPlaceholder(variable.name))}"
+            />
+          </label>
+        `;
+    }).join("");
+  }
+  function renderFavoriteModal() {
+    const modalState = state.pendingFavoriteSave;
+    if (!modalState) {
+      return;
+    }
+    syncFavoriteEditorVariables(modalState);
+    favoriteModalTitle.textContent = modalState.favoriteId ? t.favoriteEditTitle : t.favoriteModalTitle;
+    favoriteModalDesc.textContent = modalState.favoriteId ? t.favoriteEditDesc : t.favoriteModalDesc;
+    favoriteModalCancel.textContent = t.favoriteModalCancel;
+    favoriteModalConfirm.textContent = modalState.favoriteId ? t.favoriteModalSaveChanges : t.favoriteModalConfirm;
+    favoriteModalRun.textContent = t.favoriteRunNow;
+    favoriteModalRun.hidden = !modalState.favoriteId;
+    favoriteTitleLabel.textContent = t.favoriteTitleLabel;
+    favoriteModeLabel.textContent = t.favoriteModeLabel;
+    favoriteTargetsLabel.textContent = t.favoriteTargetsLabel;
+    favoriteTagsLabel.textContent = t.favoriteTagsLabel;
+    favoriteFolderLabel.textContent = t.favoriteFolderLabel;
+    favoritePinnedLabel.textContent = t.favoritePinnedLabel;
+    favoriteScheduleEnabledLabel.textContent = t.favoriteScheduleEnabledLabel;
+    favoriteScheduledAtLabel.textContent = t.favoriteScheduledAtLabel;
+    favoriteScheduleRepeatLabel.textContent = t.favoriteScheduleRepeatLabel;
+    favoriteSaveDefaultsLabel.textContent = t.favoriteSaveDefaultsLabel;
+    favoriteDefaultFieldsLabel.textContent = t.favoriteDefaultsLabel;
+    favoriteChainTitle.textContent = t.favoriteChainTitle;
+    favoriteChainDesc.textContent = t.favoriteChainDesc;
+    favoriteChainAddStep.textContent = t.favoriteChainAddStep;
+    favoriteTitleInput.value = modalState.title;
+    favoriteModeSelect.innerHTML = [
+      `<option value="single">${escapeHtml(t.favoriteModeSingle)}</option>`,
+      `<option value="chain">${escapeHtml(t.favoriteModeChain)}</option>`
+    ].join("");
+    favoriteModeSelect.value = modalState.mode;
+    favoriteTagsInput.value = modalState.tags.join(", ");
+    favoriteFolderInput.value = modalState.folder;
+    favoritePinnedInput.checked = Boolean(modalState.pinned);
+    favoriteScheduleEnabled.checked = Boolean(modalState.scheduleEnabled);
+    favoriteScheduledAtInput.value = toLocalDateTimeInputValue(modalState.scheduledAt);
+    favoriteScheduleRepeatSelect.innerHTML = [
+      `<option value="none">${escapeHtml(t.favoriteScheduleRepeatNone)}</option>`,
+      `<option value="daily">${escapeHtml(t.favoriteScheduleRepeatDaily)}</option>`,
+      `<option value="weekday">${escapeHtml(t.favoriteScheduleRepeatWeekday)}</option>`,
+      `<option value="weekly">${escapeHtml(t.favoriteScheduleRepeatWeekly)}</option>`
+    ].join("");
+    favoriteScheduleRepeatSelect.value = modalState.scheduleRepeat;
+    favoriteScheduleFields.hidden = !modalState.scheduleEnabled;
+    favoriteSaveDefaults.checked = modalState.saveDefaults;
+    favoriteSaveDefaultsRow.hidden = modalState.variables.length === 0;
+    renderFavoriteTargets();
+    renderFavoriteChainList();
+    renderFavoriteDefaultFields();
+  }
+  function buildFavoriteEditorStateFromItem(item) {
+    const baseDefaults = mergeTemplateSources(
+      state.templateVariableCache,
+      item?.templateDefaults ?? {}
+    );
+    const mode = item?.mode === "chain" ? "chain" : "single";
+    const steps = mode === "chain" && Array.isArray(item?.steps) && item.steps.length > 0 ? item.steps.map((step) => createFavoriteEditorStep(step.text, step.targetSiteIds, step.delayMs, step.id)) : [createFavoriteEditorStep(item?.text ?? "", mode === "chain" ? [] : item?.sentTo ?? [], 0)];
+    const stateValue = {
+      favoriteId: item?.id ?? null,
+      prompt: item?.text ?? "",
+      sites: normalizeSiteIdList2(item?.sentTo),
+      variables: [],
+      title: item?.title ?? "",
+      saveDefaults: Boolean(item?.templateDefaults && Object.keys(item.templateDefaults).length > 0),
+      defaultValues: { ...baseDefaults },
+      tags: Array.isArray(item?.tags) ? [...item.tags] : [],
+      folder: item?.folder ?? "",
+      pinned: Boolean(item?.pinned),
+      mode,
+      steps,
+      scheduleEnabled: Boolean(item?.scheduleEnabled),
+      scheduledAt: item?.scheduledAt ?? null,
+      scheduleRepeat: item?.scheduleRepeat ?? "none"
+    };
+    syncFavoriteEditorVariables(stateValue);
+    return stateValue;
+  }
+  function getFavoriteById2(favoriteId) {
+    return state.favorites.find((entry) => String(entry.id) === String(favoriteId)) ?? null;
+  }
+  function setFavoriteModalError2(message = "") {
+    favoriteModalError.hidden = !message;
+    favoriteModalError.textContent = message;
+  }
+  function hideFavoriteModal2() {
+    state.pendingFavoriteSave = null;
+    state.pendingFavoriteRunReason = "";
+    closeOverlay2(favoriteModal);
+    favoriteModalError.hidden = true;
+    favoriteModalError.textContent = "";
+    favoriteTitleInput.value = "";
+    favoriteSaveDefaults.checked = false;
+    favoriteSaveDefaultsRow.hidden = true;
+    favoriteDefaultFieldsWrap.hidden = true;
+    favoriteDefaultFields.innerHTML = "";
+  }
+  function dismissFavoriteModal2(event) {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    hideFavoriteModal2();
+  }
+  async function openFavoriteModal2() {
+    clearStatus2();
+    const prompt = promptInput.value.trim();
+    if (!prompt) {
+      setStatus2(t.warnEmpty, "error");
+      promptInput.focus();
+      return;
+    }
+    const loadedFavorite = state.loadedFavoriteId ? getFavoriteById2(state.loadedFavoriteId) : null;
+    const currentItem = loadedFavorite ? {
+      ...loadedFavorite,
+      text: prompt,
+      sentTo: checkedSiteIds2(),
+      templateDefaults: state.loadedTemplateDefaults
+    } : {
+      id: state.loadedFavoriteId || null,
+      title: state.loadedFavoriteTitle,
+      text: prompt,
+      sentTo: checkedSiteIds2(),
+      templateDefaults: state.loadedTemplateDefaults,
+      tags: [],
+      folder: "",
+      pinned: false,
+      mode: "single",
+      steps: [],
+      scheduleEnabled: false,
+      scheduledAt: null,
+      scheduleRepeat: "none"
+    };
+    state.pendingFavoriteSave = buildFavoriteEditorStateFromItem(currentItem);
+    setFavoriteModalError2("");
+    state.pendingFavoriteRunReason = "";
+    renderFavoriteModal();
+    openOverlay2(favoriteModal, favoriteTitleInput);
+    window.requestAnimationFrame(() => favoriteTitleInput.select());
+  }
+  function openFavoriteEditor2(item, { reason = "" } = {}) {
+    state.pendingFavoriteSave = buildFavoriteEditorStateFromItem(item);
+    state.pendingFavoriteRunReason = reason || "";
+    setFavoriteModalError2(reason);
+    renderFavoriteModal();
+    openOverlay2(favoriteModal, favoriteTitleInput);
+  }
+  async function persistFavoriteEditorChanges() {
+    const modalState = state.pendingFavoriteSave;
+    if (!modalState) {
+      return null;
+    }
+    modalState.title = favoriteTitleInput.value.trim();
+    modalState.mode = favoriteModeSelect.value === "chain" ? "chain" : "single";
+    modalState.tags = favoriteTagsInput.value.split(",").map((entry) => entry.trim()).filter(Boolean);
+    modalState.folder = favoriteFolderInput.value.trim();
+    modalState.pinned = favoritePinnedInput.checked;
+    modalState.scheduleEnabled = favoriteScheduleEnabled.checked;
+    modalState.scheduledAt = modalState.scheduleEnabled ? toIsoDateTime(favoriteScheduledAtInput.value) : null;
+    modalState.scheduleRepeat = favoriteScheduleRepeatSelect.value || "none";
+    modalState.saveDefaults = favoriteSaveDefaults.checked;
+    syncFavoriteEditorVariables(modalState);
+    if (modalState.scheduleEnabled && !modalState.scheduledAt) {
+      setFavoriteModalError2(t.favoriteScheduleDateRequired);
+      return null;
+    }
+    if (modalState.mode === "chain") {
+      modalState.steps = modalState.steps.map((step) => createFavoriteEditorStep(step.text, step.targetSiteIds, step.delayMs, step.id)).filter((step) => step.text.trim());
+      if (modalState.steps.length === 0) {
+        setFavoriteModalError2(t.favoriteChainNeedsStep);
+        return null;
+      }
+    } else {
+      modalState.prompt = modalState.steps[0]?.text?.trim() ? modalState.steps[0].text : modalState.prompt;
+      if (!modalState.prompt.trim()) {
+        setFavoriteModalError2(t.warnEmpty);
+        return null;
+      }
+    }
+    const templateDefaults = modalState.saveDefaults ? compactVariableValues(modalState.defaultValues) : {};
+    if (modalState.saveDefaults) {
+      await updateTemplateVariableCache(templateDefaults);
+      state.templateVariableCache = mergeTemplateSources(state.templateVariableCache, templateDefaults);
+    }
+    const favoritePayload = {
+      title: modalState.title,
+      text: modalState.mode === "chain" ? modalState.steps[0]?.text ?? modalState.prompt ?? "" : modalState.prompt,
+      sentTo: modalState.sites,
+      templateDefaults,
+      tags: modalState.tags,
+      folder: modalState.folder,
+      pinned: modalState.pinned,
+      mode: modalState.mode,
+      steps: modalState.mode === "chain" ? modalState.steps : [],
+      scheduleEnabled: modalState.scheduleEnabled,
+      scheduledAt: modalState.scheduleEnabled ? modalState.scheduledAt : null,
+      scheduleRepeat: modalState.scheduleEnabled ? modalState.scheduleRepeat : "none"
+    };
+    let favorite = null;
+    if (modalState.favoriteId) {
+      favorite = await updateFavoritePrompt(modalState.favoriteId, favoritePayload);
+    } else {
+      favorite = await createFavoritePrompt(favoritePayload);
+      modalState.favoriteId = favorite?.id ?? null;
+    }
+    await refreshStoredData2();
+    return favorite;
+  }
+  async function confirmFavoriteSave() {
+    const favorite = await persistFavoriteEditorChanges();
+    if (!favorite) {
+      return;
+    }
+    hideFavoriteModal2();
+    setStatus2(t.favoriteSaved, "success");
+    showAppToast2(t.favoriteSaved, "success", 2200);
+  }
+  async function runFavoriteItem2(item, { reason = "" } = {}) {
+    if (!item?.id) {
+      return;
+    }
+    const response = await chrome.runtime.sendMessage({
+      action: "favorite:run",
+      favoriteId: item.id,
+      trigger: "popup",
+      allowPopupFallback: false
+    });
+    if (response?.ok) {
+      state.openMenuKey = null;
+      setStatus2(t.sending(item.mode === "chain" ? item.steps.length || 1 : item.sentTo.length || 1));
+      showAppToast2(t.favoriteRunQueued, "success", 2200);
+      return;
+    }
+    if (response?.requiresPopupInput) {
+      state.openMenuKey = null;
+      openFavoriteEditor2(item, { reason: response?.error || reason || t.favoriteRunNeedsEditor });
+      return;
+    }
+    throw new Error(response?.error ?? getUnknownErrorText2());
+  }
+  async function runFavoriteFromEditor2() {
+    const favorite = await persistFavoriteEditorChanges();
+    if (!favorite?.id) {
+      return;
+    }
+    const response = await chrome.runtime.sendMessage({
+      action: "favorite:run",
+      favoriteId: favorite.id,
+      trigger: "popup",
+      allowPopupFallback: false
+    });
+    if (response?.ok) {
+      hideFavoriteModal2();
+      setStatus2(t.sending(favorite.mode === "chain" ? favorite.steps.length || 1 : favorite.sentTo.length || 1));
+      showAppToast2(t.favoriteRunQueued, "success", 2200);
+      return;
+    }
+    if (response?.requiresPopupInput) {
+      setFavoriteModalError2(response?.error ?? t.favoriteRunNeedsEditor);
+      return;
+    }
+    setFavoriteModalError2(response?.error ?? getUnknownErrorText2());
+  }
+  function bindFavoriteEditorEvents2() {
+    favoriteModalClose.addEventListener("click", dismissFavoriteModal2);
+    favoriteModalCancel.addEventListener("click", dismissFavoriteModal2);
+    favoriteModal.addEventListener("click", (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const dismissButton = target?.closest("[data-dismiss-favorite-modal]");
+      if (dismissButton || target === favoriteModal) {
+        dismissFavoriteModal2(event);
+      }
+    });
+    favoriteModal.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !favoriteModal.hidden) {
+        dismissFavoriteModal2(event);
+      }
+    });
+    favoriteSaveDefaults.addEventListener("change", () => {
+      if (!state.pendingFavoriteSave) {
+        return;
+      }
+      state.pendingFavoriteSave.saveDefaults = favoriteSaveDefaults.checked;
+      renderFavoriteDefaultFields();
+    });
+    favoriteDefaultFields.addEventListener("input", (event) => {
+      const input = event.target.closest("[data-favorite-default-input]");
+      if (!input || !state.pendingFavoriteSave) {
+        return;
+      }
+      state.pendingFavoriteSave.defaultValues[input.dataset.favoriteDefaultInput] = input.value;
+    });
+    favoriteModeSelect.addEventListener("change", () => {
+      const modalState = state.pendingFavoriteSave;
+      if (!modalState) {
+        return;
+      }
+      const nextMode = favoriteModeSelect.value === "chain" ? "chain" : "single";
+      if (nextMode === modalState.mode) {
+        return;
+      }
+      if (nextMode === "chain") {
+        const seedText = modalState.prompt || promptInput.value || "";
+        modalState.steps = [
+          createFavoriteEditorStep(seedText, [], 0)
+        ];
+      } else if (modalState.steps[0]?.text?.trim()) {
+        modalState.prompt = modalState.steps[0].text;
+      }
+      modalState.mode = nextMode;
+      setFavoriteModalError2("");
+      renderFavoriteModal();
+    });
+    favoriteScheduleEnabled.addEventListener("change", () => {
+      const modalState = state.pendingFavoriteSave;
+      if (!modalState) {
+        return;
+      }
+      modalState.scheduleEnabled = favoriteScheduleEnabled.checked;
+      if (modalState.scheduleEnabled && !modalState.scheduledAt) {
+        const defaultDate = new Date(Date.now() + 10 * 60 * 1e3);
+        modalState.scheduledAt = defaultDate.toISOString();
+        favoriteScheduledAtInput.value = toLocalDateTimeInputValue(modalState.scheduledAt);
+      }
+      favoriteScheduleFields.hidden = !modalState.scheduleEnabled;
+    });
+    favoriteScheduledAtInput.addEventListener("change", () => {
+      if (!state.pendingFavoriteSave) {
+        return;
+      }
+      state.pendingFavoriteSave.scheduledAt = toIsoDateTime(favoriteScheduledAtInput.value);
+    });
+    favoriteScheduleRepeatSelect.addEventListener("change", () => {
+      if (!state.pendingFavoriteSave) {
+        return;
+      }
+      state.pendingFavoriteSave.scheduleRepeat = favoriteScheduleRepeatSelect.value || "none";
+    });
+    favoriteTargetsList.addEventListener("change", (event) => {
+      const target = event.target.closest("[data-favorite-target][data-site-id]");
+      if (!target || !state.pendingFavoriteSave) {
+        return;
+      }
+      const siteId = target.dataset.siteId;
+      const nextSelected = new Set(state.pendingFavoriteSave.sites);
+      if (target.checked) {
+        nextSelected.add(siteId);
+      } else {
+        nextSelected.delete(siteId);
+      }
+      state.pendingFavoriteSave.sites = [...nextSelected];
+    });
+    favoriteChainAddStep.addEventListener("click", () => {
+      const modalState = state.pendingFavoriteSave;
+      if (!modalState) {
+        return;
+      }
+      modalState.steps.push(createFavoriteEditorStep("", [], 0));
+      renderFavoriteModal();
+      window.requestAnimationFrame(() => {
+        const inputs = [...favoriteChainList.querySelectorAll("[data-favorite-step-text]")];
+        inputs[inputs.length - 1]?.focus?.();
+      });
+    });
+    favoriteChainList.addEventListener("input", (event) => {
+      const modalState = state.pendingFavoriteSave;
+      if (!modalState) {
+        return;
+      }
+      const textInput = event.target.closest("[data-favorite-step-text]");
+      if (textInput) {
+        const step = modalState.steps.find((entry) => entry.id === textInput.dataset.favoriteStepText);
+        if (step) {
+          step.text = textInput.value;
+          syncFavoriteEditorVariables(modalState);
+          renderFavoriteDefaultFields();
+        }
+        return;
+      }
+      const delayInput = event.target.closest("[data-favorite-step-delay]");
+      if (delayInput) {
+        const step = modalState.steps.find((entry) => entry.id === delayInput.dataset.favoriteStepDelay);
+        if (step) {
+          step.delayMs = Math.max(0, Math.round(Number(delayInput.value) || 0));
+        }
+      }
+    });
+    favoriteChainList.addEventListener("change", (event) => {
+      const modalState = state.pendingFavoriteSave;
+      if (!modalState) {
+        return;
+      }
+      const target = event.target.closest("[data-favorite-step-target][data-site-id]");
+      if (!target) {
+        return;
+      }
+      const step = modalState.steps.find((entry) => entry.id === target.dataset.favoriteStepTarget);
+      if (!step) {
+        return;
+      }
+      const nextTargets = new Set(step.targetSiteIds);
+      if (target.checked) {
+        nextTargets.add(target.dataset.siteId);
+      } else {
+        nextTargets.delete(target.dataset.siteId);
+      }
+      step.targetSiteIds = [...nextTargets];
+    });
+    favoriteChainList.addEventListener("click", (event) => {
+      const modalState = state.pendingFavoriteSave;
+      if (!modalState) {
+        return;
+      }
+      const deleteButton = event.target.closest("[data-favorite-step-delete]");
+      if (deleteButton) {
+        modalState.steps = modalState.steps.filter((step2) => step2.id !== deleteButton.dataset.favoriteStepDelete);
+        renderFavoriteModal();
+        return;
+      }
+      const moveButton = event.target.closest("[data-favorite-step-move]");
+      if (!moveButton) {
+        return;
+      }
+      const stepId = moveButton.dataset.favoriteStepMove;
+      const index = modalState.steps.findIndex((step2) => step2.id === stepId);
+      if (index === -1) {
+        return;
+      }
+      const direction = moveButton.dataset.direction === "down" ? 1 : -1;
+      const nextIndex = index + direction;
+      if (nextIndex < 0 || nextIndex >= modalState.steps.length) {
+        return;
+      }
+      const [step] = modalState.steps.splice(index, 1);
+      modalState.steps.splice(nextIndex, 0, step);
+      renderFavoriteModal();
+    });
+    favoriteModalConfirm.addEventListener("click", () => {
+      void confirmFavoriteSave().catch((error) => {
+        console.error("[AI Prompt Broadcaster] Favorite save failed.", error);
+        setFavoriteModalError2(t.error(error?.message ?? getUnknownErrorText2()));
+      });
+    });
+    favoriteModalRun.addEventListener("click", () => {
+      void runFavoriteFromEditor2().catch((error) => {
+        console.error("[AI Prompt Broadcaster] Favorite run failed.", error);
+        setFavoriteModalError2(t.error(error?.message ?? getUnknownErrorText2()));
+      });
+    });
+  }
+  function clearStatus2() {
+    setStatus2("");
+  }
+  return {
+    getFavoriteById: getFavoriteById2,
+    setFavoriteModalError: setFavoriteModalError2,
+    hideFavoriteModal: hideFavoriteModal2,
+    dismissFavoriteModal: dismissFavoriteModal2,
+    openFavoriteModal: openFavoriteModal2,
+    openFavoriteEditor: openFavoriteEditor2,
+    confirmFavoriteSave,
+    runFavoriteItem: runFavoriteItem2,
+    runFavoriteFromEditor: runFavoriteFromEditor2,
+    bindFavoriteEditorEvents: bindFavoriteEditorEvents2
+  };
+}
+
 // src/popup/app/bootstrap.ts
 var { extTitle, extDesc } = popupDom.header;
 var { tabButtons, panels } = popupDom.tabs;
 var {
-  promptInput,
+  promptInput: promptInput2,
   promptCounter,
   clearPromptBtn,
   templateSummary,
@@ -3027,21 +3919,45 @@ var {
   templateModalError,
   templateModalCancel,
   templateModalConfirm,
-  favoriteModal,
-  favoriteModalTitle,
-  favoriteModalDesc,
-  favoriteModalClose,
-  favoriteTitleLabel,
-  favoriteTitleInput,
-  favoriteSaveDefaultsRow,
-  favoriteSaveDefaults,
-  favoriteSaveDefaultsLabel,
-  favoriteDefaultFieldsWrap,
-  favoriteDefaultFieldsLabel,
-  favoriteDefaultFields,
-  favoriteModalError,
-  favoriteModalCancel,
-  favoriteModalConfirm,
+  favoriteModal: favoriteModal2,
+  favoriteModalTitle: favoriteModalTitle2,
+  favoriteModalDesc: favoriteModalDesc2,
+  favoriteModalClose: favoriteModalClose2,
+  favoriteTitleLabel: favoriteTitleLabel2,
+  favoriteTitleInput: favoriteTitleInput2,
+  favoriteModeLabel: favoriteModeLabel2,
+  favoriteModeSelect: favoriteModeSelect2,
+  favoriteTargetsLabel: favoriteTargetsLabel2,
+  favoriteTargetsList: favoriteTargetsList2,
+  favoriteTagsLabel: favoriteTagsLabel2,
+  favoriteTagsInput: favoriteTagsInput2,
+  favoriteFolderLabel: favoriteFolderLabel2,
+  favoriteFolderInput: favoriteFolderInput2,
+  favoritePinnedInput: favoritePinnedInput2,
+  favoritePinnedLabel: favoritePinnedLabel2,
+  favoriteScheduleEnabledRow,
+  favoriteScheduleEnabled: favoriteScheduleEnabled2,
+  favoriteScheduleEnabledLabel: favoriteScheduleEnabledLabel2,
+  favoriteScheduleFields: favoriteScheduleFields2,
+  favoriteScheduledAtLabel: favoriteScheduledAtLabel2,
+  favoriteScheduledAtInput: favoriteScheduledAtInput2,
+  favoriteScheduleRepeatLabel: favoriteScheduleRepeatLabel2,
+  favoriteScheduleRepeatSelect: favoriteScheduleRepeatSelect2,
+  favoriteSaveDefaultsRow: favoriteSaveDefaultsRow2,
+  favoriteSaveDefaults: favoriteSaveDefaults2,
+  favoriteSaveDefaultsLabel: favoriteSaveDefaultsLabel2,
+  favoriteDefaultFieldsWrap: favoriteDefaultFieldsWrap2,
+  favoriteDefaultFieldsLabel: favoriteDefaultFieldsLabel2,
+  favoriteDefaultFields: favoriteDefaultFields2,
+  favoriteChainWrap: favoriteChainWrap2,
+  favoriteChainTitle: favoriteChainTitle2,
+  favoriteChainDesc: favoriteChainDesc2,
+  favoriteChainList: favoriteChainList2,
+  favoriteChainAddStep: favoriteChainAddStep2,
+  favoriteModalError: favoriteModalError2,
+  favoriteModalCancel: favoriteModalCancel2,
+  favoriteModalRun: favoriteModalRun2,
+  favoriteModalConfirm: favoriteModalConfirm2,
   resendModal,
   resendModalTitle,
   resendModalDesc,
@@ -3184,7 +4100,7 @@ function closeOverlay(overlay) {
   state.lastFocusedElement = null;
 }
 function getOpenOverlay() {
-  return [importReportModal, resendModal, favoriteModal, templateModal].find((overlay) => overlay && !overlay.hidden) ?? null;
+  return [importReportModal, resendModal, favoriteModal2, templateModal].find((overlay) => overlay && !overlay.hidden) ?? null;
 }
 function closeActiveOverlayOrMenu() {
   const overlay = getOpenOverlay();
@@ -3197,7 +4113,7 @@ function closeActiveOverlayOrMenu() {
     state.pendingResendHistory = null;
     return true;
   }
-  if (overlay === favoriteModal) {
+  if (overlay === favoriteModal2) {
     hideFavoriteModal();
     return true;
   }
@@ -3249,13 +4165,13 @@ function syncSiteTargetSelections() {
   state.siteTargetSelections = nextSelections;
 }
 function updatePromptCounter() {
-  const limit = Number(promptInput.maxLength) || 2e3;
-  promptCounter.textContent = t.promptCounter(promptInput.value.length, limit);
+  const limit = Number(promptInput2.maxLength) || 2e3;
+  promptCounter.textContent = t.promptCounter(promptInput2.value.length, limit);
 }
 function autoResizePromptInput() {
-  promptInput.style.height = "auto";
-  const nextHeight = Math.max(100, Math.min(promptInput.scrollHeight, 300));
-  promptInput.style.height = `${nextHeight}px`;
+  promptInput2.style.height = "auto";
+  const nextHeight = Math.max(100, Math.min(promptInput2.scrollHeight, 300));
+  promptInput2.style.height = `${nextHeight}px`;
 }
 function applyDynamicPromptPlaceholder() {
   const placeholderVariants = isKorean ? [
@@ -3268,7 +4184,7 @@ function applyDynamicPromptPlaceholder() {
     "Summarize the selected text for all services."
   ];
   const nextPlaceholder = placeholderVariants[Math.floor(Math.random() * placeholderVariants.length)] || t.placeholder;
-  promptInput.setAttribute("placeholder", nextPlaceholder);
+  promptInput2.setAttribute("placeholder", nextPlaceholder);
 }
 function getTemplateDisplayName(name) {
   return getTemplateVariableDisplayName(name, uiLanguage);
@@ -3405,9 +4321,9 @@ function renderLists() {
   renderFavoritesList();
 }
 function currentPromptVariables() {
-  const checkedTargets = buildComposerBroadcastTargets(checkedSiteIds(), promptInput.value);
+  const checkedTargets = buildComposerBroadcastTargets(checkedSiteIds(), promptInput2.value);
   if (checkedTargets.length === 0) {
-    return detectTemplateVariables(promptInput.value);
+    return detectTemplateVariables(promptInput2.value);
   }
   return detectTemplateVariablesForTargets2(checkedTargets);
 }
@@ -3431,12 +4347,12 @@ function renderTemplateSummary() {
       `;
   }).join("");
 }
-function compactVariableValues(values) {
+function compactVariableValues2(values) {
   return Object.fromEntries(
     Object.entries(values ?? {}).map(([name, value]) => [String(name), String(value ?? "")]).filter(([, value]) => value.trim())
   );
 }
-function mergeTemplateSources(...sources) {
+function mergeTemplateSources2(...sources) {
   return Object.assign({}, ...sources.filter(Boolean));
 }
 function normalizeOpenSiteTab(entry) {
@@ -3488,7 +4404,7 @@ function applySettingsToControls() {
   waitMultiplierValue.textContent = t.waitMultiplierValue(state.settings.waitMsMultiplier);
   renderSortControls();
 }
-function buildComposerBroadcastTargets(siteIds = [], basePrompt = promptInput.value) {
+function buildComposerBroadcastTargets(siteIds = [], basePrompt = promptInput2.value) {
   return normalizeSiteIdList2(siteIds).map((siteId) => {
     const targetSelection = state.siteTargetSelections?.[siteId];
     const promptOverride = typeof state.sitePromptOverrides?.[siteId] === "string" && state.sitePromptOverrides[siteId].trim() ? state.sitePromptOverrides[siteId] : "";
@@ -3563,8 +4479,8 @@ async function loadStoredData() {
     state.failedSelectors = new Map(failedSelectors.map((entry) => [entry.serviceId, entry]));
     state.settings = settings;
     await refreshOpenSiteTabs();
-    if (typeof promptResult.lastPrompt === "string" && !promptInput.value.trim()) {
-      promptInput.value = promptResult.lastPrompt;
+    if (typeof promptResult.lastPrompt === "string" && !promptInput2.value.trim()) {
+      promptInput2.value = promptResult.lastPrompt;
     }
     applySettingsToControls();
     renderSiteCheckboxesPanel();
@@ -3604,18 +4520,52 @@ async function refreshStoredData() {
     throw error;
   }
 }
+var {
+  getFavoriteById,
+  setFavoriteModalError,
+  hideFavoriteModal,
+  dismissFavoriteModal,
+  openFavoriteModal,
+  openFavoriteEditor,
+  runFavoriteItem,
+  runFavoriteFromEditor,
+  bindFavoriteEditorEvents
+} = createFavoriteEditorFeature({
+  checkedSiteIds,
+  getEnabledSites,
+  getRuntimeSiteLabel,
+  refreshStoredData,
+  setStatus,
+  showAppToast,
+  getUnknownErrorText,
+  openOverlay,
+  closeOverlay
+});
+async function maybeHandlePopupFavoriteIntent() {
+  const intent = await consumePopupFavoriteIntent().catch(() => null);
+  if (!intent?.favoriteId) {
+    return;
+  }
+  const favorite = getFavoriteById(intent.favoriteId);
+  if (!favorite) {
+    return;
+  }
+  openFavoriteEditor(favorite, {
+    reason: intent.type === "run" ? intent.reason || t.favoriteRunNeedsEditor : ""
+  });
+}
 function setLoadedTemplateContext(item) {
   state.loadedTemplateDefaults = item && item.templateDefaults && typeof item.templateDefaults === "object" ? { ...item.templateDefaults } : {};
   state.loadedFavoriteTitle = typeof item?.title === "string" ? item.title : "";
   state.loadedFavoriteId = typeof item?.id === "string" ? item.id : "";
 }
 function loadPromptIntoComposer(item) {
-  promptInput.value = item.text;
+  promptInput2.value = item.text;
   applySiteSelection(getHistorySelectedSiteIds(item));
   setLoadedTemplateContext(item);
   renderTemplateSummary();
   switchTab("compose");
-  promptInput.focus();
+  promptInput2.focus();
   setStatus(t.importedLoad, "success");
   showAppToast(t.importedLoad, "info", 2200);
 }
@@ -3802,7 +4752,7 @@ async function sendResolvedPrompt(mainPrompt, targets) {
   setStatus(t.sending(siteIds.length));
   try {
     await refreshOpenSiteTabs();
-    await chrome.storage.local.set({ lastPrompt: promptInput.value });
+    await chrome.storage.local.set({ lastPrompt: promptInput2.value });
     clearAllToasts();
     const response = await chrome.runtime.sendMessage({
       action: "broadcast",
@@ -3859,22 +4809,6 @@ function hideTemplateModal() {
   templateModalError.hidden = true;
   templateModalError.textContent = "";
 }
-function hideFavoriteModal() {
-  state.pendingFavoriteSave = null;
-  closeOverlay(favoriteModal);
-  favoriteModalError.hidden = true;
-  favoriteModalError.textContent = "";
-  favoriteTitleInput.value = "";
-  favoriteSaveDefaults.checked = false;
-  favoriteSaveDefaultsRow.hidden = true;
-  favoriteDefaultFieldsWrap.hidden = true;
-  favoriteDefaultFields.innerHTML = "";
-}
-function dismissFavoriteModal(event) {
-  event?.preventDefault?.();
-  event?.stopPropagation?.();
-  hideFavoriteModal();
-}
 function hideResendModal() {
   state.pendingResendHistory = null;
   closeOverlay(resendModal);
@@ -3929,7 +4863,7 @@ function getPromptButtonsForActiveTab() {
     return [...historyList.querySelectorAll("[data-load-history]")];
   }
   if (state.activeTab === "favorites") {
-    return [...favoritesList.querySelectorAll("[data-load-favorite]")];
+    return [...favoritesList.querySelectorAll("[data-load-favorite], [data-edit-favorite]")];
   }
   return [];
 }
@@ -3993,10 +4927,6 @@ function resetTransientModals() {
 function setTemplateModalError(message = "") {
   templateModalError.hidden = !message;
   templateModalError.textContent = message;
-}
-function setFavoriteModalError(message = "") {
-  favoriteModalError.hidden = !message;
-  favoriteModalError.textContent = message;
 }
 async function ensureClipboardReadPermission() {
   try {
@@ -4090,9 +5020,9 @@ async function confirmTemplateModalSend() {
   if (!previewState || previewState.missingUserValues.length > 0 || previewState.clipboardMissing) {
     return;
   }
-  const cachedValues = compactVariableValues(modalState.userValues);
+  const cachedValues = compactVariableValues2(modalState.userValues);
   await updateTemplateVariableCache(cachedValues);
-  state.templateVariableCache = mergeTemplateSources(state.templateVariableCache, cachedValues);
+  state.templateVariableCache = mergeTemplateSources2(state.templateVariableCache, cachedValues);
   const resolvedTargets = buildResolvedBroadcastTargets(modalState.targets, previewState.values);
   hideTemplateModal();
   await maybeMarkLoadedFavoriteAsUsed();
@@ -4103,7 +5033,7 @@ function buildTemplateSendPreviewStateV2() {
   if (!modalState) {
     return null;
   }
-  const values = mergeTemplateSources(modalState.systemValues, modalState.userValues);
+  const values = mergeTemplateSources2(modalState.systemValues, modalState.userValues);
   const preview = buildTemplatePreviewText(modalState.targets, values);
   const missingUserValues = findMissingTemplateValuesForTargets2(
     modalState.targets,
@@ -4172,7 +5102,7 @@ async function openTemplateModalV2(prompt, targets) {
     await sendResolvedPrompt(prompt, buildResolvedBroadcastTargets(targets));
     return;
   }
-  const baseDefaults = mergeTemplateSources(
+  const baseDefaults = mergeTemplateSources2(
     state.templateVariableCache,
     state.loadedTemplateDefaults
   );
@@ -4199,104 +5129,6 @@ async function openTemplateModalV2(prompt, targets) {
   };
   renderTemplateModalV2();
   openOverlay(templateModal, templateFields.querySelector("input") ?? templateModalConfirm);
-}
-function renderFavoriteDefaultFields() {
-  const modalState = state.pendingFavoriteSave;
-  if (!modalState) {
-    favoriteDefaultFieldsWrap.hidden = true;
-    favoriteDefaultFields.innerHTML = "";
-    return;
-  }
-  const showDefaults = modalState.variables.length > 0 && modalState.saveDefaults;
-  favoriteDefaultFieldsWrap.hidden = !showDefaults;
-  if (!showDefaults) {
-    favoriteDefaultFields.innerHTML = "";
-    return;
-  }
-  favoriteDefaultFields.innerHTML = modalState.variables.map((variable) => {
-    const value = modalState.defaultValues[variable.name] ?? "";
-    return `
-        <label class="field-stack">
-          <span>${escapeHtml(variable.name)}</span>
-          <input
-            class="search-input"
-            type="text"
-            data-favorite-default-input="${escapeAttribute(variable.name)}"
-            value="${escapeAttribute(value)}"
-            placeholder="${escapeAttribute(t.templateFieldPlaceholder(variable.name))}"
-          />
-        </label>
-      `;
-  }).join("");
-}
-function renderFavoriteModal() {
-  const modalState = state.pendingFavoriteSave;
-  if (!modalState) {
-    return;
-  }
-  favoriteModalTitle.textContent = t.favoriteModalTitle;
-  favoriteModalDesc.textContent = t.favoriteModalDesc;
-  favoriteModalCancel.textContent = t.favoriteModalCancel;
-  favoriteModalConfirm.textContent = t.favoriteModalConfirm;
-  favoriteTitleLabel.textContent = t.favoriteTitleLabel;
-  favoriteSaveDefaultsLabel.textContent = t.favoriteSaveDefaultsLabel;
-  favoriteDefaultFieldsLabel.textContent = t.favoriteDefaultsLabel;
-  favoriteTitleInput.value = modalState.title;
-  favoriteSaveDefaults.checked = modalState.saveDefaults;
-  favoriteSaveDefaultsRow.hidden = modalState.variables.length === 0;
-  renderFavoriteDefaultFields();
-}
-async function openFavoriteModal() {
-  clearStatus();
-  const prompt = promptInput.value.trim();
-  if (!prompt) {
-    setStatus(t.warnEmpty, "error");
-    promptInput.focus();
-    return;
-  }
-  const variables = detectTemplateVariables(prompt).filter((variable) => variable.kind === "user");
-  const baseDefaults = mergeTemplateSources(
-    state.templateVariableCache,
-    state.loadedTemplateDefaults
-  );
-  state.pendingFavoriteSave = {
-    prompt,
-    sites: checkedSiteIds(),
-    variables,
-    title: state.loadedFavoriteTitle,
-    saveDefaults: variables.length > 0,
-    defaultValues: Object.fromEntries(
-      variables.map((variable) => [variable.name, baseDefaults[variable.name] ?? ""])
-    )
-  };
-  setFavoriteModalError("");
-  renderFavoriteModal();
-  openOverlay(favoriteModal, favoriteTitleInput);
-  window.requestAnimationFrame(() => favoriteTitleInput.select());
-}
-async function confirmFavoriteSave() {
-  const modalState = state.pendingFavoriteSave;
-  if (!modalState) {
-    return;
-  }
-  const title = favoriteTitleInput.value.trim();
-  modalState.title = title;
-  modalState.saveDefaults = favoriteSaveDefaults.checked;
-  const templateDefaults = modalState.saveDefaults ? compactVariableValues(modalState.defaultValues) : {};
-  if (modalState.saveDefaults) {
-    await updateTemplateVariableCache(templateDefaults);
-    state.templateVariableCache = mergeTemplateSources(state.templateVariableCache, templateDefaults);
-  }
-  await createFavoritePrompt({
-    title,
-    text: modalState.prompt,
-    sentTo: modalState.sites,
-    templateDefaults
-  });
-  await refreshStoredData();
-  hideFavoriteModal();
-  setStatus(t.favoriteSaved, "success");
-  showAppToast(t.favoriteSaved, "success", 2200);
 }
 function renderTabLabels() {
   extTitle.textContent = t.title;
@@ -4814,6 +5646,7 @@ async function handleHistoryAction(action, historyId) {
   }
 }
 async function handleFavoriteAction(action, favoriteId) {
+  const item = getFavoriteById(favoriteId);
   if (action === "delete-favorite") {
     await deleteFavoriteItem(favoriteId);
     state.favorites = await getPromptFavorites();
@@ -4824,7 +5657,6 @@ async function handleFavoriteAction(action, favoriteId) {
     return;
   }
   if (action === "toggle-pin-favorite") {
-    const item = state.favorites.find((f) => f.id === favoriteId);
     if (item) {
       await updateFavoriteMeta(favoriteId, { pinned: !item.pinned });
       state.favorites = await getPromptFavorites();
@@ -4833,11 +5665,13 @@ async function handleFavoriteAction(action, favoriteId) {
     }
     return;
   }
-  if (action === "edit-favorite-tags") {
-    const item = state.favorites.find((f) => f.id === favoriteId);
-    if (!item) return;
+  if (action === "edit-favorite") {
+    if (!item) {
+      return;
+    }
     state.openMenuKey = null;
-    openFavoriteTagsModal(item);
+    renderFavoritesList();
+    openFavoriteEditor(item);
     return;
   }
   if (action === "duplicate-favorite") {
@@ -4847,68 +5681,26 @@ async function handleFavoriteAction(action, favoriteId) {
     renderFavoritesList();
     setStatus(t.favoriteDuplicated, "success");
     showAppToast(t.favoriteDuplicated, "success", 2200);
+    return;
   }
-}
-function openFavoriteTagsModal(item) {
-  let modal = document.getElementById("favorite-tags-modal");
-  if (!modal) {
-    modal = document.createElement("div");
-    modal.id = "favorite-tags-modal";
-    modal.className = "modal-overlay";
-    modal.innerHTML = `
-      <div class="modal-card" role="dialog" aria-modal="true">
-        <div class="modal-header">
-          <h2>${escapeHtml(msg("popup_favorite_edit_tags") || "Edit tags & folder")}</h2>
-          <button class="icon-button" type="button" id="fav-tags-modal-close">×</button>
-        </div>
-        <div class="modal-fields">
-          <label class="field-stack">
-            <span>${escapeHtml(msg("popup_favorite_tags_label") || "Tags (comma-separated)")}</span>
-            <input id="fav-tags-input" class="search-input" type="text" placeholder="${escapeHtml(msg("popup_favorite_tags_placeholder") || "coding, translation, summary")}" />
-          </label>
-          <label class="field-stack">
-            <span>${escapeHtml(msg("popup_favorite_folder_label") || "Folder")}</span>
-            <input id="fav-folder-input" class="search-input" type="text" placeholder="${escapeHtml(msg("popup_favorite_folder_placeholder") || "Work / Development")}" />
-          </label>
-        </div>
-        <div class="modal-actions">
-          <button class="ghost-button" type="button" id="fav-tags-modal-cancel">${escapeHtml(msg("popup_template_cancel") || "Cancel")}</button>
-          <button class="primary-button" type="button" id="fav-tags-modal-save">${escapeHtml(msg("popup_favorite_modal_confirm") || "Save")}</button>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(modal);
-    const closeModal = () => {
-      modal.hidden = true;
-    };
-    document.getElementById("fav-tags-modal-close").addEventListener("click", closeModal);
-    document.getElementById("fav-tags-modal-cancel").addEventListener("click", closeModal);
-    document.getElementById("fav-tags-modal-save").addEventListener("click", async () => {
-      const rawTags = document.getElementById("fav-tags-input").value;
-      const folder = document.getElementById("fav-folder-input").value.trim();
-      const tags = rawTags.split(",").map((t2) => t2.trim()).filter(Boolean);
-      const favoriteId = modal.dataset.favoriteId;
-      await updateFavoriteMeta(favoriteId, { tags, folder });
-      state.favorites = await getPromptFavorites();
-      renderFavoritesList();
-      closeModal();
-    });
+  if (action === "run-favorite") {
+    if (!item) {
+      return;
+    }
+    await runFavoriteItem(item);
+    renderFavoritesList();
   }
-  modal.dataset.favoriteId = item.id;
-  document.getElementById("fav-tags-input").value = (item.tags ?? []).join(", ");
-  document.getElementById("fav-folder-input").value = item.folder ?? "";
-  modal.hidden = false;
 }
 async function handleSend() {
   if (state.isSending) {
     return;
   }
   clearStatus();
-  const prompt = promptInput.value.trim();
+  const prompt = promptInput2.value.trim();
   if (!prompt) {
     setStatus(t.warnEmpty, "error");
     showAppToast(t.toastPromptEmpty, "warning", 2e3);
-    promptInput.focus();
+    promptInput2.focus();
     return;
   }
   const selectedSiteIds = checkedSiteIds();
@@ -4938,7 +5730,7 @@ function bindGlobalEvents() {
     button.addEventListener("click", () => switchTab(button.dataset.tab));
   });
   clearPromptBtn.addEventListener("click", () => {
-    promptInput.value = "";
+    promptInput2.value = "";
     state.loadedFavoriteId = "";
     state.loadedFavoriteTitle = "";
     state.loadedTemplateDefaults = {};
@@ -4946,7 +5738,7 @@ function bindGlobalEvents() {
     autoResizePromptInput();
     renderTemplateSummary();
     clearStatus();
-    promptInput.focus();
+    promptInput2.focus();
   });
   toggleAllBtn.addEventListener("click", () => {
     const checkboxes = allCheckboxes();
@@ -4974,7 +5766,7 @@ function bindGlobalEvents() {
       setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
     });
   });
-  promptInput.addEventListener("input", () => {
+  promptInput2.addEventListener("input", () => {
     updatePromptCounter();
     autoResizePromptInput();
     renderTemplateSummary();
@@ -4983,7 +5775,7 @@ function bindGlobalEvents() {
       card.querySelector(".retry-btn")?.remove();
     });
   });
-  promptInput.addEventListener("keydown", (event) => {
+  promptInput2.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
       void handleSend().catch((error) => {
@@ -5095,6 +5887,18 @@ function bindGlobalEvents() {
       );
       if (item) {
         loadPromptIntoComposer(item);
+      }
+      return;
+    }
+    const editButton = event.target.closest("[data-edit-favorite]");
+    if (editButton) {
+      const item = state.favorites.find(
+        (entry) => String(entry.id) === String(editButton.dataset.editFavorite)
+      );
+      if (item) {
+        state.openMenuKey = null;
+        renderFavoritesList();
+        openFavoriteEditor(item);
       }
       return;
     }
@@ -5320,40 +6124,7 @@ function bindGlobalEvents() {
       setTemplateModalError(t.error(error?.message ?? getUnknownErrorText()));
     });
   });
-  favoriteModalClose.addEventListener("click", dismissFavoriteModal);
-  favoriteModalCancel.addEventListener("click", dismissFavoriteModal);
-  favoriteModal.addEventListener("click", (event) => {
-    const target = event.target instanceof Element ? event.target : null;
-    const dismissButton = target?.closest("[data-dismiss-favorite-modal]");
-    if (dismissButton || target === favoriteModal) {
-      dismissFavoriteModal(event);
-    }
-  });
-  favoriteModal.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !favoriteModal.hidden) {
-      dismissFavoriteModal(event);
-    }
-  });
-  favoriteSaveDefaults.addEventListener("change", () => {
-    if (!state.pendingFavoriteSave) {
-      return;
-    }
-    state.pendingFavoriteSave.saveDefaults = favoriteSaveDefaults.checked;
-    renderFavoriteDefaultFields();
-  });
-  favoriteDefaultFields.addEventListener("input", (event) => {
-    const input = event.target.closest("[data-favorite-default-input]");
-    if (!input || !state.pendingFavoriteSave) {
-      return;
-    }
-    state.pendingFavoriteSave.defaultValues[input.dataset.favoriteDefaultInput] = input.value;
-  });
-  favoriteModalConfirm.addEventListener("click", () => {
-    void confirmFavoriteSave().catch((error) => {
-      console.error("[AI Prompt Broadcaster] Favorite save failed.", error);
-      setFavoriteModalError(t.error(error?.message ?? getUnknownErrorText()));
-    });
-  });
+  bindFavoriteEditorEvents();
   resendModalClose.addEventListener("click", hideResendModal);
   resendModalCancel.addEventListener("click", hideResendModal);
   resendModal.addEventListener("click", (event) => {
@@ -5425,10 +6196,13 @@ async function init() {
     switchTab(state.activeTab);
     syncToggleAllLabel();
     await loadStoredData();
+    await maybeHandlePopupFavoriteIntent();
     await chrome.runtime.sendMessage({ action: "popupOpened" }).catch(() => null);
     applyLastBroadcastState(await getLastBroadcast(), { silentToast: false });
     await flushPendingSessionToasts();
-    promptInput.focus();
+    if (!getOpenOverlay()) {
+      promptInput2.focus();
+    }
   } catch (error) {
     console.error("[AI Prompt Broadcaster] Failed to initialize popup.", error);
     setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");

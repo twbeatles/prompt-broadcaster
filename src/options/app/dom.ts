@@ -27,6 +27,9 @@ export const optionsDom = {
     historyNextPage: document.getElementById("history-next-page"),
     historyPageInfo: document.getElementById("history-page-info"),
   },
+  schedules: {
+    schedulesList: document.getElementById("schedules-list"),
+  },
   services: {
     servicesGrid: document.getElementById("services-grid"),
   },

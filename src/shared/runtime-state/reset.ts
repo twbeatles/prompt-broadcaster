@@ -11,6 +11,7 @@ import { setFailedSelectors } from "./failed-selectors";
 import { setLastBroadcast as setLastBroadcastSummary } from "./last-broadcast";
 import { setOnboardingCompleted as setOnboardingState } from "./onboarding";
 import { setStrategyStats } from "./strategy-stats";
+import { SESSION_RUNTIME_KEYS } from "./constants";
 import { setPendingUiToasts as setUiToasts } from "./ui-toasts";
 
 interface ResetPersistedExtensionStateOptions {
@@ -33,7 +34,9 @@ export async function resetPersistedExtensionState(
   options: ResetPersistedExtensionStateOptions = {}
 ) {
   const localKeys = normalizeStorageKeys(options.additionalLocalKeys, ["lastPrompt"]);
-  const sessionKeys = normalizeStorageKeys(options.additionalSessionKeys);
+  const sessionKeys = normalizeStorageKeys(options.additionalSessionKeys, [
+    SESSION_RUNTIME_KEYS.popupFavoriteIntent,
+  ]);
   const clearAlarmName =
     typeof options.clearAlarmName === "string" && options.clearAlarmName.trim()
       ? options.clearAlarmName.trim()

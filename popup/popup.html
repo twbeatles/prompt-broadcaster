@@ -295,6 +295,54 @@
           <input id="favorite-title-input" class="search-input" type="text" data-i18n-placeholder="popup_title_placeholder" />
         </label>
 
+        <label class="field-stack" for="favorite-mode-select">
+          <span id="favorite-mode-label"></span>
+          <select id="favorite-mode-select" class="search-input"></select>
+        </label>
+
+        <div class="modal-section">
+          <div class="section-row section-row-start">
+            <strong id="favorite-targets-label"></strong>
+          </div>
+          <div id="favorite-targets-list" class="favorite-targets-list"></div>
+        </div>
+
+        <div class="inline-field-grid">
+          <label class="field-stack" for="favorite-tags-input">
+            <span id="favorite-tags-label"></span>
+            <input id="favorite-tags-input" class="search-input" type="text" />
+          </label>
+
+          <label class="field-stack" for="favorite-folder-input">
+            <span id="favorite-folder-label"></span>
+            <input id="favorite-folder-input" class="search-input" type="text" />
+          </label>
+        </div>
+
+        <label class="checkbox-row" for="favorite-pinned-input">
+          <input id="favorite-pinned-input" type="checkbox" />
+          <span id="favorite-pinned-label"></span>
+        </label>
+
+        <label id="favorite-schedule-enabled-row" class="checkbox-row" for="favorite-schedule-enabled">
+          <input id="favorite-schedule-enabled" type="checkbox" />
+          <span id="favorite-schedule-enabled-label"></span>
+        </label>
+
+        <div id="favorite-schedule-fields" class="modal-section" hidden>
+          <div class="inline-field-grid">
+            <label class="field-stack" for="favorite-scheduled-at-input">
+              <span id="favorite-scheduled-at-label"></span>
+              <input id="favorite-scheduled-at-input" class="search-input" type="datetime-local" />
+            </label>
+
+            <label class="field-stack" for="favorite-schedule-repeat-select">
+              <span id="favorite-schedule-repeat-label"></span>
+              <select id="favorite-schedule-repeat-select" class="search-input"></select>
+            </label>
+          </div>
+        </div>
+
         <label id="favorite-save-defaults-row" class="checkbox-row" hidden>
           <input id="favorite-save-defaults" type="checkbox" />
           <span id="favorite-save-defaults-label" data-i18n="popup_favorite_save_defaults_label"></span>
@@ -308,10 +356,22 @@
         <div id="favorite-default-fields" class="modal-fields"></div>
       </div>
 
+      <div id="favorite-chain-wrap" class="modal-section" hidden>
+        <div class="section-row section-row-start">
+          <div class="section-copy">
+            <strong id="favorite-chain-title"></strong>
+            <p id="favorite-chain-desc" class="helper-text"></p>
+          </div>
+          <button id="favorite-chain-add-step" class="ghost-button small-button" type="button"></button>
+        </div>
+        <div id="favorite-chain-list" class="favorite-chain-list"></div>
+      </div>
+
       <div id="favorite-modal-error" class="modal-error" hidden></div>
 
       <div class="modal-actions">
         <button id="favorite-modal-cancel" class="ghost-button" type="button" data-i18n="popup_favorite_modal_cancel" data-dismiss-favorite-modal></button>
+        <button id="favorite-modal-run" class="ghost-button" type="button" hidden></button>
         <button id="favorite-modal-confirm" class="primary-button" type="button" data-i18n="popup_favorite_modal_confirm"></button>
       </div>
     </div>

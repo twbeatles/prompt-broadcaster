@@ -20,6 +20,7 @@
       <nav class="nav-list" role="tablist" aria-label="Dashboard sections">
         <button class="nav-button active" type="button" role="tab" aria-selected="true" aria-controls="section-dashboard" data-section="dashboard" data-i18n="options_nav_dashboard">Dashboard</button>
         <button class="nav-button" type="button" role="tab" aria-selected="false" aria-controls="section-history" data-section="history" data-i18n="options_nav_history">History</button>
+        <button class="nav-button" type="button" role="tab" aria-selected="false" aria-controls="section-schedules" data-section="schedules" data-i18n="options_nav_schedules">Schedules</button>
         <button class="nav-button" type="button" role="tab" aria-selected="false" aria-controls="section-services" data-section="services" data-i18n="options_nav_services">Services</button>
         <button class="nav-button" type="button" role="tab" aria-selected="false" aria-controls="section-settings" data-section="settings" data-i18n="options_nav_settings">Settings</button>
       </nav>
@@ -82,6 +83,16 @@
             <span id="history-page-info" class="helper"></span>
             <button id="history-next-page" class="btn" type="button" data-i18n="options_pagination_next">Next</button>
           </div>
+        </div>
+      </section>
+
+      <section id="section-schedules" class="page-section" role="tabpanel" tabindex="0">
+        <div class="section-head">
+          <h2 data-i18n="options_schedules_title">Schedules</h2>
+          <p data-i18n="options_schedules_desc">Manage scheduled favorites and run them manually.</p>
+        </div>
+        <div class="panel">
+          <div id="schedules-list" class="settings-stack"></div>
         </div>
       </section>
 

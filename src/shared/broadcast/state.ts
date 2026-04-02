@@ -13,6 +13,17 @@ function clonePendingBroadcastRecord(record: PendingBroadcastRecord): PendingBro
     failedSiteIds: [...(record.failedSiteIds ?? [])],
     siteResults: { ...(record.siteResults ?? {}) },
     openedTabIds: [...(record.openedTabIds ?? [])],
+    originFavoriteId: record.originFavoriteId ?? null,
+    chainRunId: record.chainRunId ?? null,
+    chainStepIndex:
+      record.chainStepIndex === null || record.chainStepIndex === undefined
+        ? null
+        : Number(record.chainStepIndex),
+    chainStepCount:
+      record.chainStepCount === null || record.chainStepCount === undefined
+        ? null
+        : Number(record.chainStepCount),
+    trigger: record.trigger,
   };
 }
 

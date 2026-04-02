@@ -17,16 +17,23 @@ export {
 } from "./constants";
 export {
   buildSiteInjectionResult,
+  createChainStepId,
   ensureUniqueNumericId,
   ensureUniqueStringId,
   normalizeBoolean,
   normalizeBroadcastCounter,
+  normalizeChainStep,
+  normalizeChainSteps,
+  normalizeDelayMs,
+  normalizeExecutionTrigger,
+  normalizeFavoriteMode,
   normalizeFavoriteSort,
   normalizeHistorySort,
   normalizeHistoryLimit,
   normalizeIsoDate,
   normalizeNullableIsoDate,
   normalizeResultCode,
+  normalizeScheduleRepeat,
   normalizeSentTo,
   normalizeSettings,
   normalizeSiteInjectionResult,
@@ -52,6 +59,7 @@ export {
   markFavoriteUsed,
   setPromptFavorites,
   updateFavoriteMeta,
+  updateFavoritePrompt,
   updateFavoriteTitle,
 } from "./favorites-store";
 export {

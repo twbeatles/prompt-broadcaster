@@ -11,6 +11,9 @@
   "command_capture_selected": {
     "message": "선택한 텍스트를 프롬프트로 넣고 팝업 열기"
   },
+  "command_quick_palette": {
+    "message": "즐겨찾기 빠른 팔레트 열기"
+  },
   "popup_sections_aria": {
     "message": "팝업 섹션"
   },
@@ -250,6 +253,121 @@
   },
   "popup_favorite_defaults_label": {
     "message": "저장할 변수 기본값"
+  },
+  "popup_favorite_modal_save_changes": {
+    "message": "변경사항 저장"
+  },
+  "popup_favorite_edit_title": {
+    "message": "즐겨찾기 편집"
+  },
+  "popup_favorite_edit_desc": {
+    "message": "대상 서비스, 기본값, 체인 단계, 예약 설정을 수정합니다."
+  },
+  "popup_favorite_mode_label": {
+    "message": "즐겨찾기 유형"
+  },
+  "popup_favorite_mode_single": {
+    "message": "단일 프롬프트"
+  },
+  "popup_favorite_mode_chain": {
+    "message": "체인"
+  },
+  "popup_favorite_targets_label": {
+    "message": "기본 대상 서비스"
+  },
+  "popup_favorite_pinned_label": {
+    "message": "이 즐겨찾기를 상단에 고정"
+  },
+  "popup_favorite_schedule_enabled_label": {
+    "message": "예약 실행 사용"
+  },
+  "popup_favorite_scheduled_at_label": {
+    "message": "다음 실행 시각"
+  },
+  "popup_favorite_schedule_repeat_label": {
+    "message": "반복"
+  },
+  "popup_favorite_schedule_repeat_none": {
+    "message": "1회"
+  },
+  "popup_favorite_schedule_repeat_daily": {
+    "message": "매일"
+  },
+  "popup_favorite_schedule_repeat_weekday": {
+    "message": "평일"
+  },
+  "popup_favorite_schedule_repeat_weekly": {
+    "message": "매주"
+  },
+  "popup_favorite_chain_title": {
+    "message": "체인 단계"
+  },
+  "popup_favorite_chain_desc": {
+    "message": "각 단계는 순서대로 실행되며, 한 단계라도 실패하면 체인을 중단합니다."
+  },
+  "popup_favorite_chain_add_step": {
+    "message": "단계 추가"
+  },
+  "popup_favorite_step_label": {
+    "message": "단계 $INDEX$",
+    "placeholders": {
+      "index": {
+        "content": "$1"
+      }
+    }
+  },
+  "popup_favorite_step_move_up": {
+    "message": "위로"
+  },
+  "popup_favorite_step_move_down": {
+    "message": "아래로"
+  },
+  "popup_favorite_step_prompt_label": {
+    "message": "프롬프트"
+  },
+  "popup_favorite_step_delay_label": {
+    "message": "이전 단계 후 대기 시간 (ms)"
+  },
+  "popup_favorite_step_targets_label": {
+    "message": "대상 서비스 덮어쓰기"
+  },
+  "popup_favorite_step_targets_hint": {
+    "message": "비워 두면 즐겨찾기 기본 대상 서비스를 사용합니다."
+  },
+  "popup_favorite_run_now": {
+    "message": "즉시 실행"
+  },
+  "popup_favorite_run_queued": {
+    "message": "즐겨찾기 실행을 시작했습니다."
+  },
+  "popup_favorite_run_needs_editor": {
+    "message": "이 즐겨찾기는 실행 전에 추가 입력이 필요합니다."
+  },
+  "popup_favorite_schedule_date_required": {
+    "message": "예약 실행 시각을 선택해주세요."
+  },
+  "popup_favorite_chain_needs_step": {
+    "message": "비어 있지 않은 체인 단계를 하나 이상 추가해주세요."
+  },
+  "popup_favorite_kind_single": {
+    "message": "단일"
+  },
+  "popup_favorite_kind_chain": {
+    "message": "체인"
+  },
+  "popup_favorite_scheduled_badge": {
+    "message": "예약"
+  },
+  "popup_favorite_step_count": {
+    "message": "$COUNT$단계",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "popup_favorite_edit": {
+    "message": "편집"
   },
   "popup_clear_prompt": {
     "message": "지우기"
@@ -506,6 +624,9 @@
   "options_nav_history": {
     "message": "히스토리"
   },
+  "options_nav_schedules": {
+    "message": "예약"
+  },
   "options_nav_services": {
     "message": "서비스 관리"
   },
@@ -717,11 +838,65 @@
   "options_shortcut_capture_selected": {
     "message": "선택 텍스트로 팝업 열기"
   },
+  "options_shortcut_quick_palette": {
+    "message": "빠른 팔레트"
+  },
   "options_shortcut_unassigned": {
     "message": "미설정"
   },
   "options_shortcut_load_failed": {
     "message": "단축키 정보를 불러오지 못했습니다."
+  },
+  "options_schedules_title": {
+    "message": "예약"
+  },
+  "options_schedules_desc": {
+    "message": "예약된 즐겨찾기를 확인하고 수동으로 실행합니다."
+  },
+  "options_schedules_empty": {
+    "message": "설정된 예약 즐겨찾기가 없습니다."
+  },
+  "options_schedules_next_run": {
+    "message": "다음 실행"
+  },
+  "options_schedules_repeat": {
+    "message": "반복"
+  },
+  "options_schedules_enabled": {
+    "message": "사용"
+  },
+  "options_schedules_last_run": {
+    "message": "마지막 실행"
+  },
+  "options_schedules_run_now": {
+    "message": "즉시 실행"
+  },
+  "options_schedules_open_in_popup": {
+    "message": "팝업에서 열기"
+  },
+  "options_schedules_run_queued": {
+    "message": "즐겨찾기 실행을 시작했습니다."
+  },
+  "options_schedules_popup_fallback": {
+    "message": "필요한 입력을 마무리하도록 팝업을 열었습니다."
+  },
+  "options_schedules_open_failed": {
+    "message": "팝업 편집기를 열지 못했습니다."
+  },
+  "options_schedules_repeat_none": {
+    "message": "1회"
+  },
+  "options_schedules_repeat_daily": {
+    "message": "매일"
+  },
+  "options_schedules_repeat_weekday": {
+    "message": "평일"
+  },
+  "options_schedules_repeat_weekly": {
+    "message": "매주"
+  },
+  "options_schedules_never": {
+    "message": "없음"
   },
   "options_data_refresh_failed": {
     "message": "데이터 새로고침에 실패했습니다."

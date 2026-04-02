@@ -11,6 +11,9 @@
   "command_capture_selected": {
     "message": "Use the selected text as a prompt and open the popup"
   },
+  "command_quick_palette": {
+    "message": "Open the quick palette for favorites"
+  },
   "popup_sections_aria": {
     "message": "Popup sections"
   },
@@ -250,6 +253,121 @@
   },
   "popup_favorite_defaults_label": {
     "message": "Template default values"
+  },
+  "popup_favorite_modal_save_changes": {
+    "message": "Save changes"
+  },
+  "popup_favorite_edit_title": {
+    "message": "Edit favorite"
+  },
+  "popup_favorite_edit_desc": {
+    "message": "Update targets, defaults, chain steps, and schedule settings."
+  },
+  "popup_favorite_mode_label": {
+    "message": "Favorite type"
+  },
+  "popup_favorite_mode_single": {
+    "message": "Single prompt"
+  },
+  "popup_favorite_mode_chain": {
+    "message": "Chain"
+  },
+  "popup_favorite_targets_label": {
+    "message": "Default target services"
+  },
+  "popup_favorite_pinned_label": {
+    "message": "Pin this favorite"
+  },
+  "popup_favorite_schedule_enabled_label": {
+    "message": "Enable scheduled run"
+  },
+  "popup_favorite_scheduled_at_label": {
+    "message": "Next run time"
+  },
+  "popup_favorite_schedule_repeat_label": {
+    "message": "Repeat"
+  },
+  "popup_favorite_schedule_repeat_none": {
+    "message": "One time"
+  },
+  "popup_favorite_schedule_repeat_daily": {
+    "message": "Daily"
+  },
+  "popup_favorite_schedule_repeat_weekday": {
+    "message": "Weekdays"
+  },
+  "popup_favorite_schedule_repeat_weekly": {
+    "message": "Weekly"
+  },
+  "popup_favorite_chain_title": {
+    "message": "Chain steps"
+  },
+  "popup_favorite_chain_desc": {
+    "message": "Each step runs in order and stops the chain if any step fails."
+  },
+  "popup_favorite_chain_add_step": {
+    "message": "Add step"
+  },
+  "popup_favorite_step_label": {
+    "message": "Step $INDEX$",
+    "placeholders": {
+      "index": {
+        "content": "$1"
+      }
+    }
+  },
+  "popup_favorite_step_move_up": {
+    "message": "Move up"
+  },
+  "popup_favorite_step_move_down": {
+    "message": "Move down"
+  },
+  "popup_favorite_step_prompt_label": {
+    "message": "Prompt"
+  },
+  "popup_favorite_step_delay_label": {
+    "message": "Delay after previous step (ms)"
+  },
+  "popup_favorite_step_targets_label": {
+    "message": "Override targets"
+  },
+  "popup_favorite_step_targets_hint": {
+    "message": "Leave empty to use the favorite default targets."
+  },
+  "popup_favorite_run_now": {
+    "message": "Run now"
+  },
+  "popup_favorite_run_queued": {
+    "message": "Favorite run queued."
+  },
+  "popup_favorite_run_needs_editor": {
+    "message": "This favorite needs more input before it can run."
+  },
+  "popup_favorite_schedule_date_required": {
+    "message": "Choose the next run time for this schedule."
+  },
+  "popup_favorite_chain_needs_step": {
+    "message": "Add at least one non-empty chain step."
+  },
+  "popup_favorite_kind_single": {
+    "message": "Single"
+  },
+  "popup_favorite_kind_chain": {
+    "message": "Chain"
+  },
+  "popup_favorite_scheduled_badge": {
+    "message": "Scheduled"
+  },
+  "popup_favorite_step_count": {
+    "message": "$COUNT$ steps",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "popup_favorite_edit": {
+    "message": "Edit"
   },
   "popup_clear_prompt": {
     "message": "Clear"
@@ -506,6 +624,9 @@
   "options_nav_history": {
     "message": "History"
   },
+  "options_nav_schedules": {
+    "message": "Schedules"
+  },
   "options_nav_services": {
     "message": "Services"
   },
@@ -717,11 +838,65 @@
   "options_shortcut_capture_selected": {
     "message": "Open popup with selected text"
   },
+  "options_shortcut_quick_palette": {
+    "message": "Quick palette"
+  },
   "options_shortcut_unassigned": {
     "message": "Not assigned"
   },
   "options_shortcut_load_failed": {
     "message": "Could not load shortcut information."
+  },
+  "options_schedules_title": {
+    "message": "Schedules"
+  },
+  "options_schedules_desc": {
+    "message": "Manage scheduled favorites and run them manually."
+  },
+  "options_schedules_empty": {
+    "message": "No scheduled favorites yet."
+  },
+  "options_schedules_next_run": {
+    "message": "Next run"
+  },
+  "options_schedules_repeat": {
+    "message": "Repeat"
+  },
+  "options_schedules_enabled": {
+    "message": "Enabled"
+  },
+  "options_schedules_last_run": {
+    "message": "Last run"
+  },
+  "options_schedules_run_now": {
+    "message": "Run now"
+  },
+  "options_schedules_open_in_popup": {
+    "message": "Open in popup"
+  },
+  "options_schedules_run_queued": {
+    "message": "Favorite run queued."
+  },
+  "options_schedules_popup_fallback": {
+    "message": "Popup opened to finish required inputs."
+  },
+  "options_schedules_open_failed": {
+    "message": "Failed to open the popup editor."
+  },
+  "options_schedules_repeat_none": {
+    "message": "One time"
+  },
+  "options_schedules_repeat_daily": {
+    "message": "Daily"
+  },
+  "options_schedules_repeat_weekday": {
+    "message": "Weekdays"
+  },
+  "options_schedules_repeat_weekly": {
+    "message": "Weekly"
+  },
+  "options_schedules_never": {
+    "message": "Never"
   },
   "options_data_refresh_failed": {
     "message": "Failed to refresh data."

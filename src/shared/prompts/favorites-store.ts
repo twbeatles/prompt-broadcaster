@@ -1,10 +1,13 @@
 // @ts-nocheck
 import { LOCAL_STORAGE_KEYS } from "./constants";
 import {
+  normalizeChainSteps,
   ensureUniqueStringId,
+  normalizeFavoriteMode,
   normalizeBoolean,
   normalizeIsoDate,
   normalizeNullableIsoDate,
+  normalizeScheduleRepeat,
   normalizeSentTo,
   normalizeTags,
   normalizeTemplateDefaults,
@@ -15,9 +18,19 @@ import {
 import { readLocal, writeLocal } from "./storage";
 
 export function buildFavoriteEntry(entry) {
+  const text = safeText(entry?.text);
+  const sentTo = normalizeSentTo(entry?.sentTo);
   const createdAt = normalizeIsoDate(entry?.createdAt);
   const favoritedAt = normalizeIsoDate(entry?.favoritedAt, createdAt);
   const usageCount = Math.max(0, Math.round(Number(entry?.usageCount) || 0));
+  const mode = normalizeFavoriteMode(entry?.mode);
+  const steps = mode === "chain"
+    ? normalizeChainSteps(entry?.steps, {
+        text,
+        delayMs: 0,
+        targetSiteIds: sentTo,
+      })
+    : [];
 
   return {
     id:
@@ -29,8 +42,8 @@ export function buildFavoriteEntry(entry) {
         ? null
         : Number(entry.sourceHistoryId),
     title: safeText(entry?.title),
-    text: safeText(entry?.text),
-    sentTo: normalizeSentTo(entry?.sentTo),
+    text,
+    sentTo,
     createdAt,
     favoritedAt,
     templateDefaults: normalizeTemplateDefaults(entry?.templateDefaults),
@@ -39,6 +52,11 @@ export function buildFavoriteEntry(entry) {
     pinned: normalizeBoolean(entry?.pinned, false),
     usageCount,
     lastUsedAt: normalizeNullableIsoDate(entry?.lastUsedAt),
+    mode,
+    steps,
+    scheduleEnabled: normalizeBoolean(entry?.scheduleEnabled, false),
+    scheduledAt: normalizeNullableIsoDate(entry?.scheduledAt),
+    scheduleRepeat: normalizeScheduleRepeat(entry?.scheduleRepeat),
   };
 }
 
@@ -75,6 +93,25 @@ export async function updateFavoriteMeta(favoriteId, { tags, folder, pinned } = 
   return nextFavorites.find((item) => String(item.id) === String(favoriteId)) ?? null;
 }
 
+export async function updateFavoritePrompt(favoriteId, patch = {}) {
+  const favorites = await getPromptFavorites();
+  const nextFavorites = favorites.map((item) => {
+    if (String(item.id) !== String(favoriteId)) {
+      return item;
+    }
+
+    return buildFavoriteEntry({
+      ...item,
+      ...(patch ?? {}),
+      id: item.id,
+      sourceHistoryId: item.sourceHistoryId,
+    });
+  });
+
+  await setPromptFavorites(nextFavorites);
+  return nextFavorites.find((item) => String(item.id) === String(favoriteId)) ?? null;
+}
+
 export async function duplicateFavoriteItem(favoriteId, titlePrefix = "[Copy]") {
   const favorites = await getPromptFavorites();
   const source = favorites.find((item) => String(item.id) === String(favoriteId));
@@ -91,6 +128,8 @@ export async function duplicateFavoriteItem(favoriteId, titlePrefix = "[Copy]") 
     favoritedAt: new Date().toISOString(),
     usageCount: 0,
     lastUsedAt: null,
+    scheduleEnabled: false,
+    scheduledAt: null,
   });
 
   await setPromptFavorites([duplicated, ...favorites]);
@@ -140,6 +179,11 @@ export async function createFavoritePrompt(entry) {
     templateDefaults: entry?.templateDefaults,
     usageCount: entry?.usageCount,
     lastUsedAt: entry?.lastUsedAt,
+    mode: entry?.mode,
+    steps: entry?.steps,
+    scheduleEnabled: entry?.scheduleEnabled,
+    scheduledAt: entry?.scheduledAt,
+    scheduleRepeat: entry?.scheduleRepeat,
   });
 
   await setPromptFavorites([favorite, ...favorites]);

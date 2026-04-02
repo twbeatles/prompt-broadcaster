@@ -13,6 +13,11 @@ export {
   setLastBroadcast,
 } from "./last-broadcast";
 export {
+  consumePopupFavoriteIntent,
+  getPopupFavoriteIntent,
+  setPopupFavoriteIntent,
+} from "./popup-intent";
+export {
   getOnboardingCompleted,
   setOnboardingCompleted,
 } from "./onboarding";

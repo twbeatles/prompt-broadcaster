@@ -1,6 +1,7 @@
 import { LOCAL_STORAGE_KEYS } from "./constants";
 import {
   ensureUniqueNumericId,
+  normalizeExecutionTrigger,
   normalizeResultCode,
   normalizeIsoDate,
   normalizeSiteResultsRecord,
@@ -59,6 +60,27 @@ export function buildHistoryEntry(entry: unknown): PromptHistoryItem {
     createdAt,
     status: normalizeStatus(source.status),
     siteResults,
+    originFavoriteId:
+      source.originFavoriteId === null || source.originFavoriteId === undefined
+        ? null
+        : safeText(source.originFavoriteId).trim() || null,
+    chainRunId:
+      source.chainRunId === null || source.chainRunId === undefined
+        ? null
+        : safeText(source.chainRunId).trim() || null,
+    chainStepIndex:
+      source.chainStepIndex === null || source.chainStepIndex === undefined
+        ? null
+        : Number.isFinite(Number(source.chainStepIndex))
+      ? Math.max(0, Math.round(Number(source.chainStepIndex)))
+      : null,
+    chainStepCount:
+      source.chainStepCount === null || source.chainStepCount === undefined
+        ? null
+        : Number.isFinite(Number(source.chainStepCount))
+      ? Math.max(0, Math.round(Number(source.chainStepCount)))
+      : null,
+    trigger: normalizeExecutionTrigger(source.trigger),
   };
 }
 

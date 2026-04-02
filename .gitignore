@@ -20,6 +20,10 @@
 .claude/
 .codex/
 
+# Editor settings
+.vscode/
+.idea/
+
 # Test artifacts
 /playwright-report/
 /test-results/
