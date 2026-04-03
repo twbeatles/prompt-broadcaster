@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { setPopupPromptIntent } from "../../shared/prompt-state";
 import {
   ONBOARDING_URL,
   POPUP_PAGE_URL,
@@ -8,7 +9,8 @@ import {
 
 async function storePromptForPopup(prompt) {
   try {
-    await chrome.storage.local.set({ lastPrompt: prompt });
+    const normalizedPrompt = typeof prompt === "string" ? prompt : "";
+    await setPopupPromptIntent(normalizedPrompt.trim() ? normalizedPrompt : null);
   } catch (error) {
     console.error("[AI Prompt Broadcaster] Failed to store prompt for popup.", error);
   }

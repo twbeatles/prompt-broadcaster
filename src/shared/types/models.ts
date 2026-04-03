@@ -7,6 +7,8 @@ export type FavoriteSort = "recentUsed" | "usageCount" | "title" | "createdAt";
 export type FavoriteMode = "single" | "chain";
 export type ScheduleRepeat = "none" | "daily" | "weekday" | "weekly";
 export type FavoriteExecutionTrigger = "popup" | "scheduled" | "palette" | "options";
+export type BroadcastTargetMode = "default" | "new" | "tab";
+export type FavoriteRunJobStatus = "queued" | "running" | "completed" | "failed" | "skipped";
 export type InjectionResultCode =
   | "submitted"
   | "selector_timeout"
@@ -47,6 +49,7 @@ export interface ImportRejectedSite {
   name: string;
   reason: string;
   origins?: string[];
+  errors?: string[];
 }
 
 export interface ImportSummary {
@@ -136,6 +139,13 @@ export interface ResolvedBroadcastTarget extends BroadcastTargetSelection {
   resolvedPrompt: string;
 }
 
+export interface BroadcastTargetSnapshot {
+  siteId: string;
+  resolvedPrompt: string;
+  targetMode: BroadcastTargetMode;
+  targetTabId: number | null;
+}
+
 export interface OpenSiteTab {
   siteId: string;
   siteName: string;
@@ -157,6 +167,7 @@ export interface PromptHistoryItem {
   createdAt: string;
   status: string;
   siteResults: Record<string, SiteInjectionResult>;
+  targetSnapshots: BroadcastTargetSnapshot[];
   originFavoriteId?: string | null;
   chainRunId?: string | null;
   chainStepIndex?: number | null;
@@ -218,6 +229,7 @@ export interface LastBroadcastSummary {
   submittedSiteIds: string[];
   failedSiteIds: string[];
   siteResults: Record<string, SiteInjectionResult>;
+  targetSnapshots: BroadcastTargetSnapshot[];
   startedAt: string;
   finishedAt: string;
 }
@@ -243,6 +255,7 @@ export interface PendingBroadcastRecord {
   submittedSiteIds: string[];
   failedSiteIds: string[];
   siteResults: Record<string, SiteInjectionResult>;
+  targetSnapshots: BroadcastTargetSnapshot[];
   startedAt: string;
   status: string;
   originTabId?: number | null;
@@ -261,6 +274,43 @@ export interface PopupFavoriteIntent {
   reason?: string;
   source?: FavoriteExecutionTrigger | "options-edit";
   createdAt: string;
+}
+
+export interface PopupPromptIntent {
+  prompt: string;
+  createdAt: string;
+}
+
+export interface FavoriteRunExecutionContextSnapshot {
+  tabId: number | null;
+  windowId: number | null;
+  url: string;
+  title: string;
+  selection: string;
+  clipboard: string;
+}
+
+export interface FavoriteRunJobSummary {
+  jobId: string;
+  favoriteId: string;
+  trigger: FavoriteExecutionTrigger;
+  status: FavoriteRunJobStatus;
+  mode: FavoriteMode;
+  stepCount: number;
+  completedSteps: number;
+  currentStepIndex: number | null;
+  chainRunId: string | null;
+  currentBroadcastId: string | null;
+  message: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FavoriteRunJobRecord extends FavoriteRunJobSummary {
+  favoriteTitle: string;
+  steps: ChainStep[];
+  templateDefaults: Record<string, string>;
+  executionContext: FavoriteRunExecutionContextSnapshot;
 }
 
 export interface ReusableTabSurfaceSnapshot {

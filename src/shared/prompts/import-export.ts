@@ -1,4 +1,3 @@
-// @ts-nocheck
 import {
   cleanupUnusedCustomSitePermissions,
   repairImportedBuiltInOverrides,
@@ -41,10 +40,25 @@ import {
   getTemplateVariableCache,
   setTemplateVariableCache,
 } from "./template-cache-store";
+import { safeText } from "../sites";
+import type {
+  FavoritePrompt,
+  ImportRejectedSite,
+  PromptHistoryItem,
+} from "../types/models";
 
-const CURRENT_EXPORT_VERSION = 5;
+const CURRENT_EXPORT_VERSION = 6;
+type AcceptedCustomSite = Record<string, unknown> & {
+  id: string;
+  name: string;
+  permissionPatterns?: unknown;
+};
 
-async function containsOriginPermission(originPattern) {
+function asImportPayload(value: unknown): Record<string, unknown> {
+  return safeObject(value);
+}
+
+async function containsOriginPermission(originPattern: string): Promise<boolean> {
   try {
     if (!chrome.permissions?.contains || !originPattern) {
       return false;
@@ -58,8 +72,8 @@ async function containsOriginPermission(originPattern) {
   }
 }
 
-async function findMissingOriginPermissions(originPatterns = []) {
-  const missingOrigins = [];
+async function findMissingOriginPermissions(originPatterns: string[] = []): Promise<string[]> {
+  const missingOrigins: string[] = [];
 
   for (const originPattern of Array.isArray(originPatterns) ? originPatterns : []) {
     if (!originPattern) {
@@ -74,14 +88,14 @@ async function findMissingOriginPermissions(originPatterns = []) {
   return missingOrigins;
 }
 
-async function repairImportedCustomSitesWithPermissions(rawSites) {
+async function repairImportedCustomSitesWithPermissions(rawSites: unknown) {
   const repaired = repairImportedCustomSites(rawSites);
-  const requestedOrigins = new Set();
-  const deniedOrigins = new Set();
-  const blockedOrigins = new Set();
+  const requestedOrigins = new Set<string>();
+  const deniedOrigins = new Set<string>();
+  const blockedOrigins = new Set<string>();
 
-  const acceptedSites = [];
-  const permissionDeniedSites = [];
+  const acceptedSites: AcceptedCustomSite[] = [];
+  const permissionDeniedSites: ImportRejectedSite[] = [];
 
   for (const site of repaired.repairedSites) {
     const permissionPatterns = Array.isArray(site?.permissionPatterns)
@@ -94,8 +108,8 @@ async function repairImportedCustomSitesWithPermissions(rawSites) {
     if (blockedForSite.length > 0) {
       blockedForSite.forEach((origin) => deniedOrigins.add(origin));
       permissionDeniedSites.push({
-        id: site.id,
-        name: site.name,
+        id: safeText(site.id) || undefined,
+        name: safeText(site.name) || "Custom AI",
         reason: "permission_denied",
         origins: blockedForSite,
       });
@@ -104,17 +118,17 @@ async function repairImportedCustomSitesWithPermissions(rawSites) {
 
     const missingOrigins = await findMissingOriginPermissions(permissionPatterns);
     if (missingOrigins.length === 0) {
-      acceptedSites.push(site);
+      acceptedSites.push(site as AcceptedCustomSite);
       continue;
     }
 
     try {
       const granted = chrome.permissions?.request
-        ? await chrome.permissions.request({ origins: missingOrigins })
+      ? await chrome.permissions.request({ origins: missingOrigins })
         : false;
 
       if (granted) {
-        acceptedSites.push(site);
+        acceptedSites.push(site as AcceptedCustomSite);
         continue;
       }
     } catch (_error) {
@@ -126,8 +140,8 @@ async function repairImportedCustomSitesWithPermissions(rawSites) {
       deniedOrigins.add(origin);
     });
     permissionDeniedSites.push({
-      id: site.id,
-      name: site.name,
+      id: safeText(site.id) || undefined,
+      name: safeText(site.name) || "Custom AI",
       reason: "permission_denied",
       origins: missingOrigins,
     });
@@ -142,7 +156,7 @@ async function repairImportedCustomSitesWithPermissions(rawSites) {
   };
 }
 
-function normalizeImportVersion(value) {
+function normalizeImportVersion(value: unknown) {
   const version = Number(value);
   if (!Number.isFinite(version) || version <= 0) {
     return 1;
@@ -151,7 +165,7 @@ function normalizeImportVersion(value) {
   return Math.max(1, Math.floor(version));
 }
 
-function migrateV1ToV2(payload) {
+function migrateV1ToV2(payload: Record<string, unknown>) {
   return {
     ...payload,
     version: 2,
@@ -159,7 +173,7 @@ function migrateV1ToV2(payload) {
   };
 }
 
-function migrateV2ToV3(payload) {
+function migrateV2ToV3(payload: Record<string, unknown>) {
   return {
     ...payload,
     version: 3,
@@ -168,7 +182,7 @@ function migrateV2ToV3(payload) {
   };
 }
 
-function migrateV3ToV4(payload) {
+function migrateV3ToV4(payload: Record<string, unknown>) {
   return {
     ...payload,
     version: 4,
@@ -178,7 +192,7 @@ function migrateV3ToV4(payload) {
   };
 }
 
-function migrateV4ToV5(payload) {
+function migrateV4ToV5(payload: Record<string, unknown>) {
   return {
     ...payload,
     version: 5,
@@ -187,8 +201,17 @@ function migrateV4ToV5(payload) {
   };
 }
 
-function migrateImportData(rawValue) {
-  let payload = safeObject(rawValue);
+function migrateV5ToV6(payload: Record<string, unknown>) {
+  return {
+    ...payload,
+    version: 6,
+    history: safeArray(payload.history).map((entry) => buildHistoryEntry(entry)),
+    favorites: safeArray(payload.favorites).map((entry) => buildFavoriteEntry(entry)),
+  };
+}
+
+function migrateImportData(rawValue: unknown) {
+  let payload = asImportPayload(rawValue);
   const sourceVersion = normalizeImportVersion(payload.version);
   let workingVersion = sourceVersion;
 
@@ -210,6 +233,11 @@ function migrateImportData(rawValue) {
   if (workingVersion < 5) {
     payload = migrateV4ToV5(payload);
     workingVersion = 5;
+  }
+
+  if (workingVersion < 6) {
+    payload = migrateV5ToV6(payload);
+    workingVersion = 6;
   }
 
   return {
@@ -254,8 +282,8 @@ export async function exportPromptData() {
   };
 }
 
-export async function importPromptData(jsonString) {
-  const parsed = JSON.parse(jsonString);
+export async function importPromptData(jsonString: string) {
+  const parsed = JSON.parse(jsonString) as unknown;
   const { migrated, sourceVersion, targetVersion } = migrateImportData(parsed);
   const previousCustomSites = await getCustomSites();
   const history = safeArray(migrated?.history).map((item) => buildHistoryEntry(item));
@@ -270,7 +298,7 @@ export async function importPromptData(jsonString) {
   const importedBuiltInSiteOverrides = safeObject(migrated?.builtInSiteOverrides);
   const historyLimit = importedSettings.historyLimit;
 
-  const normalizedHistory = [];
+  const normalizedHistory: PromptHistoryItem[] = [];
   for (const item of sortByDateDesc(history).slice(0, historyLimit)) {
     normalizedHistory.push({
       ...item,
@@ -278,7 +306,7 @@ export async function importPromptData(jsonString) {
     });
   }
 
-  const normalizedFavorites = [];
+  const normalizedFavorites: FavoritePrompt[] = [];
   for (const item of sortByDateDesc(favorites, "favoritedAt")) {
     normalizedFavorites.push({
       ...item,

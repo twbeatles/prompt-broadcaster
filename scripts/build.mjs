@@ -110,32 +110,78 @@ function validateLocaleMessages() {
   const variablePattern = /\$([^$]+)\$/g;
   const invalidNumericPattern = /\$\d/;
 
-  return readdir(localeDir, { withFileTypes: true }).then((entries) => Promise.all(entries
-    .filter((entry) => entry.isDirectory())
-    .map(async (entry) => {
-      const locale = entry.name;
-      const filePath = path.join(localeDir, locale, "messages.json");
-      const messages = JSON.parse(await readFile(filePath, "utf8"));
+  return readdir(localeDir, { withFileTypes: true }).then(async (entries) => {
+    const localeMessages = await Promise.all(entries
+      .filter((entry) => entry.isDirectory())
+      .map(async (entry) => {
+        const locale = entry.name;
+        const filePath = path.join(localeDir, locale, "messages.json");
+        const messages = JSON.parse(await readFile(filePath, "utf8"));
 
-      for (const [key, localeEntry] of Object.entries(messages)) {
-        const message = localeEntry?.message ?? "";
-        const placeholders = Object.fromEntries(
-          Object.keys(localeEntry?.placeholders ?? {}).map((name) => [name.toLowerCase(), true]),
-        );
+        for (const [key, localeEntry] of Object.entries(messages)) {
+          const message = localeEntry?.message ?? "";
+          const placeholders = Object.fromEntries(
+            Object.keys(localeEntry?.placeholders ?? {}).map((name) => [name.toLowerCase(), true]),
+          );
 
-        if (invalidNumericPattern.test(message)) {
-          throw new Error(`${locale}/${key} uses a raw numeric placeholder in message: ${message}`);
-        }
+          if (invalidNumericPattern.test(message)) {
+            throw new Error(`${locale}/${key} uses a raw numeric placeholder in message: ${message}`);
+          }
 
-        let match;
-        while ((match = variablePattern.exec(message)) !== null) {
-          const variableName = match[1].toLowerCase();
-          if (!placeholders[variableName]) {
-            throw new Error(`${locale}/${key} uses undefined placeholder $${match[1]}$`);
+          let match;
+          variablePattern.lastIndex = 0;
+          while ((match = variablePattern.exec(message)) !== null) {
+            const variableName = match[1].toLowerCase();
+            if (!placeholders[variableName]) {
+              throw new Error(`${locale}/${key} uses undefined placeholder $${match[1]}$`);
+            }
           }
         }
+
+        return {
+          locale,
+          messages,
+        };
+      }));
+
+    if (localeMessages.length <= 1) {
+      return;
+    }
+
+    const [referenceLocale, ...otherLocales] = localeMessages;
+    const referenceKeys = new Set(Object.keys(referenceLocale.messages));
+
+    for (const { locale, messages } of otherLocales) {
+      const localeKeys = new Set(Object.keys(messages));
+      const missingKeys = [...referenceKeys].filter((key) => !localeKeys.has(key));
+      const extraKeys = [...localeKeys].filter((key) => !referenceKeys.has(key));
+
+      if (missingKeys.length > 0 || extraKeys.length > 0) {
+        throw new Error(
+          `Locale key mismatch between ${referenceLocale.locale} and ${locale}: ` +
+          `${missingKeys.length > 0 ? `missing [${missingKeys.join(", ")}]` : ""}` +
+          `${missingKeys.length > 0 && extraKeys.length > 0 ? "; " : ""}` +
+          `${extraKeys.length > 0 ? `extra [${extraKeys.join(", ")}]` : ""}`
+        );
       }
-    })));
+
+      for (const key of referenceKeys) {
+        const referencePlaceholders = Object.keys(referenceLocale.messages[key]?.placeholders ?? {})
+          .map((name) => name.toLowerCase())
+          .sort();
+        const localePlaceholders = Object.keys(messages[key]?.placeholders ?? {})
+          .map((name) => name.toLowerCase())
+          .sort();
+
+        if (referencePlaceholders.join("|") !== localePlaceholders.join("|")) {
+          throw new Error(
+            `Locale placeholder mismatch for ${key} between ${referenceLocale.locale} and ${locale}: ` +
+            `[${referencePlaceholders.join(", ")}] vs [${localePlaceholders.join(", ")}]`
+          );
+        }
+      }
+    }
+  });
 }
 
 async function main() {

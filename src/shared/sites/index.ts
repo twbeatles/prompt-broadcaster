@@ -30,6 +30,10 @@ export {
   sanitizeBuiltInOverride,
   stringifyComparable,
 } from "./normalizers";
+export {
+  normalizeHostnameAliasEntry,
+  validateHostnameAliases,
+} from "./hostname-aliases";
 export { validateSiteDraft } from "./validation";
 export {
   repairImportedBuiltInOverrides,

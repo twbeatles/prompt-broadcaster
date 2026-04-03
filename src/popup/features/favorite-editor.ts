@@ -71,6 +71,7 @@ export function createFavoriteEditorFeature(deps) {
     getEnabledSites,
     getRuntimeSiteLabel,
     refreshStoredData,
+    requestFavoriteRun,
     setStatus,
     showAppToast,
     getUnknownErrorText,
@@ -528,17 +529,16 @@ export function createFavoriteEditorFeature(deps) {
       return;
     }
 
-    const response = await chrome.runtime.sendMessage({
-      action: "favorite:run",
-      favoriteId: item.id,
+    const response = await requestFavoriteRun(item, {
       trigger: "popup",
       allowPopupFallback: false,
     });
 
     if (response?.ok) {
       state.openMenuKey = null;
-      setStatus(t.sending(item.mode === "chain" ? item.steps.length || 1 : item.sentTo.length || 1));
-      showAppToast(t.favoriteRunQueued, "success", 2200);
+      const message = response?.message ?? t.favoriteRunQueued;
+      setStatus(message, "success");
+      showAppToast(message, "success", 2200);
       return;
     }
 
@@ -557,17 +557,16 @@ export function createFavoriteEditorFeature(deps) {
       return;
     }
 
-    const response = await chrome.runtime.sendMessage({
-      action: "favorite:run",
-      favoriteId: favorite.id,
+    const response = await requestFavoriteRun(favorite, {
       trigger: "popup",
       allowPopupFallback: false,
     });
 
     if (response?.ok) {
       hideFavoriteModal();
-      setStatus(t.sending(favorite.mode === "chain" ? favorite.steps.length || 1 : favorite.sentTo.length || 1));
-      showAppToast(t.favoriteRunQueued, "success", 2200);
+      const message = response?.message ?? t.favoriteRunQueued;
+      setStatus(message, "success");
+      showAppToast(message, "success", 2200);
       return;
     }
 

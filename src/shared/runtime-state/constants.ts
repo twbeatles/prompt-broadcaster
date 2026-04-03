@@ -8,4 +8,5 @@ export const SESSION_RUNTIME_KEYS = Object.freeze({
   pendingUiToasts: "pendingUiToasts",
   lastBroadcast: "lastBroadcast",
   popupFavoriteIntent: "popupFavoriteIntent",
+  favoriteRunJobs: "favoriteRunJobs",
 });

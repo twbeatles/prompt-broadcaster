@@ -823,6 +823,79 @@ async function updateFavoritePrompt(favoriteId, patch = {}) {
   return nextFavorites.find((item) => String(item.id) === String(favoriteId)) ?? null;
 }
 
+// src/shared/broadcast/target-snapshots.ts
+function normalizeTargetMode(value) {
+  if (value === "new" || value === "tab") {
+    return value;
+  }
+  return "default";
+}
+function normalizeTargetTabId(value) {
+  if (value === null || value === void 0 || value === "") {
+    return null;
+  }
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : null;
+}
+function buildBroadcastTargetSnapshot(value) {
+  const siteId = safeText(value?.siteId).trim();
+  if (!siteId) {
+    return null;
+  }
+  return {
+    siteId,
+    resolvedPrompt: safeText(value?.resolvedPrompt),
+    targetMode: normalizeTargetMode(value?.targetMode),
+    targetTabId: normalizeTargetTabId(value?.targetTabId)
+  };
+}
+function normalizeBroadcastTargetSnapshots(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const seenSiteIds = /* @__PURE__ */ new Set();
+  const snapshots = [];
+  value.forEach((entry) => {
+    const snapshot = buildBroadcastTargetSnapshot(
+      entry && typeof entry === "object" && !Array.isArray(entry) ? {
+        siteId: safeText(entry.siteId),
+        resolvedPrompt: safeText(entry.resolvedPrompt),
+        targetMode: entry.targetMode,
+        targetTabId: normalizeTargetTabId(entry.targetTabId)
+      } : null
+    );
+    if (!snapshot || seenSiteIds.has(snapshot.siteId)) {
+      return;
+    }
+    seenSiteIds.add(snapshot.siteId);
+    snapshots.push(snapshot);
+  });
+  return snapshots;
+}
+function buildFallbackTargetSnapshots(siteIds, prompt) {
+  return normalizeSiteIdList(siteIds).map((siteId) => ({
+    siteId,
+    resolvedPrompt: safeText(prompt),
+    targetMode: "default",
+    targetTabId: null
+  }));
+}
+function ensureBroadcastTargetSnapshots(snapshots, siteIds, prompt) {
+  const normalized = normalizeBroadcastTargetSnapshots(snapshots);
+  if (normalized.length > 0) {
+    return normalized;
+  }
+  return buildFallbackTargetSnapshots(siteIds, prompt);
+}
+function getTargetSnapshotSiteIds(entry) {
+  const snapshots = ensureBroadcastTargetSnapshots(
+    entry?.targetSnapshots,
+    entry?.requestedSiteIds ?? entry?.sentTo,
+    entry?.text
+  );
+  return snapshots.map((snapshot) => snapshot.siteId);
+}
+
 // src/shared/prompts/settings-store.ts
 async function getAppSettings() {
   const rawSettings = await readLocal(LOCAL_STORAGE_KEYS.settings, DEFAULT_SETTINGS);
@@ -877,6 +950,11 @@ function buildHistoryEntry(entry) {
     createdAt,
     status: normalizeStatus(source.status),
     siteResults,
+    targetSnapshots: ensureBroadcastTargetSnapshots(
+      source.targetSnapshots,
+      requestedSiteIds,
+      source.text
+    ),
     originFavoriteId: source.originFavoriteId === null || source.originFavoriteId === void 0 ? null : safeText(source.originFavoriteId).trim() || null,
     chainRunId: source.chainRunId === null || source.chainRunId === void 0 ? null : safeText(source.chainRunId).trim() || null,
     chainStepIndex: source.chainStepIndex === null || source.chainStepIndex === void 0 ? null : Number.isFinite(Number(source.chainStepIndex)) ? Math.max(0, Math.round(Number(source.chainStepIndex))) : null,
@@ -1356,6 +1434,70 @@ function normalizeCustomSite(site) {
   );
 }
 
+// src/shared/sites/hostname-aliases.ts
+function validateBareHostPort(value) {
+  const hostPortPattern = /^(?<host>[a-z0-9.-]+)(?::(?<port>\d{1,5}))?$/i;
+  const match = value.match(hostPortPattern);
+  if (!match?.groups?.host) {
+    return "";
+  }
+  const host = match.groups.host.toLowerCase();
+  const port = match.groups.port;
+  if (host.startsWith(".") || host.endsWith(".") || host.includes("..") || !/[a-z]/i.test(host)) {
+    return "";
+  }
+  if (port) {
+    const numericPort = Number(port);
+    if (!Number.isInteger(numericPort) || numericPort <= 0 || numericPort > 65535) {
+      return "";
+    }
+    return `${host}:${numericPort}`;
+  }
+  return host;
+}
+function normalizeHostnameAliasEntry(value) {
+  const input = safeText2(value);
+  if (!input) {
+    return "";
+  }
+  try {
+    const parsed = new URL(input);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return "";
+    }
+    return parsed.host.toLowerCase();
+  } catch (_error) {
+    return validateBareHostPort(input);
+  }
+}
+function validateHostnameAliases(value) {
+  const entries = Array.isArray(value) ? value : [];
+  const errors = [];
+  const normalizedHosts = /* @__PURE__ */ new Set();
+  entries.forEach((entry, index) => {
+    const rawInput = typeof entry === "string" ? entry : "";
+    const rawValue = safeText2(entry);
+    if (!rawValue) {
+      return;
+    }
+    if (rawInput && rawInput !== rawInput.trim()) {
+      errors.push(`Hostname alias line ${index + 1} must not include leading or trailing whitespace.`);
+      return;
+    }
+    const normalized = normalizeHostnameAliasEntry(rawValue);
+    if (!normalized) {
+      errors.push(`Hostname alias line ${index + 1} must be a host[:port] or http/https URL.`);
+      return;
+    }
+    normalizedHosts.add(normalized);
+  });
+  return {
+    valid: errors.length === 0,
+    normalizedHosts: [...normalizedHosts],
+    errors
+  };
+}
+
 // src/shared/security.ts
 function escapeHTML(str) {
   if (typeof str !== "string") return "";
@@ -1373,45 +1515,66 @@ function isValidURL(string) {
 }
 
 // src/shared/sites/validation.ts
+function pushFieldError(fieldErrors, field, message) {
+  if (!message) {
+    return;
+  }
+  const current = fieldErrors[field] ?? [];
+  current.push(message);
+  fieldErrors[field] = current;
+}
 function validateSiteDraft(draft, { isBuiltIn = false } = {}) {
   const errors = [];
+  const fieldErrors = {};
   const name = safeText2(draft?.name);
   const url = safeText2(draft?.url);
   const inputSelector = safeText2(draft?.inputSelector);
   if (!name) {
-    errors.push("Service name is required.");
+    pushFieldError(fieldErrors, "name", "Service name is required.");
   }
   if (!isBuiltIn && !url) {
-    errors.push("Service URL is required.");
+    pushFieldError(fieldErrors, "url", "Service URL is required.");
   }
   if (url && !isValidURL(url)) {
-    errors.push("Service URL must be a valid http or https URL.");
+    pushFieldError(fieldErrors, "url", "Service URL must be a valid http or https URL.");
   }
   if (!inputSelector) {
-    errors.push("Input selector is required.");
+    pushFieldError(fieldErrors, "inputSelector", "Input selector is required.");
   }
   if (!VALID_INPUT_TYPES.has(safeText2(draft?.inputType))) {
-    errors.push("Input type is invalid.");
+    pushFieldError(fieldErrors, "inputType", "Input type is invalid.");
   }
   if (!VALID_SUBMIT_METHODS.has(safeText2(draft?.submitMethod))) {
-    errors.push("Submit method is invalid.");
+    pushFieldError(fieldErrors, "submitMethod", "Submit method is invalid.");
   }
   const selectorCheckMode = safeText2(draft?.selectorCheckMode);
   if (selectorCheckMode && !VALID_SELECTOR_CHECK_MODES.has(selectorCheckMode)) {
-    errors.push("Selector check mode is invalid.");
+    pushFieldError(fieldErrors, "selectorCheckMode", "Selector check mode is invalid.");
   }
   if (safeText2(draft?.submitMethod) === "click" && !safeText2(draft?.submitSelector)) {
-    errors.push("Submit selector is required when using click submit.");
+    pushFieldError(fieldErrors, "submitSelector", "Submit selector is required when using click submit.");
   }
+  const aliasValidation = validateHostnameAliases(draft?.hostnameAliases);
+  aliasValidation.errors.forEach((message) => pushFieldError(fieldErrors, "hostnameAliases", message));
+  Object.values(fieldErrors).forEach((messages) => {
+    (messages ?? []).forEach((message) => {
+      errors.push(message);
+    });
+  });
   return {
     valid: errors.length === 0,
-    errors
+    errors,
+    fieldErrors
   };
 }
 
 // src/shared/sites/import-repair.ts
+function asPlainRecord(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
 function detectBuiltInOverrideAdjustment(rawEntry, sanitized, source) {
-  if (!isPlainObject(rawEntry)) {
+  const rawRecord = asPlainRecord(rawEntry);
+  if (!isPlainObject(rawRecord)) {
     return true;
   }
   const allowedKeys = /* @__PURE__ */ new Set([
@@ -1429,33 +1592,36 @@ function detectBuiltInOverrideAdjustment(rawEntry, sanitized, source) {
     "color",
     "icon"
   ]);
-  if (Object.keys(rawEntry).some((key) => !allowedKeys.has(key))) {
+  if (Object.keys(rawRecord).some((key) => !allowedKeys.has(key))) {
     return true;
   }
   const simpleComparisons = [
-    ["name", safeText2(rawEntry.name), sanitized.name],
-    ["inputSelector", safeText2(rawEntry.inputSelector), sanitized.inputSelector],
-    ["inputType", safeText2(rawEntry.inputType), sanitized.inputType],
-    ["submitSelector", safeText2(rawEntry.submitSelector), sanitized.submitSelector],
-    ["submitMethod", safeText2(rawEntry.submitMethod), sanitized.submitMethod],
-    ["selectorCheckMode", safeText2(rawEntry.selectorCheckMode), sanitized.selectorCheckMode],
-    ["lastVerified", safeText2(rawEntry.lastVerified), sanitized.lastVerified],
-    ["verifiedVersion", safeText2(rawEntry.verifiedVersion), sanitized.verifiedVersion],
-    ["color", safeText2(rawEntry.color), sanitized.color],
-    ["icon", safeText2(rawEntry.icon), sanitized.icon]
+    ["name", safeText2(rawRecord.name), sanitized.name],
+    ["inputSelector", safeText2(rawRecord.inputSelector), sanitized.inputSelector],
+    ["inputType", safeText2(rawRecord.inputType), sanitized.inputType],
+    ["submitSelector", safeText2(rawRecord.submitSelector), sanitized.submitSelector],
+    ["submitMethod", safeText2(rawRecord.submitMethod), sanitized.submitMethod],
+    ["selectorCheckMode", safeText2(rawRecord.selectorCheckMode), sanitized.selectorCheckMode],
+    ["lastVerified", safeText2(rawRecord.lastVerified), sanitized.lastVerified],
+    ["verifiedVersion", safeText2(rawRecord.verifiedVersion), sanitized.verifiedVersion],
+    ["color", safeText2(rawRecord.color), sanitized.color],
+    ["icon", safeText2(rawRecord.icon), sanitized.icon]
   ];
   for (const [key, rawValue, sanitizedValue] of simpleComparisons) {
-    if (Object.prototype.hasOwnProperty.call(rawEntry, key) && rawValue !== sanitizedValue) {
+    if (Object.prototype.hasOwnProperty.call(rawRecord, key) && rawValue !== sanitizedValue) {
       return true;
     }
   }
-  if (Object.prototype.hasOwnProperty.call(rawEntry, "waitMs") && normalizeWaitMs(rawEntry.waitMs, source.waitMs) !== sanitized.waitMs) {
+  if (Object.prototype.hasOwnProperty.call(rawRecord, "waitMs") && normalizeWaitMs(
+    rawRecord.waitMs,
+    typeof source.waitMs === "number" ? source.waitMs : void 0
+  ) !== sanitized.waitMs) {
     return true;
   }
-  if (Array.isArray(rawEntry.fallbackSelectors) && stringifyComparable(rawEntry.fallbackSelectors.filter((entry) => typeof entry === "string" && entry.trim())) !== stringifyComparable(sanitized.fallbackSelectors)) {
+  if (Array.isArray(rawRecord.fallbackSelectors) && stringifyComparable(rawRecord.fallbackSelectors.filter((entry) => typeof entry === "string" && entry.trim())) !== stringifyComparable(sanitized.fallbackSelectors)) {
     return true;
   }
-  if (Array.isArray(rawEntry.authSelectors) && stringifyComparable(rawEntry.authSelectors.filter((entry) => typeof entry === "string" && entry.trim())) !== stringifyComparable(sanitized.authSelectors)) {
+  if (Array.isArray(rawRecord.authSelectors) && stringifyComparable(rawRecord.authSelectors.filter((entry) => typeof entry === "string" && entry.trim())) !== stringifyComparable(sanitized.authSelectors)) {
     return true;
   }
   return false;
@@ -1471,12 +1637,13 @@ function repairImportedBuiltInStates(value) {
   const normalized = {};
   const appliedIds = [];
   const droppedIds = [];
-  for (const [key, entry] of Object.entries(value)) {
+  for (const [key, entry] of Object.entries(asPlainRecord(value))) {
     if (!BUILT_IN_SITE_IDS.has(key)) {
       droppedIds.push(key);
       continue;
     }
-    normalized[key] = { enabled: normalizeBoolean2(entry?.enabled, true) };
+    const entryRecord = asPlainRecord(entry);
+    normalized[key] = { enabled: normalizeBoolean2(entryRecord.enabled, true) };
     appliedIds.push(key);
   }
   return {
@@ -1498,22 +1665,24 @@ function repairImportedBuiltInOverrides(value) {
   const appliedIds = [];
   const droppedIds = [];
   const adjustedIds = [];
-  for (const [key, entry] of Object.entries(value)) {
+  for (const [key, entry] of Object.entries(asPlainRecord(value))) {
     const source = AI_SITES.find((site) => site.id === key);
     if (!source) {
       droppedIds.push(key);
       continue;
     }
-    const sanitized = sanitizeBuiltInOverride(entry, source);
+    const sourceRecord = source;
+    const entryRecord = asPlainRecord(entry);
+    const sanitized = sanitizeBuiltInOverride(entryRecord, sourceRecord);
     const mergedDraft = {
-      ...source,
+      ...sourceRecord,
       ...sanitized
     };
     const validation = validateSiteDraft(mergedDraft, { isBuiltIn: true });
-    const finalOverride = validation.valid ? sanitized : sanitizeBuiltInOverride({}, source);
+    const finalOverride = validation.valid ? sanitized : sanitizeBuiltInOverride({}, sourceRecord);
     normalized[key] = finalOverride;
     appliedIds.push(key);
-    if (!validation.valid || detectBuiltInOverrideAdjustment(entry, finalOverride, source)) {
+    if (!validation.valid || detectBuiltInOverrideAdjustment(entryRecord, finalOverride, sourceRecord)) {
       adjustedIds.push(key);
     }
   }
@@ -1531,23 +1700,27 @@ function repairImportedCustomSites(rawSites) {
   const usedIds = new Set(BUILT_IN_SITE_IDS);
   for (const [index, rawSite] of (Array.isArray(rawSites) ? rawSites : []).entries()) {
     const normalized = normalizeCustomSite(rawSite);
-    const validation = validateSiteDraft(normalized);
+    const rawSiteRecord = asPlainRecord(rawSite);
+    const validation = validateSiteDraft({
+      ...normalized,
+      hostnameAliases: Array.isArray(rawSiteRecord.hostnameAliases) ? rawSiteRecord.hostnameAliases : normalized.hostnameAliases
+    });
     if (!validation.valid) {
       rejectedSites.push({
-        id: safeText2(rawSite?.id) || normalized.id,
+        id: safeText2(rawSiteRecord.id) || normalized.id,
         name: normalized.name,
         reason: "validation_failed",
         errors: validation.errors
       });
       continue;
     }
-    const requestedId = safeText2(rawSite?.id) || "";
+    const requestedId = safeText2(rawSiteRecord.id) || "";
     let finalId = requestedId;
     if (!finalId) {
       finalId = ensureUniqueImportedSiteId(
         createImportedCustomSiteIdBase(
           {
-            ...rawSite,
+            ...rawSiteRecord,
             name: normalized.name,
             hostname: normalized.hostname,
             url: normalized.url
@@ -1559,7 +1732,7 @@ function repairImportedCustomSites(rawSites) {
     } else if (usedIds.has(finalId)) {
       const collisionBase = BUILT_IN_SITE_IDS.has(finalId) ? createImportedCustomSiteIdBase(
         {
-          ...rawSite,
+          ...rawSiteRecord,
           name: normalized.name,
           hostname: normalized.hostname,
           url: normalized.url
@@ -1746,7 +1919,10 @@ async function setTemplateVariableCache(cache) {
 }
 
 // src/shared/prompts/import-export.ts
-var CURRENT_EXPORT_VERSION = 5;
+var CURRENT_EXPORT_VERSION = 6;
+function asImportPayload(value) {
+  return safeObject(value);
+}
 async function containsOriginPermission(originPattern) {
   try {
     if (!chrome.permissions?.contains || !originPattern) {
@@ -1785,8 +1961,8 @@ async function repairImportedCustomSitesWithPermissions(rawSites) {
     if (blockedForSite.length > 0) {
       blockedForSite.forEach((origin) => deniedOrigins.add(origin));
       permissionDeniedSites.push({
-        id: site.id,
-        name: site.name,
+        id: safeText2(site.id) || void 0,
+        name: safeText2(site.name) || "Custom AI",
         reason: "permission_denied",
         origins: blockedForSite
       });
@@ -1810,8 +1986,8 @@ async function repairImportedCustomSitesWithPermissions(rawSites) {
       deniedOrigins.add(origin);
     });
     permissionDeniedSites.push({
-      id: site.id,
-      name: site.name,
+      id: safeText2(site.id) || void 0,
+      name: safeText2(site.name) || "Custom AI",
       reason: "permission_denied",
       origins: missingOrigins
     });
@@ -1863,8 +2039,16 @@ function migrateV4ToV5(payload) {
     favorites: safeArray(payload.favorites).map((entry) => buildFavoriteEntry(entry))
   };
 }
+function migrateV5ToV6(payload) {
+  return {
+    ...payload,
+    version: 6,
+    history: safeArray(payload.history).map((entry) => buildHistoryEntry(entry)),
+    favorites: safeArray(payload.favorites).map((entry) => buildFavoriteEntry(entry))
+  };
+}
 function migrateImportData(rawValue) {
-  let payload = safeObject(rawValue);
+  let payload = asImportPayload(rawValue);
   const sourceVersion = normalizeImportVersion(payload.version);
   let workingVersion = sourceVersion;
   if (workingVersion < 2) {
@@ -1882,6 +2066,10 @@ function migrateImportData(rawValue) {
   if (workingVersion < 5) {
     payload = migrateV4ToV5(payload);
     workingVersion = 5;
+  }
+  if (workingVersion < 6) {
+    payload = migrateV5ToV6(payload);
+    workingVersion = 6;
   }
   return {
     migrated: payload,
@@ -2002,6 +2190,7 @@ async function importPromptData(jsonString) {
 var state = {
   history: [],
   favorites: [],
+  favoriteJobs: [],
   runtimeSites: [],
   settings: { ...DEFAULT_SETTINGS },
   activeSection: "dashboard",
@@ -2082,6 +2271,131 @@ var optionsDom = {
   },
   toastHost: document.getElementById("toast-host")
 };
+
+// src/shared/runtime-state/constants.ts
+var LOCAL_RUNTIME_KEYS = Object.freeze({
+  failedSelectors: "failedSelectors",
+  onboardingCompleted: "onboardingCompleted",
+  strategyStats: "strategyStats"
+});
+var SESSION_RUNTIME_KEYS = Object.freeze({
+  pendingUiToasts: "pendingUiToasts",
+  lastBroadcast: "lastBroadcast",
+  popupFavoriteIntent: "popupFavoriteIntent",
+  favoriteRunJobs: "favoriteRunJobs"
+});
+
+// src/shared/runtime-state/storage.ts
+function getStorageArea(area) {
+  return area === "session" ? chrome.storage.session : chrome.storage.local;
+}
+async function readStorage(area, key, fallbackValue) {
+  const result = await getStorageArea(area).get(key);
+  return result[key] ?? fallbackValue;
+}
+
+// src/shared/runtime-state/favorite-run-jobs.ts
+var TERMINAL_JOB_TTL_MS = 5 * 60 * 1e3;
+var MAX_JOB_COUNT = 50;
+var favoriteRunJobMutationChain = Promise.resolve();
+function normalizeJobStatus(value) {
+  if (value === "queued" || value === "running" || value === "completed" || value === "failed" || value === "skipped") {
+    return value;
+  }
+  return "queued";
+}
+function normalizeIsoDate2(value, fallback = (/* @__PURE__ */ new Date()).toISOString()) {
+  if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) {
+    return fallback;
+  }
+  return new Date(value).toISOString();
+}
+function normalizeExecutionContext(value) {
+  const source = safeObject(value);
+  const tabId = Number(source.tabId);
+  const windowId = Number(source.windowId);
+  return {
+    tabId: Number.isFinite(tabId) ? tabId : null,
+    windowId: Number.isFinite(windowId) ? windowId : null,
+    url: safeText(source.url),
+    title: safeText(source.title),
+    selection: safeText(source.selection),
+    clipboard: safeText(source.clipboard)
+  };
+}
+function normalizeFavoriteRunJobRecord(value) {
+  const source = safeObject(value);
+  const jobId = safeText(source.jobId).trim();
+  const favoriteId = safeText(source.favoriteId).trim();
+  if (!jobId || !favoriteId) {
+    return null;
+  }
+  const stepCount = Math.max(0, Math.round(Number(source.stepCount) || 0));
+  const completedSteps = Math.max(0, Math.round(Number(source.completedSteps) || 0));
+  const currentStepIndex = Number(source.currentStepIndex);
+  return {
+    jobId,
+    favoriteId,
+    trigger: normalizeExecutionTrigger(source.trigger) ?? "popup",
+    status: normalizeJobStatus(source.status),
+    mode: normalizeFavoriteMode(source.mode),
+    stepCount,
+    completedSteps: Math.min(completedSteps, stepCount || completedSteps),
+    currentStepIndex: Number.isFinite(currentStepIndex) ? Math.max(0, Math.round(currentStepIndex)) : null,
+    chainRunId: safeText(source.chainRunId).trim() || null,
+    currentBroadcastId: safeText(source.currentBroadcastId).trim() || null,
+    message: safeText(source.message),
+    createdAt: normalizeIsoDate2(source.createdAt),
+    updatedAt: normalizeIsoDate2(source.updatedAt),
+    favoriteTitle: safeText(source.favoriteTitle),
+    steps: normalizeChainSteps(source.steps),
+    templateDefaults: source.templateDefaults && typeof source.templateDefaults === "object" && !Array.isArray(source.templateDefaults) ? Object.fromEntries(
+      Object.entries(source.templateDefaults).map(([key, entryValue]) => [safeText(key).trim(), safeText(entryValue)]).filter(([key]) => Boolean(key))
+    ) : {},
+    executionContext: normalizeExecutionContext(source.executionContext)
+  };
+}
+function pruneFavoriteRunJobs(jobs, nowMs = Date.now()) {
+  const byId = /* @__PURE__ */ new Map();
+  safeArray(jobs).forEach((entry) => {
+    const job = normalizeFavoriteRunJobRecord(entry);
+    if (!job) {
+      return;
+    }
+    const updatedAtMs = Date.parse(job.updatedAt);
+    const isTerminal = job.status === "completed" || job.status === "failed" || job.status === "skipped";
+    const expired = isTerminal && Number.isFinite(updatedAtMs) && nowMs - updatedAtMs > TERMINAL_JOB_TTL_MS;
+    if (expired) {
+      return;
+    }
+    const existing = byId.get(job.jobId);
+    if (!existing || Date.parse(existing.updatedAt) < Date.parse(job.updatedAt)) {
+      byId.set(job.jobId, job);
+    }
+  });
+  return [...byId.values()].sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt)).slice(0, MAX_JOB_COUNT);
+}
+async function getFavoriteRunJobs() {
+  const rawValue = await readStorage("session", SESSION_RUNTIME_KEYS.favoriteRunJobs, []);
+  return pruneFavoriteRunJobs(safeArray(rawValue));
+}
+function getLatestFavoriteRunJobByFavoriteId(jobs, favoriteId) {
+  const normalizedFavoriteId = safeText(favoriteId).trim();
+  if (!normalizedFavoriteId) {
+    return null;
+  }
+  return [...jobs].filter((job) => safeText(job.favoriteId).trim() === normalizedFavoriteId).sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))[0] ?? null;
+}
+
+// src/shared/prompt-state.ts
+var LOCAL_PROMPT_STATE_KEYS = Object.freeze({
+  composeDraftPrompt: "composeDraftPrompt",
+  lastSentPrompt: "lastSentPrompt",
+  legacyLastPrompt: "lastPrompt"
+});
+var SESSION_PROMPT_STATE_KEYS = Object.freeze({
+  popupPromptIntent: "popupPromptIntent"
+});
 
 // src/options/ui/charts.ts
 var CHART_COLORS = ["#c24f2e", "#f2a446", "#2a9d8f", "#457b9d", "#7b61ff", "#bc6c25"];
@@ -2239,10 +2553,11 @@ function getSiteLabel(siteId, runtimeSites = []) {
   return runtimeSites.find((site) => site.id === siteId)?.name ?? AI_SITES.find((site) => site.id === siteId)?.name ?? siteId;
 }
 function getRequestedServices(entry) {
-  const siteResultKeys = Object.keys(entry.siteResults ?? {});
-  if (Array.isArray(entry?.requestedSiteIds) && entry.requestedSiteIds.length > 0) {
-    return entry.requestedSiteIds;
+  const snapshotSiteIds = getTargetSnapshotSiteIds(entry);
+  if (snapshotSiteIds.length > 0) {
+    return snapshotSiteIds;
   }
+  const siteResultKeys = Object.keys(entry.siteResults ?? {});
   return siteResultKeys.length > 0 ? siteResultKeys : entry.sentTo ?? [];
 }
 function getSubmittedServices(entry) {
@@ -2275,11 +2590,13 @@ function buildImportReportMarkup(summary) {
   }
   const rejectedRows = (summary.customSites?.rejected ?? []).map((entry) => {
     const origins = Array.isArray(entry?.origins) && entry.origins.length > 0 ? `<div class="helper">${escapeHTML(entry.origins.join(", "))}</div>` : "";
+    const errors = Array.isArray(entry?.errors) && entry.errors.length > 0 ? `<div class="helper">${escapeHTML(entry.errors.join(" "))}</div>` : "";
     return `
       <div class="settings-control">
         <strong>${escapeHTML(entry?.name ?? entry?.id ?? "-")}</strong>
         <div>${escapeHTML(t.settings.importRejectReason(entry?.reason ?? "unknown"))}</div>
         ${origins}
+        ${errors}
       </div>
     `;
   }).join("");
@@ -2469,6 +2786,20 @@ function getScheduleRepeatLabel(repeat) {
 function getLastFavoriteRun(favoriteId) {
   return state.history.find((entry) => String(entry.originFavoriteId ?? "") === String(favoriteId)) ?? null;
 }
+function buildFavoriteJobStatusMarkup(favoriteId) {
+  const job = getLatestFavoriteRunJobByFavoriteId(state.favoriteJobs, favoriteId);
+  if (!job?.jobId) {
+    return "";
+  }
+  const statusLabel = job.status === "queued" ? chrome.i18n.getMessage("favorite_job_status_queued") || "Queued" : job.status === "running" ? chrome.i18n.getMessage("favorite_job_status_running") || "Running" : job.status === "completed" ? chrome.i18n.getMessage("favorite_job_status_completed") || "Done" : job.status === "failed" ? chrome.i18n.getMessage("favorite_job_status_failed") || "Failed" : chrome.i18n.getMessage("favorite_job_status_skipped") || "Skipped";
+  const detail = job.stepCount > 1 ? `${Math.min(job.completedSteps, job.stepCount)}/${job.stepCount}` : "";
+  return `
+    <div class="schedule-job-status">
+      <span class="status-pill ${escapeHTML(job.status)}">${escapeHTML(statusLabel)}</span>
+      ${detail ? `<span>${escapeHTML(detail)}</span>` : ""}
+    </div>
+  `;
+}
 function renderSchedulesSection() {
   const scheduledFavorites = [...state.favorites].filter((favorite) => favorite?.scheduleEnabled || favorite?.scheduledAt).sort((left, right) => {
     const leftTime = Date.parse(String(left?.scheduledAt ?? "")) || Number.MAX_SAFE_INTEGER;
@@ -2487,6 +2818,7 @@ function renderSchedulesSection() {
             <div>
               <h3>${escapeHTML(favorite.title || previewText(favorite.text, 42))}</h3>
               <p>${escapeHTML(previewText(favorite.text, 88))}</p>
+              ${buildFavoriteJobStatusMarkup(favorite.id)}
             </div>
             <label class="checkbox-inline" for="schedule-enabled-${escapeHTML(favorite.id)}">
               <input
@@ -2537,8 +2869,9 @@ async function runFavoriteFromOptions(favoriteId) {
     return;
   }
   if (response?.ok) {
-    setStatus(t.schedules.runQueued, "success");
-    showAppToast(t.schedules.runQueued, "success", 2200);
+    const message = response?.message ?? t.schedules.runQueued;
+    setStatus(message, "success");
+    showAppToast(message, "success", 2200);
     return;
   }
   throw new Error(response?.error ?? t.saveFailed);
@@ -3172,14 +3505,16 @@ function bindSettingsEvents({ loadData: loadData2 }) {
 
 // src/options/core/data.ts
 async function loadData() {
-  const [history, favorites, settings, runtimeSites] = await Promise.all([
+  const [history, favorites, favoriteJobs, settings, runtimeSites] = await Promise.all([
     getPromptHistory(),
     getPromptFavorites(),
+    getFavoriteRunJobs(),
     getAppSettings(),
     getRuntimeSites()
   ]);
   state.history = history;
   state.favorites = favorites;
+  state.favoriteJobs = favoriteJobs;
   state.selectedHistoryIds.clear();
   state.runtimeSites = runtimeSites;
   state.settings = settings;
@@ -3223,6 +3558,13 @@ function bindEvents() {
   bindServiceEvents();
   bindStatusEvents();
   chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === "session" && changes.favoriteRunJobs) {
+      void loadData().catch((error) => {
+        console.error("[AI Prompt Broadcaster] Failed to refresh options page.", error);
+        setStatus(error?.message ?? t.dataRefreshFailed, "error");
+      });
+      return;
+    }
     if (areaName !== "local") {
       return;
     }

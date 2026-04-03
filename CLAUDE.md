@@ -87,6 +87,7 @@ To package a release zip:
 System variables: `{{date}}`, `{{time}}`, `{{weekday}}`, `{{clipboard}}`, plus Korean aliases.
 All aliases normalize to canonical English keys in `src/shared/template/`.
 Popup scans the main prompt and every enabled per-service override together, resolves a site-level `resolvedPrompt` before dispatch, and retry flows should reuse that stored resolved prompt instead of re-reading current UI state.
+Favorite runs use the same popup-side context preparation for `{{url}}`, `{{title}}`, `{{selection}}`, and `{{clipboard}}` before the background worker queues the job.
 
 ### Injection flow
 1. Popup sends a broadcast message with one target per selected service.
@@ -112,12 +113,14 @@ Popup scans the main prompt and every enabled per-service override together, res
 - Deleting custom services, resetting service settings, or replacing imported custom services should remove unused optional host permissions.
 
 ### Import/export and counter semantics
-- JSON export now writes `version: 5` and import migrates older payloads through `v1 -> v2 -> v3 -> v4 -> v5`.
+- JSON export now writes `version: 6` and import migrates older payloads through `v1 -> v2 -> v3 -> v4 -> v5 -> v6`.
 - `{{counter}}` preview uses `current + 1`, but the stored counter only increments when at least one target site is successfully queued.
 - History and last-broadcast records store structured `siteResults` (`SiteInjectionResult`) instead of plain status strings.
+- History and last-broadcast records also store `targetSnapshots` so retries and history replay reuse the original per-site resolved prompt and routing mode.
 - Favorites also keep `mode`, `steps`, `scheduleEnabled`, `scheduledAt`, `scheduleRepeat`, `usageCount`, and `lastUsedAt`, and `appSettings` includes `waitMsMultiplier`, `historySort`, and `favoriteSort`.
+- Favorite runs now queue as background jobs, dedupe only overlapping `queued/running` executions per favorite, and surface light progress through `favoriteRunJobs` in session state.
 - History rows can also store `originFavoriteId`, `chainRunId`, `chainStepIndex`, `chainStepCount`, and `trigger`.
-- Reset-data flows should clear `broadcastCounter`, `strategyStats`, history, favorites, template cache, site data, and session runtime state such as `pendingBroadcasts`, `pendingInjections`, `pendingUiToasts`, and `lastBroadcast`.
+- Reset-data flows should clear `broadcastCounter`, `strategyStats`, history, favorites, template cache, prompt draft/sent state, site data, and session runtime state such as `pendingBroadcasts`, `pendingInjections`, `pendingUiToasts`, `lastBroadcast`, `popupPromptIntent`, and `favoriteRunJobs`.
 - CSV exports are built through `src/shared/export/csv.ts`, which quotes cells and prefixes formula-leading values with `'`.
 
 ### Background state consistency
@@ -125,15 +128,16 @@ Popup scans the main prompt and every enabled per-service override together, res
 - History append, last-broadcast sync, counter updates, and completion notifications should happen off the same finalized broadcast state, not ad-hoc read-modify-write calls from multiple surfaces.
 
 ### Popup reopening fallback
-When `chrome.action.openPopup()` fails because Chrome has no active browser window, the background worker stores `lastPrompt`, tries to focus an existing browser window, and finally opens `popup/popup.html` in a standalone popup window.
+When `chrome.action.openPopup()` fails because Chrome has no active browser window, the background worker stores a one-shot `popupPromptIntent`, tries to focus an existing browser window, and finally opens `popup/popup.html` in a standalone popup window.
 
 ### Popup behavior additions
 - Popup supports internal shortcuts for send, cancel, tab switching, modal dismissal, and list keyboard navigation.
-- History replay now opens a service-selection modal before resend.
+- History replay now opens a service-selection modal before resend and reuses stored per-site snapshots when present.
 - Popup and options both show a detailed import report after JSON import.
 - The favorite editor handles both single favorites and chain/scheduled favorites.
 - Chain favorites stop immediately when any step result is not `submitted`.
 - Scheduled favorites are reconciled through `chrome.alarms`, and options exposes a dedicated `Schedules` section.
+- Popup composer restore is draft-first: unsent draft is restored before any last-sent prompt, and popup handoff is consumed after one use.
 - Quick palette uses `Alt+Shift+F` and falls back to popup handoff when additional inputs are required.
 
 ### Selector checker
@@ -172,7 +176,10 @@ Smoke coverage includes:
 - custom-site optional permission cleanup and alias-origin handling
 - built-in override import repair for invalid `click` + empty selector combinations
 - `broadcastCounter` export/import/reset lifecycle
-- import migration to export `version: 5`
+- import migration to export `version: 6`
+- history replay snapshot fallback and resend routing safety
+- prompt draft/sent separation plus popup handoff consumption
+- favorite background job dedupe/runtime helpers
 - quick palette filtering and execution handoff
 - favorite chain/schedule normalization for legacy imports
 - favorites search across title, text, tags, and folders
@@ -189,5 +196,5 @@ Smoke coverage includes:
 - CSS class names referenced by JS should be treated as stable.
 - i18n keys follow `section_component_detail` naming.
 - History entries store `requestedSiteIds`, `submittedSiteIds`, and `failedSiteIds`.
-- Use `requestedSiteIds` when reconstructing broadcast targets.
+- Use `targetSnapshots` first when reconstructing broadcast targets; fall back to `requestedSiteIds` for legacy records.
 - `sentTo` remains for backward compatibility and mirrors `submittedSiteIds`.

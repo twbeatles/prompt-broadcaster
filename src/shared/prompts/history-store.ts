@@ -1,3 +1,4 @@
+import { ensureBroadcastTargetSnapshots } from "../broadcast/target-snapshots";
 import { LOCAL_STORAGE_KEYS } from "./constants";
 import {
   ensureUniqueNumericId,
@@ -60,6 +61,11 @@ export function buildHistoryEntry(entry: unknown): PromptHistoryItem {
     createdAt,
     status: normalizeStatus(source.status),
     siteResults,
+    targetSnapshots: ensureBroadcastTargetSnapshots(
+      source.targetSnapshots,
+      requestedSiteIds,
+      source.text
+    ),
     originFavoriteId:
       source.originFavoriteId === null || source.originFavoriteId === undefined
         ? null

@@ -1,3 +1,5 @@
+import type { FavoriteRunExecutionContextSnapshot } from "./models";
+
 export interface BroadcastSiteTargetMessage {
   id?: string;
   tabId?: number;
@@ -73,6 +75,7 @@ export interface FavoriteRunMessage {
   favoriteId: string;
   trigger?: "popup" | "scheduled" | "palette" | "options";
   allowPopupFallback?: boolean;
+  preparedExecutionContext?: Partial<FavoriteRunExecutionContextSnapshot>;
 }
 
 export interface FavoriteOpenEditorMessage {

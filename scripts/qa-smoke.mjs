@@ -504,6 +504,15 @@ async function main() {
           submitMethod: "enter",
         },
         {
+          id: "alias-invalid",
+          name: "Alias Invalid",
+          url: "https://alias-invalid.example.com/",
+          hostnameAliases: [" https://alias-invalid.example.com/ "],
+          inputSelector: "#prompt",
+          inputType: "textarea",
+          submitMethod: "enter",
+        },
+        {
           id: "bad-url",
           name: "Broken",
           url: "notaurl",
@@ -545,12 +554,21 @@ async function main() {
       "my-ai-2",
       "alias-ok",
     ]);
-    assert.equal(result.importSummary.customSites.rejected.length, 3);
+    assert.equal(result.importSummary.customSites.rejected.length, 4);
     assert.deepEqual(sortStrings(result.importSummary.customSites.deniedOrigins), [
       "https://alias-missing.example.com/*",
       "https://denied.example.com/*",
     ]);
     assert.equal(result.importSummary.customSites.rewrittenIds.length, 2);
+    assert.deepEqual(
+      result.importSummary.customSites.rejected.find((entry) => entry.id === "alias-invalid"),
+      {
+        id: "alias-invalid",
+        name: "Alias Invalid",
+        reason: "validation_failed",
+        errors: ["Hostname alias line 1 must not include leading or trailing whitespace."],
+      },
+    );
     assert.deepEqual(Object.keys(result.builtInSiteStates), ["chatgpt"]);
     assert.deepEqual(Object.keys(result.builtInSiteOverrides), ["chatgpt"]);
     assert.equal(result.builtInSiteOverrides.chatgpt.inputSelector, "#override");
@@ -574,7 +592,7 @@ async function main() {
     assert.equal(await module.getBroadcastCounter(), 1);
 
     const exported = await module.exportPromptData();
-    assert.equal(exported.version, 5);
+    assert.equal(exported.version, 6);
     assert.equal(exported.broadcastCounter, 1);
     assert.deepEqual(exported.settings, module.DEFAULT_SETTINGS);
 
@@ -585,7 +603,7 @@ async function main() {
     }));
     assert.equal(legacyImport.broadcastCounter, 0);
     assert.equal(await module.getBroadcastCounter(), 0);
-    assert.equal(legacyImport.importSummary.version, 5);
+    assert.equal(legacyImport.importSummary.version, 6);
     assert.equal(legacyImport.importSummary.migratedFromVersion, 2);
     assert.equal(legacyImport.settings.waitMsMultiplier, 1);
     assert.equal(legacyImport.settings.historySort, "latest");
@@ -618,7 +636,7 @@ async function main() {
     }));
     assert.equal(modernImport.broadcastCounter, 4);
     assert.equal(await module.getBroadcastCounter(), 4);
-    assert.equal(modernImport.importSummary.version, 5);
+    assert.equal(modernImport.importSummary.version, 6);
     assert.equal(modernImport.importSummary.migratedFromVersion, 4);
     assert.equal(modernImport.settings.waitMsMultiplier, 1);
     assert.equal(modernImport.settings.historySort, "latest");
@@ -631,6 +649,20 @@ async function main() {
     assert.equal(modernImport.history[0].chainRunId ?? null, null);
     assert.equal(modernImport.history[0].chainStepIndex ?? null, null);
     assert.equal(modernImport.history[0].chainStepCount ?? null, null);
+    assert.deepEqual(modernImport.history[0].targetSnapshots, [
+      {
+        siteId: "chatgpt",
+        resolvedPrompt: "Legacy result mapping",
+        targetMode: "default",
+        targetTabId: null,
+      },
+      {
+        siteId: "claude",
+        resolvedPrompt: "Legacy result mapping",
+        targetMode: "default",
+        targetTabId: null,
+      },
+    ]);
     assert.equal(modernImport.favorites[0].usageCount, 0);
     assert.equal(modernImport.favorites[0].lastUsedAt, null);
     assert.equal(modernImport.favorites[0].mode, "single");
@@ -701,6 +733,105 @@ async function main() {
     );
   });
 
+  await runStep("broadcast target snapshots preserve resend routing and safe tab fallback", async () => {
+    const module = await loadBundledModule("src/shared/broadcast/target-snapshots.ts", createChromeMock());
+
+    assert.deepEqual(
+      module.buildQueueTargetSnapshots([
+        {
+          site: { id: "chatgpt" },
+          resolvedPrompt: "Resolved ChatGPT prompt",
+        },
+        {
+          site: { id: "claude" },
+          resolvedPrompt: "Resolved Claude prompt",
+          targetTabId: 77,
+        },
+        {
+          site: { id: "gemini" },
+          resolvedPrompt: "Resolved Gemini prompt",
+          forceNewTab: true,
+        },
+      ], "Fallback prompt"),
+      [
+        {
+          siteId: "chatgpt",
+          resolvedPrompt: "Resolved ChatGPT prompt",
+          targetMode: "default",
+          targetTabId: null,
+        },
+        {
+          siteId: "claude",
+          resolvedPrompt: "Resolved Claude prompt",
+          targetMode: "tab",
+          targetTabId: 77,
+        },
+        {
+          siteId: "gemini",
+          resolvedPrompt: "Resolved Gemini prompt",
+          targetMode: "new",
+          targetTabId: null,
+        },
+      ],
+    );
+
+    assert.deepEqual(
+      module.buildBroadcastTargetMessageFromSnapshot(
+        {
+          siteId: "claude",
+          resolvedPrompt: "Resolved Claude prompt",
+          targetMode: "tab",
+          targetTabId: 77,
+        },
+        [
+          {
+            siteId: "claude",
+            siteName: "Claude",
+            tabId: 77,
+            title: "Claude chat",
+            url: "https://claude.ai/chat",
+            active: true,
+            status: "complete",
+            windowId: 1,
+          },
+        ],
+      ),
+      {
+        id: "claude",
+        resolvedPrompt: "Resolved Claude prompt",
+        tabId: 77,
+      },
+    );
+
+    assert.deepEqual(
+      module.buildBroadcastTargetMessageFromSnapshot({
+        siteId: "claude",
+        resolvedPrompt: "Resolved Claude prompt",
+        targetMode: "tab",
+        targetTabId: 77,
+      }),
+      {
+        id: "claude",
+        resolvedPrompt: "Resolved Claude prompt",
+      },
+    );
+
+    assert.deepEqual(
+      module.buildBroadcastTargetMessageFromSnapshot({
+        siteId: "gemini",
+        resolvedPrompt: "Resolved Gemini prompt",
+        targetMode: "new",
+        targetTabId: null,
+      }),
+      {
+        id: "gemini",
+        resolvedPrompt: "Resolved Gemini prompt",
+        reuseExistingTab: false,
+        target: "new",
+      },
+    );
+  });
+
   await runStep("template resolution includes per-site override variables and resolves prompts", async () => {
     const module = await loadBundledModule("src/shared/broadcast/resolution.ts", createChromeMock());
     const targets = [
@@ -757,6 +888,261 @@ async function main() {
       ),
       "",
     );
+  });
+
+  await runStep("prompt state keeps draft handoff and last sent prompt separate", async () => {
+    const chromeMock = createChromeMock();
+    const module = await loadBundledModule("src/shared/prompt-state.ts", chromeMock);
+
+    await chromeMock.storage.local.set({
+      lastPrompt: "legacy draft",
+    });
+    assert.equal(await module.getComposeDraftPrompt(), "legacy draft");
+
+    await module.setComposeDraftPrompt("draft from composer");
+    await module.setLastSentPrompt("resolved send payload");
+    assert.equal(await module.getComposeDraftPrompt(), "draft from composer");
+    assert.equal(await module.getLastSentPrompt(), "resolved send payload");
+
+    const storedIntent = await module.setPopupPromptIntent("popup handoff");
+    assert.equal(storedIntent.prompt, "popup handoff");
+    assert.equal((await module.getPopupPromptIntent())?.prompt, "popup handoff");
+
+    const consumedIntent = await module.consumePopupPromptIntent();
+    assert.equal(consumedIntent?.prompt, "popup handoff");
+    assert.equal(await module.getPopupPromptIntent(), null);
+  });
+
+  await runStep("favorite run job helpers dedupe active runs only", async () => {
+    const module = await loadBundledModule("src/shared/runtime-state/favorite-run-jobs.ts", createChromeMock());
+
+    const runningJob = module.normalizeFavoriteRunJobRecord({
+      jobId: "job-running",
+      favoriteId: "fav-1",
+      status: "running",
+      mode: "chain",
+      stepCount: 2,
+      completedSteps: 1,
+      currentStepIndex: 1,
+      createdAt: "2026-04-03T00:00:00.000Z",
+      updatedAt: "2026-04-03T00:00:09.000Z",
+    });
+    const recentCompletedJob = module.normalizeFavoriteRunJobRecord({
+      jobId: "job-complete",
+      favoriteId: "fav-2",
+      status: "completed",
+      mode: "single",
+      stepCount: 1,
+      completedSteps: 1,
+      currentStepIndex: 0,
+      createdAt: "2026-04-03T00:00:00.000Z",
+      updatedAt: "2026-04-03T00:00:06.000Z",
+    });
+
+    assert.equal(
+      module.findFavoriteRunDedupedJob([runningJob], "fav-1")?.jobId,
+      "job-running",
+    );
+    assert.equal(
+      module.findFavoriteRunDedupedJob([recentCompletedJob], "fav-2"),
+      null,
+    );
+  });
+
+  await runStep("favorite workflow uses default targets for empty chain step overrides", async () => {
+    const chromeMock = createChromeMock();
+    const module = await loadBundledModule("src/background/popup/favorites-workflow.ts", chromeMock);
+    let queuedSiteRefs = [];
+
+    await chromeMock.storage.local.set({
+      promptFavorites: [{
+        id: "fav-chain",
+        title: "Chain favorite",
+        text: "First step",
+        sentTo: ["claude"],
+        createdAt: "2026-04-03T00:00:00.000Z",
+        favoritedAt: "2026-04-03T00:00:00.000Z",
+        templateDefaults: {},
+        tags: [],
+        folder: "",
+        pinned: false,
+        usageCount: 0,
+        lastUsedAt: null,
+        mode: "chain",
+        steps: [{
+          id: "step-1",
+          text: "First step",
+          delayMs: 0,
+          targetSiteIds: [],
+        }],
+        scheduleEnabled: false,
+        scheduledAt: null,
+        scheduleRepeat: "none",
+      }],
+      promptHistory: [],
+      templateVariableCache: {},
+      broadcastCounter: 0,
+    });
+
+    const workflow = module.createFavoriteWorkflow({
+      getBroadcastTriggerLabel: (trigger) => trigger ?? "popup",
+      getI18nMessage: () => "",
+      rememberNormalTab: async () => null,
+      getPreferredNormalActiveTab: async () => null,
+      isInjectableTabUrl: () => true,
+      getSelectedTextFromTab: async () => "",
+      openPopupWithPrompt: async () => {},
+      nowIso: () => "2026-04-03T00:00:00.000Z",
+      buildChainRunId: () => "chain-1",
+      queueBroadcastRequest: async (_prompt, siteRefs) => {
+        queuedSiteRefs = siteRefs;
+        return {
+          ok: true,
+          broadcastId: "broadcast-1",
+        };
+      },
+    });
+
+    const queuedResponse = await workflow.handleFavoriteRunMessage({
+      favoriteId: "fav-chain",
+      trigger: "popup",
+      allowPopupFallback: false,
+    }, {});
+    assert.equal(queuedResponse?.ok, true);
+
+    const queuedJob = chromeMock.__getStorage().session.favoriteRunJobs?.[0];
+    assert.deepEqual(queuedJob.steps?.[0]?.targetSiteIds, ["claude"]);
+
+    await workflow.handleFavoriteRunJobAlarm(`apb-favorite-job:${queuedJob.jobId}`);
+    assert.deepEqual(queuedSiteRefs, [{ id: "claude" }]);
+  });
+
+  await runStep("favorite workflow accepts prepared clipboard context", async () => {
+    const chromeMock = createChromeMock();
+    const module = await loadBundledModule("src/background/popup/favorites-workflow.ts", chromeMock);
+
+    await chromeMock.storage.local.set({
+      promptFavorites: [{
+        id: "fav-clipboard",
+        title: "Clipboard favorite",
+        text: "Use {{clipboard}}",
+        sentTo: ["chatgpt"],
+        createdAt: "2026-04-03T00:00:00.000Z",
+        favoritedAt: "2026-04-03T00:00:00.000Z",
+        templateDefaults: {},
+        tags: [],
+        folder: "",
+        pinned: false,
+        usageCount: 0,
+        lastUsedAt: null,
+        mode: "single",
+        steps: [],
+        scheduleEnabled: false,
+        scheduledAt: null,
+        scheduleRepeat: "none",
+      }],
+      templateVariableCache: {},
+      broadcastCounter: 0,
+    });
+
+    const workflow = module.createFavoriteWorkflow({
+      getBroadcastTriggerLabel: (trigger) => trigger ?? "popup",
+      getI18nMessage: () => "",
+      rememberNormalTab: async () => null,
+      getPreferredNormalActiveTab: async () => null,
+      isInjectableTabUrl: () => true,
+      getSelectedTextFromTab: async () => "",
+      openPopupWithPrompt: async () => {},
+      nowIso: () => "2026-04-03T00:00:00.000Z",
+      buildChainRunId: () => "chain-clipboard",
+      queueBroadcastRequest: async () => ({ ok: true, broadcastId: "broadcast-clipboard" }),
+    });
+
+    const blocked = await workflow.handleFavoriteRunMessage({
+      favoriteId: "fav-clipboard",
+      trigger: "popup",
+      allowPopupFallback: false,
+    }, {});
+    assert.equal(blocked?.ok, false);
+    assert.equal(blocked?.reason, "clipboard_unavailable");
+
+    const queued = await workflow.handleFavoriteRunMessage({
+      favoriteId: "fav-clipboard",
+      trigger: "popup",
+      allowPopupFallback: false,
+      preparedExecutionContext: {
+        clipboard: "captured clipboard",
+      },
+    }, {});
+    assert.equal(queued?.ok, true);
+
+    const queuedJob = chromeMock.__getStorage().session.favoriteRunJobs?.[0];
+    assert.equal(queuedJob.executionContext?.clipboard, "captured clipboard");
+  });
+
+  await runStep("favorite workflow records failed history when queueing a job fails before broadcast creation", async () => {
+    const chromeMock = createChromeMock();
+    const module = await loadBundledModule("src/background/popup/favorites-workflow.ts", chromeMock);
+    const nowIso = new Date().toISOString();
+
+    await chromeMock.storage.local.set({
+      promptFavorites: [{
+        id: "fav-fail",
+        title: "Failure favorite",
+        text: "Broken step",
+        sentTo: ["claude"],
+        createdAt: nowIso,
+        favoritedAt: nowIso,
+        templateDefaults: {},
+        tags: [],
+        folder: "",
+        pinned: false,
+        usageCount: 0,
+        lastUsedAt: null,
+        mode: "single",
+        steps: [],
+        scheduleEnabled: false,
+        scheduledAt: null,
+        scheduleRepeat: "none",
+      }],
+      promptHistory: [],
+      templateVariableCache: {},
+      broadcastCounter: 0,
+    });
+
+    const workflow = module.createFavoriteWorkflow({
+      getBroadcastTriggerLabel: (trigger) => trigger ?? "popup",
+      getI18nMessage: () => "",
+      rememberNormalTab: async () => null,
+      getPreferredNormalActiveTab: async () => null,
+      isInjectableTabUrl: () => true,
+      getSelectedTextFromTab: async () => "",
+      openPopupWithPrompt: async () => {},
+      nowIso: () => nowIso,
+      buildChainRunId: () => "chain-fail",
+      queueBroadcastRequest: async () => ({
+        ok: false,
+        error: "Queue exploded",
+      }),
+    });
+
+    const queued = await workflow.handleFavoriteRunMessage({
+      favoriteId: "fav-fail",
+      trigger: "popup",
+      allowPopupFallback: false,
+    }, {});
+    assert.equal(queued?.ok, true);
+
+    const queuedJob = chromeMock.__getStorage().session.favoriteRunJobs?.[0];
+    await workflow.handleFavoriteRunJobAlarm(`apb-favorite-job:${queuedJob.jobId}`);
+
+    const storage = chromeMock.__getStorage();
+    assert.equal(storage.session.favoriteRunJobs?.[0]?.status, "failed");
+    assert.equal(storage.session.favoriteRunJobs?.[0]?.message, "Queue exploded");
+    assert.equal(storage.local.promptHistory?.[0]?.status, "failed");
+    assert.equal(storage.local.promptHistory?.[0]?.originFavoriteId, "fav-fail");
+    assert.deepEqual(storage.local.promptHistory?.[0]?.requestedSiteIds, ["claude"]);
+    assert.deepEqual(storage.local.promptHistory?.[0]?.failedSiteIds, ["claude"]);
   });
 
   await runStep("csv export helper escapes formulas safely", async () => {
@@ -897,6 +1283,8 @@ async function main() {
     const module = await loadBundledModule("src/shared/runtime-state/reset.ts", chromeMock);
 
     await chromeMock.storage.local.set({
+      composeDraftPrompt: "draft",
+      lastSentPrompt: "last sent",
       lastPrompt: "draft",
       promptHistory: [{ id: 1 }],
       promptFavorites: [{ id: "fav-1" }],
@@ -929,6 +1317,8 @@ async function main() {
       pendingBroadcasts: { "broadcast-1": { id: "broadcast-1" } },
       selectorAlerts: { signature: 1 },
       popupFavoriteIntent: { type: "run", favoriteId: "fav-1" },
+      popupPromptIntent: { prompt: "handoff prompt", createdAt: "2026-04-03T00:00:00.000Z" },
+      favoriteRunJobs: [{ jobId: "job-1", favoriteId: "fav-1" }],
     });
     chromeMock.alarms.create("badge-clear", { when: 123 });
 
@@ -938,6 +1328,8 @@ async function main() {
     });
 
     const storage = chromeMock.__getStorage();
+    assert.equal(storage.local.composeDraftPrompt, undefined);
+    assert.equal(storage.local.lastSentPrompt, undefined);
     assert.equal(storage.local.lastPrompt, undefined);
     assert.deepEqual(storage.local.promptHistory, []);
     assert.deepEqual(storage.local.promptFavorites, []);
@@ -964,6 +1356,8 @@ async function main() {
     assert.equal(storage.session.pendingBroadcasts, undefined);
     assert.equal(storage.session.selectorAlerts, undefined);
     assert.equal(storage.session.popupFavoriteIntent, undefined);
+    assert.equal(storage.session.popupPromptIntent, undefined);
+    assert.equal(storage.session.favoriteRunJobs, undefined);
     assert.deepEqual(chromeMock.__getAlarms(), {});
   });
 

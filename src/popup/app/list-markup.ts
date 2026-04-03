@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { getTargetSnapshotSiteIds } from "../../shared/broadcast/target-snapshots";
 import { msg, t } from "./i18n";
 import {
   escapeAttribute,
@@ -19,11 +20,7 @@ export function buildEmptyState(message) {
 }
 
 export function getHistorySelectedSiteIds(item) {
-  return normalizeSiteIdList(
-    Array.isArray(item?.requestedSiteIds) && item.requestedSiteIds.length > 0
-      ? item.requestedSiteIds
-      : item?.sentTo
-  );
+  return normalizeSiteIdList(getTargetSnapshotSiteIds(item));
 }
 
 export function renderServiceBadges(siteIds = [], runtimeSites = []) {
@@ -85,7 +82,34 @@ function buildFavoriteTagsMarkup(item) {
   return `<div class="fav-meta-row">${pinIcon}${kindBadge}${scheduleBadge}${stepCount}${folderBadge}${tagChips}</div>`;
 }
 
-export function buildFavoriteItemMarkup(item, { openMenuKey = null, runtimeSites = [] } = {}) {
+function buildFavoriteJobMarkup(job) {
+  if (!job?.jobId) {
+    return "";
+  }
+
+  const statusLabel =
+    job.status === "queued"
+      ? (msg("favorite_job_status_queued") || "Queued")
+      : job.status === "running"
+        ? (msg("favorite_job_status_running") || "Running")
+        : job.status === "completed"
+          ? (msg("favorite_job_status_completed") || "Done")
+          : job.status === "failed"
+            ? (msg("favorite_job_status_failed") || "Failed")
+            : (msg("favorite_job_status_skipped") || "Skipped");
+  const detail = job.stepCount > 1
+    ? `${Math.min(Number(job.completedSteps ?? 0), Number(job.stepCount ?? 0))}/${Number(job.stepCount ?? 0)}`
+    : "";
+
+  return `
+    <div class="fav-job-row">
+      <span class="fav-job-badge ${escapeAttribute(job.status)}">${escapeHtml(statusLabel)}</span>
+      ${detail ? `<span class="fav-job-detail">${escapeHtml(detail)}</span>` : ""}
+    </div>
+  `;
+}
+
+export function buildFavoriteItemMarkup(item, { openMenuKey = null, runtimeSites = [], latestJob = null } = {}) {
   const menuKey = `favorite:${item.id}`;
   const safeFavoriteId = escapeAttribute(item.id);
   const pinLabel = item.pinned
@@ -106,6 +130,7 @@ export function buildFavoriteItemMarkup(item, { openMenuKey = null, runtimeSites
         />
       </div>
       ${buildFavoriteTagsMarkup(item)}
+      ${buildFavoriteJobMarkup(latestJob)}
       <button class="prompt-main" type="button" data-${primaryAction}="${safeFavoriteId}">
         <div class="prompt-preview">${escapeHtml(previewText(item.text))}</div>
         <div class="prompt-meta">
@@ -136,11 +161,15 @@ export function buildImportReportMarkup(summary) {
     const origins = Array.isArray(entry?.origins) && entry.origins.length > 0
       ? `<div class="helper-text">${escapeHtml(entry.origins.join(", "))}</div>`
       : "";
+    const errors = Array.isArray(entry?.errors) && entry.errors.length > 0
+      ? `<div class="helper-text">${escapeHtml(entry.errors.join(" "))}</div>`
+      : "";
     return `
       <div class="import-report-row">
         <strong>${escapeHtml(entry?.name ?? entry?.id ?? "-")}</strong>
         <div>${escapeHtml(t.importRejectReason(entry?.reason ?? "unknown"))}</div>
         ${origins}
+        ${errors}
       </div>
     `;
   }).join("");

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { AI_SITES } from "../../config/sites";
 import { BUILT_IN_SITE_IDS } from "./constants";
 import {
@@ -14,8 +13,21 @@ import {
 } from "./normalizers";
 import { validateSiteDraft } from "./validation";
 
-function detectBuiltInOverrideAdjustment(rawEntry, sanitized, source) {
-  if (!isPlainObject(rawEntry)) {
+type PlainRecord = Record<string, unknown>;
+
+function asPlainRecord(value: unknown): PlainRecord {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as PlainRecord)
+    : {};
+}
+
+function detectBuiltInOverrideAdjustment(
+  rawEntry: unknown,
+  sanitized: PlainRecord,
+  source: PlainRecord
+) {
+  const rawRecord = asPlainRecord(rawEntry);
+  if (!isPlainObject(rawRecord)) {
     return true;
   }
 
@@ -35,47 +47,50 @@ function detectBuiltInOverrideAdjustment(rawEntry, sanitized, source) {
     "icon",
   ]);
 
-  if (Object.keys(rawEntry).some((key) => !allowedKeys.has(key))) {
+  if (Object.keys(rawRecord).some((key) => !allowedKeys.has(key))) {
     return true;
   }
 
   const simpleComparisons = [
-    ["name", safeText(rawEntry.name), sanitized.name],
-    ["inputSelector", safeText(rawEntry.inputSelector), sanitized.inputSelector],
-    ["inputType", safeText(rawEntry.inputType), sanitized.inputType],
-    ["submitSelector", safeText(rawEntry.submitSelector), sanitized.submitSelector],
-    ["submitMethod", safeText(rawEntry.submitMethod), sanitized.submitMethod],
-    ["selectorCheckMode", safeText(rawEntry.selectorCheckMode), sanitized.selectorCheckMode],
-    ["lastVerified", safeText(rawEntry.lastVerified), sanitized.lastVerified],
-    ["verifiedVersion", safeText(rawEntry.verifiedVersion), sanitized.verifiedVersion],
-    ["color", safeText(rawEntry.color), sanitized.color],
-    ["icon", safeText(rawEntry.icon), sanitized.icon],
-  ];
+    ["name", safeText(rawRecord.name), sanitized.name],
+    ["inputSelector", safeText(rawRecord.inputSelector), sanitized.inputSelector],
+    ["inputType", safeText(rawRecord.inputType), sanitized.inputType],
+    ["submitSelector", safeText(rawRecord.submitSelector), sanitized.submitSelector],
+    ["submitMethod", safeText(rawRecord.submitMethod), sanitized.submitMethod],
+    ["selectorCheckMode", safeText(rawRecord.selectorCheckMode), sanitized.selectorCheckMode],
+    ["lastVerified", safeText(rawRecord.lastVerified), sanitized.lastVerified],
+    ["verifiedVersion", safeText(rawRecord.verifiedVersion), sanitized.verifiedVersion],
+    ["color", safeText(rawRecord.color), sanitized.color],
+    ["icon", safeText(rawRecord.icon), sanitized.icon],
+  ] as Array<[string, string, unknown]>;
 
   for (const [key, rawValue, sanitizedValue] of simpleComparisons) {
-    if (Object.prototype.hasOwnProperty.call(rawEntry, key) && rawValue !== sanitizedValue) {
+    if (Object.prototype.hasOwnProperty.call(rawRecord, key) && rawValue !== sanitizedValue) {
       return true;
     }
   }
 
   if (
-    Object.prototype.hasOwnProperty.call(rawEntry, "waitMs") &&
-    normalizeWaitMs(rawEntry.waitMs, source.waitMs) !== sanitized.waitMs
+    Object.prototype.hasOwnProperty.call(rawRecord, "waitMs") &&
+    normalizeWaitMs(
+      rawRecord.waitMs,
+      typeof source.waitMs === "number" ? source.waitMs : undefined
+    ) !== sanitized.waitMs
   ) {
     return true;
   }
 
   if (
-    Array.isArray(rawEntry.fallbackSelectors) &&
-    stringifyComparable(rawEntry.fallbackSelectors.filter((entry) => typeof entry === "string" && entry.trim())) !==
+    Array.isArray(rawRecord.fallbackSelectors) &&
+    stringifyComparable(rawRecord.fallbackSelectors.filter((entry) => typeof entry === "string" && entry.trim())) !==
       stringifyComparable(sanitized.fallbackSelectors)
   ) {
     return true;
   }
 
   if (
-    Array.isArray(rawEntry.authSelectors) &&
-    stringifyComparable(rawEntry.authSelectors.filter((entry) => typeof entry === "string" && entry.trim())) !==
+    Array.isArray(rawRecord.authSelectors) &&
+    stringifyComparable(rawRecord.authSelectors.filter((entry) => typeof entry === "string" && entry.trim())) !==
       stringifyComparable(sanitized.authSelectors)
   ) {
     return true;
@@ -84,7 +99,7 @@ function detectBuiltInOverrideAdjustment(rawEntry, sanitized, source) {
   return false;
 }
 
-export function repairImportedBuiltInStates(value) {
+export function repairImportedBuiltInStates(value: unknown) {
   if (!isPlainObject(value)) {
     return {
       normalized: {},
@@ -93,17 +108,18 @@ export function repairImportedBuiltInStates(value) {
     };
   }
 
-  const normalized = {};
+  const normalized: Record<string, { enabled: boolean }> = {};
   const appliedIds = [];
   const droppedIds = [];
 
-  for (const [key, entry] of Object.entries(value)) {
+  for (const [key, entry] of Object.entries(asPlainRecord(value))) {
     if (!BUILT_IN_SITE_IDS.has(key)) {
       droppedIds.push(key);
       continue;
     }
 
-    normalized[key] = { enabled: normalizeBoolean(entry?.enabled, true) };
+    const entryRecord = asPlainRecord(entry);
+    normalized[key] = { enabled: normalizeBoolean(entryRecord.enabled, true) };
     appliedIds.push(key);
   }
 
@@ -114,7 +130,7 @@ export function repairImportedBuiltInStates(value) {
   };
 }
 
-export function repairImportedBuiltInOverrides(value) {
+export function repairImportedBuiltInOverrides(value: unknown) {
   if (!isPlainObject(value)) {
     return {
       normalized: {},
@@ -124,31 +140,33 @@ export function repairImportedBuiltInOverrides(value) {
     };
   }
 
-  const normalized = {};
+  const normalized: Record<string, PlainRecord> = {};
   const appliedIds = [];
   const droppedIds = [];
   const adjustedIds = [];
 
-  for (const [key, entry] of Object.entries(value)) {
+  for (const [key, entry] of Object.entries(asPlainRecord(value))) {
     const source = AI_SITES.find((site) => site.id === key);
     if (!source) {
       droppedIds.push(key);
       continue;
     }
 
-    const sanitized = sanitizeBuiltInOverride(entry, source);
+    const sourceRecord = source as PlainRecord;
+    const entryRecord = asPlainRecord(entry);
+    const sanitized = sanitizeBuiltInOverride(entryRecord, sourceRecord) as PlainRecord;
     const mergedDraft = {
-      ...source,
+      ...sourceRecord,
       ...sanitized,
     };
     const validation = validateSiteDraft(mergedDraft, { isBuiltIn: true });
     const finalOverride = validation.valid
       ? sanitized
-      : sanitizeBuiltInOverride({}, source);
+      : (sanitizeBuiltInOverride({}, sourceRecord) as PlainRecord);
     normalized[key] = finalOverride;
     appliedIds.push(key);
 
-    if (!validation.valid || detectBuiltInOverrideAdjustment(entry, finalOverride, source)) {
+    if (!validation.valid || detectBuiltInOverrideAdjustment(entryRecord, finalOverride, sourceRecord)) {
       adjustedIds.push(key);
     }
   }
@@ -161,19 +179,25 @@ export function repairImportedBuiltInOverrides(value) {
   };
 }
 
-export function repairImportedCustomSites(rawSites) {
-  const repairedSites = [];
+export function repairImportedCustomSites(rawSites: unknown) {
+  const repairedSites: PlainRecord[] = [];
   const rejectedSites = [];
   const rewrittenIds = [];
   const usedIds = new Set(BUILT_IN_SITE_IDS);
 
   for (const [index, rawSite] of (Array.isArray(rawSites) ? rawSites : []).entries()) {
     const normalized = normalizeCustomSite(rawSite);
-    const validation = validateSiteDraft(normalized);
+    const rawSiteRecord = asPlainRecord(rawSite);
+    const validation = validateSiteDraft({
+      ...normalized,
+      hostnameAliases: Array.isArray(rawSiteRecord.hostnameAliases)
+        ? rawSiteRecord.hostnameAliases
+        : normalized.hostnameAliases,
+    });
 
     if (!validation.valid) {
       rejectedSites.push({
-        id: safeText(rawSite?.id) || normalized.id,
+        id: safeText(rawSiteRecord.id) || normalized.id,
         name: normalized.name,
         reason: "validation_failed",
         errors: validation.errors,
@@ -181,14 +205,14 @@ export function repairImportedCustomSites(rawSites) {
       continue;
     }
 
-    const requestedId = safeText(rawSite?.id) || "";
+    const requestedId = safeText(rawSiteRecord.id) || "";
     let finalId = requestedId;
 
     if (!finalId) {
       finalId = ensureUniqueImportedSiteId(
         createImportedCustomSiteIdBase(
           {
-            ...rawSite,
+            ...rawSiteRecord,
             name: normalized.name,
             hostname: normalized.hostname,
             url: normalized.url,
@@ -201,7 +225,7 @@ export function repairImportedCustomSites(rawSites) {
       const collisionBase = BUILT_IN_SITE_IDS.has(finalId)
         ? createImportedCustomSiteIdBase(
             {
-              ...rawSite,
+              ...rawSiteRecord,
               name: normalized.name,
               hostname: normalized.hostname,
               url: normalized.url,

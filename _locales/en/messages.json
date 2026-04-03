@@ -216,6 +216,109 @@
   "popup_template_system_notice": {
     "message": "Automatic system variables"
   },
+  "favorite_job_status_queued": {
+    "message": "Queued"
+  },
+  "favorite_job_status_running": {
+    "message": "Running"
+  },
+  "favorite_job_status_completed": {
+    "message": "Done"
+  },
+  "favorite_job_status_failed": {
+    "message": "Failed"
+  },
+  "favorite_job_status_skipped": {
+    "message": "Skipped"
+  },
+  "favorite_run_error_missing_targets": {
+    "message": "Favorite does not have any target services."
+  },
+  "favorite_run_error_missing_template_values": {
+    "message": "Missing template values: $NAMES$",
+    "placeholders": {
+      "names": {
+        "content": "$1"
+      }
+    }
+  },
+  "favorite_run_error_scheduled_unsupported_variable": {
+    "message": "Scheduled favorites cannot resolve $VARIABLES$.",
+    "placeholders": {
+      "variables": {
+        "content": "$1"
+      }
+    }
+  },
+  "favorite_run_error_clipboard_popup_required": {
+    "message": "Clipboard-backed favorites need popup input."
+  },
+  "favorite_run_error_tab_context_unavailable": {
+    "message": "Current tab context is unavailable for this favorite."
+  },
+  "favorite_run_error_start_failed": {
+    "message": "Favorite execution could not start."
+  },
+  "favorite_run_error_queue_failed": {
+    "message": "Favorite execution could not be queued."
+  },
+  "favorite_run_error_favorite_id_required": {
+    "message": "Favorite id is required."
+  },
+  "favorite_run_error_favorite_not_found": {
+    "message": "Favorite not found."
+  },
+  "favorite_run_message_queued": {
+    "message": "Queued"
+  },
+  "favorite_run_message_completed": {
+    "message": "Completed"
+  },
+  "favorite_run_message_failed": {
+    "message": "Favorite run failed"
+  },
+  "favorite_run_message_deduped": {
+    "message": "Favorite run is already queued."
+  },
+  "favorite_run_message_step_progress": {
+    "message": "Step $CURRENT$/$TOTAL$",
+    "placeholders": {
+      "current": {
+        "content": "$1"
+      },
+      "total": {
+        "content": "$2"
+      }
+    }
+  },
+  "favorite_run_message_waiting_step": {
+    "message": "Waiting for step $CURRENT$/$TOTAL$",
+    "placeholders": {
+      "current": {
+        "content": "$1"
+      },
+      "total": {
+        "content": "$2"
+      }
+    }
+  },
+  "favorite_run_message_queued_step": {
+    "message": "Queued step $CURRENT$/$TOTAL$",
+    "placeholders": {
+      "current": {
+        "content": "$1"
+      },
+      "total": {
+        "content": "$2"
+      }
+    }
+  },
+  "favorite_run_notification_title_skipped": {
+    "message": "Favorite run skipped"
+  },
+  "popup_service_permission_preview": {
+    "message": "Requested origins"
+  },
   "popup_template_clipboard_notice": {
     "message": "Clipboard text is read automatically right before sending."
   },

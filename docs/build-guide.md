@@ -45,6 +45,7 @@ npm run build
 ```
 
 This also refreshes the generated root runtime mirrors such as `background/service_worker.js` and `popup/popup.js`.
+Before bundling, the build validates locale placeholder usage and `en/ko` locale key parity.
 
 If you want to wipe `dist/` first:
 
@@ -78,8 +79,10 @@ The smoke flow loads local fixtures from `qa/fixtures/` and validates the built 
 - alias-based custom-service permission requests and cleanup of unused optional origins
 - built-in override import repair for `click` configurations with empty selectors
 - `broadcastCounter` export/import/reset consistency
-- import migration and export `version: 5` normalization
+- import migration and export `version: 6` normalization
 - favorite chain/schedule field backfill for legacy imports
+- favorite run job dedupe behavior, chain target fallback, and prepared clipboard context
+- favorite failure-history recording for queue failures before broadcast creation
 - quick palette overlay filtering and execution handoff
 - favorites search matching title, tags, and folders
 - per-service override template resolution and retry prompt preservation
@@ -163,11 +166,13 @@ The generated ZIP contains the built extension from `dist/` only.
 11. Add, import, delete, and reset a custom service and confirm optional host permissions are granted and cleaned up only for the required origins
 12. Confirm that popup sorting, favorite duplication, resend-service selection, import-report modals, and the integrated favorite editor all behave correctly
 13. Verify single favorites, chain favorites, scheduled favorites, and the options `Schedules` section
-14. Trigger the quick palette with `Alt+Shift+F` on an injectable page and confirm both direct execution and popup fallback flows
-15. Confirm that cancelling a broadcast leaves reused tabs open and closes only newly opened tabs
-16. Trigger **Reset data** and confirm it clears both local prompt data and in-memory/session runtime state, including strategy stats
-17. Run the packaging script for your platform
-18. Upload the generated ZIP to Chrome Web Store or attach it to a GitHub release
+14. Trigger popup-side favorite runs that use `{{clipboard}}`, `{{url}}`, or `{{selection}}` and confirm they queue without opening the editor unnecessarily
+15. Trigger the quick palette with `Alt+Shift+F` on an injectable page and confirm both direct execution and popup fallback flows
+16. Confirm popup fallback resumes automatically when only popup-resolvable context was missing, and opens the editor only when user-variable input is still required
+17. Confirm that cancelling a broadcast leaves reused tabs open and closes only newly opened tabs
+18. Trigger **Reset data** and confirm it clears both local prompt data and in-memory/session runtime state, including strategy stats
+19. Run the packaging script for your platform
+20. Upload the generated ZIP to Chrome Web Store or attach it to a GitHub release
 
 ## Chrome Web Store Release Checklist
 

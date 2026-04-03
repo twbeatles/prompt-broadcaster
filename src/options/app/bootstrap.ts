@@ -22,6 +22,14 @@ function bindEvents() {
   bindStatusEvents();
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === "session" && changes.favoriteRunJobs) {
+      void loadData().catch((error) => {
+        console.error("[AI Prompt Broadcaster] Failed to refresh options page.", error);
+        setStatus(error?.message ?? t.dataRefreshFailed, "error");
+      });
+      return;
+    }
+
     if (areaName !== "local") {
       return;
     }

@@ -18,6 +18,17 @@ export {
   setPopupFavoriteIntent,
 } from "./popup-intent";
 export {
+  findFavoriteRunDedupedJob,
+  findFavoriteRunJobByBroadcastId,
+  getFavoriteRunJobById,
+  getFavoriteRunJobs,
+  getLatestFavoriteRunJobByFavoriteId,
+  normalizeFavoriteRunJobRecord,
+  pruneFavoriteRunJobs,
+  setFavoriteRunJobs,
+  updateFavoriteRunJobs,
+} from "./favorite-run-jobs";
+export {
   getOnboardingCompleted,
   setOnboardingCompleted,
 } from "./onboarding";

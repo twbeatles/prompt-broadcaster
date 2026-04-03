@@ -4,6 +4,7 @@ import { DEFAULT_SETTINGS } from "../../shared/prompts";
 export const state = {
   history: [],
   favorites: [],
+  favoriteJobs: [],
   runtimeSites: [],
   settings: { ...DEFAULT_SETTINGS },
   activeSection: "dashboard",

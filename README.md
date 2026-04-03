@@ -38,7 +38,7 @@
 - **즐겨찾기 복제 + 정렬 옵션** – 최근 사용순, 사용 횟수순, 제목순, 생성일순 정렬과 복제 저장 지원
 - **히스토리 재전송 선택 + 옵션 일괄 삭제** – 원래 대상 기준 재전송 모달, 선택 삭제, 7/30/90일 이전 빠른 삭제
 - **서비스별 프롬프트 오버라이드** – 서비스 카드마다 메인 프롬프트와 다른 별도 프롬프트를 지정 가능
-- 히스토리/즐겨찾기/템플릿 캐시/설정/서비스 구성을 JSON으로 내보내기 및 가져오기 (`v5`, 체인/예약 메타와 `{{counter}}` 포함)
+- 히스토리/즐겨찾기/템플릿 캐시/설정/서비스 구성을 JSON으로 내보내기 및 가져오기 (`v6`, 체인/예약 메타, 재전송 스냅샷, `{{counter}}` 포함)
 - **상세 import 리포트 + 구조화된 전송 결과 코드** – 권한 거부/ID 재작성/built-in 보정 내역과 서비스별 결과 코드 표시
 - **확장 템플릿 변수** – `{{url}}`, `{{title}}`, `{{selection}}`, `{{counter}}`, `{{random}}` 등 9개 이상의 시스템 변수 지원
 - Chrome MV3 기반, 백엔드 없음
@@ -150,9 +150,12 @@ GIF 자리표시자: `docs/assets/usage-demo.gif`
 
 ### 즐겨찾기 체인·예약·빠른 팔레트
 - 즐겨찾기 편집기에서 `Single` / `Chain` 모드를 전환할 수 있고, chain 모드에서는 단계 추가, 순서 이동, 단계별 지연시간, 단계별 대상 서비스 override를 설정할 수 있습니다.
+- chain 단계의 대상 서비스를 비워 두면 해당 단계는 즐겨찾기 기본 대상 서비스를 그대로 상속합니다.
 - chain favorite은 각 단계를 순차 실행하며, 한 단계라도 `submitted`가 아닌 결과가 나오면 즉시 중단됩니다.
 - 예약은 즐겨찾기 단위로 저장되며, `One time`, `Daily`, `Weekdays`, `Weekly` 반복 규칙을 지원합니다.
 - 예약 실행은 `{{date}}`, `{{time}}`, `{{weekday}}`, `{{random}}`, `{{counter}}`만 자동 해석합니다. `{{url}}`, `{{title}}`, `{{selection}}`, `{{clipboard}}`가 필요하면 해당 예약 실행은 실패 히스토리를 남기고 건너뜁니다.
+- popup에서 실행되는 즐겨찾기는 `{{url}}`, `{{title}}`, `{{selection}}`, `{{clipboard}}`를 먼저 준비한 뒤 background job으로 넘깁니다. quick palette/options에서 popup fallback이 발생해도 popup이 자동으로 이어서 실행을 재시도합니다.
+- 즐겨찾기 실행은 background job으로 즉시 큐잉되고, 같은 즐겨찾기의 `queued/running` 실행만 dedupe합니다. 완료/실패 직후 재실행은 다시 허용됩니다. 팝업과 options `Schedules`에는 최근 job의 `queued/running/done/failed` 상태가 간단히 표시됩니다.
 - 옵션 페이지 `Schedules` 섹션에서 예약된 즐겨찾기만 모아 보고, 활성화 토글, `Run now`, `Open in popup`을 사용할 수 있습니다.
 - `Alt+Shift+F` 빠른 팔레트는 shadow root 오버레이로 동작하며, 즉시 해석 가능한 즐겨찾기는 바로 실행하고 추가 입력이 필요하면 popup으로 handoff합니다.
 
@@ -162,10 +165,11 @@ GIF 자리표시자: `docs/assets/usage-demo.gif`
 - `Esc`는 열린 모달이나 메뉴를 닫습니다.
 - 작성 탭에서 포커스가 입력창 밖에 있을 때만 `Ctrl/Cmd+A`가 전체 서비스 선택/해제로 동작하고, 입력창 안에서는 브라우저 기본 전체 선택을 유지합니다.
 - 히스토리와 즐겨찾기 목록은 키보드 roving focus 탐색을 지원하며, 각각 정렬 드롭다운으로 표시 순서를 바꿀 수 있습니다.
+- 팝업을 다시 열면 마지막 전송 프롬프트가 아니라 현재 작성 중이던 draft가 우선 복원되고, popup handoff 프롬프트는 one-shot intent로 한 번만 주입됩니다.
 
 ### 서비스별 프롬프트 오버라이드
 서비스 카드에서 **Custom prompt for this service** 토글을 켜면 해당 서비스에만 전송할 별도 프롬프트를 입력할 수 있습니다. 비워두면 메인 프롬프트가 사용됩니다.
-메인 프롬프트와 서비스별 오버라이드는 모두 같은 템플릿 변수 해석 경로를 타며, 재시도 시에도 최초 전송 시점의 해석된 프롬프트가 그대로 재사용됩니다.
+메인 프롬프트와 서비스별 오버라이드는 모두 같은 템플릿 변수 해석 경로를 타며, 재시도와 히스토리 재전송 시에도 최초 전송 시점의 서비스별 resolved prompt snapshot이 그대로 재사용됩니다.
 
 ### 커스텀 서비스 권한
 - 커스텀 서비스는 `url`과 `hostnameAliases`에서 파생된 모든 origin에 대해 optional host permission을 확인합니다.
@@ -182,13 +186,13 @@ GIF 자리표시자: `docs/assets/usage-demo.gif`
 서비스별 결과는 문자열 한 개가 아니라 구조화된 결과 코드로 저장됩니다. 현재 주요 코드는 `submitted`, `selector_timeout`, `auth_required`, `submit_failed`, `strategy_exhausted`, `injection_timeout`, `cancelled`, `unexpected_error` 등입니다.
 
 ### 가져오기/내보내기와 상세 리포트
-- JSON export는 항상 `version: 5`로 기록됩니다.
-- import는 `v1 -> v2 -> v3 -> v4 -> v5` 단계형 마이그레이션을 거쳐 기존 데이터를 정규화합니다.
-- `v5`에서는 즐겨찾기 `mode`, `steps`, `scheduleEnabled`, `scheduledAt`, `scheduleRepeat`, 히스토리 chain metadata까지 함께 정규화합니다.
-- popup과 options 모두 import 직후 상세 리포트 모달을 띄워 적용된 서비스, 거부된 서비스, 권한 거부 origin, ID 재작성, built-in 보정 내역을 보여줍니다.
+- JSON export는 항상 `version: 6`으로 기록됩니다.
+- import는 `v1 -> v2 -> v3 -> v4 -> v5 -> v6` 단계형 마이그레이션을 거쳐 기존 데이터를 정규화합니다.
+- `v6`에서는 즐겨찾기 `mode`, `steps`, `scheduleEnabled`, `scheduledAt`, `scheduleRepeat`, 히스토리 chain metadata와 함께 history resend용 `targetSnapshots`까지 보강합니다.
+- popup과 options 모두 import 직후 상세 리포트 모달을 띄워 적용된 서비스, 거부된 서비스, 권한 거부 origin, ID 재작성, alias 검증 오류, built-in 보정 내역을 보여줍니다.
 
 ### Reset data
-옵션 페이지의 **Reset data**는 background worker를 통해 실행됩니다. 진행 중인 방송을 먼저 정리한 뒤 히스토리, 즐겨찾기, 템플릿 캐시, 커스텀 서비스, `lastPrompt`, 전략 통계(`strategyStats`) 같은 local 데이터뿐 아니라 `pendingBroadcasts`, `pendingInjections`, `pendingUiToasts`, `lastBroadcast` 같은 session/runtime 상태도 함께 초기화합니다.
+옵션 페이지의 **Reset data**는 background worker를 통해 실행됩니다. 진행 중인 방송을 먼저 정리한 뒤 히스토리, 즐겨찾기, 템플릿 캐시, 커스텀 서비스, `composeDraftPrompt`, `lastSentPrompt`, 전략 통계(`strategyStats`) 같은 local 데이터뿐 아니라 `pendingBroadcasts`, `pendingInjections`, `pendingUiToasts`, `lastBroadcast`, `popupPromptIntent`, `favoriteRunJobs` 같은 session/runtime 상태도 함께 초기화합니다.
 
 ### 새 AI 서비스 추가 방법
 기본 내장 서비스 추가는 `src/config/sites/builtins.ts`에 새 항목을 추가하는 것입니다. `src/config/sites.ts`는 하위 호환용 re-export만 담당합니다.
@@ -269,8 +273,8 @@ For build and packaging steps, see [docs/build-guide.md](docs/build-guide.md). F
 - **Favorite duplication and sort controls** — duplicate saved prompts and sort by recent use, usage count, title, or creation date
 - **History resend selection and bulk delete tools** — choose a subset of the original services when replaying history and delete selected or aged entries from options
 - **Per-service prompt overrides** — assign a different prompt to individual service cards without changing the main prompt
-- JSON export/import for history, favorites, template cache, settings, and service configuration, including `broadcastCounter` and export `version: 5`
-- History keeps requested, submitted, and failed service ids so partial broadcasts can be replayed accurately
+- JSON export/import for history, favorites, template cache, settings, and service configuration, including `broadcastCounter`, history resend snapshots, and export `version: 6`
+- History keeps requested, submitted, failed, and per-site snapshot prompt data so partial broadcasts can be replayed accurately
 - **Detailed import reports and structured result codes** — popup/options show rejected services, rewritten ids, built-in adjustments, and service-level result codes
 - **Extended template variables** — 9+ system variables including `{{url}}`, `{{title}}`, `{{selection}}`, `{{counter}}`, and `{{random}}`
 - Custom services can store fallback selectors, auth selectors, hostname aliases, and verification metadata
@@ -344,7 +348,7 @@ npm run build
 13. Replaying a history item opens a service picker so you can resend only a subset of the originally requested services.
 14. Open the options page and click any history entry to see a per-service result comparison (✅ / ❌ / ⏳) in the detail modal.
 
-If a keyboard shortcut or notification tries to reopen the UI while Chrome has no active browser window, the extension stores the prompt first and falls back to a standalone popup window when needed.
+If a keyboard shortcut or notification tries to reopen the UI while Chrome has no active browser window, the extension stores a one-shot popup prompt intent first and falls back to a standalone popup window when needed.
 
 GIF placeholder: `docs/assets/usage-demo.gif`
 
@@ -386,9 +390,12 @@ Template prompts support both user-defined variables and built-in system variabl
 
 ### Favorite Chains, Schedules, and Quick Palette
 - The favorite editor supports `Single` and `Chain` modes. Chain favorites can add steps, reorder them, apply per-step delays, and override the target services for each step.
+- Leaving a chain step target list empty makes that step inherit the favorite's default targets.
 - Chain execution is sequential. If any step finishes with a result other than `submitted`, the remaining steps are skipped.
 - Favorites can store one-time or repeating schedules (`daily`, `weekday`, `weekly`) and the options page exposes a dedicated `Schedules` section for toggle, `Run now`, and `Open in popup` actions.
 - Scheduled execution auto-resolves only `{{date}}`, `{{time}}`, `{{weekday}}`, `{{random}}`, and `{{counter}}`. Favorites that need `{{url}}`, `{{title}}`, `{{selection}}`, or `{{clipboard}}` are skipped and recorded as failed schedule runs.
+- Popup-triggered favorite runs pre-resolve `{{url}}`, `{{title}}`, `{{selection}}`, and `{{clipboard}}` before handing off to the background worker. Popup fallbacks from quick palette or options retry automatically once that context is available.
+- Favorite runs now queue as background jobs immediately, dedupe only overlapping `queued/running` runs for the same favorite, and expose a light `queued/running/done/failed` status in popup and options.
 - The quick palette uses a shadow-root overlay on the current page. Fully resolvable favorites run immediately; favorites that still need popup input fall back through a popup handoff intent.
 
 ### Popup Shortcuts and Sorting
@@ -397,10 +404,11 @@ Template prompts support both user-defined variables and built-in system variabl
 - `Esc` closes the currently open modal or menu.
 - `Ctrl/Cmd+A` toggles all services only when focus is outside a text field; normal select-all behavior is preserved inside inputs.
 - History and favorites support keyboard roving focus and have popup sort controls for display order.
+- Reopening the popup restores the unsent compose draft first; one-shot popup handoff prompts override the draft only once and are then consumed.
 
 ### Per-Service Prompt Overrides
 Expand a service card in the compose view and enable the **Custom prompt for this service** toggle to enter a prompt that will be used exclusively for that service. The main prompt is used when the override is left blank or the toggle is off.
-Both the main prompt and per-service overrides go through the same template-variable resolution flow, and retry actions reuse the exact resolved prompt captured by the original broadcast.
+Both the main prompt and per-service overrides go through the same template-variable resolution flow, and retry/history replay actions reuse the exact resolved prompt captured by the original broadcast snapshot.
 
 ### Selector Error Reporting
 When the selector checker detects a stale or missing selector (⚠), a **Report issue** link appears in the settings tab's service management card for that service. Clicking it opens a GitHub issue search scoped to that service so you can check existing reports or file a new one.
@@ -412,16 +420,17 @@ Each stored service result now uses a structured code rather than a free-form st
 
 ### History and Favorites Semantics
 - History entries now store `requestedSiteIds`, `submittedSiteIds`, and `failedSiteIds`.
+- History entries also store `targetSnapshots`, which capture the original per-site resolved prompt and routing mode used for replay.
 - The legacy `sentTo` field is still exported for backward compatibility and mirrors the submitted service ids.
-- Reloading a history entry or creating a favorite from it uses the requested service set first, so partially failed broadcasts can be retried with the original target list intact.
+- Reloading a history entry or creating a favorite from it uses `targetSnapshots` first, then falls back to requested services for legacy data, so partially failed broadcasts can be retried with the original target list and prompt text intact.
 - Favorite records also track `mode`, `steps`, `scheduleEnabled`, `scheduledAt`, `scheduleRepeat`, `usageCount`, and `lastUsedAt`.
 - History rows can carry `originFavoriteId`, `chainRunId`, `chainStepIndex`, `chainStepCount`, and `trigger` so chain runs and scheduled executions remain traceable.
 
 ### Import / Export and Detailed Reports
-- JSON export always writes `version: 5`.
-- Import applies staged migrations from older payloads (`v1 -> v2 -> v3 -> v4 -> v5`) before normalizing settings, favorites, and history records.
-- `v5` backfills favorite chain/schedule fields and chain-related history metadata in addition to prior settings and result normalization.
-- Both popup and options show a detailed import report modal listing accepted services, rejected services, denied origins, rewritten ids, and built-in override adjustments.
+- JSON export always writes `version: 6`.
+- Import applies staged migrations from older payloads (`v1 -> v2 -> v3 -> v4 -> v5 -> v6`) before normalizing settings, favorites, and history records.
+- `v6` backfills history resend `targetSnapshots` in addition to prior favorite chain/schedule fields, chain-related history metadata, and result normalization.
+- Both popup and options show a detailed import report modal listing accepted services, rejected services, denied origins, rewritten ids, alias validation errors, and built-in override adjustments.
 
 ### Custom Service Advanced Settings
 The popup service editor supports the following advanced fields for custom services:
@@ -437,6 +446,7 @@ If `submitMethod` is `click`, `submitSelector` is required and validation blocks
 Custom service permissions are managed per site, not per single URL field:
 
 - optional host permissions are derived from the service `url` plus every `hostnameAliases` entry
+- `hostnameAliases` lines must be valid `host[:port]` entries or absolute `http/https` URLs before save/import continues
 - save and JSON import are all-or-nothing for a custom service if any required origin is denied
 - deleting a custom service, resetting service settings, or replacing custom services through JSON import removes only the unused optional origins
 
@@ -514,7 +524,10 @@ The smoke script verifies:
 - custom service permission cleanup for shared and unused origins
 - JSON import repair for alias-based custom service permissions and invalid built-in click-submit overrides
 - `broadcastCounter` export/import/reset semantics
-- import migration to export `version: 5` defaults
+- import migration to export `version: 6` defaults
+- history replay snapshot fallback and resend routing safety
+- draft-first popup restore and popup handoff consumption
+- favorite background job dedupe helpers and runtime-state cleanup
 - quick palette filtering and execution handoff
 - favorite chain/schedule field normalization for legacy imports
 - favorites search across title, tags, and folders

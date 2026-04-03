@@ -5,6 +5,10 @@ import {
   resolveBroadcastTargets,
 } from "../../shared/broadcast/resolution";
 import {
+  buildBroadcastTargetMessageFromSnapshot,
+  ensureBroadcastTargetSnapshots,
+} from "../../shared/broadcast/target-snapshots";
+import {
   SYSTEM_TEMPLATE_VARIABLES,
   buildSystemTemplateValues,
   detectTemplateVariables,
@@ -34,9 +38,17 @@ import {
   updateTemplateVariableCache,
 } from "../../shared/prompts";
 import {
+  consumePopupPromptIntent,
+  getComposeDraftPrompt,
+  setComposeDraftPrompt,
+  setLastSentPrompt,
+} from "../../shared/prompt-state";
+import {
   consumePopupFavoriteIntent,
   drainPendingUiToasts,
+  getFavoriteRunJobs,
   getFailedSelectors,
+  getLatestFavoriteRunJobByFavoriteId,
   getLastBroadcast,
 } from "../../shared/runtime-state";
 import {
@@ -47,6 +59,7 @@ import {
   saveBuiltInSiteOverride,
   saveCustomSite,
   setRuntimeSiteEnabled,
+  validateHostnameAliases,
   validateSiteDraft,
 } from "../../shared/sites";
 import { matchesFavoriteSearch } from "../../shared/prompts/search";
@@ -153,6 +166,7 @@ const {
   serviceAuthSelectorsInput,
   serviceHostnameAliasesLabel,
   serviceHostnameAliasesInput,
+  servicePermissionPreview,
   serviceLastVerifiedLabel,
   serviceLastVerifiedInput,
   serviceVerifiedVersionLabel,
@@ -485,6 +499,19 @@ function autoResizePromptInput() {
   promptInput.style.height = `${nextHeight}px`;
 }
 
+function scheduleComposeDraftSave(value = promptInput.value) {
+  if (state.promptDraftSaveTimer) {
+    window.clearTimeout(state.promptDraftSaveTimer);
+  }
+
+  state.promptDraftSaveTimer = window.setTimeout(() => {
+    state.promptDraftSaveTimer = null;
+    void setComposeDraftPrompt(String(value ?? "")).catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to persist compose draft.", error);
+    });
+  }, 180);
+}
+
 function applyDynamicPromptPlaceholder() {
   const placeholderVariants = isKorean
     ? [
@@ -664,6 +691,7 @@ function renderFavoritesList() {
     .map((item) => buildFavoriteItemMarkup(item, {
       openMenuKey: state.openMenuKey,
       runtimeSites: state.runtimeSites,
+      latestJob: getLatestFavoriteRunJobByFavoriteId(state.favoriteJobs, item.id),
     }))
     .join("");
 }
@@ -869,13 +897,25 @@ function buildTemplatePreviewText(targets = [], values = {}) {
 
 async function loadStoredData() {
   try {
-    const [history, favorites, variableCache, runtimeSites, promptResult, failedSelectors, settings] = await Promise.all([
+    const [
+      history,
+      favorites,
+      variableCache,
+      runtimeSites,
+      promptIntent,
+      composeDraftPrompt,
+      failedSelectors,
+      favoriteJobs,
+      settings,
+    ] = await Promise.all([
       getPromptHistory(),
       getPromptFavorites(),
       getTemplateVariableCache(),
       getRuntimeSites(),
-      chrome.storage.local.get(["lastPrompt"]),
+      consumePopupPromptIntent(),
+      getComposeDraftPrompt(),
       getFailedSelectors(),
+      getFavoriteRunJobs(),
       getAppSettings(),
     ]);
 
@@ -884,12 +924,15 @@ async function loadStoredData() {
     state.templateVariableCache = variableCache;
     state.runtimeSites = runtimeSites;
     state.failedSelectors = new Map(failedSelectors.map((entry) => [entry.serviceId, entry]));
+    state.favoriteJobs = favoriteJobs;
     state.settings = settings;
 
     await refreshOpenSiteTabs();
 
-    if (typeof promptResult.lastPrompt === "string" && !promptInput.value.trim()) {
-      promptInput.value = promptResult.lastPrompt;
+    if (typeof promptIntent?.prompt === "string" && !promptInput.value.trim()) {
+      promptInput.value = promptIntent.prompt;
+    } else if (!promptInput.value.trim()) {
+      promptInput.value = composeDraftPrompt;
     }
 
     applySettingsToControls();
@@ -907,12 +950,13 @@ async function loadStoredData() {
 
 async function refreshStoredData() {
   try {
-    const [history, favorites, variableCache, runtimeSites, failedSelectors, settings] = await Promise.all([
+    const [history, favorites, variableCache, runtimeSites, failedSelectors, favoriteJobs, settings] = await Promise.all([
       getPromptHistory(),
       getPromptFavorites(),
       getTemplateVariableCache(),
       getRuntimeSites(),
       getFailedSelectors(),
+      getFavoriteRunJobs(),
       getAppSettings(),
     ]);
 
@@ -921,6 +965,7 @@ async function refreshStoredData() {
     state.templateVariableCache = variableCache;
     state.runtimeSites = runtimeSites;
     state.failedSelectors = new Map(failedSelectors.map((entry) => [entry.serviceId, entry]));
+    state.favoriteJobs = favoriteJobs;
     state.settings = settings;
     await refreshOpenSiteTabs();
     applySettingsToControls();
@@ -948,6 +993,7 @@ const {
   getEnabledSites,
   getRuntimeSiteLabel,
   refreshStoredData,
+  requestFavoriteRun,
   setStatus,
   showAppToast,
   getUnknownErrorText,
@@ -966,8 +1012,33 @@ async function maybeHandlePopupFavoriteIntent() {
     return;
   }
 
+  let runReason = intent.reason || t.favoriteRunNeedsEditor;
+
+  if (intent.type === "run") {
+    const response = await requestFavoriteRun(favorite, {
+      trigger: intent.source === "options-edit" ? "popup" : (intent.source ?? "popup"),
+      allowPopupFallback: false,
+    });
+
+    if (response?.ok) {
+      const message = response?.message ?? t.favoriteRunQueued;
+      setStatus(message, "success");
+      showAppToast(message, "success", 2200);
+      return;
+    }
+
+    if (!response?.requiresPopupInput) {
+      const errorMessage = response?.error ?? getUnknownErrorText();
+      setStatus(t.error(errorMessage), "error");
+      showAppToast(t.error(errorMessage), "error", 3200);
+      return;
+    }
+
+    runReason = response?.error || runReason;
+  }
+
   openFavoriteEditor(favorite, {
-    reason: intent.type === "run" ? intent.reason || t.favoriteRunNeedsEditor : "",
+    reason: intent.type === "run" ? runReason : "",
   });
 }
 
@@ -982,6 +1053,7 @@ function setLoadedTemplateContext(item) {
 
 function loadPromptIntoComposer(item) {
   promptInput.value = item.text;
+  scheduleComposeDraftSave(promptInput.value);
   applySiteSelection(getHistorySelectedSiteIds(item));
   setLoadedTemplateContext(item);
   renderTemplateSummary();
@@ -1208,7 +1280,7 @@ async function sendResolvedPrompt(mainPrompt, targets) {
 
   try {
     await refreshOpenSiteTabs();
-    await chrome.storage.local.set({ lastPrompt: promptInput.value });
+    await setLastSentPrompt(mainPrompt);
     clearAllToasts();
 
     const response = await chrome.runtime.sendMessage({
@@ -1315,8 +1387,16 @@ async function confirmResendModal() {
     return;
   }
 
+  const selectedTargets = ensureBroadcastTargetSnapshots(
+    historyItem.targetSnapshots,
+    historyItem.requestedSiteIds,
+    historyItem.text
+  )
+    .filter((snapshot) => selectedSiteIds.includes(snapshot.siteId))
+    .map((snapshot) => buildBroadcastTargetMessageFromSnapshot(snapshot, state.openSiteTabs));
+
   hideResendModal();
-  await sendResolvedPrompt(historyItem.text, selectedSiteIds.map((siteId) => ({ id: siteId })));
+  await sendResolvedPrompt(historyItem.text, selectedTargets);
 }
 
 function openImportReportModal(summary) {
@@ -1506,6 +1586,100 @@ async function readClipboardTemplateValue() {
       error: error?.message ?? String(error),
     };
   }
+}
+
+function getFavoriteTemplateSources(favorite) {
+  if (favorite?.mode === "chain" && Array.isArray(favorite.steps) && favorite.steps.length > 0) {
+    return favorite.steps
+      .map((step) => String(step?.text ?? ""))
+      .filter((text) => text.trim());
+  }
+
+  return [String(favorite?.text ?? "")];
+}
+
+function detectFavoriteTemplateVariables(favorite) {
+  const seen = new Set();
+
+  return getFavoriteTemplateSources(favorite)
+    .flatMap((template) => detectTemplateVariables(template))
+    .filter((variable) => {
+      if (seen.has(variable.name)) {
+        return false;
+      }
+
+      seen.add(variable.name);
+      return true;
+    });
+}
+
+async function buildPreparedFavoriteExecutionContext(favorite) {
+  const variables = detectFavoriteTemplateVariables(favorite);
+  const needsClipboard = variables.some(
+    (variable) => variable.kind === "system" && variable.name === SYSTEM_TEMPLATE_VARIABLES.clipboard
+  );
+  const asyncExtra = await resolveAsyncTemplateVariables(variables);
+  const preparedExecutionContext = {};
+
+  if (typeof asyncExtra.url === "string") {
+    preparedExecutionContext.url = asyncExtra.url;
+  }
+  if (typeof asyncExtra.title === "string") {
+    preparedExecutionContext.title = asyncExtra.title;
+  }
+  if (typeof asyncExtra.selection === "string") {
+    preparedExecutionContext.selection = asyncExtra.selection;
+  }
+
+  if (!needsClipboard) {
+    return {
+      ok: true,
+      preparedExecutionContext,
+    };
+  }
+
+  const clipboardResult = await readClipboardTemplateValue();
+  if (!clipboardResult.ok) {
+    return {
+      ok: false,
+      reason: "clipboard_read_failed",
+      error: clipboardResult.error || t.templateClipboardError,
+    };
+  }
+
+  preparedExecutionContext.clipboard = clipboardResult.text ?? "";
+  return {
+    ok: true,
+    preparedExecutionContext,
+  };
+}
+
+async function requestFavoriteRun(
+  favorite,
+  {
+    trigger = "popup",
+    allowPopupFallback = false,
+  } = {}
+) {
+  if (!favorite?.id) {
+    return {
+      ok: false,
+      error: getUnknownErrorText(),
+    };
+  }
+
+  const prepared = await buildPreparedFavoriteExecutionContext(favorite);
+  if (!prepared?.ok) {
+    return prepared;
+  }
+
+  return chrome.runtime.sendMessage({
+    action: "favorite:run",
+    favoriteId: favorite.id,
+    trigger,
+    allowPopupFallback,
+    preparedExecutionContext: prepared.preparedExecutionContext,
+  });
 }
 
 async function maybeMarkLoadedFavoriteAsUsed() {
@@ -2142,6 +2316,43 @@ function setServiceTestResult(message = "", isError = false) {
   serviceTestResult.style.color = isError ? "var(--danger)" : "var(--text)";
 }
 
+function setServicePermissionPreview(message = "", isError = false) {
+  servicePermissionPreview.hidden = !message;
+  servicePermissionPreview.textContent = message;
+  servicePermissionPreview.style.color = isError ? "var(--danger)" : "var(--text-soft)";
+}
+
+function renderServicePermissionPreview(draft = readServiceEditorDraft(), validation = null) {
+  const aliasErrors = validation?.fieldErrors?.hostnameAliases ?? [];
+  const aliasValidation = aliasErrors.length > 0
+    ? { valid: false, errors: aliasErrors }
+    : validateHostnameAliases(draft.hostnameAliases);
+  const hasAliasError = aliasValidation.errors.length > 0;
+
+  serviceHostnameAliasesInput.setAttribute("aria-invalid", String(hasAliasError));
+
+  if (hasAliasError) {
+    setServicePermissionPreview(aliasValidation.errors.join(" "), true);
+    return;
+  }
+
+  if (Boolean(state.serviceEditor?.isBuiltIn)) {
+    setServicePermissionPreview("");
+    return;
+  }
+
+  const patterns = buildSitePermissionPatterns(draft.url, draft.hostnameAliases);
+  if (!draft.url.trim() || patterns.length === 0) {
+    setServicePermissionPreview("");
+    return;
+  }
+
+  setServicePermissionPreview(
+    `${msg("popup_service_permission_preview") || "Requested origins"}: ${patterns.join(", ")}`,
+    false,
+  );
+}
+
 function resetServiceEditorForm() {
   serviceNameInput.value = "";
   serviceUrlInput.value = "";
@@ -2164,6 +2375,7 @@ function resetServiceEditorForm() {
   state.serviceEditor = null;
   setServiceEditorError("");
   setServiceTestResult("");
+  setServicePermissionPreview("");
 }
 
 function hideServiceEditor() {
@@ -2206,6 +2418,7 @@ function populateServiceEditor(site) {
   serviceUrlInput.disabled = Boolean(site?.isBuiltIn);
   setServiceEditorError("");
   setServiceTestResult("");
+  renderServicePermissionPreview(readServiceEditorDraft());
   serviceEditor.hidden = false;
 }
 
@@ -2340,6 +2553,7 @@ async function saveServiceEditorDraft() {
   const draft = readServiceEditorDraft();
   const isBuiltIn = Boolean(state.serviceEditor?.isBuiltIn);
   const validation = validateSiteDraft(draft, { isBuiltIn });
+  renderServicePermissionPreview(draft, validation);
 
   if (!validation.valid) {
     setServiceEditorError(validation.errors.join(" "));
@@ -2550,7 +2764,6 @@ async function handleSend() {
     }
   }
 
-  await chrome.storage.local.set({ lastPrompt: prompt });
   await openTemplateModalV2(prompt, composerTargets);
 }
 
@@ -2561,6 +2774,7 @@ function bindGlobalEvents() {
 
   clearPromptBtn.addEventListener("click", () => {
     promptInput.value = "";
+    scheduleComposeDraftSave("");
     state.loadedFavoriteId = "";
     state.loadedFavoriteTitle = "";
     state.loadedTemplateDefaults = {};
@@ -2604,6 +2818,7 @@ function bindGlobalEvents() {
   });
 
   promptInput.addEventListener("input", () => {
+    scheduleComposeDraftSave(promptInput.value);
     updatePromptCounter();
     autoResizePromptInput();
     renderTemplateSummary();
@@ -2987,6 +3202,18 @@ function bindGlobalEvents() {
     serviceWaitValue.textContent = `${serviceWaitRange.value}ms`;
   });
 
+  serviceUrlInput.addEventListener("input", () => {
+    if (!serviceEditor.hidden) {
+      renderServicePermissionPreview();
+    }
+  });
+
+  serviceHostnameAliasesInput.addEventListener("input", () => {
+    if (!serviceEditor.hidden) {
+      renderServicePermissionPreview();
+    }
+  });
+
   serviceEditorCancel.addEventListener("click", hideServiceEditor);
   serviceEditorSave.addEventListener("click", () => {
     void saveServiceEditorDraft();
@@ -3073,6 +3300,17 @@ function bindGlobalEvents() {
         void flushPendingSessionToasts();
       }
 
+       if (changes.favoriteRunJobs) {
+        void getFavoriteRunJobs()
+          .then((favoriteJobs) => {
+            state.favoriteJobs = favoriteJobs;
+            renderFavoritesList();
+          })
+          .catch((error) => {
+            console.error("[AI Prompt Broadcaster] Failed to refresh favorite jobs.", error);
+          });
+      }
+
       return;
     }
 
@@ -3083,7 +3321,6 @@ function bindGlobalEvents() {
     if (
       changes.promptHistory ||
       changes.promptFavorites ||
-      changes.lastPrompt ||
       changes.templateVariableCache ||
       changes.appSettings ||
       changes.customSites ||

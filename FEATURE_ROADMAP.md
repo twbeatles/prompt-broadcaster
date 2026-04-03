@@ -1,7 +1,7 @@
 # AI Prompt Broadcaster - 잔여 기능 로드맵
 
 > 작성일: 2026-03-31
-> 최종 업데이트: 2026-04-02 (예약/체인/빠른 팔레트 완료 반영, 잔여 항목만 유지)
+> 최종 업데이트: 2026-04-03 (favorite workflow 보강, locale parity 검증 반영)
 > 기준 코드: 현재 `main` 브랜치의 `src/`, `popup/`, `options/`, `manifest.json`
 
 이 문서는 아직 구현되지 않은 항목만 남긴다. 현재 동작과 완료된 기능은 `README.md`, `PROJECT_ANALYSIS.md`, `CLAUDE.md`, `docs/extension-architecture.md`를 기준으로 본다.
@@ -115,6 +115,7 @@
 
 **현재 상태**
 - 현재 로케일은 `_locales/en`, `_locales/ko`만 유지한다.
+- 빌드 시 `en/ko` locale key parity와 placeholder parity를 함께 검증한다.
 
 **남은 작업**
 - `_locales/ja/messages.json`
@@ -130,7 +131,7 @@
 
 **주의사항**
 - 단순 기계 번역으로는 템플릿 변수 설명과 접근성 문구 품질이 떨어질 수 있다.
-- 새 로케일 추가 시 한국어/영어와 동일한 키 셋 유지 검증이 필요하다.
+- 새 로케일 추가 시 한국어/영어와 동일한 키 셋 및 placeholder 구성을 유지하도록 빌드 검증을 확장해야 한다.
 
 ---
 

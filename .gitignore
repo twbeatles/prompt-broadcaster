@@ -10,7 +10,7 @@
 # Extension dev profile directory (Chrome extension ID folder)
 /ddebobakhbknpcmiobbpkgbhhccmdmop/
 
-# Release packages — any zip at root level
+# Release packages and ad-hoc archives
 /prompt-broadcaster-v*.zip
 /prompt-broadcaster-v*/
 *.zip

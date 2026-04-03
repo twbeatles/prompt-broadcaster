@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { AI_SITES } from "../../config/sites";
+import { getTargetSnapshotSiteIds } from "../../shared/broadcast/target-snapshots";
 import { escapeHTML } from "../../shared/security";
 import { isKorean, locale, t } from "./i18n";
 
@@ -84,11 +85,12 @@ export function getSiteLabel(siteId, runtimeSites = []) {
 }
 
 export function getRequestedServices(entry) {
-  const siteResultKeys = Object.keys(entry.siteResults ?? {});
-  if (Array.isArray(entry?.requestedSiteIds) && entry.requestedSiteIds.length > 0) {
-    return entry.requestedSiteIds;
+  const snapshotSiteIds = getTargetSnapshotSiteIds(entry);
+  if (snapshotSiteIds.length > 0) {
+    return snapshotSiteIds;
   }
 
+  const siteResultKeys = Object.keys(entry.siteResults ?? {});
   return siteResultKeys.length > 0 ? siteResultKeys : entry.sentTo ?? [];
 }
 
@@ -130,11 +132,15 @@ export function buildImportReportMarkup(summary) {
     const origins = Array.isArray(entry?.origins) && entry.origins.length > 0
       ? `<div class="helper">${escapeHTML(entry.origins.join(", "))}</div>`
       : "";
+    const errors = Array.isArray(entry?.errors) && entry.errors.length > 0
+      ? `<div class="helper">${escapeHTML(entry.errors.join(" "))}</div>`
+      : "";
     return `
       <div class="settings-control">
         <strong>${escapeHTML(entry?.name ?? entry?.id ?? "-")}</strong>
         <div>${escapeHTML(t.settings.importRejectReason(entry?.reason ?? "unknown"))}</div>
         ${origins}
+        ${errors}
       </div>
     `;
   }).join("");

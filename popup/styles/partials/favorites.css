@@ -7,6 +7,49 @@
   margin-top: 4px;
 }
 
+.fav-job-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.fav-job-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-soft);
+}
+
+.fav-job-badge.queued,
+.fav-job-badge.running {
+  background: rgba(194, 129, 17, 0.1);
+  border-color: rgba(194, 129, 17, 0.2);
+  color: #9b6508;
+}
+
+.fav-job-badge.completed {
+  background: rgba(31, 143, 95, 0.1);
+  border-color: rgba(31, 143, 95, 0.2);
+  color: var(--success);
+}
+
+.fav-job-badge.failed,
+.fav-job-badge.skipped {
+  background: rgba(181, 59, 59, 0.1);
+  border-color: rgba(181, 59, 59, 0.2);
+  color: var(--danger);
+}
+
+.fav-job-detail {
+  font-size: 11px;
+  color: var(--text-soft);
+}
+
 .fav-pin-icon {
   font-size: 12px;
   color: var(--accent);

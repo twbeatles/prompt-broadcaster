@@ -1,7 +1,7 @@
 # AI Prompt Broadcaster - 프로젝트 구조 분석
 
-> 기준일: 2026-04-02
-> 최종 업데이트: 2026-04-02 (예약/체인/빠른 팔레트, v5 데이터 모델, 기능 기준 모듈 분리 반영)
+> 기준일: 2026-04-03
+> 최종 업데이트: 2026-04-03 (favorite workflow 보강, v6 데이터 모델, popup context 준비 경로 반영)
 > 분석 범위: 전체 소스코드, 빌드 시스템, 데이터 흐름, UI 구조
 
 ---
@@ -68,6 +68,7 @@ prompt-broadcaster/
 │       ├── chrome/
 │       ├── export/
 │       ├── i18n/
+│       ├── prompt-state.ts
 │       ├── prompts/
 │       ├── runtime-state/
 │       ├── sites/
@@ -142,6 +143,8 @@ prompt-broadcaster/
   - 즐겨찾기 실행
   - chain step 순차 실행
   - schedule alarm reconcile / firing 처리
+  - popup 준비 context(`url/title/selection/clipboard`) 병합
+  - favorite run job / failure history / popup fallback 정리
   - popup handoff intent 저장
 - `src/background/popup/launcher.ts`
   - toolbar popup 재오픈
@@ -316,6 +319,8 @@ interface SiteInjectionResult {
 - `templateVariableCache`
 - `appSettings`
 - `broadcastCounter`
+- `composeDraftPrompt`
+- `lastSentPrompt`
 - `failedSelectors`
 - `onboardingCompleted`
 - `strategyStats`
@@ -327,19 +332,22 @@ interface SiteInjectionResult {
 - `selectorAlerts`
 - `lastBroadcast`
 - `pendingUiToasts`
-- popup handoff intent (`src/shared/runtime-state/popup-intent.ts`)
+- `popupPromptIntent`
+- `popupFavoriteIntent`
+- `favoriteRunJobs`
 
 JSON export/import:
 
-- 현재 export version: `5`
-- 지원 migration: `v1 -> v2 -> v3 -> v4 -> v5`
-- `v5`에서 backfill 되는 대표 항목:
+- 현재 export version: `6`
+- 지원 migration: `v1 -> v2 -> v3 -> v4 -> v5 -> v6`
+- `v6`에서 backfill 되는 대표 항목:
   - favorite `mode`
   - `steps`
   - `scheduleEnabled`
   - `scheduledAt`
   - `scheduleRepeat`
   - history chain metadata
+  - history `targetSnapshots`
 
 ---
 
@@ -372,14 +380,15 @@ siteResults / history / lastBroadcast 업데이트
 - quick palette
 - `chrome.alarms`
 
-모두 background의 동일 favorite 실행 엔트리포인트를 사용한다.
+모두 background의 동일 favorite 실행 엔트리포인트를 사용한다. popup 경유 실행은 background에 넘기기 전에 `url/title/selection/clipboard`를 먼저 준비해 함께 전달한다.
 
 ### 7.3 Chain favorite
 
 - step을 순서대로 실행
 - 각 step 전 `delayMs` 적용 가능
-- step별 `targetSiteIds`가 있으면 favorite 기본 `sentTo`를 override
+- step별 `targetSiteIds`가 비어 있으면 favorite 기본 `sentTo`를 상속하고, 값이 있으면 그것으로 override
 - 어떤 step이든 결과가 `submitted`가 아니면 즉시 중단
+- dedupe는 같은 favorite의 `queued/running` 겹침만 막고, 완료/실패 직후 재실행은 허용
 
 ### 7.4 Scheduled favorite
 
@@ -396,7 +405,8 @@ siteResults / history / lastBroadcast 업데이트
 - background가 injectable tab이면 `content/palette.js`를 주입
 - overlay는 favorites만 검색
 - fully resolvable favorite면 즉시 실행
-- 추가 입력이 필요하면 popup handoff intent 저장 후 popup fallback
+- popup이 자동으로 해결 가능한 입력만 부족하면 popup fallback 후 자동 재실행
+- user variable 같은 수동 입력이 남아 있으면 favorite editor로 handoff
 
 ---
 
@@ -484,8 +494,10 @@ npm run qa:smoke
 - custom service permission cleanup
 - invalid built-in override import repair
 - `broadcastCounter` export/import/reset
-- export `version: 5` migration
+- export `version: 6` migration
 - favorite chain/schedule field backfill
+- favorite run job dedupe / chain target fallback
+- prepared clipboard context / pre-broadcast failure history
 - quick palette filtering 및 실행
 - favorites search
 - structured `siteResults`
@@ -519,7 +531,7 @@ npm run qa:smoke
 
 - [x] 구조화된 `siteResults`
 - [x] adaptive strategy stats
-- [x] import/export `v5`
+- [x] import/export `v6`
 - [x] 상세 import 리포트
 - [x] background mutation chain
 - [x] reset-data 일원화

@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { updateFavoritePrompt } from "../../shared/prompts";
+import { getLatestFavoriteRunJobByFavoriteId } from "../../shared/runtime-state";
 import { escapeHTML } from "../../shared/security";
 import { optionsDom } from "../app/dom";
 import { t } from "../app/i18n";
@@ -32,6 +33,32 @@ function getLastFavoriteRun(favoriteId) {
   return state.history.find((entry) => String(entry.originFavoriteId ?? "") === String(favoriteId)) ?? null;
 }
 
+function buildFavoriteJobStatusMarkup(favoriteId) {
+  const job = getLatestFavoriteRunJobByFavoriteId(state.favoriteJobs, favoriteId);
+  if (!job?.jobId) {
+    return "";
+  }
+
+  const statusLabel =
+    job.status === "queued"
+      ? (chrome.i18n.getMessage("favorite_job_status_queued") || "Queued")
+      : job.status === "running"
+        ? (chrome.i18n.getMessage("favorite_job_status_running") || "Running")
+        : job.status === "completed"
+          ? (chrome.i18n.getMessage("favorite_job_status_completed") || "Done")
+          : job.status === "failed"
+            ? (chrome.i18n.getMessage("favorite_job_status_failed") || "Failed")
+            : (chrome.i18n.getMessage("favorite_job_status_skipped") || "Skipped");
+  const detail = job.stepCount > 1 ? `${Math.min(job.completedSteps, job.stepCount)}/${job.stepCount}` : "";
+
+  return `
+    <div class="schedule-job-status">
+      <span class="status-pill ${escapeHTML(job.status)}">${escapeHTML(statusLabel)}</span>
+      ${detail ? `<span>${escapeHTML(detail)}</span>` : ""}
+    </div>
+  `;
+}
+
 export function renderSchedulesSection() {
   const scheduledFavorites = [...state.favorites]
     .filter((favorite) => favorite?.scheduleEnabled || favorite?.scheduledAt)
@@ -55,6 +82,7 @@ export function renderSchedulesSection() {
             <div>
               <h3>${escapeHTML(favorite.title || previewText(favorite.text, 42))}</h3>
               <p>${escapeHTML(previewText(favorite.text, 88))}</p>
+              ${buildFavoriteJobStatusMarkup(favorite.id)}
             </div>
             <label class="checkbox-inline" for="schedule-enabled-${escapeHTML(favorite.id)}">
               <input
@@ -109,8 +137,9 @@ async function runFavoriteFromOptions(favoriteId) {
   }
 
   if (response?.ok) {
-    setStatus(t.schedules.runQueued, "success");
-    showAppToast(t.schedules.runQueued, "success", 2200);
+    const message = response?.message ?? t.schedules.runQueued;
+    setStatus(message, "success");
+    showAppToast(message, "success", 2200);
     return;
   }
 

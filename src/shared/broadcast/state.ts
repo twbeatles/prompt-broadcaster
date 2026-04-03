@@ -4,6 +4,7 @@ import type {
   SiteInjectionResult,
 } from "../types/models";
 import { buildSiteInjectionResult, normalizeSiteInjectionResult, normalizeResultCode } from "../prompts";
+import { ensureBroadcastTargetSnapshots } from "./target-snapshots";
 
 function clonePendingBroadcastRecord(record: PendingBroadcastRecord): PendingBroadcastRecord {
   return {
@@ -12,6 +13,7 @@ function clonePendingBroadcastRecord(record: PendingBroadcastRecord): PendingBro
     submittedSiteIds: [...(record.submittedSiteIds ?? [])],
     failedSiteIds: [...(record.failedSiteIds ?? [])],
     siteResults: { ...(record.siteResults ?? {}) },
+    targetSnapshots: ensureBroadcastTargetSnapshots(record.targetSnapshots, record.siteIds, record.prompt),
     openedTabIds: [...(record.openedTabIds ?? [])],
     originFavoriteId: record.originFavoriteId ?? null,
     chainRunId: record.chainRunId ?? null,
@@ -64,6 +66,7 @@ export function buildPendingBroadcastSummary(
     submittedSiteIds: [...(record.submittedSiteIds ?? [])],
     failedSiteIds: [...(record.failedSiteIds ?? [])],
     siteResults: { ...(record.siteResults ?? {}) },
+    targetSnapshots: ensureBroadcastTargetSnapshots(record.targetSnapshots, record.siteIds, record.prompt),
     startedAt: record.startedAt ?? now,
     finishedAt: record.completed >= record.total && status !== "sending" ? now : "",
     ...overrides,

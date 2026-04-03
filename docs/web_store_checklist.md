@@ -8,7 +8,7 @@
   - 지원 서비스 범위: ChatGPT, Gemini, Claude, Grok, Perplexity
   - 동작 방식: 사용자가 로그인한 AI 웹앱 탭을 열고 DOM 입력창에 프롬프트를 주입
   - 데이터 저장 범위: 로컬 브라우저 저장소 기반 히스토리, 즐겨찾기, 템플릿 변수 캐시
-  - 주요 편의 기능: 템플릿 변수, 히스토리/즐겨찾기, 대시보드, 단축키, 컨텍스트 메뉴
+  - 주요 편의 기능: 템플릿 변수, 단일/체인/예약 즐겨찾기, 빠른 팔레트, 히스토리/즐겨찾기, 대시보드, 단축키, 컨텍스트 메뉴
 
 ## 2. 개인정보처리방침
 
@@ -95,7 +95,7 @@ npm run build
 npm run qa:smoke
 ```
 
-`qa:smoke`는 `dist/` 기준 주입/전송 경로를 로컬 fixture로 검증합니다. 여기에는 custom service optional permission 정리, import repair, `broadcastCounter` 수명주기, 즐겨찾기 검색 범위도 포함됩니다. 다만 실제 Chrome 툴바 팝업 동작, 열린 탭 재사용, 실서비스 Claude 전송 성공 여부는 수동 검수가 필요합니다.
+`qa:smoke`는 `dist/` 기준 주입/전송 경로를 로컬 fixture로 검증합니다. 여기에는 custom service optional permission 정리, import repair, `broadcastCounter` 수명주기, 즐겨찾기 검색 범위, favorite run job dedupe, clipboard/context 준비 경로도 포함됩니다. 다만 실제 Chrome 툴바 팝업 동작, 열린 탭 재사용, 실서비스 Claude 전송 성공 여부는 수동 검수가 필요합니다.
 
 ### 로컬 테스트
 
@@ -142,6 +142,7 @@ bash ./package.sh
 - 단축키와 컨텍스트 메뉴 동작을 확인
 - ChatGPT, Gemini, Claude, Grok, Perplexity에 각각 한 번씩 실제 전송을 시도하고 특히 Claude와 Perplexity의 전송 버튼 경로를 확인
 - 현재 창의 열린 AI 탭 재사용 설정과 서비스별 특정 탭 선택 UI를 확인
+- `{{clipboard}}`, `{{url}}`, `{{selection}}`가 포함된 즐겨찾기를 popup과 quick palette/options fallback 경로에서 각각 확인
 - 커스텀 서비스 추가/삭제/리셋 후 optional host permission이 필요한 origin에만 남는지 확인
 - 알림 권한, optional clipboard permission 요청 흐름을 확인
 - 공개된 개인정보처리방침 URL을 준비했는지 확인

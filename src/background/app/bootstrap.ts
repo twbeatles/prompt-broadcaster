@@ -2,6 +2,7 @@
 import {
   pickBroadcastTargetPrompt,
 } from "../../shared/broadcast/resolution";
+import { buildQueueTargetSnapshots } from "../../shared/broadcast/target-snapshots";
 import {
   applyPendingBroadcastSiteResult as applyBroadcastSiteResultMutation,
   buildPendingBroadcastSummary as buildBroadcastSummary,
@@ -980,24 +981,26 @@ const {
 const {
   buildScheduleAlarmName,
   parseScheduleAlarmFavoriteId,
+  reconcileFavoriteRunJobs,
   reconcileFavoriteSchedules,
   handleFavoriteScheduleAlarm,
   handleFavoriteRunMessage,
   handleFavoriteOpenEditorMessage,
   handleQuickPaletteGetState,
   handleQuickPaletteExecuteMessage,
+  handleFavoriteRunJobAlarm,
+  handleFavoriteBroadcastCompletion,
 } = createFavoriteWorkflow({
   getBroadcastTriggerLabel,
+  getI18nMessage,
   rememberNormalTab,
   getPreferredNormalActiveTab,
   isInjectableTabUrl,
   getSelectedTextFromTab,
   openPopupWithPrompt,
   nowIso,
-  sleep,
   buildChainRunId,
   queueBroadcastRequest,
-  registerBroadcastCompletionWaiter,
 });
 
 
@@ -1303,13 +1306,14 @@ async function syncLastBroadcast(summary) {
   await applyBadgeForBroadcast(summary);
 }
 
-async function createPendingBroadcast(prompt, sites, metadata = {}) {
+async function createPendingBroadcast(prompt, targets, metadata = {}) {
   const pendingInjections = await getPendingInjections();
   if (Object.keys(pendingInjections).length > 0) {
     console.warn("[AI Prompt Broadcaster] Starting a new broadcast while pending tabs still exist.", pendingInjections);
   }
 
   const originContext = await getFocusedTabContext();
+  const sites = Array.isArray(targets) ? targets.map((target) => target.site).filter(Boolean) : [];
   const broadcastId =
     typeof crypto?.randomUUID === "function"
       ? crypto.randomUUID()
@@ -1324,6 +1328,7 @@ async function createPendingBroadcast(prompt, sites, metadata = {}) {
     submittedSiteIds: [],
     failedSiteIds: [],
     siteResults: {},
+    targetSnapshots: buildQueueTargetSnapshots(targets, prompt),
     startedAt: nowIso(),
     status: "sending",
     originTabId: originContext?.tabId ?? null,
@@ -1492,6 +1497,12 @@ async function recordBroadcastSiteResult(broadcastId, siteId, resultInput) {
 
         if (suppressCompletionEffects) {
           await syncLastBroadcast(summary);
+          void handleFavoriteBroadcastCompletion(summary).catch((error) => {
+            console.error("[AI Prompt Broadcaster] Favorite job completion sync failed.", {
+              broadcastId,
+              error,
+            });
+          });
           resolveBroadcastCompletionWaiter(broadcastId, summary);
           return summary;
         }
@@ -1506,6 +1517,7 @@ async function recordBroadcastSiteResult(broadcastId, siteId, resultInput) {
           createdAt: completedRecord.startedAt,
           status: summary.status,
           siteResults: completedRecord.siteResults,
+          targetSnapshots: completedRecord.targetSnapshots,
           originFavoriteId: completedRecord.originFavoriteId ?? null,
           chainRunId: completedRecord.chainRunId ?? null,
           chainStepIndex: completedRecord.chainStepIndex ?? null,
@@ -1516,6 +1528,12 @@ async function recordBroadcastSiteResult(broadcastId, siteId, resultInput) {
         await syncLastBroadcast(summary);
         await restoreBroadcastFocus(completedRecord);
         await maybeCreateBroadcastNotification(summary);
+        void handleFavoriteBroadcastCompletion(summary).catch((error) => {
+          console.error("[AI Prompt Broadcaster] Favorite job completion sync failed.", {
+            broadcastId,
+            error,
+          });
+        });
         resolveBroadcastCompletionWaiter(broadcastId, summary);
       } else {
         await syncLastBroadcast(summary);
@@ -2236,6 +2254,7 @@ async function initializeServiceWorker() {
   await ensureReconcileAlarm();
   await reconcilePendingInjections();
   await reconcilePendingBroadcasts();
+  await reconcileFavoriteRunJobs();
   await reconcileFavoriteSchedules();
 }
 
@@ -2243,7 +2262,7 @@ async function queueResolvedBroadcastRequest(prompt, selectedTargets, metadata =
   const selectedSites = selectedTargets.map((target) => target.site);
   let queuedSiteCount = 0;
 
-  const broadcast = await createPendingBroadcast(prompt, selectedSites, metadata);
+  const broadcast = await createPendingBroadcast(prompt, selectedTargets, metadata);
   registerBroadcastCompletionWaiter(broadcast.id);
   const settings = await getAppSettings();
   const createdTabSiteIds = [];
@@ -2544,6 +2563,13 @@ async function resetAllExtensionData() {
   selectionCache.clear();
   lastNormalWindowId = null;
   lastNormalTabId = null;
+
+  const alarms = await chrome.alarms.getAll().catch(() => []);
+  await Promise.all(
+    alarms
+      .filter((alarm) => alarm.name.startsWith("apb-favorite-job:"))
+      .map((alarm) => chrome.alarms.clear(alarm.name).catch(() => false))
+  );
 
   await queueBackgroundStateMutation((state) => {
     state.pendingInjections = {};
@@ -2856,6 +2882,11 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 
   if (alarm.name === BADGE_CLEAR_ALARM) {
     void clearBadge();
+    return;
+  }
+
+  if (alarm.name.startsWith("apb-favorite-job:")) {
+    void handleFavoriteRunJobAlarm(alarm.name);
     return;
   }
 

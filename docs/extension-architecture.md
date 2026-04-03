@@ -280,6 +280,8 @@ Important local-storage keys:
 - `templateVariableCache`
 - `appSettings`
 - `broadcastCounter`
+- `composeDraftPrompt`
+- `lastSentPrompt`
 - `failedSelectors`
 - `onboardingCompleted`
 - `strategyStats`
@@ -291,9 +293,11 @@ Important session-storage keys:
 - `selectorAlerts`
 - `lastBroadcast`
 - `pendingUiToasts`
-- popup handoff intent state in `src/shared/runtime-state/popup-intent.ts`
+- `popupPromptIntent`
+- `popupFavoriteIntent`
+- `favoriteRunJobs`
 
-The background worker mirrors session keys in memory and updates them through a serialized mutation chain so overlapping completions and cancellations do not lose results.
+The background worker mirrors `pendingInjections`, `pendingBroadcasts`, and `selectorAlerts` in memory and updates them through a serialized mutation chain so overlapping completions and cancellations do not lose results. Favorite popup intents and favorite run jobs are stored through `src/shared/runtime-state/`.
 
 ### Prompt History Schema
 
@@ -325,6 +329,8 @@ Favorites are normalized in `src/shared/prompts/favorites-store.ts` and include:
 
 Chain favorites store ordered steps. Scheduled favorites use the same record as the single source of truth for `chrome.alarms`.
 
+Background favorite jobs also persist a normalized step list plus `FavoriteRunExecutionContextSnapshot`, which now includes a prepared `clipboard` field for popup-triggered runs.
+
 ### Structured Result Codes
 
 `siteResults` store structured `SiteInjectionResult` objects with codes such as:
@@ -343,11 +349,11 @@ Chain favorites store ordered steps. Scheduled favorites use the same record as 
 
 ### Broadcast Counter and Export Version
 
-`broadcastCounter` is stored in local storage and exported with prompt data JSON `version: 5`.
+`broadcastCounter` is stored in local storage and exported with prompt data JSON `version: 6`.
 
 - popup preview resolves `{{counter}}` as `current + 1`
 - the stored counter increments only when a broadcast queues at least one target site
-- import migrates older payloads through `v1 -> v2 -> v3 -> v4 -> v5`
+- import migrates older payloads through `v1 -> v2 -> v3 -> v4 -> v5 -> v6`
 - reset-data clears the counter together with the rest of the user data
 
 ### Strategy Stats and Pending Tab Tracking
@@ -370,10 +376,13 @@ Chain favorites store ordered steps. Scheduled favorites use the same record as 
 ### Favorite Run / Chain Run
 
 1. A favorite run can start from popup, options, quick palette, or an alarm.
-2. Background validates whether all required template inputs are resolvable.
-3. For single favorites, background queues one broadcast.
-4. For chain favorites, background queues one step at a time and waits for completion before moving on.
-5. If any step result is not `submitted`, the remaining chain steps are skipped.
+2. Popup-triggered runs prepare `url`, `title`, `selection`, and `clipboard` when possible and include that context in the runtime message.
+3. Background validates whether all required template inputs are resolvable and stores a normalized effective step list in the favorite job record.
+4. For single favorites, background queues one broadcast.
+5. For chain favorites, background queues one step at a time and waits for completion before moving on.
+6. Empty chain-step target overrides inherit the favorite default targets.
+7. If any step result is not `submitted`, the remaining chain steps are skipped.
+8. Favorite-run dedupe blocks only overlapping `queued/running` jobs for the same favorite.
 
 ### Scheduled Favorite Run
 
@@ -388,6 +397,7 @@ Chain favorites store ordered steps. Scheduled favorites use the same record as 
 2. Background injects `content/palette.js` when the page supports content scripts.
 3. The overlay asks the background for favorite search state.
 4. Entering a favorite either runs it directly or falls back to popup handoff when additional inputs are required.
+5. If the missing values are popup-resolvable only (for example clipboard or active-tab context), the popup retries automatically before showing the editor.
 
 ## Template Variable Flow
 
@@ -414,6 +424,8 @@ Scheduled favorites intentionally block variables that require live page context
 - `selection`
 - `clipboard`
 
+Popup-triggered favorite runs can resolve those same variables ahead of queueing, including `clipboardRead`-backed `{{clipboard}}`.
+
 ## Local QA
 
 The repository includes a fixture-based smoke runner at `scripts/qa-smoke.mjs` plus helpers in `scripts/qa-smoke/`. It validates the built bundles from `dist/` against local fixtures in `qa/fixtures/`.
@@ -429,8 +441,10 @@ Current smoke coverage includes:
 - custom service permission cleanup and alias-origin handling
 - built-in override repair for invalid click-submit imports
 - `broadcastCounter` export/import/reset semantics
-- import migration to export `version: 5`
+- import migration to export `version: 6`
 - favorite chain/schedule field normalization for legacy imports
+- favorite run job dedupe, effective chain-target fallback, and prepared clipboard context
+- failure history creation for pre-broadcast favorite job failures
 - quick palette filtering and execution
 - favorites search across title, tags, and folders
 - per-service override template resolution and retry prompt preservation
@@ -444,6 +458,7 @@ Current smoke coverage includes:
 - Localized strings live in `_locales/ko/messages.json` and `_locales/en/messages.json`.
 - `manifest.json` uses `__MSG_*__` keys for extension metadata and command descriptions.
 - Popup and options text resolve through shared i18n helpers and Chrome i18n APIs.
+- `npm run build` now validates locale key parity and placeholder parity across the checked locale files before bundling.
 
 ## Packaging and Release
 

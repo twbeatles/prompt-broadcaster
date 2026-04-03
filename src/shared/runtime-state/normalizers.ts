@@ -1,3 +1,4 @@
+import { ensureBroadcastTargetSnapshots } from "../broadcast/target-snapshots";
 import type {
   FailedSelectorRecord,
   LastBroadcastSummary,
@@ -86,6 +87,11 @@ export function normalizeLastBroadcast(value: unknown): LastBroadcastSummary | n
       .map((siteId) => safeText(siteId))
       .filter(Boolean),
     siteResults: normalizeSiteResultsRecord(value.siteResults),
+    targetSnapshots: ensureBroadcastTargetSnapshots(
+      value.targetSnapshots,
+      value.siteIds,
+      value.prompt
+    ),
     startedAt: normalizeIsoDate(value.startedAt),
     finishedAt: safeText(value.finishedAt) ? normalizeIsoDate(value.finishedAt) : "",
   };
