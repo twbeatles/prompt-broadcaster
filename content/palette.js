@@ -1,5 +1,52 @@
 "use strict";
 var AIPromptBroadcasterQuickPaletteBundle = (() => {
+  // src/shared/prompts/constants.ts
+  var LOCAL_STORAGE_KEYS = Object.freeze({
+    history: "promptHistory",
+    favorites: "promptFavorites",
+    templateVariableCache: "templateVariableCache",
+    settings: "appSettings",
+    broadcastCounter: "broadcastCounter"
+  });
+  var DEFAULT_HISTORY_LIMIT = 50;
+  var DEFAULT_WAIT_MS_MULTIPLIER = 1;
+  var DEFAULT_HISTORY_SORT = "latest";
+  var DEFAULT_FAVORITE_SORT = "recentUsed";
+  var DEFAULT_SETTINGS = Object.freeze({
+    historyLimit: DEFAULT_HISTORY_LIMIT,
+    autoClosePopup: false,
+    desktopNotifications: true,
+    reuseExistingTabs: true,
+    waitMsMultiplier: DEFAULT_WAIT_MS_MULTIPLIER,
+    historySort: DEFAULT_HISTORY_SORT,
+    favoriteSort: DEFAULT_FAVORITE_SORT
+  });
+
+  // src/shared/prompts/normalizers.ts
+  function safeText(value) {
+    return typeof value === "string" ? value : "";
+  }
+
+  // src/shared/prompts/search.ts
+  function normalizeSearchValue(value) {
+    return safeText(value).trim().toLowerCase();
+  }
+  function matchesFavoriteSearch(item, query) {
+    const normalizedQuery = normalizeSearchValue(query);
+    if (!normalizedQuery) {
+      return true;
+    }
+    const tags = Array.isArray(item?.tags) ? item.tags.map((tag) => safeText(tag).trim()).filter(Boolean) : [];
+    const values = [
+      item?.title,
+      item?.text,
+      item?.folder,
+      ...tags,
+      ...tags.map((tag) => `#${tag}`)
+    ];
+    return values.some((value) => normalizeSearchValue(value).includes(normalizedQuery));
+  }
+
   // src/content/palette/main.ts
   (() => {
     if (globalThis.__aiPromptBroadcasterQuickPaletteLoaded) {
@@ -31,16 +78,7 @@ var AIPromptBroadcasterQuickPaletteBundle = (() => {
       return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
     }
     function filterFavorites() {
-      const query = state.query.trim().toLowerCase();
-      state.filteredFavorites = query ? state.favorites.filter((favorite) => {
-        const haystack = [
-          favorite.title,
-          favorite.preview,
-          favorite.folder,
-          ...Array.isArray(favorite.tags) ? favorite.tags : []
-        ].join(" ").toLowerCase();
-        return haystack.includes(query);
-      }) : [...state.favorites];
+      state.filteredFavorites = state.query.trim() ? state.favorites.filter((favorite) => matchesFavoriteSearch(favorite, state.query)) : [...state.favorites];
       state.activeIndex = Math.min(
         state.filteredFavorites.length - 1,
         Math.max(0, state.activeIndex)

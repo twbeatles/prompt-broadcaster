@@ -63,6 +63,7 @@ export {
   updateFavoriteTitle,
 } from "./favorites-store";
 export {
+  applyHistoryVisibleLimit,
   appendPromptHistory,
   buildHistoryEntry,
   clearPromptHistory,
@@ -70,6 +71,7 @@ export {
   deletePromptHistoryItemsBeforeDate,
   deletePromptHistoryItemsByIds,
   getPromptHistory,
+  getStoredPromptHistory,
   setPromptHistory,
 } from "./history-store";
 export {

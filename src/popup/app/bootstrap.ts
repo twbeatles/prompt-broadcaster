@@ -489,8 +489,7 @@ function syncSiteTargetSelections() {
 }
 
 function updatePromptCounter() {
-  const limit = Number(promptInput.maxLength) || 2000;
-  promptCounter.textContent = t.promptCounter(promptInput.value.length, limit);
+  promptCounter.textContent = t.promptCounter(promptInput.value.length);
 }
 
 function autoResizePromptInput() {
@@ -3343,6 +3342,15 @@ async function init() {
     initToastRoot(toastHost);
     renderTabLabels();
     bindGlobalEvents();
+    const hashTab = ({
+      "#compose": "compose",
+      "#history": "history",
+      "#favorites": "favorites",
+      "#settings": "settings",
+    })[location.hash];
+    if (hashTab) {
+      state.activeTab = hashTab;
+    }
     switchTab(state.activeTab);
     syncToggleAllLabel();
     await loadStoredData();

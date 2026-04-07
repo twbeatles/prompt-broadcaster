@@ -685,10 +685,6 @@ async function setAppSettings(settings) {
   await writeLocal(LOCAL_STORAGE_KEYS.settings, normalized);
   return normalized;
 }
-async function getHistoryLimit() {
-  const settings = await getAppSettings();
-  return settings.historyLimit;
-}
 
 // src/shared/prompts/history-store.ts
 function asHistoryRecord(entry) {
@@ -734,27 +730,24 @@ function buildHistoryEntry(entry) {
     trigger: normalizeExecutionTrigger(source.trigger)
   };
 }
-async function getPromptHistory() {
-  const historyLimit = await getHistoryLimit();
+async function getStoredPromptHistory() {
   const rawHistory = await readLocal(LOCAL_STORAGE_KEYS.history, []);
   return sortByDateDesc(
     safeArray(rawHistory).map((item) => buildHistoryEntry(item))
-  ).slice(0, historyLimit);
+  );
 }
 async function setPromptHistory(historyItems) {
-  const historyLimit = await getHistoryLimit();
   const normalized = sortByDateDesc(
     safeArray(historyItems).map((item) => buildHistoryEntry(item))
-  ).slice(0, historyLimit);
+  );
   await writeLocal(LOCAL_STORAGE_KEYS.history, normalized);
   return normalized;
 }
 async function appendPromptHistory(entry) {
-  const historyLimit = await getHistoryLimit();
-  const history = await getPromptHistory();
+  const history = await getStoredPromptHistory();
   const normalized = buildHistoryEntry(entry);
   normalized.id = ensureUniqueNumericId(history, Number(normalized.id));
-  const nextHistory = sortByDateDesc([normalized, ...history]).slice(0, historyLimit);
+  const nextHistory = sortByDateDesc([normalized, ...history]);
   await setPromptHistory(nextHistory);
   return normalized;
 }
@@ -3483,6 +3476,7 @@ function createFavoriteWorkflow(deps) {
       favorites: favorites.map((favorite) => ({
         id: favorite.id,
         title: favorite.title || previewFavoriteText(favorite),
+        text: favorite.text ?? "",
         preview: previewFavoriteText(favorite),
         mode: favorite.mode === "chain" ? "chain" : "single",
         tags: Array.isArray(favorite.tags) ? favorite.tags : [],

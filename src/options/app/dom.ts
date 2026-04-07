@@ -32,10 +32,12 @@ export const optionsDom = {
   },
   services: {
     servicesGrid: document.getElementById("services-grid"),
+    servicesOpenManagerBtn: document.getElementById("services-open-manager"),
   },
   settings: {
     historyLimitSlider: document.getElementById("history-limit-slider"),
     historyLimitValue: document.getElementById("history-limit-value"),
+    historyLimitNote: document.getElementById("history-limit-note"),
     autoCloseToggle: document.getElementById("auto-close-toggle"),
     desktopNotificationToggle: document.getElementById("desktop-notification-toggle"),
     reuseTabsToggle: document.getElementById("reuse-tabs-toggle"),

@@ -115,6 +115,7 @@ Favorite runs use the same popup-side context preparation for `{{url}}`, `{{titl
 ### Import/export and counter semantics
 - JSON export now writes `version: 6` and import migrates older payloads through `v1 -> v2 -> v3 -> v4 -> v5 -> v6`.
 - `{{counter}}` preview uses `current + 1`, but the stored counter only increments when at least one target site is successfully queued.
+- `appSettings.historyLimit` is now a default visible history cap only. Lower values hide older rows in popup/options without deleting stored history, and export/import still operate on the full stored history.
 - History and last-broadcast records store structured `siteResults` (`SiteInjectionResult`) instead of plain status strings.
 - History and last-broadcast records also store `targetSnapshots` so retries and history replay reuse the original per-site resolved prompt and routing mode.
 - Favorites also keep `mode`, `steps`, `scheduleEnabled`, `scheduledAt`, `scheduleRepeat`, `usageCount`, and `lastUsedAt`, and `appSettings` includes `waitMsMultiplier`, `historySort`, and `favoriteSort`.
@@ -135,10 +136,11 @@ When `chrome.action.openPopup()` fails because Chrome has no active browser wind
 - History replay now opens a service-selection modal before resend and reuses stored per-site snapshots when present.
 - Popup and options both show a detailed import report after JSON import.
 - The favorite editor handles both single favorites and chain/scheduled favorites.
+- Single favorites can now edit prompt body text directly inside the favorite editor without switching back to the composer first.
 - Chain favorites stop immediately when any step result is not `submitted`.
 - Scheduled favorites are reconciled through `chrome.alarms`, and options exposes a dedicated `Schedules` section.
 - Popup composer restore is draft-first: unsent draft is restored before any last-sent prompt, and popup handoff is consumed after one use.
-- Quick palette uses `Alt+Shift+F` and falls back to popup handoff when additional inputs are required.
+- Quick palette uses `Alt+Shift+F`, matches popup favorite search across title/text/folder/tags/`#tag`, and falls back to popup handoff when additional inputs are required.
 
 ### Selector checker
 Runs on supported pages and reports `ok`, `selector_missing`, or `auth_page` back to the background worker.
@@ -180,7 +182,7 @@ Smoke coverage includes:
 - history replay snapshot fallback and resend routing safety
 - prompt draft/sent separation plus popup handoff consumption
 - favorite background job dedupe/runtime helpers
-- quick palette filtering and execution handoff
+- quick palette filtering parity with popup favorite search and execution handoff
 - favorite chain/schedule normalization for legacy imports
 - favorites search across title, text, tags, and folders
 - per-service override template resolution and retry prompt preservation

@@ -4,6 +4,7 @@ import { buildImportReportMarkup } from "../app/helpers";
 import { msg, t } from "../app/i18n";
 import { state } from "../app/state";
 import { optionsDom } from "../app/dom";
+import { closeModal, openModal, registerModalCloseHandler } from "./modal";
 
 const { pageStatus } = optionsDom.navigation;
 const {
@@ -44,19 +45,14 @@ export function openImportReportModal(summary) {
   importReportModalTitle.textContent = t.settings.importReportTitle;
   importReportModalDesc.textContent = t.settings.importReportDesc;
   importReportBody.innerHTML = buildImportReportMarkup(summary);
-  importReportModal.hidden = false;
+  openModal(importReportModal, importReportModalClose);
 }
 
 export function closeImportReportModal() {
   state.pendingImportSummary = null;
-  importReportModal.hidden = true;
+  closeModal(importReportModal);
 }
 
 export function bindStatusEvents() {
-  importReportModalClose.addEventListener("click", closeImportReportModal);
-  importReportModal.addEventListener("click", (event) => {
-    if (event.target === importReportModal) {
-      closeImportReportModal();
-    }
-  });
+  registerModalCloseHandler(importReportModal, closeImportReportModal);
 }

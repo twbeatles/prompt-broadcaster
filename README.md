@@ -105,7 +105,7 @@ npm run build
 9. 히스토리 재전송 시에는 서비스 선택 모달에서 일부 서비스만 골라 다시 보낼 수 있습니다.
 10. 즐겨찾기는 단일 프롬프트뿐 아니라 chain favorite과 예약 favorite으로 저장할 수 있습니다.
 11. `Alt+Shift+F` 빠른 팔레트로 현재 페이지 위에서 즐겨찾기를 검색해 바로 실행할 수 있습니다.
-12. 옵션 페이지 히스토리에서 각 전송 항목을 클릭하면 서비스별 성공/실패 결과를 한눈에 확인할 수 있습니다.
+12. 옵션 페이지 히스토리에서 **상세 보기**를 누르면 서비스별 성공/실패 결과를 한눈에 확인할 수 있습니다.
 
 GIF 자리표시자: `docs/assets/usage-demo.gif`
 
@@ -156,8 +156,8 @@ GIF 자리표시자: `docs/assets/usage-demo.gif`
 - 예약 실행은 `{{date}}`, `{{time}}`, `{{weekday}}`, `{{random}}`, `{{counter}}`만 자동 해석합니다. `{{url}}`, `{{title}}`, `{{selection}}`, `{{clipboard}}`가 필요하면 해당 예약 실행은 실패 히스토리를 남기고 건너뜁니다.
 - popup에서 실행되는 즐겨찾기는 `{{url}}`, `{{title}}`, `{{selection}}`, `{{clipboard}}`를 먼저 준비한 뒤 background job으로 넘깁니다. quick palette/options에서 popup fallback이 발생해도 popup이 자동으로 이어서 실행을 재시도합니다.
 - 즐겨찾기 실행은 background job으로 즉시 큐잉되고, 같은 즐겨찾기의 `queued/running` 실행만 dedupe합니다. 완료/실패 직후 재실행은 다시 허용됩니다. 팝업과 options `Schedules`에는 최근 job의 `queued/running/done/failed` 상태가 간단히 표시됩니다.
-- 옵션 페이지 `Schedules` 섹션에서 예약된 즐겨찾기만 모아 보고, 활성화 토글, `Run now`, `Open in popup`을 사용할 수 있습니다.
-- `Alt+Shift+F` 빠른 팔레트는 shadow root 오버레이로 동작하며, 즉시 해석 가능한 즐겨찾기는 바로 실행하고 추가 입력이 필요하면 popup으로 handoff합니다.
+- 옵션 페이지 `Schedules` 섹션에서 예약된 즐겨찾기만 모아 보고, 활성화 토글, `Run now`, `Edit in popup`을 사용할 수 있습니다.
+- `Alt+Shift+F` 빠른 팔레트는 shadow root 오버레이로 동작하며, popup 즐겨찾기 검색과 같은 로직으로 제목/본문/태그/폴더 및 `#tag` 검색을 지원합니다. 즉시 해석 가능한 즐겨찾기는 바로 실행하고 추가 입력이 필요하면 popup으로 handoff합니다.
 
 ### 팝업 단축키와 정렬
 - `Ctrl/Cmd+Enter`는 전송, `Ctrl/Cmd+Shift+Enter`는 현재 방송 취소입니다.
@@ -346,7 +346,7 @@ npm run build
 11. Favorites can be saved as single prompts, scheduled runs, or multi-step chains.
 12. Press `Alt+Shift+F` to open the quick palette on the current page and search favorites without opening the popup first.
 13. Replaying a history item opens a service picker so you can resend only a subset of the originally requested services.
-14. Open the options page and click any history entry to see a per-service result comparison (✅ / ❌ / ⏳) in the detail modal.
+14. Open the options page and use **Open details** on any history row to see a per-service result comparison (✅ / ❌ / ⏳) in the detail modal.
 
 If a keyboard shortcut or notification tries to reopen the UI while Chrome has no active browser window, the extension stores a one-shot popup prompt intent first and falls back to a standalone popup window when needed.
 
@@ -392,11 +392,11 @@ Template prompts support both user-defined variables and built-in system variabl
 - The favorite editor supports `Single` and `Chain` modes. Chain favorites can add steps, reorder them, apply per-step delays, and override the target services for each step.
 - Leaving a chain step target list empty makes that step inherit the favorite's default targets.
 - Chain execution is sequential. If any step finishes with a result other than `submitted`, the remaining steps are skipped.
-- Favorites can store one-time or repeating schedules (`daily`, `weekday`, `weekly`) and the options page exposes a dedicated `Schedules` section for toggle, `Run now`, and `Open in popup` actions.
+- Favorites can store one-time or repeating schedules (`daily`, `weekday`, `weekly`) and the options page exposes a dedicated `Schedules` section for toggle, `Run now`, and `Edit in popup` actions.
 - Scheduled execution auto-resolves only `{{date}}`, `{{time}}`, `{{weekday}}`, `{{random}}`, and `{{counter}}`. Favorites that need `{{url}}`, `{{title}}`, `{{selection}}`, or `{{clipboard}}` are skipped and recorded as failed schedule runs.
 - Popup-triggered favorite runs pre-resolve `{{url}}`, `{{title}}`, `{{selection}}`, and `{{clipboard}}` before handing off to the background worker. Popup fallbacks from quick palette or options retry automatically once that context is available.
 - Favorite runs now queue as background jobs immediately, dedupe only overlapping `queued/running` runs for the same favorite, and expose a light `queued/running/done/failed` status in popup and options.
-- The quick palette uses a shadow-root overlay on the current page. Fully resolvable favorites run immediately; favorites that still need popup input fall back through a popup handoff intent.
+- The quick palette uses a shadow-root overlay on the current page. Its search behavior now matches popup favorite search across title, body text, folder, tags, and `#tag` queries. Fully resolvable favorites run immediately; favorites that still need popup input fall back through a popup handoff intent.
 
 ### Popup Shortcuts and Sorting
 - `Ctrl/Cmd+Enter` sends the current prompt, and `Ctrl/Cmd+Shift+Enter` cancels the active broadcast.
@@ -422,6 +422,7 @@ Each stored service result now uses a structured code rather than a free-form st
 - History entries now store `requestedSiteIds`, `submittedSiteIds`, and `failedSiteIds`.
 - History entries also store `targetSnapshots`, which capture the original per-site resolved prompt and routing mode used for replay.
 - The legacy `sentTo` field is still exported for backward compatibility and mirrors the submitted service ids.
+- `appSettings.historyLimit` is a non-destructive default visible cap for popup/options history lists. Lowering it does not delete stored history, and exports still include the full stored history.
 - Reloading a history entry or creating a favorite from it uses `targetSnapshots` first, then falls back to requested services for legacy data, so partially failed broadcasts can be retried with the original target list and prompt text intact.
 - Favorite records also track `mode`, `steps`, `scheduleEnabled`, `scheduledAt`, `scheduleRepeat`, `usageCount`, and `lastUsedAt`.
 - History rows can carry `originFavoriteId`, `chainRunId`, `chainStepIndex`, `chainStepCount`, and `trigger` so chain runs and scheduled executions remain traceable.
@@ -530,7 +531,7 @@ The smoke script verifies:
 - favorite background job dedupe helpers and runtime-state cleanup
 - quick palette filtering and execution handoff
 - favorite chain/schedule field normalization for legacy imports
-- favorites search across title, tags, and folders
+- favorites search across title, text, tags, folders, and `#tag`
 - per-service override template resolution and retry prompt preservation
 - CSV export escaping for spreadsheet formula-leading cells
 - pending broadcast state accumulation across sequential completions with structured `siteResults`

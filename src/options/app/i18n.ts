@@ -65,6 +65,7 @@ export const t = {
     tablePrompt: msg("options_table_prompt"),
     tableServices: msg("options_table_services"),
     tableStatus: msg("options_table_status"),
+    tableActions: msg("options_table_actions") || "Actions",
     allServices: msg("options_filter_all_services"),
     pageInfo: (current, total) => msg("options_page_info", [String(current), String(total)]),
     exportSuccess: msg("options_settings_export_success"),
@@ -77,6 +78,7 @@ export const t = {
     deleteFilteredConfirm: (count) => msg("options_history_delete_filtered_confirm", [String(count)]) || `Delete ${count} filtered history item(s)?`,
     deleteOlderConfirm: (days) => msg("options_history_delete_older_confirm", [String(days)]) || `Delete items older than ${days} days?`,
     deleteSuccess: msg("options_history_delete_success") || "History deleted.",
+    openDetails: msg("options_history_open_details") || "Open details",
   },
   services: {
     inputType: msg("options_service_input_type"),
@@ -86,6 +88,7 @@ export const t = {
     lastUsed: msg("options_service_last_used"),
     defaultColor: msg("options_service_default_color"),
     none: msg("options_value_none"),
+    openManagerFailed: msg("options_services_open_failed") || "Failed to open the popup manager.",
   },
   settings: {
     historyLimitValue: (count) => msg("options_settings_history_limit_value", [String(count)]),
@@ -151,7 +154,7 @@ export const t = {
     enabled: msg("options_schedules_enabled") || "Enabled",
     lastRun: msg("options_schedules_last_run") || "Last run",
     runNow: msg("options_schedules_run_now") || "Run now",
-    openInPopup: msg("options_schedules_open_in_popup") || "Open in popup",
+    openInPopup: msg("options_schedules_open_in_popup") || "Edit in popup",
     runQueued: msg("options_schedules_run_queued") || "Favorite run queued.",
     popupFallback: msg("options_schedules_popup_fallback") || "Popup opened to finish required inputs.",
     openFailed: msg("options_schedules_open_failed") || "Failed to open the popup editor.",

@@ -14,6 +14,7 @@ import { renderServiceFilterOptions } from "../core/service-filter";
 import { setStatus, showAppToast } from "../core/status";
 
 const { servicesGrid } = optionsDom.services;
+const { servicesOpenManagerBtn } = optionsDom.services;
 
 export function renderServicesSection() {
   servicesGrid.innerHTML = state.runtimeSites.map((site, index) => {
@@ -64,6 +65,26 @@ export async function saveSiteWaitMs(siteId, waitMs) {
 }
 
 export function bindServiceEvents() {
+  servicesOpenManagerBtn.addEventListener("click", () => {
+    const popupUrl = chrome.runtime.getURL("popup/popup.html#settings");
+    void chrome.windows.create({
+      url: popupUrl,
+      type: "popup",
+      width: 480,
+      height: 760,
+      focused: true,
+    }).catch(async (error) => {
+      console.error("[AI Prompt Broadcaster] Failed to open popup manager window.", error);
+      try {
+        await chrome.tabs.create({ url: popupUrl });
+      } catch (fallbackError) {
+        console.error("[AI Prompt Broadcaster] Failed to open popup manager tab.", fallbackError);
+        setStatus(t.services.openManagerFailed, "error");
+        showAppToast(t.services.openManagerFailed, "error", 3000);
+      }
+    });
+  });
+
   servicesGrid.addEventListener("input", (event) => {
     const slider = event.target.closest("[data-waitms-site-id]");
     if (!slider) {

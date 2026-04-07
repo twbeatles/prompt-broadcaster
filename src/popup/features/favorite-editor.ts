@@ -21,6 +21,9 @@ const {
   favoriteTitleInput,
   favoriteModeLabel,
   favoriteModeSelect,
+  favoritePromptWrap,
+  favoritePromptLabel,
+  favoritePromptInput,
   favoriteTargetsLabel,
   favoriteTargetsList,
   favoriteTagsLabel,
@@ -148,6 +151,17 @@ export function createFavoriteEditorFeature(deps) {
     if (variables.length === 0) {
       modalState.saveDefaults = false;
     }
+  }
+
+  function syncFavoriteVariableUi(modalState) {
+    syncFavoriteEditorVariables(modalState);
+    favoriteSaveDefaults.checked = modalState.saveDefaults;
+    favoriteSaveDefaultsRow.hidden = modalState.variables.length === 0;
+    renderFavoriteDefaultFields();
+  }
+
+  function getFirstNonEmptyStepText(steps = []) {
+    return steps.find((step) => step?.text?.trim())?.text ?? "";
   }
 
   function buildFavoriteTargetChecklist(selectedSiteIds = [], { stepId = "" } = {}) {
@@ -283,6 +297,7 @@ export function createFavoriteEditorFeature(deps) {
     favoriteTitleLabel.textContent = t.favoriteTitleLabel;
     favoriteModeLabel.textContent = t.favoriteModeLabel;
     favoriteTargetsLabel.textContent = t.favoriteTargetsLabel;
+    favoritePromptLabel.textContent = t.favoritePromptLabel;
     favoriteTagsLabel.textContent = t.favoriteTagsLabel;
     favoriteFolderLabel.textContent = t.favoriteFolderLabel;
     favoritePinnedLabel.textContent = t.favoritePinnedLabel;
@@ -300,6 +315,8 @@ export function createFavoriteEditorFeature(deps) {
       `<option value="chain">${escapeHtml(t.favoriteModeChain)}</option>`,
     ].join("");
     favoriteModeSelect.value = modalState.mode;
+    favoritePromptWrap.hidden = modalState.mode !== "single";
+    favoritePromptInput.value = modalState.prompt;
     favoriteTagsInput.value = modalState.tags.join(", ");
     favoriteFolderInput.value = modalState.folder;
     favoritePinnedInput.checked = Boolean(modalState.pinned);
@@ -328,7 +345,9 @@ export function createFavoriteEditorFeature(deps) {
     const mode = item?.mode === "chain" ? "chain" : "single";
     const steps = mode === "chain" && Array.isArray(item?.steps) && item.steps.length > 0
       ? item.steps.map((step) => createFavoriteEditorStep(step.text, step.targetSiteIds, step.delayMs, step.id))
-      : [createFavoriteEditorStep(item?.text ?? "", mode === "chain" ? [] : item?.sentTo ?? [], 0)];
+      : mode === "chain"
+        ? [createFavoriteEditorStep(item?.text ?? "", [], 0)]
+        : [];
     const stateValue = {
       favoriteId: item?.id ?? null,
       prompt: item?.text ?? "",
@@ -371,6 +390,7 @@ export function createFavoriteEditorFeature(deps) {
     favoriteSaveDefaultsRow.hidden = true;
     favoriteDefaultFieldsWrap.hidden = true;
     favoriteDefaultFields.innerHTML = "";
+    favoritePromptInput.value = "";
   }
 
   function dismissFavoriteModal(event) {
@@ -437,6 +457,9 @@ export function createFavoriteEditorFeature(deps) {
 
     modalState.title = favoriteTitleInput.value.trim();
     modalState.mode = favoriteModeSelect.value === "chain" ? "chain" : "single";
+    if (modalState.mode === "single") {
+      modalState.prompt = favoritePromptInput.value;
+    }
     modalState.tags = favoriteTagsInput.value
       .split(",")
       .map((entry) => entry.trim())
@@ -466,9 +489,6 @@ export function createFavoriteEditorFeature(deps) {
         return null;
       }
     } else {
-      modalState.prompt = modalState.steps[0]?.text?.trim()
-        ? modalState.steps[0].text
-        : modalState.prompt;
       if (!modalState.prompt.trim()) {
         setFavoriteModalError(t.warnEmpty);
         return null;
@@ -621,12 +641,15 @@ export function createFavoriteEditorFeature(deps) {
       }
 
       if (nextMode === "chain") {
-        const seedText = modalState.prompt || promptInput.value || "";
-        modalState.steps = [
-          createFavoriteEditorStep(seedText, [], 0),
-        ];
-      } else if (modalState.steps[0]?.text?.trim()) {
-        modalState.prompt = modalState.steps[0].text;
+        const seedText = favoritePromptInput.value || modalState.prompt || promptInput.value || "";
+        modalState.prompt = seedText;
+        if (modalState.steps.length === 0) {
+          modalState.steps = [createFavoriteEditorStep(seedText, [], 0)];
+        } else if (!modalState.steps.some((step) => step.text.trim())) {
+          modalState.steps = [createFavoriteEditorStep(seedText, [], 0)];
+        }
+      } else {
+        modalState.prompt = getFirstNonEmptyStepText(modalState.steps) || favoritePromptInput.value || modalState.prompt;
       }
 
       modalState.mode = nextMode;
@@ -660,6 +683,16 @@ export function createFavoriteEditorFeature(deps) {
       }
 
       state.pendingFavoriteSave.scheduleRepeat = favoriteScheduleRepeatSelect.value || "none";
+    });
+    favoritePromptInput.addEventListener("input", () => {
+      const modalState = state.pendingFavoriteSave;
+      if (!modalState) {
+        return;
+      }
+
+      modalState.prompt = favoritePromptInput.value;
+      syncFavoriteVariableUi(modalState);
+      setFavoriteModalError("");
     });
     favoriteTargetsList.addEventListener("change", (event) => {
       const target = event.target.closest("[data-favorite-target][data-site-id]");
@@ -700,8 +733,7 @@ export function createFavoriteEditorFeature(deps) {
         const step = modalState.steps.find((entry) => entry.id === textInput.dataset.favoriteStepText);
         if (step) {
           step.text = textInput.value;
-          syncFavoriteEditorVariables(modalState);
-          renderFavoriteDefaultFields();
+          syncFavoriteVariableUi(modalState);
         }
         return;
       }

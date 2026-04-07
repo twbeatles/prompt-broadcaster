@@ -1,9 +1,7 @@
 // @ts-nocheck
 import {
   exportPromptData,
-  getPromptHistory,
   importPromptData,
-  setPromptHistory,
   updateAppSettings,
 } from "../../shared/prompts";
 import { optionsDom } from "../app/dom";
@@ -18,6 +16,7 @@ import { openImportReportModal, setStatus, showAppToast, showConfirmToast } from
 const {
   historyLimitSlider,
   historyLimitValue,
+  historyLimitNote,
   autoCloseToggle,
   desktopNotificationToggle,
   reuseTabsToggle,
@@ -45,6 +44,7 @@ const {
 export function applySettingsToControls() {
   historyLimitSlider.value = String(state.settings.historyLimit);
   historyLimitValue.textContent = t.settings.historyLimitValue(state.settings.historyLimit);
+  historyLimitNote.textContent = chrome.i18n.getMessage("options_settings_history_limit_note") || historyLimitNote.textContent;
   autoCloseToggle.checked = state.settings.autoClosePopup;
   desktopNotificationToggle.checked = state.settings.desktopNotifications;
   reuseTabsToggle.checked = state.settings.reuseExistingTabs;
@@ -98,11 +98,7 @@ async function saveSettings(partialSettings) {
   state.settings = nextSettings;
 
   if (typeof partialSettings.historyLimit !== "undefined") {
-    await setPromptHistory(state.history);
-    state.history = await getPromptHistory();
-    renderDashboard();
     renderHistoryTable();
-    renderServicesSection();
   }
 
   applySettingsToControls();

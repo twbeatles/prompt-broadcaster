@@ -891,23 +891,30 @@ function buildHistoryEntry(entry) {
     trigger: normalizeExecutionTrigger(source.trigger)
   };
 }
-async function getPromptHistory() {
-  const historyLimit = await getHistoryLimit();
+async function getStoredPromptHistory() {
   const rawHistory = await readLocal(LOCAL_STORAGE_KEYS.history, []);
   return sortByDateDesc(
     safeArray(rawHistory).map((item) => buildHistoryEntry(item))
-  ).slice(0, historyLimit);
+  );
+}
+function applyHistoryVisibleLimit(historyItems, historyLimit) {
+  const normalizedLimit = Number.isFinite(Number(historyLimit)) ? Math.max(1, Math.round(Number(historyLimit))) : 50;
+  return safeArray(historyItems).slice(0, normalizedLimit);
+}
+async function getPromptHistory() {
+  const historyLimit = await getHistoryLimit();
+  const history = await getStoredPromptHistory();
+  return applyHistoryVisibleLimit(history, historyLimit);
 }
 async function setPromptHistory(historyItems) {
-  const historyLimit = await getHistoryLimit();
   const normalized = sortByDateDesc(
     safeArray(historyItems).map((item) => buildHistoryEntry(item))
-  ).slice(0, historyLimit);
+  );
   await writeLocal(LOCAL_STORAGE_KEYS.history, normalized);
   return normalized;
 }
 async function deletePromptHistoryItem(historyId) {
-  const history = await getPromptHistory();
+  const history = await getStoredPromptHistory();
   const nextHistory = history.filter((item) => Number(item.id) !== Number(historyId));
   await setPromptHistory(nextHistory);
   return nextHistory;
@@ -2009,7 +2016,7 @@ async function exportPromptData() {
     builtInSiteOverrides
   ] = await Promise.all([
     getBroadcastCounter(),
-    getPromptHistory(),
+    getStoredPromptHistory(),
     getPromptFavorites(),
     getTemplateVariableCache(),
     getAppSettings(),
@@ -2044,9 +2051,8 @@ async function importPromptData(jsonString) {
   const importedCustomSites = safeArray(migrated?.customSites);
   const importedBuiltInSiteStates = safeObject(migrated?.builtInSiteStates);
   const importedBuiltInSiteOverrides = safeObject(migrated?.builtInSiteOverrides);
-  const historyLimit = importedSettings.historyLimit;
   const normalizedHistory = [];
-  for (const item of sortByDateDesc(history).slice(0, historyLimit)) {
+  for (const item of sortByDateDesc(history)) {
     normalizedHistory.push({
       ...item,
       id: ensureUniqueNumericId(normalizedHistory, Number(item.id))
@@ -2819,6 +2825,7 @@ var t = {
   favoriteModeLabel: msg("popup_favorite_mode_label") || "Favorite type",
   favoriteModeSingle: msg("popup_favorite_mode_single") || "Single prompt",
   favoriteModeChain: msg("popup_favorite_mode_chain") || "Chain",
+  favoritePromptLabel: msg("popup_favorite_prompt_label") || "Prompt",
   favoriteTargetsLabel: msg("popup_favorite_targets_label") || "Default target services",
   favoriteTagsLabel: msg("popup_favorite_tags_label") || "Tags",
   favoriteFolderLabel: msg("popup_favorite_folder_label") || "Folder",
@@ -2853,7 +2860,7 @@ var t = {
   favoriteStepCount: (count) => msg("popup_favorite_step_count", [String(count)]) || `${count} steps`,
   favoriteEdit: msg("popup_favorite_edit") || "Edit",
   clearPrompt: msg("popup_clear_prompt") || "Clear",
-  promptCounter: (current, limit) => `${current} / ${limit}`,
+  promptCounter: (current) => isKorean ? `${current}자` : `${current} chars`,
   serviceManagementTitle: msg("popup_service_management_title") || "Service Management",
   serviceManagementDesc: msg("popup_service_management_desc") || "Add, edit, enable, or disable AI targets without editing code.",
   addService: msg("popup_service_add") || "Add Service",
@@ -3232,6 +3239,9 @@ var popupDom = {
     favoriteTitleInput: document.getElementById("favorite-title-input"),
     favoriteModeLabel: document.getElementById("favorite-mode-label"),
     favoriteModeSelect: document.getElementById("favorite-mode-select"),
+    favoritePromptWrap: document.getElementById("favorite-prompt-wrap"),
+    favoritePromptLabel: document.getElementById("favorite-prompt-label"),
+    favoritePromptInput: document.getElementById("favorite-prompt-input"),
     favoriteTargetsLabel: document.getElementById("favorite-targets-label"),
     favoriteTargetsList: document.getElementById("favorite-targets-list"),
     favoriteTagsLabel: document.getElementById("favorite-tags-label"),
@@ -3560,6 +3570,9 @@ var {
   favoriteTitleInput,
   favoriteModeLabel,
   favoriteModeSelect,
+  favoritePromptWrap,
+  favoritePromptLabel,
+  favoritePromptInput,
   favoriteTargetsLabel,
   favoriteTargetsList,
   favoriteTagsLabel,
@@ -3663,6 +3676,15 @@ function createFavoriteEditorFeature(deps) {
     if (variables.length === 0) {
       modalState.saveDefaults = false;
     }
+  }
+  function syncFavoriteVariableUi(modalState) {
+    syncFavoriteEditorVariables(modalState);
+    favoriteSaveDefaults.checked = modalState.saveDefaults;
+    favoriteSaveDefaultsRow.hidden = modalState.variables.length === 0;
+    renderFavoriteDefaultFields();
+  }
+  function getFirstNonEmptyStepText(steps = []) {
+    return steps.find((step) => step?.text?.trim())?.text ?? "";
   }
   function buildFavoriteTargetChecklist(selectedSiteIds = [], { stepId = "" } = {}) {
     const selected = new Set(normalizeSiteIdList2(selectedSiteIds));
@@ -3772,6 +3794,7 @@ function createFavoriteEditorFeature(deps) {
     favoriteTitleLabel.textContent = t.favoriteTitleLabel;
     favoriteModeLabel.textContent = t.favoriteModeLabel;
     favoriteTargetsLabel.textContent = t.favoriteTargetsLabel;
+    favoritePromptLabel.textContent = t.favoritePromptLabel;
     favoriteTagsLabel.textContent = t.favoriteTagsLabel;
     favoriteFolderLabel.textContent = t.favoriteFolderLabel;
     favoritePinnedLabel.textContent = t.favoritePinnedLabel;
@@ -3789,6 +3812,8 @@ function createFavoriteEditorFeature(deps) {
       `<option value="chain">${escapeHtml(t.favoriteModeChain)}</option>`
     ].join("");
     favoriteModeSelect.value = modalState.mode;
+    favoritePromptWrap.hidden = modalState.mode !== "single";
+    favoritePromptInput.value = modalState.prompt;
     favoriteTagsInput.value = modalState.tags.join(", ");
     favoriteFolderInput.value = modalState.folder;
     favoritePinnedInput.checked = Boolean(modalState.pinned);
@@ -3814,7 +3839,7 @@ function createFavoriteEditorFeature(deps) {
       item?.templateDefaults ?? {}
     );
     const mode = item?.mode === "chain" ? "chain" : "single";
-    const steps = mode === "chain" && Array.isArray(item?.steps) && item.steps.length > 0 ? item.steps.map((step) => createFavoriteEditorStep(step.text, step.targetSiteIds, step.delayMs, step.id)) : [createFavoriteEditorStep(item?.text ?? "", mode === "chain" ? [] : item?.sentTo ?? [], 0)];
+    const steps = mode === "chain" && Array.isArray(item?.steps) && item.steps.length > 0 ? item.steps.map((step) => createFavoriteEditorStep(step.text, step.targetSiteIds, step.delayMs, step.id)) : mode === "chain" ? [createFavoriteEditorStep(item?.text ?? "", [], 0)] : [];
     const stateValue = {
       favoriteId: item?.id ?? null,
       prompt: item?.text ?? "",
@@ -3853,6 +3878,7 @@ function createFavoriteEditorFeature(deps) {
     favoriteSaveDefaultsRow.hidden = true;
     favoriteDefaultFieldsWrap.hidden = true;
     favoriteDefaultFields.innerHTML = "";
+    favoritePromptInput.value = "";
   }
   function dismissFavoriteModal2(event) {
     event?.preventDefault?.();
@@ -3909,6 +3935,9 @@ function createFavoriteEditorFeature(deps) {
     }
     modalState.title = favoriteTitleInput.value.trim();
     modalState.mode = favoriteModeSelect.value === "chain" ? "chain" : "single";
+    if (modalState.mode === "single") {
+      modalState.prompt = favoritePromptInput.value;
+    }
     modalState.tags = favoriteTagsInput.value.split(",").map((entry) => entry.trim()).filter(Boolean);
     modalState.folder = favoriteFolderInput.value.trim();
     modalState.pinned = favoritePinnedInput.checked;
@@ -3928,7 +3957,6 @@ function createFavoriteEditorFeature(deps) {
         return null;
       }
     } else {
-      modalState.prompt = modalState.steps[0]?.text?.trim() ? modalState.steps[0].text : modalState.prompt;
       if (!modalState.prompt.trim()) {
         setFavoriteModalError2(t.warnEmpty);
         return null;
@@ -4055,12 +4083,15 @@ function createFavoriteEditorFeature(deps) {
         return;
       }
       if (nextMode === "chain") {
-        const seedText = modalState.prompt || promptInput.value || "";
-        modalState.steps = [
-          createFavoriteEditorStep(seedText, [], 0)
-        ];
-      } else if (modalState.steps[0]?.text?.trim()) {
-        modalState.prompt = modalState.steps[0].text;
+        const seedText = favoritePromptInput.value || modalState.prompt || promptInput.value || "";
+        modalState.prompt = seedText;
+        if (modalState.steps.length === 0) {
+          modalState.steps = [createFavoriteEditorStep(seedText, [], 0)];
+        } else if (!modalState.steps.some((step) => step.text.trim())) {
+          modalState.steps = [createFavoriteEditorStep(seedText, [], 0)];
+        }
+      } else {
+        modalState.prompt = getFirstNonEmptyStepText(modalState.steps) || favoritePromptInput.value || modalState.prompt;
       }
       modalState.mode = nextMode;
       setFavoriteModalError2("");
@@ -4090,6 +4121,15 @@ function createFavoriteEditorFeature(deps) {
         return;
       }
       state.pendingFavoriteSave.scheduleRepeat = favoriteScheduleRepeatSelect.value || "none";
+    });
+    favoritePromptInput.addEventListener("input", () => {
+      const modalState = state.pendingFavoriteSave;
+      if (!modalState) {
+        return;
+      }
+      modalState.prompt = favoritePromptInput.value;
+      syncFavoriteVariableUi(modalState);
+      setFavoriteModalError2("");
     });
     favoriteTargetsList.addEventListener("change", (event) => {
       const target = event.target.closest("[data-favorite-target][data-site-id]");
@@ -4127,8 +4167,7 @@ function createFavoriteEditorFeature(deps) {
         const step = modalState.steps.find((entry) => entry.id === textInput.dataset.favoriteStepText);
         if (step) {
           step.text = textInput.value;
-          syncFavoriteEditorVariables(modalState);
-          renderFavoriteDefaultFields();
+          syncFavoriteVariableUi(modalState);
         }
         return;
       }
@@ -4560,8 +4599,7 @@ function syncSiteTargetSelections() {
   state.siteTargetSelections = nextSelections;
 }
 function updatePromptCounter() {
-  const limit = Number(promptInput2.maxLength) || 2e3;
-  promptCounter.textContent = t.promptCounter(promptInput2.value.length, limit);
+  promptCounter.textContent = t.promptCounter(promptInput2.value.length);
 }
 function autoResizePromptInput() {
   promptInput2.style.height = "auto";
@@ -6768,6 +6806,15 @@ async function init() {
     initToastRoot(toastHost);
     renderTabLabels();
     bindGlobalEvents();
+    const hashTab = {
+      "#compose": "compose",
+      "#history": "history",
+      "#favorites": "favorites",
+      "#settings": "settings"
+    }[location.hash];
+    if (hashTab) {
+      state.activeTab = hashTab;
+    }
     switchTab(state.activeTab);
     syncToggleAllLabel();
     await loadStoredData();

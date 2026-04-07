@@ -1084,6 +1084,7 @@ export function createFavoriteWorkflow(deps: FavoriteWorkflowDeps) {
       favorites: favorites.map((favorite) => ({
         id: favorite.id,
         title: favorite.title || previewFavoriteText(favorite),
+        text: favorite.text ?? "",
         preview: previewFavoriteText(favorite),
         mode: favorite.mode === "chain" ? "chain" : "single",
         tags: Array.isArray(favorite.tags) ? favorite.tags : [],

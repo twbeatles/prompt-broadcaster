@@ -351,6 +351,9 @@
   "popup_favorite_title_label": {
     "message": "Favorite title"
   },
+  "popup_favorite_prompt_label": {
+    "message": "Prompt"
+  },
   "popup_favorite_save_defaults_label": {
     "message": "Save template defaults with this favorite"
   },
@@ -752,7 +755,13 @@
     "message": "Service Management"
   },
   "options_services_desc": {
-    "message": "Inspect supported services, usage volume, and success rate."
+    "message": "Inspect service health and metrics here, and use the popup manager for detailed editing."
+  },
+  "options_services_open_popup": {
+    "message": "Open popup manager"
+  },
+  "options_services_open_failed": {
+    "message": "Failed to open the popup manager."
   },
   "options_settings_title": {
     "message": "Settings"
@@ -823,6 +832,9 @@
   "options_table_status": {
     "message": "Status"
   },
+  "options_table_actions": {
+    "message": "Actions"
+  },
   "options_filter_all_services": {
     "message": "All services"
   },
@@ -865,15 +877,21 @@
     "message": "None"
   },
   "options_settings_history_limit": {
-    "message": "History retention"
+    "message": "Default visible history count"
   },
   "options_settings_history_limit_value": {
-    "message": "Keep up to $COUNT$ items",
+    "message": "Show up to $COUNT$ items in lists",
     "placeholders": {
       "count": {
         "content": "$1"
       }
     }
+  },
+  "options_settings_history_limit_note": {
+    "message": "This only changes the default list cap. Existing history is not deleted."
+  },
+  "options_history_open_details": {
+    "message": "Open details"
   },
   "options_settings_auto_close": {
     "message": "Auto-close popup after send"
@@ -954,7 +972,7 @@
     "message": "Schedules"
   },
   "options_schedules_desc": {
-    "message": "Manage scheduled favorites and run them manually."
+    "message": "Review schedule status, run items manually, and continue detailed editing in the popup."
   },
   "options_schedules_empty": {
     "message": "No scheduled favorites yet."
@@ -975,7 +993,7 @@
     "message": "Run now"
   },
   "options_schedules_open_in_popup": {
-    "message": "Open in popup"
+    "message": "Edit in popup"
   },
   "options_schedules_run_queued": {
     "message": "Favorite run queued."

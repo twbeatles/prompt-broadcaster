@@ -4,6 +4,7 @@ import { applyI18n, isKorean, t } from "./i18n";
 import { state } from "./state";
 import { optionsDom } from "./dom";
 import { loadData } from "../core/data";
+import { bindModalKeyboardEvents } from "../core/modal";
 import { bindNavigationEvents, switchSection } from "../core/navigation";
 import { bindStatusEvents, setStatus, showAppToast } from "../core/status";
 import { bindHistoryEvents } from "../features/history";
@@ -14,6 +15,7 @@ import { bindSettingsEvents, renderShortcutList } from "../features/settings";
 const { toastHost } = optionsDom;
 
 function bindEvents() {
+  bindModalKeyboardEvents();
   bindNavigationEvents();
   bindHistoryEvents();
   bindScheduleEvents({ reloadData: loadData });

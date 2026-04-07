@@ -1,10 +1,12 @@
 // @ts-nocheck
 import {
+  applyHistoryVisibleLimit,
   deletePromptHistoryItemsBeforeDate,
   deletePromptHistoryItemsByIds,
-  getPromptHistory,
+  getStoredPromptHistory,
   normalizeResultCode,
 } from "../../shared/prompts";
+import { getLocalDateKey } from "../../shared/date-utils";
 import { buildCsvLine } from "../../shared/export/csv";
 import { escapeHTML } from "../../shared/security";
 import { optionsDom } from "../app/dom";
@@ -22,6 +24,7 @@ import { renderDashboard } from "./dashboard";
 import { renderSchedulesSection } from "./schedules";
 import { renderServicesSection } from "./services";
 import { setStatus, showAppToast, showConfirmToast } from "../core/status";
+import { closeModal, openModal, registerModalCloseHandler } from "../core/modal";
 
 const PAGE_SIZE = 10;
 const {
@@ -53,15 +56,19 @@ export function filteredHistory() {
     const requestedServices = getRequestedServices(entry);
     const matchesService =
       state.filters.service === "all" || requestedServices.includes(state.filters.service);
-    const dateKey = entry.createdAt.slice(0, 10);
+    const dateKey = getLocalDateKey(entry.createdAt);
     const matchesFrom = !state.filters.dateFrom || dateKey >= state.filters.dateFrom;
     const matchesTo = !state.filters.dateTo || dateKey <= state.filters.dateTo;
     return matchesService && matchesFrom && matchesTo;
   });
 }
 
+function getVisibleFilteredHistory() {
+  return applyHistoryVisibleLimit(filteredHistory(), state.settings.historyLimit);
+}
+
 export function syncHistorySelectionState() {
-  const availableIds = new Set(state.history.map((entry) => Number(entry.id)));
+  const availableIds = new Set(getVisibleFilteredHistory().map((entry) => Number(entry.id)));
   state.selectedHistoryIds = new Set(
     [...state.selectedHistoryIds].filter((historyId) => availableIds.has(Number(historyId))),
   );
@@ -69,11 +76,12 @@ export function syncHistorySelectionState() {
 
 export function renderHistoryTable() {
   syncHistorySelectionState();
-  const history = filteredHistory();
-  const pageCount = Math.max(1, Math.ceil(history.length / PAGE_SIZE));
-  state.historyPage = Math.min(state.historyPage, pageCount);
+  const filteredEntries = filteredHistory();
+  const visibleHistory = getVisibleFilteredHistory();
+  const pageCount = Math.max(1, Math.ceil(visibleHistory.length / PAGE_SIZE));
+  state.historyPage = Math.max(1, Math.min(state.historyPage, pageCount));
   const startIndex = (state.historyPage - 1) * PAGE_SIZE;
-  const currentPageRows = history.slice(startIndex, startIndex + PAGE_SIZE);
+  const currentPageRows = visibleHistory.slice(startIndex, startIndex + PAGE_SIZE);
   const currentPageIds = currentPageRows.map((entry) => Number(entry.id));
   const allCurrentPageSelected =
     currentPageIds.length > 0 &&
@@ -91,6 +99,7 @@ export function renderHistoryTable() {
             <th>${escapeHTML(t.history.tablePrompt)}</th>
             <th>${escapeHTML(t.history.tableServices)}</th>
             <th>${escapeHTML(t.history.tableStatus)}</th>
+            <th>${escapeHTML(t.history.tableActions)}</th>
           </tr>
         </thead>
         <tbody>
@@ -98,12 +107,13 @@ export function renderHistoryTable() {
             .map((entry) => {
               const status = getStatusInfo(entry.status);
               return `
-                <tr class="table-row-button" data-history-id="${entry.id}">
-                  <td><input type="checkbox" data-history-select="${entry.id}" ${state.selectedHistoryIds.has(Number(entry.id)) ? "checked" : ""} /></td>
+                <tr data-history-row="${entry.id}">
+                  <td><input type="checkbox" aria-label="${escapeHTML(t.history.tableSelect)}" data-history-select="${entry.id}" ${state.selectedHistoryIds.has(Number(entry.id)) ? "checked" : ""} /></td>
                   <td>${escapeHTML(formatDateTime(entry.createdAt))}</td>
                   <td>${escapeHTML(previewText(entry.text))}</td>
                   <td><div class="service-badges">${getRequestedServices(entry).map((siteId) => buildBadgeMarkup(siteId, state.runtimeSites)).join("")}</div></td>
                   <td><span class="status-pill ${status.className}">${escapeHTML(status.label)}</span></td>
+                  <td><button class="btn ghost history-detail-button" type="button" data-open-history-id="${entry.id}">${escapeHTML(t.history.openDetails)}</button></td>
                 </tr>
               `;
             })
@@ -118,7 +128,7 @@ export function renderHistoryTable() {
   historyNextPage.disabled = state.historyPage >= pageCount;
   historySelectAll.checked = allCurrentPageSelected;
   historyDeleteSelected.disabled = state.selectedHistoryIds.size === 0;
-  historyDeleteFiltered.disabled = history.length === 0;
+  historyDeleteFiltered.disabled = filteredEntries.length === 0;
 }
 
 function downloadBlob(filename, content, type) {
@@ -156,7 +166,7 @@ export function exportFilteredHistoryAsCsv() {
 }
 
 async function refreshHistoryAfterMutation() {
-  state.history = await getPromptHistory();
+  state.history = await getStoredPromptHistory();
   syncHistorySelectionState();
   renderDashboard();
   renderHistoryTable();
@@ -251,11 +261,11 @@ function openHistoryModal(historyId) {
   }
   comparisonEl.innerHTML = buildResultComparisonMarkup(entry);
 
-  historyModal.hidden = false;
+  openModal(historyModal, historyModalClose);
 }
 
 function closeHistoryModal() {
-  historyModal.hidden = true;
+  closeModal(historyModal);
 }
 
 export function bindHistoryEvents() {
@@ -280,7 +290,7 @@ export function bindHistoryEvents() {
   historyExportCsv.addEventListener("click", exportFilteredHistoryAsCsv);
 
   historySelectAll.addEventListener("change", (event) => {
-    const history = filteredHistory();
+    const history = getVisibleFilteredHistory();
     const startIndex = (state.historyPage - 1) * PAGE_SIZE;
     const currentPageRows = history.slice(startIndex, startIndex + PAGE_SIZE);
     const checked = Boolean(event.target.checked);
@@ -319,18 +329,13 @@ export function bindHistoryEvents() {
       return;
     }
 
-    const row = event.target.closest("[data-history-id]");
-    if (row) {
-      openHistoryModal(row.dataset.historyId);
+    const detailButton = event.target.closest("[data-open-history-id]");
+    if (detailButton) {
+      openHistoryModal(detailButton.dataset.openHistoryId);
     }
   });
 
-  historyModalClose.addEventListener("click", closeHistoryModal);
-  historyModal.addEventListener("click", (event) => {
-    if (event.target === historyModal) {
-      closeHistoryModal();
-    }
-  });
+  registerModalCloseHandler(historyModal, closeHistoryModal);
 
   historyDeleteSelected.addEventListener("click", () => {
     showConfirmToast(t.history.deleteSelectedConfirm, async () => {

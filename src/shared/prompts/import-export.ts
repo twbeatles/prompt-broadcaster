@@ -19,6 +19,7 @@ import {
 import {
   buildHistoryEntry,
   getPromptHistory,
+  getStoredPromptHistory,
   setPromptHistory,
 } from "./history-store";
 import {
@@ -259,7 +260,7 @@ export async function exportPromptData() {
     builtInSiteOverrides,
   ] = await Promise.all([
     getBroadcastCounter(),
-    getPromptHistory(),
+    getStoredPromptHistory(),
     getPromptFavorites(),
     getTemplateVariableCache(),
     getAppSettings(),
@@ -296,10 +297,8 @@ export async function importPromptData(jsonString: string) {
   const importedCustomSites = safeArray(migrated?.customSites);
   const importedBuiltInSiteStates = safeObject(migrated?.builtInSiteStates);
   const importedBuiltInSiteOverrides = safeObject(migrated?.builtInSiteOverrides);
-  const historyLimit = importedSettings.historyLimit;
-
   const normalizedHistory: PromptHistoryItem[] = [];
-  for (const item of sortByDateDesc(history).slice(0, historyLimit)) {
+  for (const item of sortByDateDesc(history)) {
     normalizedHistory.push({
       ...item,
       id: ensureUniqueNumericId(normalizedHistory, Number(item.id)),

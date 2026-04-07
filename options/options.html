@@ -97,9 +97,12 @@
       </section>
 
       <section id="section-services" class="page-section" role="tabpanel" tabindex="0">
-        <div class="section-head">
-          <h2 data-i18n="options_services_title">Service Management</h2>
-          <p data-i18n="options_services_desc">Inspect supported services, usage volume, and success rate.</p>
+        <div class="section-head-row">
+          <div class="section-head">
+            <h2 data-i18n="options_services_title">Service Management</h2>
+            <p data-i18n="options_services_desc">Inspect supported services, usage volume, and success rate.</p>
+          </div>
+          <button id="services-open-manager" class="btn" type="button" data-i18n="options_services_open_popup">Open popup manager</button>
         </div>
         <div id="services-grid" class="services-grid"></div>
       </section>
@@ -114,6 +117,7 @@
             <strong data-i18n="options_settings_history_limit">History retention</strong>
             <input id="history-limit-slider" type="range" min="10" max="200" step="10" />
             <span id="history-limit-value" class="helper"></span>
+            <div id="history-limit-note" class="helper" data-i18n="options_settings_history_limit_note">Visible list cap only. Existing history is not deleted.</div>
           </div>
           <div class="settings-control">
             <div class="toggle-row">
@@ -169,7 +173,7 @@
           <h2 id="history-modal-title" data-i18n="options_history_modal_title">Prompt details</h2>
           <p id="history-modal-meta" class="helper"></p>
         </div>
-        <button id="history-modal-close" class="btn" type="button" data-i18n="common_close">Close</button>
+        <button id="history-modal-close" class="btn" type="button" data-modal-close data-i18n="common_close">Close</button>
       </div>
       <div id="history-modal-services" class="service-badges"></div>
       <pre id="history-modal-text" class="modal-prompt"></pre>
@@ -184,7 +188,7 @@
           <h2 id="import-report-modal-title"></h2>
           <p id="import-report-modal-desc" class="helper"></p>
         </div>
-        <button id="import-report-modal-close" class="btn" type="button" data-i18n="common_close">Close</button>
+        <button id="import-report-modal-close" class="btn" type="button" data-modal-close data-i18n="common_close">Close</button>
       </div>
       <div id="import-report-body" class="settings-stack"></div>
     </div>

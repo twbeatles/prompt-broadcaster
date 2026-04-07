@@ -2,7 +2,7 @@
 import {
   getAppSettings,
   getPromptFavorites,
-  getPromptHistory,
+  getStoredPromptHistory,
 } from "../../shared/prompts";
 import { getFavoriteRunJobs } from "../../shared/runtime-state";
 import { getRuntimeSites } from "../../shared/sites";
@@ -16,7 +16,7 @@ import { renderServiceFilterOptions } from "./service-filter";
 
 export async function loadData() {
   const [history, favorites, favoriteJobs, settings, runtimeSites] = await Promise.all([
-    getPromptHistory(),
+    getStoredPromptHistory(),
     getPromptFavorites(),
     getFavoriteRunJobs(),
     getAppSettings(),

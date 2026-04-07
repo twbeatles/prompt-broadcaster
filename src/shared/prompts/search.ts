@@ -1,11 +1,17 @@
-// @ts-nocheck
 import { safeText } from "./normalizers";
 
-function normalizeSearchValue(value) {
+interface FavoriteSearchTarget {
+  title?: unknown;
+  text?: unknown;
+  folder?: unknown;
+  tags?: unknown;
+}
+
+function normalizeSearchValue(value: unknown) {
   return safeText(value).trim().toLowerCase();
 }
 
-export function matchesFavoriteSearch(item, query) {
+export function matchesFavoriteSearch(item: FavoriteSearchTarget | null | undefined, query: unknown) {
   const normalizedQuery = normalizeSearchValue(query);
   if (!normalizedQuery) {
     return true;

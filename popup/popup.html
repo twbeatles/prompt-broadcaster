@@ -27,10 +27,10 @@
     <main class="panel-stack">
       <section id="panel-compose" class="tab-panel active" data-panel="compose" role="tabpanel" aria-labelledby="tab-compose" tabindex="0">
         <div class="prompt-toolbar">
-          <span id="prompt-counter" class="helper-text">0 / 2000</span>
+          <span id="prompt-counter" class="helper-text">0 chars</span>
           <button id="clear-prompt-btn" class="ghost-button small-button" type="button"></button>
         </div>
-        <textarea id="prompt-input" maxlength="2000" data-i18n-placeholder="popup_placeholder"></textarea>
+        <textarea id="prompt-input" data-i18n-placeholder="popup_placeholder"></textarea>
         <div id="template-summary" class="template-summary" hidden>
           <div class="template-summary-header">
             <span id="template-summary-label"></span>
@@ -300,6 +300,13 @@
           <span id="favorite-mode-label"></span>
           <select id="favorite-mode-select" class="search-input"></select>
         </label>
+
+        <div id="favorite-prompt-wrap" class="modal-section" hidden>
+          <label class="field-stack" for="favorite-prompt-input">
+            <span id="favorite-prompt-label"></span>
+            <textarea id="favorite-prompt-input" class="search-input textarea-input" rows="4"></textarea>
+          </label>
+        </div>
 
         <div class="modal-section">
           <div class="section-row section-row-start">

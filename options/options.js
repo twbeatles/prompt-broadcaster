@@ -312,6 +312,7 @@ var t = {
     tablePrompt: msg("options_table_prompt"),
     tableServices: msg("options_table_services"),
     tableStatus: msg("options_table_status"),
+    tableActions: msg("options_table_actions") || "Actions",
     allServices: msg("options_filter_all_services"),
     pageInfo: (current, total) => msg("options_page_info", [String(current), String(total)]),
     exportSuccess: msg("options_settings_export_success"),
@@ -323,7 +324,8 @@ var t = {
     deleteSelectedConfirm: msg("options_history_delete_selected_confirm") || "Delete the selected history items?",
     deleteFilteredConfirm: (count) => msg("options_history_delete_filtered_confirm", [String(count)]) || `Delete ${count} filtered history item(s)?`,
     deleteOlderConfirm: (days) => msg("options_history_delete_older_confirm", [String(days)]) || `Delete items older than ${days} days?`,
-    deleteSuccess: msg("options_history_delete_success") || "History deleted."
+    deleteSuccess: msg("options_history_delete_success") || "History deleted.",
+    openDetails: msg("options_history_open_details") || "Open details"
   },
   services: {
     inputType: msg("options_service_input_type"),
@@ -332,7 +334,8 @@ var t = {
     successRate: msg("options_service_success_rate"),
     lastUsed: msg("options_service_last_used"),
     defaultColor: msg("options_service_default_color"),
-    none: msg("options_value_none")
+    none: msg("options_value_none"),
+    openManagerFailed: msg("options_services_open_failed") || "Failed to open the popup manager."
   },
   settings: {
     historyLimitValue: (count) => msg("options_settings_history_limit_value", [String(count)]),
@@ -394,7 +397,7 @@ var t = {
     enabled: msg("options_schedules_enabled") || "Enabled",
     lastRun: msg("options_schedules_last_run") || "Last run",
     runNow: msg("options_schedules_run_now") || "Run now",
-    openInPopup: msg("options_schedules_open_in_popup") || "Open in popup",
+    openInPopup: msg("options_schedules_open_in_popup") || "Edit in popup",
     runQueued: msg("options_schedules_run_queued") || "Favorite run queued.",
     popupFallback: msg("options_schedules_popup_fallback") || "Popup opened to finish required inputs.",
     openFailed: msg("options_schedules_open_failed") || "Failed to open the popup editor.",
@@ -913,10 +916,6 @@ async function updateAppSettings(partialSettings) {
     ...partialSettings ?? {}
   });
 }
-async function getHistoryLimit() {
-  const settings = await getAppSettings();
-  return settings.historyLimit;
-}
 
 // src/shared/prompts/history-store.ts
 function asHistoryRecord(entry) {
@@ -962,18 +961,20 @@ function buildHistoryEntry(entry) {
     trigger: normalizeExecutionTrigger(source.trigger)
   };
 }
-async function getPromptHistory() {
-  const historyLimit = await getHistoryLimit();
+async function getStoredPromptHistory() {
   const rawHistory = await readLocal(LOCAL_STORAGE_KEYS.history, []);
   return sortByDateDesc(
     safeArray(rawHistory).map((item) => buildHistoryEntry(item))
-  ).slice(0, historyLimit);
+  );
+}
+function applyHistoryVisibleLimit(historyItems, historyLimit) {
+  const normalizedLimit = Number.isFinite(Number(historyLimit)) ? Math.max(1, Math.round(Number(historyLimit))) : 50;
+  return safeArray(historyItems).slice(0, normalizedLimit);
 }
 async function setPromptHistory(historyItems) {
-  const historyLimit = await getHistoryLimit();
   const normalized = sortByDateDesc(
     safeArray(historyItems).map((item) => buildHistoryEntry(item))
-  ).slice(0, historyLimit);
+  );
   await writeLocal(LOCAL_STORAGE_KEYS.history, normalized);
   return normalized;
 }
@@ -981,7 +982,7 @@ async function deletePromptHistoryItemsByIds(historyIds) {
   const selectedIds = new Set(
     safeArray(historyIds).map((historyId) => Number(historyId)).filter((historyId) => Number.isFinite(historyId))
   );
-  const history = await getPromptHistory();
+  const history = await getStoredPromptHistory();
   const nextHistory = history.filter((item) => !selectedIds.has(Number(item.id)));
   await setPromptHistory(nextHistory);
   return nextHistory;
@@ -989,10 +990,10 @@ async function deletePromptHistoryItemsByIds(historyIds) {
 async function deletePromptHistoryItemsBeforeDate(dateValue) {
   const cutoffDate = typeof dateValue === "string" || dateValue instanceof Date ? new Date(dateValue) : /* @__PURE__ */ new Date("");
   if (!Number.isFinite(cutoffDate.getTime())) {
-    return getPromptHistory();
+    return getStoredPromptHistory();
   }
   const cutoffTime = cutoffDate.getTime();
-  const history = await getPromptHistory();
+  const history = await getStoredPromptHistory();
   const nextHistory = history.filter((item) => {
     const itemTime = Date.parse(item.createdAt);
     return !Number.isFinite(itemTime) || itemTime >= cutoffTime;
@@ -2089,7 +2090,7 @@ async function exportPromptData() {
     builtInSiteOverrides
   ] = await Promise.all([
     getBroadcastCounter(),
-    getPromptHistory(),
+    getStoredPromptHistory(),
     getPromptFavorites(),
     getTemplateVariableCache(),
     getAppSettings(),
@@ -2124,9 +2125,8 @@ async function importPromptData(jsonString) {
   const importedCustomSites = safeArray(migrated?.customSites);
   const importedBuiltInSiteStates = safeObject(migrated?.builtInSiteStates);
   const importedBuiltInSiteOverrides = safeObject(migrated?.builtInSiteOverrides);
-  const historyLimit = importedSettings.historyLimit;
   const normalizedHistory = [];
-  for (const item of sortByDateDesc(history).slice(0, historyLimit)) {
+  for (const item of sortByDateDesc(history)) {
     normalizedHistory.push({
       ...item,
       id: ensureUniqueNumericId(normalizedHistory, Number(item.id))
@@ -2237,11 +2237,13 @@ var optionsDom = {
     schedulesList: document.getElementById("schedules-list")
   },
   services: {
-    servicesGrid: document.getElementById("services-grid")
+    servicesGrid: document.getElementById("services-grid"),
+    servicesOpenManagerBtn: document.getElementById("services-open-manager")
   },
   settings: {
     historyLimitSlider: document.getElementById("history-limit-slider"),
     historyLimitValue: document.getElementById("history-limit-value"),
+    historyLimitNote: document.getElementById("history-limit-note"),
     autoCloseToggle: document.getElementById("auto-close-toggle"),
     desktopNotificationToggle: document.getElementById("desktop-notification-toggle"),
     reuseTabsToggle: document.getElementById("reuse-tabs-toggle"),
@@ -2396,6 +2398,24 @@ var LOCAL_PROMPT_STATE_KEYS = Object.freeze({
 var SESSION_PROMPT_STATE_KEYS = Object.freeze({
   popupPromptIntent: "popupPromptIntent"
 });
+
+// src/shared/date-utils.ts
+function getLocalDateKey(value) {
+  const date = value instanceof Date ? new Date(value.getTime()) : new Date(value);
+  if (!Number.isFinite(date.getTime())) {
+    return "";
+  }
+  const year = String(date.getFullYear()).padStart(4, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+function getRelativeLocalDateKey(daysFromToday = 0, now = /* @__PURE__ */ new Date()) {
+  const date = now instanceof Date ? new Date(now.getTime()) : new Date(now);
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() + Math.trunc(daysFromToday));
+  return getLocalDateKey(date);
+}
 
 // src/options/ui/charts.ts
 var CHART_COLORS = ["#c24f2e", "#f2a446", "#2a9d8f", "#457b9d", "#7b61ff", "#bc6c25"];
@@ -2661,11 +2681,11 @@ function buildDashboardMetrics(history = state.history) {
     const date = /* @__PURE__ */ new Date();
     date.setHours(0, 0, 0, 0);
     date.setDate(date.getDate() - index);
-    const dateKey = date.toISOString().slice(0, 10);
+    const dateKey = getRelativeLocalDateKey(-index);
     dailyCounts.push({
       key: dateKey,
       label: formatShortDate(date),
-      count: history.filter((entry) => entry.createdAt.slice(0, 10) === dateKey).length
+      count: history.filter((entry) => getLocalDateKey(entry.createdAt) === dateKey).length
     });
   }
   return {
@@ -2717,6 +2737,127 @@ function buildCsvLine(values) {
   return (Array.isArray(values) ? values : []).map((value) => escapeCsvCell(value)).join(",");
 }
 
+// src/options/core/modal.ts
+var modalState = /* @__PURE__ */ new WeakMap();
+var boundOverlays = /* @__PURE__ */ new WeakSet();
+var keyboardEventsBound = false;
+var activeModal = null;
+function toModalOverlay(overlay) {
+  if (!overlay) {
+    return null;
+  }
+  return overlay;
+}
+function getModalEntry(overlay) {
+  const existing = modalState.get(overlay);
+  if (existing) {
+    return existing;
+  }
+  const created = { lastFocused: null };
+  modalState.set(overlay, created);
+  return created;
+}
+function isFocusable(element) {
+  if (element.hidden || element.getAttribute("aria-hidden") === "true") {
+    return false;
+  }
+  if ("disabled" in element && typeof element.disabled === "boolean" && element.disabled) {
+    return false;
+  }
+  return true;
+}
+function getFocusableElements(root) {
+  return Array.from(root.querySelectorAll(
+    "button, [href], input:not([type='hidden']), select, textarea, [tabindex]:not([tabindex='-1'])"
+  )).filter(isFocusable);
+}
+function getOpenModal() {
+  if (activeModal && !activeModal.hidden) {
+    return activeModal;
+  }
+  activeModal = Array.from(document.querySelectorAll(".modal-overlay")).map((overlay) => toModalOverlay(overlay)).find((overlay) => overlay && !overlay.hidden) ?? null;
+  return activeModal;
+}
+function openModal(overlay, initialFocus = null) {
+  const modal = toModalOverlay(overlay);
+  if (!modal) {
+    return;
+  }
+  const entry = getModalEntry(modal);
+  entry.lastFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  modal.hidden = false;
+  activeModal = modal;
+  window.requestAnimationFrame(() => {
+    const fallbackTarget = getFocusableElements(modal)[0] ?? modal.querySelector(".modal-card");
+    (initialFocus ?? fallbackTarget)?.focus?.();
+  });
+}
+function closeModal(overlay) {
+  const modal = toModalOverlay(overlay);
+  if (!modal) {
+    return;
+  }
+  const entry = getModalEntry(modal);
+  modal.hidden = true;
+  if (activeModal === modal) {
+    activeModal = null;
+  }
+  entry.lastFocused?.focus?.();
+  entry.lastFocused = null;
+}
+function registerModalCloseHandler(overlay, onClose) {
+  const modal = toModalOverlay(overlay);
+  if (!modal) {
+    return;
+  }
+  const entry = getModalEntry(modal);
+  entry.onClose = onClose;
+  if (boundOverlays.has(modal)) {
+    return;
+  }
+  boundOverlays.add(modal);
+  modal.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target) {
+      return;
+    }
+    if (target === modal || target.closest("[data-modal-close]")) {
+      event.preventDefault();
+      entry.onClose?.();
+    }
+  });
+}
+function bindModalKeyboardEvents() {
+  if (keyboardEventsBound) {
+    return;
+  }
+  keyboardEventsBound = true;
+  document.addEventListener("keydown", (event) => {
+    const modal = getOpenModal();
+    if (!modal) {
+      return;
+    }
+    const entry = getModalEntry(modal);
+    if (event.key === "Escape") {
+      event.preventDefault();
+      entry.onClose?.();
+      return;
+    }
+    if (event.key !== "Tab") {
+      return;
+    }
+    const focusable = getFocusableElements(modal);
+    if (focusable.length === 0) {
+      event.preventDefault();
+      return;
+    }
+    const currentIndex = focusable.indexOf(document.activeElement);
+    const nextIndex = event.shiftKey ? currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1 : currentIndex === -1 || currentIndex >= focusable.length - 1 ? 0 : currentIndex + 1;
+    event.preventDefault();
+    focusable[nextIndex]?.focus?.();
+  });
+}
+
 // src/options/core/status.ts
 var { pageStatus } = optionsDom.navigation;
 var {
@@ -2753,19 +2894,14 @@ function openImportReportModal(summary) {
   importReportModalTitle.textContent = t.settings.importReportTitle;
   importReportModalDesc.textContent = t.settings.importReportDesc;
   importReportBody.innerHTML = buildImportReportMarkup(summary);
-  importReportModal.hidden = false;
+  openModal(importReportModal, importReportModalClose);
 }
 function closeImportReportModal() {
   state.pendingImportSummary = null;
-  importReportModal.hidden = true;
+  closeModal(importReportModal);
 }
 function bindStatusEvents() {
-  importReportModalClose.addEventListener("click", closeImportReportModal);
-  importReportModal.addEventListener("click", (event) => {
-    if (event.target === importReportModal) {
-      closeImportReportModal();
-    }
-  });
+  registerModalCloseHandler(importReportModal, closeImportReportModal);
 }
 
 // src/options/features/schedules.ts
@@ -2937,6 +3073,7 @@ function renderServiceFilterOptions() {
 
 // src/options/features/services.ts
 var { servicesGrid } = optionsDom.services;
+var { servicesOpenManagerBtn } = optionsDom.services;
 function renderServicesSection() {
   servicesGrid.innerHTML = state.runtimeSites.map((site, index) => {
     const requestedEntries = state.history.filter((entry) => getRequestedServices(entry).includes(site.id));
@@ -2983,6 +3120,25 @@ async function saveSiteWaitMs(siteId, waitMs) {
   showAppToast(t.settings.waitSaved, "success", 1600);
 }
 function bindServiceEvents() {
+  servicesOpenManagerBtn.addEventListener("click", () => {
+    const popupUrl = chrome.runtime.getURL("popup/popup.html#settings");
+    void chrome.windows.create({
+      url: popupUrl,
+      type: "popup",
+      width: 480,
+      height: 760,
+      focused: true
+    }).catch(async (error) => {
+      console.error("[AI Prompt Broadcaster] Failed to open popup manager window.", error);
+      try {
+        await chrome.tabs.create({ url: popupUrl });
+      } catch (fallbackError) {
+        console.error("[AI Prompt Broadcaster] Failed to open popup manager tab.", fallbackError);
+        setStatus(t.services.openManagerFailed, "error");
+        showAppToast(t.services.openManagerFailed, "error", 3e3);
+      }
+    });
+  });
   servicesGrid.addEventListener("input", (event) => {
     const slider = event.target.closest("[data-waitms-site-id]");
     if (!slider) {
@@ -3035,25 +3191,29 @@ function filteredHistory() {
   return state.history.filter((entry) => {
     const requestedServices = getRequestedServices(entry);
     const matchesService = state.filters.service === "all" || requestedServices.includes(state.filters.service);
-    const dateKey = entry.createdAt.slice(0, 10);
+    const dateKey = getLocalDateKey(entry.createdAt);
     const matchesFrom = !state.filters.dateFrom || dateKey >= state.filters.dateFrom;
     const matchesTo = !state.filters.dateTo || dateKey <= state.filters.dateTo;
     return matchesService && matchesFrom && matchesTo;
   });
 }
+function getVisibleFilteredHistory() {
+  return applyHistoryVisibleLimit(filteredHistory(), state.settings.historyLimit);
+}
 function syncHistorySelectionState() {
-  const availableIds = new Set(state.history.map((entry) => Number(entry.id)));
+  const availableIds = new Set(getVisibleFilteredHistory().map((entry) => Number(entry.id)));
   state.selectedHistoryIds = new Set(
     [...state.selectedHistoryIds].filter((historyId) => availableIds.has(Number(historyId)))
   );
 }
 function renderHistoryTable() {
   syncHistorySelectionState();
-  const history = filteredHistory();
-  const pageCount = Math.max(1, Math.ceil(history.length / PAGE_SIZE));
-  state.historyPage = Math.min(state.historyPage, pageCount);
+  const filteredEntries = filteredHistory();
+  const visibleHistory = getVisibleFilteredHistory();
+  const pageCount = Math.max(1, Math.ceil(visibleHistory.length / PAGE_SIZE));
+  state.historyPage = Math.max(1, Math.min(state.historyPage, pageCount));
   const startIndex = (state.historyPage - 1) * PAGE_SIZE;
-  const currentPageRows = history.slice(startIndex, startIndex + PAGE_SIZE);
+  const currentPageRows = visibleHistory.slice(startIndex, startIndex + PAGE_SIZE);
   const currentPageIds = currentPageRows.map((entry) => Number(entry.id));
   const allCurrentPageSelected = currentPageIds.length > 0 && currentPageIds.every((historyId) => state.selectedHistoryIds.has(historyId));
   if (currentPageRows.length === 0) {
@@ -3068,18 +3228,20 @@ function renderHistoryTable() {
             <th>${escapeHTML(t.history.tablePrompt)}</th>
             <th>${escapeHTML(t.history.tableServices)}</th>
             <th>${escapeHTML(t.history.tableStatus)}</th>
+            <th>${escapeHTML(t.history.tableActions)}</th>
           </tr>
         </thead>
         <tbody>
           ${currentPageRows.map((entry) => {
       const status = getStatusInfo(entry.status);
       return `
-                <tr class="table-row-button" data-history-id="${entry.id}">
-                  <td><input type="checkbox" data-history-select="${entry.id}" ${state.selectedHistoryIds.has(Number(entry.id)) ? "checked" : ""} /></td>
+                <tr data-history-row="${entry.id}">
+                  <td><input type="checkbox" aria-label="${escapeHTML(t.history.tableSelect)}" data-history-select="${entry.id}" ${state.selectedHistoryIds.has(Number(entry.id)) ? "checked" : ""} /></td>
                   <td>${escapeHTML(formatDateTime(entry.createdAt))}</td>
                   <td>${escapeHTML(previewText(entry.text))}</td>
                   <td><div class="service-badges">${getRequestedServices(entry).map((siteId) => buildBadgeMarkup(siteId, state.runtimeSites)).join("")}</div></td>
                   <td><span class="status-pill ${status.className}">${escapeHTML(status.label)}</span></td>
+                  <td><button class="btn ghost history-detail-button" type="button" data-open-history-id="${entry.id}">${escapeHTML(t.history.openDetails)}</button></td>
                 </tr>
               `;
     }).join("")}
@@ -3092,7 +3254,7 @@ function renderHistoryTable() {
   historyNextPage.disabled = state.historyPage >= pageCount;
   historySelectAll.checked = allCurrentPageSelected;
   historyDeleteSelected.disabled = state.selectedHistoryIds.size === 0;
-  historyDeleteFiltered.disabled = history.length === 0;
+  historyDeleteFiltered.disabled = filteredEntries.length === 0;
 }
 function downloadBlob(filename, content, type) {
   const blob = new Blob([content], { type });
@@ -3126,7 +3288,7 @@ function exportFilteredHistoryAsCsv() {
   showAppToast(t.history.exportSuccess, "success", 1800);
 }
 async function refreshHistoryAfterMutation() {
-  state.history = await getPromptHistory();
+  state.history = await getStoredPromptHistory();
   syncHistorySelectionState();
   renderDashboard();
   renderHistoryTable();
@@ -3204,10 +3366,10 @@ function openHistoryModal(historyId) {
     historyModalText.parentElement?.appendChild(comparisonEl);
   }
   comparisonEl.innerHTML = buildResultComparisonMarkup(entry);
-  historyModal.hidden = false;
+  openModal(historyModal, historyModalClose);
 }
 function closeHistoryModal() {
-  historyModal.hidden = true;
+  closeModal(historyModal);
 }
 function bindHistoryEvents() {
   historyServiceFilter2.addEventListener("change", (event) => {
@@ -3227,7 +3389,7 @@ function bindHistoryEvents() {
   });
   historyExportCsv.addEventListener("click", exportFilteredHistoryAsCsv);
   historySelectAll.addEventListener("change", (event) => {
-    const history = filteredHistory();
+    const history = getVisibleFilteredHistory();
     const startIndex = (state.historyPage - 1) * PAGE_SIZE;
     const currentPageRows = history.slice(startIndex, startIndex + PAGE_SIZE);
     const checked = Boolean(event.target.checked);
@@ -3260,17 +3422,12 @@ function bindHistoryEvents() {
       renderHistoryTable();
       return;
     }
-    const row = event.target.closest("[data-history-id]");
-    if (row) {
-      openHistoryModal(row.dataset.historyId);
+    const detailButton = event.target.closest("[data-open-history-id]");
+    if (detailButton) {
+      openHistoryModal(detailButton.dataset.openHistoryId);
     }
   });
-  historyModalClose.addEventListener("click", closeHistoryModal);
-  historyModal.addEventListener("click", (event) => {
-    if (event.target === historyModal) {
-      closeHistoryModal();
-    }
-  });
+  registerModalCloseHandler(historyModal, closeHistoryModal);
   historyDeleteSelected.addEventListener("click", () => {
     showConfirmToast(t.history.deleteSelectedConfirm, async () => {
       await deleteSelectedHistoryRows([...state.selectedHistoryIds]);
@@ -3303,6 +3460,7 @@ function bindHistoryEvents() {
 var {
   historyLimitSlider,
   historyLimitValue,
+  historyLimitNote,
   autoCloseToggle,
   desktopNotificationToggle,
   reuseTabsToggle,
@@ -3329,6 +3487,7 @@ var {
 function applySettingsToControls() {
   historyLimitSlider.value = String(state.settings.historyLimit);
   historyLimitValue.textContent = t.settings.historyLimitValue(state.settings.historyLimit);
+  historyLimitNote.textContent = chrome.i18n.getMessage("options_settings_history_limit_note") || historyLimitNote.textContent;
   autoCloseToggle.checked = state.settings.autoClosePopup;
   desktopNotificationToggle.checked = state.settings.desktopNotifications;
   reuseTabsToggle.checked = state.settings.reuseExistingTabs;
@@ -3375,11 +3534,7 @@ async function saveSettings(partialSettings) {
   const nextSettings = await updateAppSettings(partialSettings);
   state.settings = nextSettings;
   if (typeof partialSettings.historyLimit !== "undefined") {
-    await setPromptHistory(state.history);
-    state.history = await getPromptHistory();
-    renderDashboard();
     renderHistoryTable();
-    renderServicesSection();
   }
   applySettingsToControls();
   setStatus(t.statusSaved, "success");
@@ -3506,7 +3661,7 @@ function bindSettingsEvents({ loadData: loadData2 }) {
 // src/options/core/data.ts
 async function loadData() {
   const [history, favorites, favoriteJobs, settings, runtimeSites] = await Promise.all([
-    getPromptHistory(),
+    getStoredPromptHistory(),
     getPromptFavorites(),
     getFavoriteRunJobs(),
     getAppSettings(),
@@ -3551,6 +3706,7 @@ function bindNavigationEvents() {
 // src/options/app/bootstrap.ts
 var { toastHost } = optionsDom;
 function bindEvents() {
+  bindModalKeyboardEvents();
   bindNavigationEvents();
   bindHistoryEvents();
   bindScheduleEvents({ reloadData: loadData });

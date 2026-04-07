@@ -230,7 +230,7 @@ Source: `src/content/palette/main.ts`
 Responsibilities:
 
 - render a shadow-root overlay over the current page
-- search favorites by title, preview, folder, and tags
+- search favorites by title, text, folder, tags, and `#tag` queries with the same matcher used by popup favorites
 - support arrow-key navigation, `Enter`, and `Escape`
 - request favorite execution from the background worker
 - close when the background asks for popup fallback or when the user dismisses it
@@ -354,6 +354,7 @@ Background favorite jobs also persist a normalized step list plus `FavoriteRunEx
 - popup preview resolves `{{counter}}` as `current + 1`
 - the stored counter increments only when a broadcast queues at least one target site
 - import migrates older payloads through `v1 -> v2 -> v3 -> v4 -> v5 -> v6`
+- `appSettings.historyLimit` is a non-destructive default visible cap. Popup/options history lists apply it at read time, while storage and JSON export keep the full history set.
 - reset-data clears the counter together with the rest of the user data
 
 ### Strategy Stats and Pending Tab Tracking
@@ -446,7 +447,7 @@ Current smoke coverage includes:
 - favorite run job dedupe, effective chain-target fallback, and prepared clipboard context
 - failure history creation for pre-broadcast favorite job failures
 - quick palette filtering and execution
-- favorites search across title, tags, and folders
+- favorites search across title, text, tags, folders, and `#tag`
 - per-service override template resolution and retry prompt preservation
 - structured `siteResults` accumulation
 - adaptive strategy-stat accumulation

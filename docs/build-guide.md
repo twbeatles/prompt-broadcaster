@@ -84,7 +84,7 @@ The smoke flow loads local fixtures from `qa/fixtures/` and validates the built 
 - favorite run job dedupe behavior, chain target fallback, and prepared clipboard context
 - favorite failure-history recording for queue failures before broadcast creation
 - quick palette overlay filtering and execution handoff
-- favorites search matching title, tags, and folders
+- favorites search matching title, text, tags, folders, and `#tag`
 - per-service override template resolution and retry prompt preservation
 - CSV export escaping for spreadsheet formula-leading values
 - pending broadcast state accumulation across sequential site completions with structured `siteResults`
@@ -165,7 +165,9 @@ The generated ZIP contains the built extension from `dist/` only.
 10. Verify that a per-service prompt override with template variables resolves correctly and that retry reuses the originally rendered prompt even after editing the popup text
 11. Add, import, delete, and reset a custom service and confirm optional host permissions are granted and cleaned up only for the required origins
 12. Confirm that popup sorting, favorite duplication, resend-service selection, import-report modals, and the integrated favorite editor all behave correctly
+   Verify that single favorites can edit prompt body text inline and that single/chain mode switches preserve expected values
 13. Verify single favorites, chain favorites, scheduled favorites, and the options `Schedules` section
+   Confirm the options action label is `Edit in popup`, and that the services section opens the popup manager for detailed editing
 14. Trigger popup-side favorite runs that use `{{clipboard}}`, `{{url}}`, or `{{selection}}` and confirm they queue without opening the editor unnecessarily
 15. Trigger the quick palette with `Alt+Shift+F` on an injectable page and confirm both direct execution and popup fallback flows
 16. Confirm popup fallback resumes automatically when only popup-resolvable context was missing, and opens the editor only when user-variable input is still required

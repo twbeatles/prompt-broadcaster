@@ -351,6 +351,9 @@
   "popup_favorite_title_label": {
     "message": "즐겨찾기 제목"
   },
+  "popup_favorite_prompt_label": {
+    "message": "프롬프트 본문"
+  },
   "popup_favorite_save_defaults_label": {
     "message": "현재 변수 기본값도 함께 저장"
   },
@@ -752,7 +755,13 @@
     "message": "서비스 관리"
   },
   "options_services_desc": {
-    "message": "현재 지원 서비스와 사용량/성공률을 확인합니다."
+    "message": "지원 서비스의 상태와 지표를 확인하고, 상세 편집은 popup 관리자에서 수행합니다."
+  },
+  "options_services_open_popup": {
+    "message": "팝업 관리자 열기"
+  },
+  "options_services_open_failed": {
+    "message": "팝업 관리자를 열지 못했습니다."
   },
   "options_settings_title": {
     "message": "설정"
@@ -823,6 +832,9 @@
   "options_table_status": {
     "message": "상태"
   },
+  "options_table_actions": {
+    "message": "동작"
+  },
   "options_filter_all_services": {
     "message": "전체 서비스"
   },
@@ -865,15 +877,21 @@
     "message": "없음"
   },
   "options_settings_history_limit": {
-    "message": "히스토리 보관 개수"
+    "message": "히스토리 기본 표시 개수"
   },
   "options_settings_history_limit_value": {
-    "message": "$COUNT$개까지 보관",
+    "message": "목록에 최대 $COUNT$개 표시",
     "placeholders": {
       "count": {
         "content": "$1"
       }
     }
+  },
+  "options_settings_history_limit_note": {
+    "message": "기존 히스토리는 삭제하지 않고, 목록에 기본으로 보여줄 개수만 조정합니다."
+  },
+  "options_history_open_details": {
+    "message": "상세 보기"
   },
   "options_settings_auto_close": {
     "message": "전송 후 팝업 자동 닫기"
@@ -954,7 +972,7 @@
     "message": "예약"
   },
   "options_schedules_desc": {
-    "message": "예약된 즐겨찾기를 확인하고 수동으로 실행합니다."
+    "message": "예약 상태를 확인하고 실행하거나, 상세 편집은 popup에서 이어서 수행합니다."
   },
   "options_schedules_empty": {
     "message": "설정된 예약 즐겨찾기가 없습니다."
@@ -975,7 +993,7 @@
     "message": "즉시 실행"
   },
   "options_schedules_open_in_popup": {
-    "message": "팝업에서 열기"
+    "message": "팝업에서 편집"
   },
   "options_schedules_run_queued": {
     "message": "즐겨찾기 실행을 시작했습니다."

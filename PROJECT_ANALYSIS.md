@@ -228,7 +228,7 @@ prompt-broadcaster/
 
 ```ts
 interface AppSettings {
-  historyLimit: number;
+  historyLimit: number; // default visible history cap, not destructive retention
   autoClosePopup: boolean;
   desktopNotifications: boolean;
   reuseExistingTabs: boolean;

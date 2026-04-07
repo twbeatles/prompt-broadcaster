@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { getLocalDateKey, getRelativeLocalDateKey } from "../../shared/date-utils";
 import { escapeHTML } from "../../shared/security";
 import { buildBarChartMarkup, buildDonutMarkup } from "../ui/charts";
 import { optionsDom } from "../app/dom";
@@ -50,11 +51,11 @@ export function buildDashboardMetrics(history = state.history) {
     const date = new Date();
     date.setHours(0, 0, 0, 0);
     date.setDate(date.getDate() - index);
-    const dateKey = date.toISOString().slice(0, 10);
+    const dateKey = getRelativeLocalDateKey(-index);
     dailyCounts.push({
       key: dateKey,
       label: formatShortDate(date),
-      count: history.filter((entry) => entry.createdAt.slice(0, 10) === dateKey).length,
+      count: history.filter((entry) => getLocalDateKey(entry.createdAt) === dateKey).length,
     });
   }
 

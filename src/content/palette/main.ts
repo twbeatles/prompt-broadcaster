@@ -1,4 +1,6 @@
 // @ts-nocheck
+import { matchesFavoriteSearch } from "../../shared/prompts/search";
+
 (() => {
   if (globalThis.__aiPromptBroadcasterQuickPaletteLoaded) {
     return;
@@ -40,17 +42,8 @@
   }
 
   function filterFavorites() {
-    const query = state.query.trim().toLowerCase();
-    state.filteredFavorites = query
-      ? state.favorites.filter((favorite) => {
-          const haystack = [
-            favorite.title,
-            favorite.preview,
-            favorite.folder,
-            ...(Array.isArray(favorite.tags) ? favorite.tags : []),
-          ].join(" ").toLowerCase();
-          return haystack.includes(query);
-        })
+    state.filteredFavorites = state.query.trim()
+      ? state.favorites.filter((favorite) => matchesFavoriteSearch(favorite, state.query))
       : [...state.favorites];
 
     state.activeIndex = Math.min(

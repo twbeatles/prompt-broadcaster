@@ -90,38 +90,51 @@ export function buildHistoryEntry(entry: unknown): PromptHistoryItem {
   };
 }
 
-export async function getPromptHistory(): Promise<PromptHistoryItem[]> {
-  const historyLimit = await getHistoryLimit();
+export async function getStoredPromptHistory(): Promise<PromptHistoryItem[]> {
   const rawHistory = await readLocal(LOCAL_STORAGE_KEYS.history, []);
   return sortByDateDesc(
     safeArray(rawHistory).map((item) => buildHistoryEntry(item))
-  ).slice(0, historyLimit);
+  );
+}
+
+export function applyHistoryVisibleLimit(
+  historyItems: PromptHistoryItem[],
+  historyLimit: number
+): PromptHistoryItem[] {
+  const normalizedLimit = Number.isFinite(Number(historyLimit))
+    ? Math.max(1, Math.round(Number(historyLimit)))
+    : 50;
+  return safeArray<PromptHistoryItem>(historyItems).slice(0, normalizedLimit);
+}
+
+export async function getPromptHistory(): Promise<PromptHistoryItem[]> {
+  const historyLimit = await getHistoryLimit();
+  const history = await getStoredPromptHistory();
+  return applyHistoryVisibleLimit(history, historyLimit);
 }
 
 export async function setPromptHistory(historyItems: unknown[]): Promise<PromptHistoryItem[]> {
-  const historyLimit = await getHistoryLimit();
   const normalized = sortByDateDesc(
     safeArray(historyItems).map((item) => buildHistoryEntry(item))
-  ).slice(0, historyLimit);
+  );
 
   await writeLocal(LOCAL_STORAGE_KEYS.history, normalized);
   return normalized;
 }
 
 export async function appendPromptHistory(entry: unknown): Promise<PromptHistoryItem> {
-  const historyLimit = await getHistoryLimit();
-  const history = await getPromptHistory();
+  const history = await getStoredPromptHistory();
   const normalized = buildHistoryEntry(entry);
   normalized.id = ensureUniqueNumericId(history, Number(normalized.id));
 
-  const nextHistory = sortByDateDesc([normalized, ...history]).slice(0, historyLimit);
+  const nextHistory = sortByDateDesc([normalized, ...history]);
 
   await setPromptHistory(nextHistory);
   return normalized;
 }
 
 export async function deletePromptHistoryItem(historyId: number | string) {
-  const history = await getPromptHistory();
+  const history = await getStoredPromptHistory();
   const nextHistory = history.filter((item) => Number(item.id) !== Number(historyId));
   await setPromptHistory(nextHistory);
   return nextHistory;
@@ -131,7 +144,7 @@ export async function deletePromptHistoryItemsByIds(historyIds: Array<number | s
   const selectedIds = new Set(
     safeArray(historyIds).map((historyId) => Number(historyId)).filter((historyId) => Number.isFinite(historyId))
   );
-  const history = await getPromptHistory();
+  const history = await getStoredPromptHistory();
   const nextHistory = history.filter((item) => !selectedIds.has(Number(item.id)));
   await setPromptHistory(nextHistory);
   return nextHistory;
@@ -143,11 +156,11 @@ export async function deletePromptHistoryItemsBeforeDate(dateValue: string | Dat
     : new Date("");
 
   if (!Number.isFinite(cutoffDate.getTime())) {
-    return getPromptHistory();
+    return getStoredPromptHistory();
   }
 
   const cutoffTime = cutoffDate.getTime();
-  const history = await getPromptHistory();
+  const history = await getStoredPromptHistory();
   const nextHistory = history.filter((item) => {
     const itemTime = Date.parse(item.createdAt);
     return !Number.isFinite(itemTime) || itemTime >= cutoffTime;

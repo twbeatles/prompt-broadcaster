@@ -15,8 +15,7 @@
     "skipLibCheck": true,
     "types": [
       "chrome"
-    ],
-    "baseUrl": "."
+    ]
   },
   "include": [
     "src/**/*.ts"
