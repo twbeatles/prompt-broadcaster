@@ -5,6 +5,7 @@ export const state = {
   history: [],
   favorites: [],
   favoriteJobs: [],
+  strategyStats: {},
   runtimeSites: [],
   settings: { ...DEFAULT_SETTINGS },
   activeSection: "dashboard",

@@ -287,10 +287,54 @@ var AIPromptBroadcasterInjectorBundle = (() => {
     return replaceContentEditableText(element, "");
   }
 
+  // src/shared/chrome/messaging.ts
+  var DEFAULT_RUNTIME_MESSAGE_TIMEOUT_MS = 5e3;
+  function normalizeTimeoutMs(timeoutMs) {
+    const numericValue = Number(timeoutMs);
+    if (!Number.isFinite(numericValue) || numericValue <= 0) {
+      return 0;
+    }
+    return Math.max(0, Math.round(numericValue));
+  }
+  function sendRuntimeMessage(message, timeoutMs = 0, fallbackValue = null) {
+    return new Promise((resolve) => {
+      let settled = false;
+      let timeoutId = 0;
+      const finish = (value) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        if (timeoutId) {
+          globalThis.clearTimeout(timeoutId);
+        }
+        resolve(value ?? fallbackValue);
+      };
+      const normalizedTimeoutMs = normalizeTimeoutMs(timeoutMs);
+      if (normalizedTimeoutMs > 0) {
+        timeoutId = globalThis.setTimeout(() => finish(fallbackValue), normalizedTimeoutMs);
+      }
+      try {
+        chrome.runtime.sendMessage(message, (response) => {
+          if (chrome.runtime.lastError) {
+            finish(fallbackValue);
+            return;
+          }
+          finish(response ?? fallbackValue);
+        });
+      } catch (_error) {
+        finish(fallbackValue);
+      }
+    });
+  }
+  function sendRuntimeMessageWithTimeout(message, timeoutMs = DEFAULT_RUNTIME_MESSAGE_TIMEOUT_MS, fallbackValue = null) {
+    return sendRuntimeMessage(message, timeoutMs, fallbackValue);
+  }
+
   // src/content/injector/fallback.ts
-  async function sendRuntimeMessage(message) {
+  async function sendRuntimeMessage2(message) {
     try {
-      return await chrome.runtime.sendMessage(message);
+      return await sendRuntimeMessageWithTimeout(message, 4e3);
     } catch (error) {
       const action = typeof message === "object" && message && "action" in message ? String(message.action) : "unknown";
       logError(`Runtime message failed: ${action}`, error);
@@ -469,7 +513,8 @@ var AIPromptBroadcasterInjectorBundle = (() => {
       observer.observe(document.documentElement, {
         childList: true,
         subtree: true,
-        attributes: true
+        attributes: true,
+        attributeFilter: ["class", "id", "style", "disabled", "aria-disabled"]
       });
       const intervalId = window.setInterval(tryMatch, 150);
       const timeoutId = window.setTimeout(() => finish(null), Math.max(timeoutMs, 0));
@@ -697,13 +742,13 @@ var AIPromptBroadcasterInjectorBundle = (() => {
       const selectorCandidates = normalizeSelectors(config);
       const match = await waitForElement(selectorCandidates, Math.max((config?.waitMs ?? 0) + 6e3, 8e3));
       if (!match?.element) {
-        await sendRuntimeMessage({
+        await sendRuntimeMessage2({
           action: "selectorFailed",
           serviceId: config?.id,
           selector: selectorCandidates[0] ?? ""
         });
         const copied = config?.fallback !== false ? await copyPromptToClipboard(prompt) : false;
-        await sendRuntimeMessage({
+        await sendRuntimeMessage2({
           action: "injectFallback",
           serviceId: config?.id,
           copied
@@ -745,7 +790,7 @@ var AIPromptBroadcasterInjectorBundle = (() => {
       }
       if (!injected) {
         const copied = config?.fallback !== false ? await copyPromptToClipboard(prompt) : false;
-        await sendRuntimeMessage({
+        await sendRuntimeMessage2({
           action: "injectFallback",
           serviceId: config?.id,
           copied
@@ -753,7 +798,7 @@ var AIPromptBroadcasterInjectorBundle = (() => {
         return { status: "strategy_exhausted", copied, attempts };
       }
       log(`✅ ${serviceName} 주입 성공 (셀렉터: ${selector}, 대기: ${elapsedMs}ms, 전략: ${usedStrategy})`);
-      await sendRuntimeMessage({
+      await sendRuntimeMessage2({
         action: "injectSuccess",
         serviceId: config?.id,
         selector,
@@ -774,7 +819,7 @@ var AIPromptBroadcasterInjectorBundle = (() => {
     } catch (error) {
       logError("injectPrompt failed", error);
       const copied = config?.fallback !== false ? await copyPromptToClipboard(prompt) : false;
-      await sendRuntimeMessage({
+      await sendRuntimeMessage2({
         action: "injectFallback",
         serviceId: config?.id,
         copied

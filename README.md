@@ -36,7 +36,10 @@
 - **빠른 팔레트** – `Alt+Shift+F`로 현재 페이지 위에서 즐겨찾기 검색 및 즉시 실행, 필요 시 popup 폴백
 - **즐겨찾기 태그·폴더·핀 시스템** – 태그와 폴더로 즐겨찾기를 분류하고, 중요 항목을 상단 고정
 - **즐겨찾기 복제 + 정렬 옵션** – 최근 사용순, 사용 횟수순, 제목순, 생성일순 정렬과 복제 저장 지원
+- **서비스 순서 커스터마이징** – options `Services`에서 `Move up` / `Move down`으로 서비스 표시 순서를 저장하고 popup·favorite editor·options에 동일 반영
 - **히스토리 재전송 선택 + 옵션 일괄 삭제** – 원래 대상 기준 재전송 모달, 선택 삭제, 7/30/90일 이전 빠른 삭제
+- **확장 Dashboard 분석** – 서비스 점유율 외에 활동 히트맵, 서비스별 성공률 추이, 상위 실패 원인, 전략 요약 제공
+- **예약 실행 결과 요약** – options `Schedules`에서 최근 scheduled 실행 시각, 상태, 실패 상세를 별도로 확인 가능
 - **서비스별 프롬프트 오버라이드** – 서비스 카드마다 메인 프롬프트와 다른 별도 프롬프트를 지정 가능
 - 히스토리/즐겨찾기/템플릿 캐시/설정/서비스 구성을 JSON으로 내보내기 및 가져오기 (`v6`, 체인/예약 메타, 재전송 스냅샷, `{{counter}}` 포함)
 - **상세 import 리포트 + 구조화된 전송 결과 코드** – 권한 거부/ID 재작성/built-in 보정 내역과 서비스별 결과 코드 표시
@@ -156,8 +159,12 @@ GIF 자리표시자: `docs/assets/usage-demo.gif`
 - 예약 실행은 `{{date}}`, `{{time}}`, `{{weekday}}`, `{{random}}`, `{{counter}}`만 자동 해석합니다. `{{url}}`, `{{title}}`, `{{selection}}`, `{{clipboard}}`가 필요하면 해당 예약 실행은 실패 히스토리를 남기고 건너뜁니다.
 - popup에서 실행되는 즐겨찾기는 `{{url}}`, `{{title}}`, `{{selection}}`, `{{clipboard}}`를 먼저 준비한 뒤 background job으로 넘깁니다. quick palette/options에서 popup fallback이 발생해도 popup이 자동으로 이어서 실행을 재시도합니다.
 - 즐겨찾기 실행은 background job으로 즉시 큐잉되고, 같은 즐겨찾기의 `queued/running` 실행만 dedupe합니다. 완료/실패 직후 재실행은 다시 허용됩니다. 팝업과 options `Schedules`에는 최근 job의 `queued/running/done/failed` 상태가 간단히 표시됩니다.
-- 옵션 페이지 `Schedules` 섹션에서 예약된 즐겨찾기만 모아 보고, 활성화 토글, `Run now`, `Edit in popup`을 사용할 수 있습니다.
+- 옵션 페이지 `Schedules` 섹션에서 예약된 즐겨찾기만 모아 보고, 활성화 토글, `Run now`, `Edit in popup`을 사용할 수 있습니다. 최근 **scheduled** 실행은 manual run과 분리되어 시각, 상태, 대표 실패 상세를 따로 표시합니다.
 - `Alt+Shift+F` 빠른 팔레트는 shadow root 오버레이로 동작하며, popup 즐겨찾기 검색과 같은 로직으로 제목/본문/태그/폴더 및 `#tag` 검색을 지원합니다. 즉시 해석 가능한 즐겨찾기는 바로 실행하고 추가 입력이 필요하면 popup으로 handoff합니다.
+
+### 옵션 Dashboard와 서비스 순서
+- options `Dashboard`는 기본 카드/도넛 차트 외에 **요일×시간대 activity heatmap**, **서비스별 성공률 추이**, **상위 실패 원인**, **strategy summary**를 함께 표시합니다.
+- options `Services` 섹션의 `Move up` / `Move down`은 `appSettings.siteOrder`로 저장되며 popup compose 서비스 카드, favorite editor 대상 체크리스트, options 서비스 목록 순서에 동일하게 반영됩니다.
 
 ### 팝업 단축키와 정렬
 - `Ctrl/Cmd+Enter`는 전송, `Ctrl/Cmd+Shift+Enter`는 현재 방송 취소입니다.
@@ -271,7 +278,10 @@ For build and packaging steps, see [docs/build-guide.md](docs/build-guide.md). F
 - **Quick palette overlay** — press `Alt+Shift+F` to search favorites on the current page and run them immediately when all inputs are resolvable
 - **Favorites tag, folder, and pin system** — categorize saved prompts with tags and folders; pin important ones to the top
 - **Favorite duplication and sort controls** — duplicate saved prompts and sort by recent use, usage count, title, or creation date
+- **Custom service ordering** — reorder service cards from the options `Services` section with `Move up` / `Move down`, and reuse that order across popup, favorite editor, and options
 - **History resend selection and bulk delete tools** — choose a subset of the original services when replaying history and delete selected or aged entries from options
+- **Expanded dashboard analytics** — activity heatmap, per-service success trends, top failure reasons, and strategy summary on the options dashboard
+- **Scheduled-run result summary** — the options `Schedules` section separates the last scheduled run from manual runs and surfaces its status plus representative failure detail
 - **Per-service prompt overrides** — assign a different prompt to individual service cards without changing the main prompt
 - JSON export/import for history, favorites, template cache, settings, and service configuration, including `broadcastCounter`, history resend snapshots, and export `version: 6`
 - History keeps requested, submitted, failed, and per-site snapshot prompt data so partial broadcasts can be replayed accurately
@@ -396,7 +406,12 @@ Template prompts support both user-defined variables and built-in system variabl
 - Scheduled execution auto-resolves only `{{date}}`, `{{time}}`, `{{weekday}}`, `{{random}}`, and `{{counter}}`. Favorites that need `{{url}}`, `{{title}}`, `{{selection}}`, or `{{clipboard}}` are skipped and recorded as failed schedule runs.
 - Popup-triggered favorite runs pre-resolve `{{url}}`, `{{title}}`, `{{selection}}`, and `{{clipboard}}` before handing off to the background worker. Popup fallbacks from quick palette or options retry automatically once that context is available.
 - Favorite runs now queue as background jobs immediately, dedupe only overlapping `queued/running` runs for the same favorite, and expose a light `queued/running/done/failed` status in popup and options.
+- The options `Schedules` section now separates the last **scheduled** execution from manual runs and shows its timestamp, status, and representative failure detail when present.
 - The quick palette uses a shadow-root overlay on the current page. Its search behavior now matches popup favorite search across title, body text, folder, tags, and `#tag` queries. Fully resolvable favorites run immediately; favorites that still need popup input fall back through a popup handoff intent.
+
+### Options Dashboard and Service Ordering
+- The options `Dashboard` now includes a weekday-by-hour activity heatmap, per-service success trends, top failure reasons, and a strategy summary in addition to the original overview cards and usage charts.
+- The options `Services` section persists service ordering through `appSettings.siteOrder`, and that order is reused by popup compose service cards, favorite editor target checklists, and the options service list.
 
 ### Popup Shortcuts and Sorting
 - `Ctrl/Cmd+Enter` sends the current prompt, and `Ctrl/Cmd+Shift+Enter` cancels the active broadcast.

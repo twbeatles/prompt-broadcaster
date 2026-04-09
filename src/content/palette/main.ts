@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { sendRuntimeMessageWithTimeout } from "../../shared/chrome/messaging";
 import { matchesFavoriteSearch } from "../../shared/prompts/search";
 
 (() => {
@@ -316,7 +317,7 @@ import { matchesFavoriteSearch } from "../../shared/prompts/search";
   }
 
   async function loadFavorites() {
-    const response = await chrome.runtime.sendMessage({ action: "quickPalette:getState" });
+    const response = await sendRuntimeMessageWithTimeout({ action: "quickPalette:getState" }, 5000);
     if (!response?.ok) {
       throw new Error(response?.error ?? "Failed to load favorites.");
     }
@@ -350,10 +351,10 @@ import { matchesFavoriteSearch } from "../../shared/prompts/search";
       return;
     }
 
-    const response = await chrome.runtime.sendMessage({
+    const response = await sendRuntimeMessageWithTimeout({
       action: "quickPalette:execute",
       favoriteId: favorite.id,
-    });
+    }, 5000);
 
     if (response?.ok) {
       closePalette();

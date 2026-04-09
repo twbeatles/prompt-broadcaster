@@ -1,76 +1,96 @@
 // @ts-nocheck
-import { getLocalDateKey, getRelativeLocalDateKey } from "../../shared/date-utils";
 import { escapeHTML } from "../../shared/security";
-import { buildBarChartMarkup, buildDonutMarkup } from "../ui/charts";
 import { optionsDom } from "../app/dom";
-import { t } from "../app/i18n";
+import { formatShortDate } from "../app/helpers";
+import { locale, t } from "../app/i18n";
 import { state } from "../app/state";
 import {
-  formatShortDate,
-  getRequestedServices,
-  getSiteLabel,
-} from "../app/helpers";
+  buildBarChartMarkup,
+  buildDonutMarkup,
+  buildHeatmapMarkup,
+  buildTrendMarkup,
+  createEmptyState,
+} from "../ui/charts";
+import { buildDashboardMetrics } from "./dashboard-metrics";
 
-const { dashboardCards, serviceDonut, dailyBarChart } = optionsDom.dashboard;
+const {
+  activityHeatmap,
+  dailyBarChart,
+  dashboardCards,
+  failureReasons,
+  serviceDonut,
+  serviceTrend,
+  strategySummary,
+} = optionsDom.dashboard;
 
-function getStartOfCurrentWeek() {
-  const now = new Date();
-  const result = new Date(now);
-  const offset = (result.getDay() + 6) % 7;
-  result.setHours(0, 0, 0, 0);
-  result.setDate(result.getDate() - offset);
-  return result;
+function getWeekdayLabels() {
+  const formatter = new Intl.DateTimeFormat(locale, { weekday: "short" });
+  const monday = new Date("2026-01-05T00:00:00");
+
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(monday);
+    date.setDate(monday.getDate() + index);
+    return formatter.format(date);
+  });
 }
 
-export function buildDashboardMetrics(history = state.history) {
-  const serviceCounts = new Map();
-  let totalPromptLength = 0;
+function formatDailyLabel(dateKey) {
+  return formatShortDate(`${dateKey}T00:00:00`);
+}
 
-  history.forEach((entry) => {
-    totalPromptLength += entry.text.length;
-    getRequestedServices(entry).forEach((siteId) => {
-      serviceCounts.set(siteId, (serviceCounts.get(siteId) ?? 0) + 1);
-    });
-  });
-
-  const mostUsed = [...serviceCounts.entries()].sort((left, right) => right[1] - left[1])[0];
-  const weekStart = getStartOfCurrentWeek();
-  const weekCount = history.filter((entry) => new Date(entry.createdAt) >= weekStart).length;
-  const averagePromptLength = history.length > 0 ? Math.round(totalPromptLength / history.length) : 0;
-
-  const donutItems = [...serviceCounts.entries()]
-    .sort((left, right) => right[1] - left[1])
-    .map(([siteId, count]) => ({
-      id: siteId,
-      label: getSiteLabel(siteId, state.runtimeSites),
-      count,
-    }));
-
-  const dailyCounts = [];
-  for (let index = 6; index >= 0; index -= 1) {
-    const date = new Date();
-    date.setHours(0, 0, 0, 0);
-    date.setDate(date.getDate() - index);
-    const dateKey = getRelativeLocalDateKey(-index);
-    dailyCounts.push({
-      key: dateKey,
-      label: formatShortDate(date),
-      count: history.filter((entry) => getLocalDateKey(entry.createdAt) === dateKey).length,
-    });
+function buildFailureReasonsMarkup(items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return createEmptyState(t.charts.noFailure);
   }
 
-  return {
-    totalTransmissions: history.length,
-    mostUsedService: mostUsed ? getSiteLabel(mostUsed[0], state.runtimeSites) : "-",
-    weekCount,
-    averagePromptLength,
-    donutItems,
-    dailyCounts,
-  };
+  return `
+    <div class="summary-list">
+      ${items.slice(0, 6).map((item) => {
+        const label = t.settings.resultCodeLabels[item.code] || item.code;
+        return `
+          <div class="summary-row">
+            <div class="summary-copy">
+              <strong>${escapeHTML(label)}</strong>
+              <span>${escapeHTML(item.code)}</span>
+            </div>
+            <div class="summary-meta">${escapeHTML(String(item.count))}</div>
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function buildStrategySummaryMarkup(items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return createEmptyState(t.charts.noStrategy);
+  }
+
+  return `
+    <div class="summary-list">
+      ${items.slice(0, 6).map((item) => `
+        <div class="summary-row">
+          <div class="summary-copy">
+            <strong>${escapeHTML(item.label)}</strong>
+            <span>${escapeHTML(`${t.charts.bestStrategyLabel}: ${item.bestStrategy || "-"}`)}</span>
+          </div>
+          <div class="summary-meta">
+            ${escapeHTML(`${item.totalAttempts} ${t.charts.attemptsLabel}`)}
+            <br />
+            ${escapeHTML(`${item.bestSuccessRate}%`)}
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  `;
 }
 
 export function renderDashboard() {
-  const metrics = buildDashboardMetrics(state.history);
+  const metrics = buildDashboardMetrics(
+    state.history,
+    state.runtimeSites,
+    state.strategyStats,
+  );
   const cards = [
     { label: t.cards.totalTransmissions, value: metrics.totalTransmissions },
     { label: t.cards.mostUsedService, value: metrics.mostUsedService },
@@ -94,8 +114,44 @@ export function renderDashboard() {
     totalSent: t.charts.totalSent,
     donutAria: t.charts.donutAria,
   });
-  dailyBarChart.innerHTML = buildBarChartMarkup(metrics.dailyCounts, {
-    noDaily: t.charts.noDaily,
-    barAria: t.charts.barAria,
-  });
+
+  dailyBarChart.innerHTML = buildBarChartMarkup(
+    metrics.dailyCounts.map((item) => ({
+      ...item,
+      label: formatDailyLabel(item.key),
+    })),
+    {
+      noDaily: t.charts.noDaily,
+      barAria: t.charts.barAria,
+    },
+  );
+
+  activityHeatmap.innerHTML = buildHeatmapMarkup(
+    metrics.heatmap.rows.map((row) => ({
+      ...row,
+      label: getWeekdayLabels()[row.dayIndex] ?? `D${row.dayIndex + 1}`,
+    })),
+    {
+      noHeatmap: t.charts.noHeatmap,
+      heatmapAria: t.charts.heatmapAria,
+      hourLabel: t.charts.hourLabel,
+    },
+  );
+
+  serviceTrend.innerHTML = buildTrendMarkup(
+    metrics.serviceTrendItems.map((item) => ({
+      ...item,
+      dailySeries: (item.dailySeries ?? []).map((point) => ({
+        ...point,
+        label: formatDailyLabel(point.key),
+      })),
+    })),
+    {
+      noTrend: t.charts.noTrend,
+      requestsLabel: t.charts.requestsLabel,
+    },
+  );
+
+  failureReasons.innerHTML = buildFailureReasonsMarkup(metrics.failureReasonItems);
+  strategySummary.innerHTML = buildStrategySummaryMarkup(metrics.strategySummaryItems);
 }

@@ -195,7 +195,8 @@ var DEFAULT_SETTINGS = Object.freeze({
   reuseExistingTabs: true,
   waitMsMultiplier: DEFAULT_WAIT_MS_MULTIPLIER,
   historySort: DEFAULT_HISTORY_SORT,
-  favoriteSort: DEFAULT_FAVORITE_SORT
+  favoriteSort: DEFAULT_FAVORITE_SORT,
+  siteOrder: []
 });
 
 // src/shared/prompts/normalizers.ts
@@ -344,7 +345,8 @@ function normalizeSettings(value) {
     ),
     waitMsMultiplier: normalizeWaitMsMultiplier(settings.waitMsMultiplier),
     historySort: normalizeHistorySort(settings.historySort),
-    favoriteSort: normalizeFavoriteSort(settings.favoriteSort)
+    favoriteSort: normalizeFavoriteSort(settings.favoriteSort),
+    siteOrder: normalizeSiteIdList(settings.siteOrder)
   };
 }
 function normalizeStatus(value) {
@@ -2703,6 +2705,7 @@ var SCHEDULED_VARIABLE_BLOCKLIST = /* @__PURE__ */ new Set([
 ]);
 var FAVORITE_JOB_ALARM_PREFIX = "apb-favorite-job:";
 var FAVORITE_JOB_INITIAL_DELAY_MS = 50;
+var favoriteExecutionChain = Promise.resolve();
 function createFavoriteRunJobId() {
   return typeof crypto?.randomUUID === "function" ? crypto.randomUUID() : `favorite-job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -2727,6 +2730,11 @@ function replaceFavoriteRunJob(jobs, nextJob) {
   const nextJobs = jobs.filter((job) => job.jobId !== nextJob.jobId);
   nextJobs.unshift(nextJob);
   return nextJobs;
+}
+function queueFavoriteExecution(task) {
+  const resultPromise = favoriteExecutionChain.then(task, task);
+  favoriteExecutionChain = resultPromise.then(() => void 0, () => void 0);
+  return resultPromise;
 }
 function createFavoriteWorkflow(deps) {
   const {
@@ -3072,42 +3080,64 @@ function createFavoriteWorkflow(deps) {
     });
   }
   async function queueFavoriteRunJob(favorite, trigger, executionContext, steps, defaults) {
-    const existingJobs = await getFavoriteRunJobs();
-    const dedupedJob = findFavoriteRunDedupedJob(existingJobs, favorite.id);
-    if (dedupedJob) {
+    const createdAt = nowIso2();
+    const queueState = {
+      queuedJob: null,
+      dedupedJob: null
+    };
+    await updateFavoriteRunJobs((jobs) => {
+      queueState.dedupedJob = findFavoriteRunDedupedJob(jobs, favorite.id);
+      if (queueState.dedupedJob) {
+        return jobs;
+      }
+      queueState.queuedJob = {
+        jobId: createFavoriteRunJobId(),
+        favoriteId: favorite.id,
+        trigger,
+        status: "queued",
+        mode: favorite.mode === "chain" ? "chain" : "single",
+        stepCount: steps.length,
+        completedSteps: 0,
+        currentStepIndex: steps.length > 0 ? 0 : null,
+        chainRunId: favorite.mode === "chain" ? buildChainRunId2() : null,
+        currentBroadcastId: null,
+        message: getQueuedMessage(),
+        createdAt,
+        updatedAt: createdAt,
+        favoriteTitle: favorite.title || previewFavoriteText(favorite),
+        steps,
+        templateDefaults: { ...defaults ?? {} },
+        executionContext: { ...executionContext }
+      };
+      return replaceFavoriteRunJob(jobs, queueState.queuedJob);
+    });
+    const finalDedupedJob = queueState.dedupedJob;
+    if (finalDedupedJob) {
       return {
         ok: true,
         deduped: true,
-        jobId: dedupedJob.jobId,
+        jobId: finalDedupedJob.jobId,
         message: getDedupedMessage()
       };
     }
-    const createdAt = nowIso2();
-    const job = {
-      jobId: createFavoriteRunJobId(),
-      favoriteId: favorite.id,
-      trigger,
-      status: "queued",
-      mode: favorite.mode === "chain" ? "chain" : "single",
-      stepCount: steps.length,
-      completedSteps: 0,
-      currentStepIndex: steps.length > 0 ? 0 : null,
-      chainRunId: favorite.mode === "chain" ? buildChainRunId2() : null,
-      currentBroadcastId: null,
-      message: getQueuedMessage(),
-      createdAt,
-      updatedAt: createdAt,
-      favoriteTitle: favorite.title || previewFavoriteText(favorite),
-      steps,
-      templateDefaults: { ...defaults ?? {} },
-      executionContext: { ...executionContext }
-    };
-    await updateFavoriteRunJobs((jobs) => replaceFavoriteRunJob(jobs, job));
-    await scheduleFavoriteJobAlarm(job.jobId);
+    const finalQueuedJob = queueState.queuedJob;
+    if (!finalQueuedJob) {
+      return {
+        ok: false,
+        deduped: false,
+        jobId: "",
+        message: getWorkflowMessage(
+          "favorite_run_error_queue_failed",
+          [],
+          "Favorite execution could not be queued."
+        )
+      };
+    }
+    await scheduleFavoriteJobAlarm(finalQueuedJob.jobId);
     return {
       ok: true,
       deduped: false,
-      jobId: job.jobId,
+      jobId: finalQueuedJob.jobId,
       message: getQueuedMessage()
     };
   }
@@ -3217,23 +3247,25 @@ function createFavoriteWorkflow(deps) {
         }));
         return;
       }
-      const prompt = await buildFavoriteStepPrompt(
-        step,
-        job.templateDefaults,
-        job.executionContext
-      );
       const targetSiteIds = normalizeSiteIdList(step.targetSiteIds);
-      const response = await queueBroadcastRequest2(
-        prompt,
-        targetSiteIds.map((siteId) => ({ id: siteId })),
-        {
-          originFavoriteId: job.favoriteId,
-          chainRunId: job.chainRunId,
-          chainStepIndex: job.mode === "chain" ? stepIndex : null,
-          chainStepCount: job.mode === "chain" ? job.stepCount : null,
-          trigger: job.trigger
-        }
-      );
+      const response = await queueFavoriteExecution(async () => {
+        const prompt = await buildFavoriteStepPrompt(
+          step,
+          job.templateDefaults,
+          job.executionContext
+        );
+        return queueBroadcastRequest2(
+          prompt,
+          targetSiteIds.map((siteId) => ({ id: siteId })),
+          {
+            originFavoriteId: job.favoriteId,
+            chainRunId: job.chainRunId,
+            chainStepIndex: job.mode === "chain" ? stepIndex : null,
+            chainStepCount: job.mode === "chain" ? job.stepCount : null,
+            trigger: job.trigger
+          }
+        );
+      });
       if (!response?.ok || !response?.broadcastId) {
         const errorMessage = response?.error ?? getWorkflowMessage(
           "favorite_run_error_queue_failed",
@@ -3267,7 +3299,7 @@ function createFavoriteWorkflow(deps) {
         updatedAt: nowIso2()
       }));
       const lastBroadcast = await getLastBroadcast().catch(() => null);
-      if (lastBroadcast?.broadcastId === response.broadcastId && lastBroadcast.status !== "sending") {
+      if (lastBroadcast && lastBroadcast.broadcastId === response.broadcastId && lastBroadcast.status !== "sending") {
         await handleFavoriteBroadcastCompletion2(lastBroadcast);
       }
     } catch (error) {
@@ -3586,26 +3618,55 @@ function createFavoriteWorkflow(deps) {
 }
 
 // src/background/messages/router.ts
+function safeSendResponse(sendResponse, payload) {
+  try {
+    sendResponse(payload);
+  } catch (_error) {
+    return false;
+  }
+  return true;
+}
+function buildFallback(work, error) {
+  const fallback = {
+    ok: false,
+    error: error?.message ?? String(error)
+  };
+  return typeof work.onError === "function" ? work.onError(error, fallback) : fallback;
+}
+function isTrustedSender(sender) {
+  if (sender?.tab?.id) {
+    return true;
+  }
+  return sender?.id === chrome.runtime.id;
+}
 function respondWith(sendResponse, work, errorLabel) {
-  void Promise.resolve().then(work).then((result) => sendResponse(result)).catch((error) => {
+  void Promise.resolve().then(work).then((result) => {
+    safeSendResponse(sendResponse, result);
+  }).catch((error) => {
     if (errorLabel) {
       console.error(errorLabel, error);
     }
-    const fallback = {
-      ok: false,
-      error: error?.message ?? String(error)
-    };
-    sendResponse(typeof work.onError === "function" ? work.onError(error, fallback) : fallback);
+    safeSendResponse(sendResponse, buildFallback(work, error));
   });
 }
 function registerRuntimeMessageRouter(handlers) {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (!isTrustedSender(sender)) {
+      return false;
+    }
     const handler = handlers[message?.action];
     if (!handler) {
       return false;
     }
     if (handler.sync) {
-      sendResponse(handler.run(message, sender));
+      try {
+        safeSendResponse(sendResponse, handler.run(message, sender));
+      } catch (error) {
+        if (handler.errorLabel) {
+          console.error(handler.errorLabel, error);
+        }
+        safeSendResponse(sendResponse, buildFallback(handler, error));
+      }
       return false;
     }
     const task = () => handler.run(message, sender);
@@ -3634,6 +3695,7 @@ var lastNormalTabId = null;
 var contextMenuRefreshChain = Promise.resolve();
 var injectionProcessChain = Promise.resolve();
 var backgroundStateMutationChain = Promise.resolve();
+var runtimeSiteLookupCache = null;
 var SCHEDULED_VARIABLE_BLOCKLIST2 = /* @__PURE__ */ new Set([
   SYSTEM_TEMPLATE_VARIABLES.url,
   SYSTEM_TEMPLATE_VARIABLES.title,
@@ -3653,6 +3715,22 @@ function sleep(ms) {
 }
 function clonePlainValue(value) {
   return value ? JSON.parse(JSON.stringify(value)) : value;
+}
+function cacheRuntimeSites(sites) {
+  runtimeSiteLookupCache = new Map(
+    (Array.isArray(sites) ? sites : []).filter((site) => typeof site?.id === "string" && site.id.trim()).map((site) => [site.id.trim(), site])
+  );
+  return runtimeSiteLookupCache;
+}
+async function getRuntimeSiteLookup(forceRefresh = false) {
+  if (!runtimeSiteLookupCache || forceRefresh) {
+    try {
+      cacheRuntimeSites(await getRuntimeSites());
+    } catch (_error) {
+      runtimeSiteLookupCache = /* @__PURE__ */ new Map();
+    }
+  }
+  return runtimeSiteLookupCache;
 }
 function normalizePrompt2(value) {
   return typeof value === "string" ? value : "";
@@ -3935,13 +4013,13 @@ async function removePendingInjection(tabId) {
   await updatePendingInjection(tabId, null);
 }
 async function getSiteById(siteId) {
-  const sites = await getRuntimeSites();
-  return sites.find((site) => site.id === siteId) ?? null;
+  const siteLookup = await getRuntimeSiteLookup();
+  return siteLookup.get(siteId) ?? null;
 }
 async function getSiteForUrl(urlString) {
   try {
     const url = new URL(urlString);
-    const sites = await getRuntimeSites();
+    const sites = [...(await getRuntimeSiteLookup()).values()];
     const normalizedHostname = url.hostname.toLowerCase();
     return sites.find((site) => getAllowedSiteHostnames(site).has(normalizedHostname)) ?? null;
   } catch (error) {
@@ -3958,6 +4036,7 @@ function normalizeTargetTabId2(value) {
 }
 async function resolveSelectedTargets(siteRefs) {
   const runtimeSites = await getRuntimeSites();
+  cacheRuntimeSites(runtimeSites);
   const resolvedTargets = [];
   const seenIds = /* @__PURE__ */ new Set();
   for (const siteRef of Array.isArray(siteRefs) ? siteRefs : []) {

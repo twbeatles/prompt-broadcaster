@@ -1,8 +1,9 @@
+import { sendRuntimeMessageWithTimeout as sendSharedRuntimeMessageWithTimeout } from "../../shared/chrome/messaging";
 import { logError } from "./dom";
 
 export async function sendRuntimeMessage(message: unknown): Promise<unknown> {
   try {
-    return await chrome.runtime.sendMessage(message as object);
+    return await sendSharedRuntimeMessageWithTimeout(message, 4000);
   } catch (error) {
     const action = typeof message === "object" && message && "action" in (message as Record<string, unknown>)
       ? String((message as Record<string, unknown>).action)

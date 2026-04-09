@@ -5,7 +5,14 @@
 /node_modules
 
 # Documentation assets
-/docs/assets/
+/docs/assets/*
+!/docs/assets/README.md
+!/docs/assets/web-store/
+/docs/assets/web-store/*
+!/docs/assets/web-store/showcase.html
+!/docs/assets/web-store/showcase.css
+!/docs/assets/web-store/showcase.js
+/docs/assets/web-store/screenshots/
 
 # Extension dev profile directory (Chrome extension ID folder)
 /ddebobakhbknpcmiobbpkgbhhccmdmop/

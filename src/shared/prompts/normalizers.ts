@@ -211,6 +211,7 @@ export function normalizeSettings(value: unknown): AppSettings {
     waitMsMultiplier: normalizeWaitMsMultiplier(settings.waitMsMultiplier),
     historySort: normalizeHistorySort(settings.historySort),
     favoriteSort: normalizeFavoriteSort(settings.favoriteSort),
+    siteOrder: normalizeSiteIdList(settings.siteOrder),
   };
 }
 

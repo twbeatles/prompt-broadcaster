@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { sendRuntimeMessageWithTimeout } from "../../shared/chrome/messaging";
 import { updateFavoritePrompt } from "../../shared/prompts";
 import { getLatestFavoriteRunJobByFavoriteId } from "../../shared/runtime-state";
 import { escapeHTML } from "../../shared/security";
@@ -12,6 +13,7 @@ import {
   previewText,
 } from "../app/helpers";
 import { setStatus, showAppToast } from "../core/status";
+import { buildScheduledFavoriteRunSummary } from "./schedule-summary";
 
 const { schedulesList } = optionsDom.schedules;
 
@@ -29,8 +31,28 @@ function getScheduleRepeatLabel(repeat) {
   }
 }
 
-function getLastFavoriteRun(favoriteId) {
-  return state.history.find((entry) => String(entry.originFavoriteId ?? "") === String(favoriteId)) ?? null;
+function buildScheduledRunDetailMarkup(summary) {
+  if (!summary?.representativeCode && !summary?.representativeMessage) {
+    return "";
+  }
+
+  const codeLabel = summary?.representativeCode
+    ? (t.settings.resultCodeLabels[summary.representativeCode] || summary.representativeCode)
+    : "";
+  const detailText = summary?.representativeMessage
+    ? `${codeLabel ? `${codeLabel}: ` : ""}${summary.representativeMessage}`
+    : codeLabel;
+
+  if (!detailText) {
+    return "";
+  }
+
+  return `
+    <div class="schedule-result-detail">
+      <strong>${escapeHTML(t.schedules.failureDetail)}</strong>
+      <div>${escapeHTML(detailText)}</div>
+    </div>
+  `;
 }
 
 function buildFavoriteJobStatusMarkup(favoriteId) {
@@ -75,7 +97,7 @@ export function renderSchedulesSection() {
 
   schedulesList.innerHTML = scheduledFavorites
     .map((favorite) => {
-      const lastRun = getLastFavoriteRun(favorite.id);
+      const scheduledRunSummary = buildScheduledFavoriteRunSummary(state.history, favorite.id);
       return `
         <article class="settings-control schedule-card" data-schedule-favorite-id="${escapeHTML(favorite.id)}">
           <div class="schedule-card-head">
@@ -104,14 +126,15 @@ export function renderSchedulesSection() {
               <div>${escapeHTML(getScheduleRepeatLabel(favorite.scheduleRepeat))}</div>
             </div>
             <div>
-              <strong>${escapeHTML(t.schedules.lastRun)}</strong>
-              <div>${escapeHTML(lastRun?.createdAt ? formatDateTime(lastRun.createdAt) : t.schedules.never)}</div>
+              <strong>${escapeHTML(t.schedules.lastScheduledRun)}</strong>
+              <div>${escapeHTML(scheduledRunSummary?.createdAt ? formatDateTime(scheduledRunSummary.createdAt) : t.schedules.never)}</div>
             </div>
             <div>
-              <strong>${escapeHTML(t.history.tableStatus)}</strong>
-              <div>${escapeHTML(lastRun ? getStatusInfo(lastRun.status).label : t.schedules.never)}</div>
+              <strong>${escapeHTML(t.schedules.scheduledResult)}</strong>
+              <div>${escapeHTML(scheduledRunSummary ? getStatusInfo(scheduledRunSummary.status).label : t.schedules.never)}</div>
             </div>
           </div>
+          ${buildScheduledRunDetailMarkup(scheduledRunSummary)}
           <div class="schedule-card-actions">
             <button class="btn" type="button" data-action="run-schedule-favorite" data-favorite-id="${escapeHTML(favorite.id)}">${escapeHTML(t.schedules.runNow)}</button>
             <button class="btn ghost" type="button" data-action="open-schedule-favorite" data-favorite-id="${escapeHTML(favorite.id)}">${escapeHTML(t.schedules.openInPopup)}</button>
@@ -123,12 +146,12 @@ export function renderSchedulesSection() {
 }
 
 async function runFavoriteFromOptions(favoriteId) {
-  const response = await chrome.runtime.sendMessage({
+  const response = await sendRuntimeMessageWithTimeout({
     action: "favorite:run",
     favoriteId,
     trigger: "options",
     allowPopupFallback: true,
-  });
+  }, 5000);
 
   if (response?.ok && response?.popupFallback) {
     setStatus(t.schedules.popupFallback, "success");
@@ -147,11 +170,11 @@ async function runFavoriteFromOptions(favoriteId) {
 }
 
 async function openFavoriteInPopup(favoriteId) {
-  const response = await chrome.runtime.sendMessage({
+  const response = await sendRuntimeMessageWithTimeout({
     action: "favorite:openEditor",
     favoriteId,
     source: "options-edit",
-  });
+  }, 5000);
 
   if (!response?.ok) {
     throw new Error(response?.error ?? t.schedules.openFailed);

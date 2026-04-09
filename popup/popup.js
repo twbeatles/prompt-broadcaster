@@ -230,7 +230,8 @@ var DEFAULT_SETTINGS = Object.freeze({
   reuseExistingTabs: true,
   waitMsMultiplier: DEFAULT_WAIT_MS_MULTIPLIER,
   historySort: DEFAULT_HISTORY_SORT,
-  favoriteSort: DEFAULT_FAVORITE_SORT
+  favoriteSort: DEFAULT_FAVORITE_SORT,
+  siteOrder: []
 });
 
 // src/shared/prompts/normalizers.ts
@@ -379,7 +380,8 @@ function normalizeSettings(value) {
     ),
     waitMsMultiplier: normalizeWaitMsMultiplier(settings.waitMsMultiplier),
     historySort: normalizeHistorySort(settings.historySort),
-    favoriteSort: normalizeFavoriteSort(settings.favoriteSort)
+    favoriteSort: normalizeFavoriteSort(settings.favoriteSort),
+    siteOrder: normalizeSiteIdList(settings.siteOrder)
   };
 }
 function normalizeStatus(value) {
@@ -2460,6 +2462,87 @@ async function drainPendingUiToasts() {
   const current = await getPendingUiToasts();
   await setPendingUiToasts([]);
   return current;
+}
+
+// src/shared/sites/order.ts
+function normalizeSiteOrder(siteOrder) {
+  if (!Array.isArray(siteOrder)) {
+    return [];
+  }
+  return Array.from(
+    new Set(
+      siteOrder.filter((entry) => typeof entry === "string" && entry.trim()).map((entry) => entry.trim())
+    )
+  );
+}
+function sortSitesByOrder(sites = [], siteOrder) {
+  const normalizedOrder = normalizeSiteOrder(siteOrder);
+  if (normalizedOrder.length === 0) {
+    return [...Array.isArray(sites) ? sites : []];
+  }
+  const siteMap = /* @__PURE__ */ new Map();
+  const unorderedSites = [];
+  (Array.isArray(sites) ? sites : []).forEach((site) => {
+    const siteId = typeof site?.id === "string" ? site.id.trim() : "";
+    if (!siteId) {
+      unorderedSites.push(site);
+      return;
+    }
+    siteMap.set(siteId, site);
+  });
+  const orderedSites = normalizedOrder.map((siteId) => siteMap.get(siteId)).filter((site) => Boolean(site));
+  const orderedIds = new Set(orderedSites.map((site) => String(site.id).trim()));
+  return [
+    ...orderedSites,
+    ...(Array.isArray(sites) ? sites : []).filter((site) => {
+      const siteId = typeof site?.id === "string" ? site.id.trim() : "";
+      return !siteId || !orderedIds.has(siteId);
+    })
+  ];
+}
+
+// src/shared/chrome/messaging.ts
+var DEFAULT_RUNTIME_MESSAGE_TIMEOUT_MS = 5e3;
+function normalizeTimeoutMs(timeoutMs) {
+  const numericValue = Number(timeoutMs);
+  if (!Number.isFinite(numericValue) || numericValue <= 0) {
+    return 0;
+  }
+  return Math.max(0, Math.round(numericValue));
+}
+function sendRuntimeMessage(message, timeoutMs = 0, fallbackValue = null) {
+  return new Promise((resolve) => {
+    let settled = false;
+    let timeoutId = 0;
+    const finish = (value) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timeoutId) {
+        globalThis.clearTimeout(timeoutId);
+      }
+      resolve(value ?? fallbackValue);
+    };
+    const normalizedTimeoutMs = normalizeTimeoutMs(timeoutMs);
+    if (normalizedTimeoutMs > 0) {
+      timeoutId = globalThis.setTimeout(() => finish(fallbackValue), normalizedTimeoutMs);
+    }
+    try {
+      chrome.runtime.sendMessage(message, (response) => {
+        if (chrome.runtime.lastError) {
+          finish(fallbackValue);
+          return;
+        }
+        finish(response ?? fallbackValue);
+      });
+    } catch (_error) {
+      finish(fallbackValue);
+    }
+  });
+}
+function sendRuntimeMessageWithTimeout(message, timeoutMs = DEFAULT_RUNTIME_MESSAGE_TIMEOUT_MS, fallbackValue = null) {
+  return sendRuntimeMessage(message, timeoutMs, fallbackValue);
 }
 
 // src/popup/ui/toast.ts
@@ -4817,7 +4900,7 @@ function normalizeOpenSiteTab(entry) {
 }
 async function refreshOpenSiteTabs() {
   try {
-    const response = await chrome.runtime.sendMessage({ action: "getOpenAiTabs" }).catch(() => null);
+    const response = await sendRuntimeMessageWithTimeout({ action: "getOpenAiTabs" }, 5e3);
     const tabs = Array.isArray(response?.tabs) ? response.tabs.map((entry) => normalizeOpenSiteTab(entry)).filter(Boolean) : [];
     state.openTabsWindowId = Number.isFinite(Number(response?.windowId)) ? Number(response.windowId) : null;
     state.openSiteTabs = tabs;
@@ -4932,7 +5015,7 @@ async function loadStoredData() {
     state.history = history;
     state.favorites = favorites;
     state.templateVariableCache = variableCache;
-    state.runtimeSites = runtimeSites;
+    state.runtimeSites = sortSitesByOrder(runtimeSites, settings.siteOrder);
     state.failedSelectors = new Map(failedSelectors.map((entry) => [entry.serviceId, entry]));
     state.favoriteJobs = favoriteJobs;
     state.settings = settings;
@@ -4968,7 +5051,7 @@ async function refreshStoredData() {
     state.history = history;
     state.favorites = favorites;
     state.templateVariableCache = variableCache;
-    state.runtimeSites = runtimeSites;
+    state.runtimeSites = sortSitesByOrder(runtimeSites, settings.siteOrder);
     state.failedSelectors = new Map(failedSelectors.map((entry) => [entry.serviceId, entry]));
     state.favoriteJobs = favoriteJobs;
     state.settings = settings;
@@ -5130,10 +5213,10 @@ async function cancelCurrentBroadcast() {
   }
   cancelSendBtn.disabled = true;
   try {
-    const response = await chrome.runtime.sendMessage({
+    const response = await sendRuntimeMessageWithTimeout({
       action: "cancelBroadcast",
       broadcastId
-    });
+    }, 1e4);
     if (!response?.ok) {
       throw new Error(response?.error ?? getUnknownErrorText());
     }
@@ -5193,11 +5276,11 @@ function addRetryButton(target, mainPrompt) {
     setSiteCardState(siteId, "sending");
     try {
       await refreshOpenSiteTabs();
-      const response = await chrome.runtime.sendMessage({
+      const response = await sendRuntimeMessageWithTimeout({
         action: "broadcast",
         prompt: mainPrompt,
         sites: buildRuntimeBroadcastTargets([target])
-      });
+      }, 1e4);
       const failedIds = Array.isArray(response?.failedTabSiteIds) ? response.failedTabSiteIds : [];
       if (response?.ok && !failedIds.includes(siteId)) {
         setSiteCardState(siteId, "sent");
@@ -5238,11 +5321,11 @@ async function sendResolvedPrompt(mainPrompt, targets) {
     await refreshOpenSiteTabs();
     await setLastSentPrompt(mainPrompt);
     clearAllToasts();
-    const response = await chrome.runtime.sendMessage({
+    const response = await sendRuntimeMessageWithTimeout({
       action: "broadcast",
       prompt: mainPrompt,
       sites: buildRuntimeBroadcastTargets(targets)
-    });
+    }, 1e4);
     if (response?.ok) {
       if (Array.isArray(response.failedTabSiteIds)) {
         response.failedTabSiteIds.forEach((siteId) => {
@@ -5441,7 +5524,7 @@ async function resolveAsyncTemplateVariables(variables) {
   const extra = {};
   if (needsTabContext) {
     try {
-      const response = await chrome.runtime.sendMessage({ action: "getActiveTabContext" }).catch(() => null);
+      const response = await sendRuntimeMessageWithTimeout({ action: "getActiveTabContext" }, 4e3);
       if (response?.ok) {
         extra.url = response.url ?? "";
         extra.title = response.title ?? "";
@@ -5452,7 +5535,7 @@ async function resolveAsyncTemplateVariables(variables) {
   }
   if (needsCounter) {
     try {
-      const response = await chrome.runtime.sendMessage({ action: "getBroadcastCounter" }).catch(() => null);
+      const response = await sendRuntimeMessageWithTimeout({ action: "getBroadcastCounter" }, 4e3);
       extra.counter = response?.counter != null ? String(Number(response.counter) + 1) : "1";
     } catch (_error) {
       extra.counter = "1";
@@ -5554,13 +5637,13 @@ async function requestFavoriteRun(favorite, {
   if (!prepared?.ok) {
     return prepared;
   }
-  return chrome.runtime.sendMessage({
+  return sendRuntimeMessageWithTimeout({
     action: "favorite:run",
     favoriteId: favorite.id,
     trigger,
     allowPopupFallback,
     preparedExecutionContext: prepared.preparedExecutionContext
-  });
+  }, 1e4);
 }
 async function maybeMarkLoadedFavoriteAsUsed() {
   if (!state.loadedFavoriteId) {
@@ -6122,11 +6205,11 @@ async function testSelectorOnActiveTab() {
     return;
   }
   try {
-    const response = await chrome.runtime.sendMessage({
+    const response = await sendRuntimeMessageWithTimeout({
       action: "service-test:run",
       draft: readServiceEditorDraft(),
       isBuiltIn: Boolean(state.serviceEditor?.isBuiltIn)
-    });
+    }, 1e4);
     const result = buildServiceTestResultMessage(response);
     setServiceTestResult(result.message, result.isError);
   } catch (error) {
@@ -6819,7 +6902,7 @@ async function init() {
     syncToggleAllLabel();
     await loadStoredData();
     await maybeHandlePopupFavoriteIntent();
-    await chrome.runtime.sendMessage({ action: "popupOpened" }).catch(() => null);
+    await sendRuntimeMessageWithTimeout({ action: "popupOpened" }, 1e3);
     applyLastBroadcastState(await getLastBroadcast(), { silentToast: false });
     await flushPendingSessionToasts();
     if (!getOpenOverlay()) {

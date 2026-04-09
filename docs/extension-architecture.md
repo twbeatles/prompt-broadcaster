@@ -135,6 +135,7 @@ Responsibilities:
 
 - register Chrome listeners and wire runtime dependencies
 - route popup/content/runtime messages through `src/background/messages/router.ts`
+- accept only internal extension pages and this extension's own content scripts at the runtime-message trust boundary
 - resolve tab routing, including reusable tabs, specific tab targets, and forced new tabs
 - open target tabs and track pending broadcasts
 - maintain action badge state, notifications, selector alerts, and popup reopen flow
@@ -163,6 +164,7 @@ Popup helper boundaries:
 - `src/popup/app/dom.ts`: DOM registry
 - `src/popup/app/helpers.ts`, `sorting.ts`, `list-markup.ts`: pure formatting and markup helpers
 - `src/popup/features/favorite-editor.ts`: modal state, chain steps, schedule fields, favorite run/edit actions
+- `src/shared/chrome/messaging.ts`: timeout-safe runtime messaging helper shared by popup/options/content surfaces
 
 ### Options Page
 
@@ -176,11 +178,15 @@ Responsibilities:
 - runtime service inspection and `waitMs` controls
 - import/export, reset-data, shortcut display, and general settings
 - scheduled-favorite list with toggle, `Run now`, and popup editor handoff
+- persisted service ordering controls (`Move up` / `Move down`) reused by popup and favorite editor
+- separate last-scheduled-run result summaries from manual favorite runs
 
 Options helper boundaries:
 
 - `src/options/core/`: shared status, navigation, reload, and filter helpers
 - `src/options/features/`: dashboard, history, schedules, services, and settings sections
+- `src/options/features/dashboard-metrics.ts`: pure aggregation for cards, heatmap, trends, failure reasons, and strategy summary
+- `src/options/features/schedule-summary.ts`: pure scheduled-run summary helper
 - `src/options/ui/charts.ts`: chart rendering
 
 ### Content Injector
@@ -270,6 +276,7 @@ Runtime site records can include:
 - `verifiedVersion`
 
 Custom service permissions are derived from `url + hostnameAliases`. Save, import, and runtime execution checks are all-or-nothing for that required origin set.
+Runtime site ordering is persisted separately in `appSettings.siteOrder` and then applied consistently by popup, favorite editor, and options services.
 
 ### Prompt, Favorite, and Runtime State Storage
 
@@ -285,6 +292,7 @@ Important local-storage keys:
 - `failedSelectors`
 - `onboardingCompleted`
 - `strategyStats`
+- `appSettings.siteOrder` (inside `appSettings`)
 
 Important session-storage keys:
 
@@ -330,6 +338,7 @@ Favorites are normalized in `src/shared/prompts/favorites-store.ts` and include:
 Chain favorites store ordered steps. Scheduled favorites use the same record as the single source of truth for `chrome.alarms`.
 
 Background favorite jobs also persist a normalized step list plus `FavoriteRunExecutionContextSnapshot`, which now includes a prepared `clipboard` field for popup-triggered runs.
+Favorite prompt rendering plus queue submission is serialized so concurrent `{{counter}}` favorite runs do not reuse the same counter value.
 
 ### Structured Result Codes
 
@@ -391,6 +400,7 @@ Background favorite jobs also persist a normalized step list plus `FavoriteRunEx
 2. When `chrome.alarms` fires, background loads the favorite and validates scheduled-safe variables.
 3. One-time schedules clear themselves after execution.
 4. Repeating schedules compute the next `scheduledAt` and re-register the alarm.
+5. Options summarizes the latest `trigger === "scheduled"` history entry separately from manual runs so failed schedules stay visible even after later manual retries.
 
 ### Quick Palette
 
@@ -399,6 +409,12 @@ Background favorite jobs also persist a normalized step list plus `FavoriteRunEx
 3. The overlay asks the background for favorite search state.
 4. Entering a favorite either runs it directly or falls back to popup handoff when additional inputs are required.
 5. If the missing values are popup-resolvable only (for example clipboard or active-tab context), the popup retries automatically before showing the editor.
+
+## Options Analytics and Service Ordering
+
+- The options `Dashboard` now includes overview cards, usage share, 7-day activity bars, a weekday/hour heatmap, per-service success trends, top failure reasons, and a strategy summary backed by `strategyStats`.
+- The options `Services` section persists runtime site order through `appSettings.siteOrder` using accessible `Move up` / `Move down` buttons instead of drag-and-drop.
+- That saved order is reused by popup compose service cards, favorite editor target lists, and the options services list. Explicit broadcast target arrays still keep their own requested order.
 
 ## Template Variable Flow
 
@@ -439,18 +455,23 @@ Current smoke coverage includes:
 - delayed click-submit activation
 - `click`, `enter`, and `shift+enter` submission paths
 - selector checker `ok` and `auth_page` reporting
+- internal-only runtime router trust checks and timeout-safe runtime messaging fallback
 - custom service permission cleanup and alias-origin handling
 - built-in override repair for invalid click-submit imports
 - `broadcastCounter` export/import/reset semantics
 - import migration to export `version: 6`
+- `siteOrder` normalization and ordering reuse
 - favorite chain/schedule field normalization for legacy imports
 - favorite run job dedupe, effective chain-target fallback, and prepared clipboard context
+- favorite `{{counter}}` serialization across concurrent runs
 - failure history creation for pre-broadcast favorite job failures
+- scheduled-run summary isolation from manual runs
 - quick palette filtering and execution
 - favorites search across title, text, tags, folders, and `#tag`
 - per-service override template resolution and retry prompt preservation
 - structured `siteResults` accumulation
 - adaptive strategy-stat accumulation
+- dashboard metrics for heatmap, trend, failure reasons, and strategy summary
 - reusable-tab preflight rejection for auth/settings/non-input tabs
 - reset helper cleanup across local and session runtime state
 

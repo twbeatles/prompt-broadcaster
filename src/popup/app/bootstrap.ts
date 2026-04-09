@@ -62,6 +62,8 @@ import {
   validateHostnameAliases,
   validateSiteDraft,
 } from "../../shared/sites";
+import { sortSitesByOrder } from "../../shared/sites/order";
+import { sendRuntimeMessageWithTimeout } from "../../shared/chrome/messaging";
 import { matchesFavoriteSearch } from "../../shared/prompts/search";
 import { clearAllToasts, initToastRoot, showToast } from "../ui/toast";
 import {
@@ -768,7 +770,7 @@ function normalizeOpenSiteTab(entry) {
 
 async function refreshOpenSiteTabs() {
   try {
-    const response = await chrome.runtime.sendMessage({ action: "getOpenAiTabs" }).catch(() => null);
+    const response = await sendRuntimeMessageWithTimeout({ action: "getOpenAiTabs" }, 5000);
     const tabs = Array.isArray(response?.tabs)
       ? response.tabs.map((entry) => normalizeOpenSiteTab(entry)).filter(Boolean)
       : [];
@@ -921,7 +923,7 @@ async function loadStoredData() {
     state.history = history;
     state.favorites = favorites;
     state.templateVariableCache = variableCache;
-    state.runtimeSites = runtimeSites;
+    state.runtimeSites = sortSitesByOrder(runtimeSites, settings.siteOrder);
     state.failedSelectors = new Map(failedSelectors.map((entry) => [entry.serviceId, entry]));
     state.favoriteJobs = favoriteJobs;
     state.settings = settings;
@@ -962,7 +964,7 @@ async function refreshStoredData() {
     state.history = history;
     state.favorites = favorites;
     state.templateVariableCache = variableCache;
-    state.runtimeSites = runtimeSites;
+    state.runtimeSites = sortSitesByOrder(runtimeSites, settings.siteOrder);
     state.failedSelectors = new Map(failedSelectors.map((entry) => [entry.serviceId, entry]));
     state.favoriteJobs = favoriteJobs;
     state.settings = settings;
@@ -1160,10 +1162,10 @@ async function cancelCurrentBroadcast() {
   cancelSendBtn.disabled = true;
 
   try {
-    const response = await chrome.runtime.sendMessage({
+    const response = await sendRuntimeMessageWithTimeout({
       action: "cancelBroadcast",
       broadcastId,
-    });
+    }, 10000);
 
     if (!response?.ok) {
       throw new Error(response?.error ?? getUnknownErrorText());
@@ -1229,11 +1231,11 @@ function addRetryButton(target, mainPrompt) {
     setSiteCardState(siteId, "sending");
     try {
       await refreshOpenSiteTabs();
-      const response = await chrome.runtime.sendMessage({
+      const response = await sendRuntimeMessageWithTimeout({
         action: "broadcast",
         prompt: mainPrompt,
         sites: buildRuntimeBroadcastTargets([target]),
-      });
+      }, 10000);
       const failedIds = Array.isArray(response?.failedTabSiteIds) ? response.failedTabSiteIds : [];
       if (response?.ok && !failedIds.includes(siteId)) {
         setSiteCardState(siteId, "sent");
@@ -1282,11 +1284,11 @@ async function sendResolvedPrompt(mainPrompt, targets) {
     await setLastSentPrompt(mainPrompt);
     clearAllToasts();
 
-    const response = await chrome.runtime.sendMessage({
+    const response = await sendRuntimeMessageWithTimeout({
       action: "broadcast",
       prompt: mainPrompt,
       sites: buildRuntimeBroadcastTargets(targets),
-    });
+    }, 10000);
 
     if (response?.ok) {
       if (Array.isArray(response.failedTabSiteIds)) {
@@ -1533,7 +1535,7 @@ async function resolveAsyncTemplateVariables(variables) {
 
   if (needsTabContext) {
     try {
-      const response = await chrome.runtime.sendMessage({ action: "getActiveTabContext" }).catch(() => null);
+      const response = await sendRuntimeMessageWithTimeout({ action: "getActiveTabContext" }, 4000);
       if (response?.ok) {
         extra.url = response.url ?? "";
         extra.title = response.title ?? "";
@@ -1546,7 +1548,7 @@ async function resolveAsyncTemplateVariables(variables) {
 
   if (needsCounter) {
     try {
-      const response = await chrome.runtime.sendMessage({ action: "getBroadcastCounter" }).catch(() => null);
+      const response = await sendRuntimeMessageWithTimeout({ action: "getBroadcastCounter" }, 4000);
       extra.counter = response?.counter != null ? String(Number(response.counter) + 1) : "1";
     } catch (_error) {
       extra.counter = "1";
@@ -1672,13 +1674,13 @@ async function requestFavoriteRun(
     return prepared;
   }
 
-  return chrome.runtime.sendMessage({
+  return sendRuntimeMessageWithTimeout({
     action: "favorite:run",
     favoriteId: favorite.id,
     trigger,
     allowPopupFallback,
     preparedExecutionContext: prepared.preparedExecutionContext,
-  });
+  }, 10000);
 }
 
 async function maybeMarkLoadedFavoriteAsUsed() {
@@ -2535,11 +2537,11 @@ async function testSelectorOnActiveTab() {
   }
 
   try {
-    const response = await chrome.runtime.sendMessage({
+    const response = await sendRuntimeMessageWithTimeout({
       action: "service-test:run",
       draft: readServiceEditorDraft(),
       isBuiltIn: Boolean(state.serviceEditor?.isBuiltIn),
-    });
+    }, 10000);
     const result = buildServiceTestResultMessage(response);
     setServiceTestResult(result.message, result.isError);
   } catch (error) {
@@ -3355,7 +3357,7 @@ async function init() {
     syncToggleAllLabel();
     await loadStoredData();
     await maybeHandlePopupFavoriteIntent();
-    await chrome.runtime.sendMessage({ action: "popupOpened" }).catch(() => null);
+    await sendRuntimeMessageWithTimeout({ action: "popupOpened" }, 1000);
     applyLastBroadcastState(await getLastBroadcast(), { silentToast: false });
     await flushPendingSessionToasts();
     if (!getOpenOverlay()) {

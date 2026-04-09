@@ -102,6 +102,7 @@ let lastNormalTabId = null;
 let contextMenuRefreshChain = Promise.resolve();
 let injectionProcessChain = Promise.resolve();
 let backgroundStateMutationChain = Promise.resolve();
+let runtimeSiteLookupCache = null;
 
 const SCHEDULED_VARIABLE_BLOCKLIST = new Set([
   SYSTEM_TEMPLATE_VARIABLES.url,
@@ -126,6 +127,27 @@ function sleep(ms) {
 
 function clonePlainValue(value) {
   return value ? JSON.parse(JSON.stringify(value)) : value;
+}
+
+function cacheRuntimeSites(sites) {
+  runtimeSiteLookupCache = new Map(
+    (Array.isArray(sites) ? sites : [])
+      .filter((site) => typeof site?.id === "string" && site.id.trim())
+      .map((site) => [site.id.trim(), site])
+  );
+  return runtimeSiteLookupCache;
+}
+
+async function getRuntimeSiteLookup(forceRefresh = false) {
+  if (!runtimeSiteLookupCache || forceRefresh) {
+    try {
+      cacheRuntimeSites(await getRuntimeSites());
+    } catch (_error) {
+      runtimeSiteLookupCache = new Map();
+    }
+  }
+
+  return runtimeSiteLookupCache;
 }
 
 function normalizePrompt(value) {
@@ -504,14 +526,14 @@ async function removePendingInjection(tabId) {
 }
 
 async function getSiteById(siteId) {
-  const sites = await getRuntimeSites();
-  return sites.find((site) => site.id === siteId) ?? null;
+  const siteLookup = await getRuntimeSiteLookup();
+  return siteLookup.get(siteId) ?? null;
 }
 
 async function getSiteForUrl(urlString) {
   try {
     const url = new URL(urlString);
-    const sites = await getRuntimeSites();
+    const sites = [...(await getRuntimeSiteLookup()).values()];
     const normalizedHostname = url.hostname.toLowerCase();
 
     return (
@@ -533,6 +555,7 @@ function normalizeTargetTabId(value) {
 
 async function resolveSelectedTargets(siteRefs) {
   const runtimeSites = await getRuntimeSites();
+  cacheRuntimeSites(runtimeSites);
   const resolvedTargets = [];
   const seenIds = new Set();
 

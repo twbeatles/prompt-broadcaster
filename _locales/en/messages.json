@@ -796,6 +796,45 @@
   "options_chart_bar_aria": {
     "message": "Bar chart of send count for the last 7 days"
   },
+  "options_chart_heatmap_title": {
+    "message": "Activity heatmap"
+  },
+  "options_chart_service_trend_title": {
+    "message": "Service success trend"
+  },
+  "options_chart_failure_title": {
+    "message": "Top failure reasons"
+  },
+  "options_chart_strategy_title": {
+    "message": "Strategy summary"
+  },
+  "options_chart_no_heatmap": {
+    "message": "No activity heatmap yet."
+  },
+  "options_chart_no_trend": {
+    "message": "No service trend yet."
+  },
+  "options_chart_no_failure": {
+    "message": "No failure reasons recorded."
+  },
+  "options_chart_no_strategy": {
+    "message": "No strategy attempts recorded."
+  },
+  "options_chart_heatmap_aria": {
+    "message": "Activity heatmap"
+  },
+  "options_chart_hour_label": {
+    "message": "Hour"
+  },
+  "options_chart_requests_label": {
+    "message": "requests"
+  },
+  "options_chart_attempts_label": {
+    "message": "attempts"
+  },
+  "options_chart_best_strategy_label": {
+    "message": "Best strategy"
+  },
   "options_card_total_transmissions": {
     "message": "Total sends"
   },
@@ -872,6 +911,15 @@
   },
   "options_service_default_color": {
     "message": "Color"
+  },
+  "options_service_move_up": {
+    "message": "Move up"
+  },
+  "options_service_move_down": {
+    "message": "Move down"
+  },
+  "options_service_order_saved": {
+    "message": "Service order saved."
   },
   "options_value_none": {
     "message": "None"
@@ -988,6 +1036,15 @@
   },
   "options_schedules_last_run": {
     "message": "Last run"
+  },
+  "options_schedules_last_scheduled_run": {
+    "message": "Last scheduled run"
+  },
+  "options_schedules_scheduled_result": {
+    "message": "Scheduled result"
+  },
+  "options_schedules_failure_detail": {
+    "message": "Failure detail"
   },
   "options_schedules_run_now": {
     "message": "Run now"

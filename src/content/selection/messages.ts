@@ -1,12 +1,13 @@
 // @ts-nocheck
+import { sendRuntimeMessageWithTimeout } from "../../shared/chrome/messaging";
 import { getSelectionText, logSelectionError } from "./reader";
 
 export function sendSelectionUpdate() {
   try {
-    chrome.runtime.sendMessage({
+    void sendRuntimeMessageWithTimeout({
       action: "selection:update",
       text: getSelectionText(),
-    });
+    }, 1000);
   } catch (error) {
     logSelectionError("Failed to send selection update.", error);
   }

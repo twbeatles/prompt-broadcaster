@@ -1,5 +1,7 @@
 // @ts-nocheck
+import { updateAppSettings } from "../../shared/prompts";
 import { getRuntimeSites, updateRuntimeSite } from "../../shared/sites";
+import { sortSitesByOrder } from "../../shared/sites/order";
 import { escapeHTML } from "../../shared/security";
 import { CHART_COLORS } from "../ui/charts";
 import { optionsDom } from "../app/dom";
@@ -38,6 +40,10 @@ export function renderServicesSection() {
           <div>${escapeHTML(t.services.lastUsed)}</div><div>${escapeHTML(lastUsed)}</div>
           <div>${escapeHTML(t.services.defaultColor)}</div><div><span class="swatch" style="background:${escapeHTML(site.color || CHART_COLORS[index % CHART_COLORS.length])}"></span></div>
         </div>
+        <div class="settings-actions">
+          <button class="btn ghost" type="button" data-move-site="${escapeHTML(site.id)}" data-direction="up" ${index === 0 ? "disabled" : ""}>${escapeHTML(t.services.moveUp)}</button>
+          <button class="btn ghost" type="button" data-move-site="${escapeHTML(site.id)}" data-direction="down" ${index === state.runtimeSites.length - 1 ? "disabled" : ""}>${escapeHTML(t.services.moveDown)}</button>
+        </div>
         <label class="settings-control" for="wait-range-${escapeHTML(site.id)}">
           <strong>${escapeHTML(t.services.waitTime)}</strong>
           <input
@@ -58,10 +64,45 @@ export function renderServicesSection() {
 
 export async function saveSiteWaitMs(siteId, waitMs) {
   await updateRuntimeSite(siteId, { waitMs: Number(waitMs) });
-  state.runtimeSites = await getRuntimeSites();
+  state.runtimeSites = sortSitesByOrder(await getRuntimeSites(), state.settings.siteOrder);
   renderServiceFilterOptions();
   renderServicesSection();
   showAppToast(t.settings.waitSaved, "success", 1600);
+}
+
+function moveRuntimeSite(siteId, direction) {
+  const currentIndex = state.runtimeSites.findIndex((site) => site.id === siteId);
+  if (currentIndex === -1) {
+    return null;
+  }
+
+  const offset = direction === "up" ? -1 : 1;
+  const nextIndex = currentIndex + offset;
+  if (nextIndex < 0 || nextIndex >= state.runtimeSites.length) {
+    return null;
+  }
+
+  const nextSites = [...state.runtimeSites];
+  const [movedSite] = nextSites.splice(currentIndex, 1);
+  nextSites.splice(nextIndex, 0, movedSite);
+  return nextSites;
+}
+
+async function saveSiteOrder(siteId, direction) {
+  const nextSites = moveRuntimeSite(siteId, direction);
+  if (!nextSites) {
+    return;
+  }
+
+  const nextSettings = await updateAppSettings({
+    siteOrder: nextSites.map((site) => site.id),
+  });
+  state.settings = nextSettings;
+  state.runtimeSites = nextSites;
+  renderServiceFilterOptions();
+  renderServicesSection();
+  setStatus(t.services.orderSaved, "success");
+  showAppToast(t.services.orderSaved, "success", 1600);
 }
 
 export function bindServiceEvents() {
@@ -105,6 +146,19 @@ export function bindServiceEvents() {
 
     void saveSiteWaitMs(slider.dataset.waitmsSiteId, slider.value).catch((error) => {
       console.error("[AI Prompt Broadcaster] Failed to save waitMs.", error);
+      setStatus(error?.message ?? t.saveFailed, "error");
+      showAppToast(error?.message ?? t.saveFailed, "error", 3000);
+    });
+  });
+
+  servicesGrid.addEventListener("click", (event) => {
+    const moveButton = event.target.closest("[data-move-site][data-direction]");
+    if (!moveButton) {
+      return;
+    }
+
+    void saveSiteOrder(moveButton.dataset.moveSite, moveButton.dataset.direction).catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to save site order.", error);
       setStatus(error?.message ?? t.saveFailed, "error");
       showAppToast(error?.message ?? t.saveFailed, "error", 3000);
     });

@@ -54,7 +54,9 @@ To package a release zip:
 
 ### Logic
 - `src/shared/sites/`: built-in, override, and custom site merging
+- `src/shared/sites/order.ts`: persisted runtime site ordering helper
 - `src/shared/prompts/`: history, favorites, template cache, broadcast counter, import/export, and settings
+- `src/shared/chrome/messaging.ts`: timeout-safe runtime messaging helper for popup/options/content surfaces
 - `src/shared/runtime-state/`: last broadcast, UI toasts, selector warning state, and strategy stats
 - `src/shared/template/`: template detection and rendering
 - `src/popup/app/bootstrap.ts`: popup orchestration and feature wiring
@@ -64,6 +66,8 @@ To package a release zip:
 - `src/options/app/bootstrap.ts`: options orchestration and section wiring
 - `src/options/core/`: shared status, navigation, data refresh, and filter helpers
 - `src/options/features/`: dashboard, history, schedules, services, and settings sections
+- `src/options/features/dashboard-metrics.ts`: pure dashboard aggregation for cards, heatmap, trends, failures, and strategy summary
+- `src/options/features/schedule-summary.ts`: pure scheduled-run summary helper used by options schedules UI
 - `src/options/ui/charts.ts`: chart rendering
 - `src/background/app/bootstrap.ts`: service worker composition root
 - `src/background/commands/quick-palette.ts`: command handling and content-script injection for the page overlay
@@ -119,6 +123,7 @@ Favorite runs use the same popup-side context preparation for `{{url}}`, `{{titl
 - History and last-broadcast records store structured `siteResults` (`SiteInjectionResult`) instead of plain status strings.
 - History and last-broadcast records also store `targetSnapshots` so retries and history replay reuse the original per-site resolved prompt and routing mode.
 - Favorites also keep `mode`, `steps`, `scheduleEnabled`, `scheduledAt`, `scheduleRepeat`, `usageCount`, and `lastUsedAt`, and `appSettings` includes `waitMsMultiplier`, `historySort`, and `favoriteSort`.
+- `appSettings.siteOrder` stores the persisted runtime-site ordering used by popup, favorite editor, and options services.
 - Favorite runs now queue as background jobs, dedupe only overlapping `queued/running` executions per favorite, and surface light progress through `favoriteRunJobs` in session state.
 - History rows can also store `originFavoriteId`, `chainRunId`, `chainStepIndex`, `chainStepCount`, and `trigger`.
 - Reset-data flows should clear `broadcastCounter`, `strategyStats`, history, favorites, template cache, prompt draft/sent state, site data, and session runtime state such as `pendingBroadcasts`, `pendingInjections`, `pendingUiToasts`, `lastBroadcast`, `popupPromptIntent`, and `favoriteRunJobs`.
@@ -127,6 +132,12 @@ Favorite runs use the same popup-side context preparation for `{{url}}`, `{{titl
 ### Background state consistency
 - Pending injections, pending broadcasts, and selector alerts are mirrored in background memory and written through a serialized mutation chain.
 - History append, last-broadcast sync, counter updates, and completion notifications should happen off the same finalized broadcast state, not ad-hoc read-modify-write calls from multiple surfaces.
+- Favorite prompt rendering plus queue submission is serialized so concurrent `{{counter}}` favorite runs do not reuse the same counter value.
+
+### Runtime messaging trust boundary
+- Popup, options, and content helpers should use `src/shared/chrome/messaging.ts` instead of raw `chrome.runtime.sendMessage` when hangs or closed-port fallbacks matter.
+- `src/background/messages/router.ts` now accepts only internal extension pages (`sender.id === chrome.runtime.id`) and this extension's own content scripts (`sender.tab` present).
+- Safe `sendResponse` wrappers are required because the response port may already be closed by the time an async handler settles.
 
 ### Popup reopening fallback
 When `chrome.action.openPopup()` fails because Chrome has no active browser window, the background worker stores a one-shot `popupPromptIntent`, tries to focus an existing browser window, and finally opens `popup/popup.html` in a standalone popup window.
@@ -139,8 +150,11 @@ When `chrome.action.openPopup()` fails because Chrome has no active browser wind
 - Single favorites can now edit prompt body text directly inside the favorite editor without switching back to the composer first.
 - Chain favorites stop immediately when any step result is not `submitted`.
 - Scheduled favorites are reconciled through `chrome.alarms`, and options exposes a dedicated `Schedules` section.
+- The options `Schedules` section also separates the last scheduled execution from manual runs and surfaces its timestamp, status, and representative failure detail.
 - Popup composer restore is draft-first: unsent draft is restored before any last-sent prompt, and popup handoff is consumed after one use.
 - Quick palette uses `Alt+Shift+F`, matches popup favorite search across title/text/folder/tags/`#tag`, and falls back to popup handoff when additional inputs are required.
+- Options `Services` supports accessible `Move up` / `Move down` ordering controls, persisted through `appSettings.siteOrder`.
+- Options `Dashboard` now renders a weekday/hour heatmap, per-service success trends, top failure reasons, and a strategy summary in addition to the original overview cards.
 
 ### Selector checker
 Runs on supported pages and reports `ok`, `selector_missing`, or `auth_page` back to the background worker.
@@ -177,13 +191,18 @@ Smoke coverage includes:
 - selector checker `input-only` mode for conditional submit UIs
 - custom-site optional permission cleanup and alias-origin handling
 - built-in override import repair for invalid `click` + empty selector combinations
+- internal-only runtime router trust checks and timeout-safe runtime messaging fallback
 - `broadcastCounter` export/import/reset lifecycle
 - import migration to export `version: 6`
+- `siteOrder` normalization and ordering reuse
 - history replay snapshot fallback and resend routing safety
 - prompt draft/sent separation plus popup handoff consumption
 - favorite background job dedupe/runtime helpers
+- favorite `{{counter}}` serialization across concurrent runs
 - quick palette filtering parity with popup favorite search and execution handoff
 - favorite chain/schedule normalization for legacy imports
+- scheduled-run summary isolation from manual runs
+- dashboard metrics for heatmap, trend, failure reasons, and strategy summary
 - favorites search across title, text, tags, and folders
 - per-service override template resolution and retry prompt preservation
 - CSV export formula escaping

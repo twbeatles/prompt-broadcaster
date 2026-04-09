@@ -796,6 +796,45 @@
   "options_chart_bar_aria": {
     "message": "최근 7일 전송 횟수 막대 차트"
   },
+  "options_chart_heatmap_title": {
+    "message": "활동 히트맵"
+  },
+  "options_chart_service_trend_title": {
+    "message": "서비스 성공률 추이"
+  },
+  "options_chart_failure_title": {
+    "message": "주요 실패 원인"
+  },
+  "options_chart_strategy_title": {
+    "message": "전략 요약"
+  },
+  "options_chart_no_heatmap": {
+    "message": "아직 표시할 활동 히트맵이 없습니다."
+  },
+  "options_chart_no_trend": {
+    "message": "아직 표시할 서비스 추이가 없습니다."
+  },
+  "options_chart_no_failure": {
+    "message": "기록된 실패 원인이 없습니다."
+  },
+  "options_chart_no_strategy": {
+    "message": "기록된 전략 시도가 없습니다."
+  },
+  "options_chart_heatmap_aria": {
+    "message": "활동 히트맵"
+  },
+  "options_chart_hour_label": {
+    "message": "시간"
+  },
+  "options_chart_requests_label": {
+    "message": "요청"
+  },
+  "options_chart_attempts_label": {
+    "message": "시도"
+  },
+  "options_chart_best_strategy_label": {
+    "message": "최적 전략"
+  },
   "options_card_total_transmissions": {
     "message": "총 전송 횟수"
   },
@@ -872,6 +911,15 @@
   },
   "options_service_default_color": {
     "message": "기본 색상"
+  },
+  "options_service_move_up": {
+    "message": "위로 이동"
+  },
+  "options_service_move_down": {
+    "message": "아래로 이동"
+  },
+  "options_service_order_saved": {
+    "message": "서비스 순서를 저장했습니다."
   },
   "options_value_none": {
     "message": "없음"
@@ -988,6 +1036,15 @@
   },
   "options_schedules_last_run": {
     "message": "마지막 실행"
+  },
+  "options_schedules_last_scheduled_run": {
+    "message": "최근 예약 실행"
+  },
+  "options_schedules_scheduled_result": {
+    "message": "예약 실행 결과"
+  },
+  "options_schedules_failure_detail": {
+    "message": "실패 상세"
   },
   "options_schedules_run_now": {
     "message": "즉시 실행"

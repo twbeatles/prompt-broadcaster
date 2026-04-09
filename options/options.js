@@ -301,9 +301,18 @@ var t = {
   charts: {
     noUsage: msg("options_chart_no_usage"),
     noDaily: msg("options_chart_no_daily"),
+    noHeatmap: msg("options_chart_no_heatmap") || "No activity heatmap yet.",
+    noTrend: msg("options_chart_no_trend") || "No service trend yet.",
+    noFailure: msg("options_chart_no_failure") || "No failure reasons recorded.",
+    noStrategy: msg("options_chart_no_strategy") || "No strategy attempts recorded.",
     totalSent: msg("options_chart_total_sent"),
     donutAria: msg("options_chart_donut_aria"),
-    barAria: msg("options_chart_bar_aria")
+    barAria: msg("options_chart_bar_aria"),
+    heatmapAria: msg("options_chart_heatmap_aria") || "Activity heatmap",
+    hourLabel: msg("options_chart_hour_label") || "Hour",
+    requestsLabel: msg("options_chart_requests_label") || "requests",
+    attemptsLabel: msg("options_chart_attempts_label") || "attempts",
+    bestStrategyLabel: msg("options_chart_best_strategy_label") || "Best strategy"
   },
   history: {
     emptyFiltered: msg("options_history_empty_filtered"),
@@ -335,6 +344,9 @@ var t = {
     lastUsed: msg("options_service_last_used"),
     defaultColor: msg("options_service_default_color"),
     none: msg("options_value_none"),
+    moveUp: msg("options_service_move_up") || "Move up",
+    moveDown: msg("options_service_move_down") || "Move down",
+    orderSaved: msg("options_service_order_saved") || "Service order saved.",
     openManagerFailed: msg("options_services_open_failed") || "Failed to open the popup manager."
   },
   settings: {
@@ -396,6 +408,9 @@ var t = {
     repeat: msg("options_schedules_repeat") || "Repeat",
     enabled: msg("options_schedules_enabled") || "Enabled",
     lastRun: msg("options_schedules_last_run") || "Last run",
+    lastScheduledRun: msg("options_schedules_last_scheduled_run") || "Last scheduled run",
+    scheduledResult: msg("options_schedules_scheduled_result") || "Scheduled result",
+    failureDetail: msg("options_schedules_failure_detail") || "Failure detail",
     runNow: msg("options_schedules_run_now") || "Run now",
     openInPopup: msg("options_schedules_open_in_popup") || "Edit in popup",
     runQueued: msg("options_schedules_run_queued") || "Favorite run queued.",
@@ -432,7 +447,8 @@ var DEFAULT_SETTINGS = Object.freeze({
   reuseExistingTabs: true,
   waitMsMultiplier: DEFAULT_WAIT_MS_MULTIPLIER,
   historySort: DEFAULT_HISTORY_SORT,
-  favoriteSort: DEFAULT_FAVORITE_SORT
+  favoriteSort: DEFAULT_FAVORITE_SORT,
+  siteOrder: []
 });
 
 // src/shared/prompts/normalizers.ts
@@ -581,7 +597,8 @@ function normalizeSettings(value) {
     ),
     waitMsMultiplier: normalizeWaitMsMultiplier(settings.waitMsMultiplier),
     historySort: normalizeHistorySort(settings.historySort),
-    favoriteSort: normalizeFavoriteSort(settings.favoriteSort)
+    favoriteSort: normalizeFavoriteSort(settings.favoriteSort),
+    siteOrder: normalizeSiteIdList(settings.siteOrder)
   };
 }
 function normalizeStatus(value) {
@@ -2191,6 +2208,7 @@ var state = {
   history: [],
   favorites: [],
   favoriteJobs: [],
+  strategyStats: {},
   runtimeSites: [],
   settings: { ...DEFAULT_SETTINGS },
   activeSection: "dashboard",
@@ -2214,7 +2232,11 @@ var optionsDom = {
   dashboard: {
     dashboardCards: document.getElementById("dashboard-cards"),
     serviceDonut: document.getElementById("service-donut"),
-    dailyBarChart: document.getElementById("daily-bar-chart")
+    dailyBarChart: document.getElementById("daily-bar-chart"),
+    activityHeatmap: document.getElementById("activity-heatmap"),
+    serviceTrend: document.getElementById("service-trend"),
+    failureReasons: document.getElementById("failure-reasons"),
+    strategySummary: document.getElementById("strategy-summary")
   },
   history: {
     historyServiceFilter: document.getElementById("history-service-filter"),
@@ -2389,6 +2411,36 @@ function getLatestFavoriteRunJobByFavoriteId(jobs, favoriteId) {
   return [...jobs].filter((job) => safeText(job.favoriteId).trim() === normalizedFavoriteId).sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))[0] ?? null;
 }
 
+// src/shared/runtime-state/strategy-stats.ts
+function normalizeCounterValue(value) {
+  return Math.max(0, Math.round(Number(value) || 0));
+}
+function normalizeStrategyStats(value) {
+  const root = safeObject(value);
+  return Object.fromEntries(
+    Object.entries(root).map(([siteId, siteValue]) => {
+      const siteStats = safeObject(siteValue);
+      const normalizedSiteStats = Object.fromEntries(
+        Object.entries(siteStats).map(([strategyName, counts]) => {
+          const normalizedCounts = safeObject(counts);
+          return [
+            String(strategyName).trim(),
+            {
+              success: normalizeCounterValue(normalizedCounts.success),
+              fail: normalizeCounterValue(normalizedCounts.fail)
+            }
+          ];
+        }).filter(([strategyName]) => strategyName)
+      );
+      return [String(siteId).trim(), normalizedSiteStats];
+    }).filter(([siteId]) => siteId)
+  );
+}
+async function getStrategyStats() {
+  const rawValue = await readStorage("local", LOCAL_RUNTIME_KEYS.strategyStats, {});
+  return normalizeStrategyStats(rawValue);
+}
+
 // src/shared/prompt-state.ts
 var LOCAL_PROMPT_STATE_KEYS = Object.freeze({
   composeDraftPrompt: "composeDraftPrompt",
@@ -2399,109 +2451,41 @@ var SESSION_PROMPT_STATE_KEYS = Object.freeze({
   popupPromptIntent: "popupPromptIntent"
 });
 
-// src/shared/date-utils.ts
-function getLocalDateKey(value) {
-  const date = value instanceof Date ? new Date(value.getTime()) : new Date(value);
-  if (!Number.isFinite(date.getTime())) {
-    return "";
+// src/shared/sites/order.ts
+function normalizeSiteOrder(siteOrder) {
+  if (!Array.isArray(siteOrder)) {
+    return [];
   }
-  const year = String(date.getFullYear()).padStart(4, "0");
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return Array.from(
+    new Set(
+      siteOrder.filter((entry) => typeof entry === "string" && entry.trim()).map((entry) => entry.trim())
+    )
+  );
 }
-function getRelativeLocalDateKey(daysFromToday = 0, now = /* @__PURE__ */ new Date()) {
-  const date = now instanceof Date ? new Date(now.getTime()) : new Date(now);
-  date.setHours(0, 0, 0, 0);
-  date.setDate(date.getDate() + Math.trunc(daysFromToday));
-  return getLocalDateKey(date);
-}
-
-// src/options/ui/charts.ts
-var CHART_COLORS = ["#c24f2e", "#f2a446", "#2a9d8f", "#457b9d", "#7b61ff", "#bc6c25"];
-function createEmptyState(message) {
-  return `<div class="empty-state">${message}</div>`;
-}
-function polarToCartesian(cx, cy, radius, angle) {
-  const radian = (angle - 90) * Math.PI / 180;
-  return {
-    x: cx + radius * Math.cos(radian),
-    y: cy + radius * Math.sin(radian)
-  };
-}
-function createDonutSlicePath(cx, cy, outerRadius, innerRadius, startAngle, endAngle) {
-  const outerStart = polarToCartesian(cx, cy, outerRadius, endAngle);
-  const outerEnd = polarToCartesian(cx, cy, outerRadius, startAngle);
-  const innerStart = polarToCartesian(cx, cy, innerRadius, startAngle);
-  const innerEnd = polarToCartesian(cx, cy, innerRadius, endAngle);
-  const largeArcFlag = endAngle - startAngle > 180 ? 1 : 0;
-  return [
-    `M ${outerStart.x} ${outerStart.y}`,
-    `A ${outerRadius} ${outerRadius} 0 ${largeArcFlag} 0 ${outerEnd.x} ${outerEnd.y}`,
-    `L ${innerStart.x} ${innerStart.y}`,
-    `A ${innerRadius} ${innerRadius} 0 ${largeArcFlag} 1 ${innerEnd.x} ${innerEnd.y}`,
-    "Z"
-  ].join(" ");
-}
-function buildDonutMarkup(items, labels) {
-  if (items.length === 0) {
-    return createEmptyState(labels.noUsage);
+function sortSitesByOrder(sites = [], siteOrder) {
+  const normalizedOrder = normalizeSiteOrder(siteOrder);
+  if (normalizedOrder.length === 0) {
+    return [...Array.isArray(sites) ? sites : []];
   }
-  let currentAngle = 0;
-  const total = items.reduce((sum, item) => sum + item.count, 0);
-  const segments = items.map((item, index) => {
-    const angleSize = item.count / total * 360;
-    const path = createDonutSlicePath(110, 110, 86, 48, currentAngle, currentAngle + angleSize);
-    const color = CHART_COLORS[index % CHART_COLORS.length];
-    currentAngle += angleSize;
-    return { ...item, path, color };
+  const siteMap = /* @__PURE__ */ new Map();
+  const unorderedSites = [];
+  (Array.isArray(sites) ? sites : []).forEach((site) => {
+    const siteId = typeof site?.id === "string" ? site.id.trim() : "";
+    if (!siteId) {
+      unorderedSites.push(site);
+      return;
+    }
+    siteMap.set(siteId, site);
   });
-  return `
-    <div class="chart-box">
-      <svg class="chart-svg" viewBox="0 0 220 220" role="img" aria-label="${labels.donutAria}">
-        ${segments.map((segment) => `<path d="${segment.path}" fill="${segment.color}"></path>`).join("")}
-        <text x="110" y="102" text-anchor="middle" font-size="14" fill="currentColor">${labels.totalSent}</text>
-        <text x="110" y="126" text-anchor="middle" font-size="28" font-weight="700" fill="currentColor">${total}</text>
-      </svg>
-      <div class="legend">
-        ${segments.map(
-    (segment) => `
-              <div class="legend-row">
-                <span class="legend-label">
-                  <span class="swatch" style="background:${segment.color}"></span>
-                  <span>${segment.label}</span>
-                </span>
-                <span>${Math.round(segment.count / total * 100)}%</span>
-              </div>
-            `
-  ).join("")}
-      </div>
-    </div>
-  `;
-}
-function buildBarChartMarkup(items, labels) {
-  if (items.length === 0) {
-    return createEmptyState(labels.noDaily);
-  }
-  const maxValue = Math.max(...items.map((item) => item.count), 1);
-  const barWidth = 38;
-  const gap = 12;
-  const chartHeight = 180;
-  const bars = items.map((item, index) => {
-    const height = item.count / maxValue * 120;
-    const x = 20 + index * (barWidth + gap);
-    const y = 24 + (120 - height);
-    return `
-        <rect x="${x}" y="${y}" width="${barWidth}" height="${height}" rx="10" fill="${CHART_COLORS[index % CHART_COLORS.length]}"></rect>
-        <text x="${x + barWidth / 2}" y="164" text-anchor="middle" font-size="12" fill="currentColor">${item.label}</text>
-        <text x="${x + barWidth / 2}" y="${y - 6}" text-anchor="middle" font-size="12" fill="currentColor">${item.count}</text>
-      `;
-  }).join("");
-  return `
-    <svg class="chart-svg" viewBox="0 0 380 ${chartHeight}" role="img" aria-label="${labels.barAria}">
-      ${bars}
-    </svg>
-  `;
+  const orderedSites = normalizedOrder.map((siteId) => siteMap.get(siteId)).filter((site) => Boolean(site));
+  const orderedIds = new Set(orderedSites.map((site) => String(site.id).trim()));
+  return [
+    ...orderedSites,
+    ...(Array.isArray(sites) ? sites : []).filter((site) => {
+      const siteId = typeof site?.id === "string" ? site.id.trim() : "";
+      return !siteId || !orderedIds.has(siteId);
+    })
+  ];
 }
 
 // src/options/app/helpers.ts
@@ -2601,7 +2585,7 @@ function getStatusInfo(status) {
 function buildBadgeMarkup(siteId, runtimeSites = []) {
   return `<span class="badge">${escapeHTML(getSiteLabel(siteId, runtimeSites))}</span>`;
 }
-function createEmptyState2(message) {
+function createEmptyState(message) {
   return `<div class="empty-state">${escapeHTML(message)}</div>`;
 }
 function buildImportReportMarkup(summary) {
@@ -2648,57 +2632,427 @@ function buildImportReportMarkup(summary) {
   `;
 }
 
-// src/options/features/dashboard.ts
-var { dashboardCards, serviceDonut, dailyBarChart } = optionsDom.dashboard;
-function getStartOfCurrentWeek() {
-  const now = /* @__PURE__ */ new Date();
+// src/options/ui/charts.ts
+var CHART_COLORS = ["#c24f2e", "#f2a446", "#2a9d8f", "#457b9d", "#7b61ff", "#bc6c25"];
+function createEmptyState2(message) {
+  return `<div class="empty-state">${escapeHTML(message)}</div>`;
+}
+function polarToCartesian(cx, cy, radius, angle) {
+  const radian = (angle - 90) * Math.PI / 180;
+  return {
+    x: cx + radius * Math.cos(radian),
+    y: cy + radius * Math.sin(radian)
+  };
+}
+function createDonutSlicePath(cx, cy, outerRadius, innerRadius, startAngle, endAngle) {
+  const outerStart = polarToCartesian(cx, cy, outerRadius, endAngle);
+  const outerEnd = polarToCartesian(cx, cy, outerRadius, startAngle);
+  const innerStart = polarToCartesian(cx, cy, innerRadius, startAngle);
+  const innerEnd = polarToCartesian(cx, cy, innerRadius, endAngle);
+  const largeArcFlag = endAngle - startAngle > 180 ? 1 : 0;
+  return [
+    `M ${outerStart.x} ${outerStart.y}`,
+    `A ${outerRadius} ${outerRadius} 0 ${largeArcFlag} 0 ${outerEnd.x} ${outerEnd.y}`,
+    `L ${innerStart.x} ${innerStart.y}`,
+    `A ${innerRadius} ${innerRadius} 0 ${largeArcFlag} 1 ${innerEnd.x} ${innerEnd.y}`,
+    "Z"
+  ].join(" ");
+}
+function buildDonutMarkup(items, labels) {
+  if (items.length === 0) {
+    return createEmptyState2(labels.noUsage);
+  }
+  let currentAngle = 0;
+  const total = items.reduce((sum, item) => sum + item.count, 0);
+  const segments = items.map((item, index) => {
+    const angleSize = item.count / total * 360;
+    const path = createDonutSlicePath(110, 110, 86, 48, currentAngle, currentAngle + angleSize);
+    const color = CHART_COLORS[index % CHART_COLORS.length];
+    currentAngle += angleSize;
+    return { ...item, path, color };
+  });
+  return `
+    <div class="chart-box">
+      <svg class="chart-svg" viewBox="0 0 220 220" role="img" aria-label="${escapeHTML(labels.donutAria)}">
+        ${segments.map((segment) => `<path d="${segment.path}" fill="${segment.color}"></path>`).join("")}
+        <text x="110" y="102" text-anchor="middle" font-size="14" fill="currentColor">${escapeHTML(labels.totalSent)}</text>
+        <text x="110" y="126" text-anchor="middle" font-size="28" font-weight="700" fill="currentColor">${total}</text>
+      </svg>
+      <div class="legend">
+        ${segments.map(
+    (segment) => `
+              <div class="legend-row">
+                <span class="legend-label">
+                  <span class="swatch" style="background:${segment.color}"></span>
+                  <span>${escapeHTML(segment.label)}</span>
+                </span>
+                <span>${Math.round(segment.count / total * 100)}%</span>
+              </div>
+            `
+  ).join("")}
+      </div>
+    </div>
+  `;
+}
+function buildBarChartMarkup(items, labels) {
+  if (items.length === 0) {
+    return createEmptyState2(labels.noDaily);
+  }
+  const maxValue = Math.max(...items.map((item) => item.count), 1);
+  const barWidth = 38;
+  const gap = 12;
+  const chartHeight = 180;
+  const bars = items.map((item, index) => {
+    const height = item.count / maxValue * 120;
+    const x = 20 + index * (barWidth + gap);
+    const y = 24 + (120 - height);
+    return `
+        <rect x="${x}" y="${y}" width="${barWidth}" height="${height}" rx="10" fill="${CHART_COLORS[index % CHART_COLORS.length]}"></rect>
+        <text x="${x + barWidth / 2}" y="164" text-anchor="middle" font-size="12" fill="currentColor">${escapeHTML(String(item.label ?? ""))}</text>
+        <text x="${x + barWidth / 2}" y="${y - 6}" text-anchor="middle" font-size="12" fill="currentColor">${escapeHTML(String(item.count ?? 0))}</text>
+      `;
+  }).join("");
+  return `
+    <svg class="chart-svg" viewBox="0 0 380 ${chartHeight}" role="img" aria-label="${escapeHTML(labels.barAria)}">
+      ${bars}
+    </svg>
+  `;
+}
+function buildHeatmapMarkup(rows, labels) {
+  const maxCount = Math.max(...Array.isArray(rows) ? rows.flatMap((row) => row.counts ?? []) : [0], 0);
+  if (!Array.isArray(rows) || rows.length === 0 || maxCount <= 0) {
+    return createEmptyState2(labels.noHeatmap);
+  }
+  const hourHeader = Array.from({ length: 24 }, (_, hour) => `<span>${hour}</span>`).join("");
+  return `
+    <div class="heatmap" role="img" aria-label="${escapeHTML(labels.heatmapAria)}">
+      <div class="heatmap-row heatmap-header">
+        <span>${escapeHTML(labels.hourLabel)}</span>
+        <div class="heatmap-cells">${hourHeader}</div>
+      </div>
+      ${rows.map((row) => `
+        <div class="heatmap-row">
+          <span>${escapeHTML(row.label)}</span>
+          <div class="heatmap-cells">
+            ${(row.counts ?? []).map((count) => {
+    const intensity = maxCount > 0 ? Math.max(0.08, count / maxCount) : 0.08;
+    return `<span class="heatmap-cell" title="${escapeHTML(`${row.label} · ${count}`)}" style="opacity:${intensity}">${count > 0 ? count : ""}</span>`;
+  }).join("")}
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+function buildTrendMarkup(items, labels) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return createEmptyState2(labels.noTrend);
+  }
+  return `
+    <div class="trend-list">
+      ${items.map((item) => `
+        <div class="trend-card">
+          <div class="trend-head">
+            <strong>${escapeHTML(item.label)}</strong>
+            <span>${item.successRate}%</span>
+          </div>
+          <div class="trend-bars">
+            ${(item.dailySeries ?? []).map((point) => `
+              <span class="trend-bar-wrap" title="${escapeHTML(`${point.label}: ${point.successRate}% (${point.successes}/${point.requests})`)}">
+                <span class="trend-bar" style="height:${Math.max(8, point.successRate)}%"></span>
+              </span>
+            `).join("")}
+          </div>
+          <div class="trend-meta">${escapeHTML(`${item.requestCount} ${labels.requestsLabel}`)}</div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+// src/shared/date-utils.ts
+function getLocalDateKey(value) {
+  const date = value instanceof Date ? new Date(value.getTime()) : new Date(value);
+  if (!Number.isFinite(date.getTime())) {
+    return "";
+  }
+  const year = String(date.getFullYear()).padStart(4, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+function getRelativeLocalDateKey(daysFromToday = 0, now = /* @__PURE__ */ new Date()) {
+  const date = now instanceof Date ? new Date(now.getTime()) : new Date(now);
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() + Math.trunc(daysFromToday));
+  return getLocalDateKey(date);
+}
+
+// src/options/features/dashboard-metrics.ts
+function isDefined(value) {
+  return value !== null && value !== void 0;
+}
+function normalizeSiteIds(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return Array.from(
+    new Set(
+      value.filter((entry) => typeof entry === "string" && entry.trim()).map((entry) => entry.trim())
+    )
+  );
+}
+function getRequestedSiteIds(entry) {
+  const requestedSiteIds = normalizeSiteIds(entry?.requestedSiteIds);
+  if (requestedSiteIds.length > 0) {
+    return requestedSiteIds;
+  }
+  const siteResultKeys = normalizeSiteIds(Object.keys(entry?.siteResults ?? {}));
+  if (siteResultKeys.length > 0) {
+    return siteResultKeys;
+  }
+  return normalizeSiteIds(entry?.sentTo);
+}
+function getSubmittedSiteIds(entry) {
+  const submittedSiteIds = normalizeSiteIds(entry?.submittedSiteIds);
+  if (submittedSiteIds.length > 0) {
+    return submittedSiteIds;
+  }
+  return normalizeSiteIds(entry?.sentTo);
+}
+function getSiteLabel2(siteId, runtimeSites = []) {
+  return runtimeSites.find((site) => site?.id === siteId)?.name ?? siteId;
+}
+function getStartOfCurrentWeek(now = /* @__PURE__ */ new Date()) {
   const result = new Date(now);
   const offset = (result.getDay() + 6) % 7;
   result.setHours(0, 0, 0, 0);
   result.setDate(result.getDate() - offset);
   return result;
 }
-function buildDashboardMetrics(history = state.history) {
+function createHeatmapRows() {
+  return Array.from({ length: 7 }, (_, dayIndex) => ({
+    dayIndex,
+    counts: Array.from({ length: 24 }, () => 0),
+    total: 0
+  }));
+}
+function getHeatmapDayIndex(date) {
+  return (date.getDay() + 6) % 7;
+}
+function buildDashboardMetrics(historyItems = [], runtimeSites = [], strategyStats = {}, now = /* @__PURE__ */ new Date()) {
+  const history = Array.isArray(historyItems) ? historyItems : [];
   const serviceCounts = /* @__PURE__ */ new Map();
+  const serviceSuccessCounts = /* @__PURE__ */ new Map();
+  const dailyKeys = Array.from({ length: 7 }, (_, index) => getRelativeLocalDateKey(index - 6, now));
+  const dailyCounts = dailyKeys.map((dateKey) => ({ key: dateKey, count: 0 }));
+  const heatmapRows = createHeatmapRows();
+  const failureReasonCounts = /* @__PURE__ */ new Map();
   let totalPromptLength = 0;
   history.forEach((entry) => {
-    totalPromptLength += entry.text.length;
-    getRequestedServices(entry).forEach((siteId) => {
+    const requestedSiteIds = getRequestedSiteIds(entry);
+    const submittedSiteIds = new Set(getSubmittedSiteIds(entry));
+    const siteResults = entry?.siteResults && typeof entry.siteResults === "object" ? entry.siteResults : {};
+    const createdAt = new Date(String(entry?.createdAt ?? ""));
+    const localDateKey = getLocalDateKey(createdAt);
+    totalPromptLength += String(entry?.text ?? "").length;
+    requestedSiteIds.forEach((siteId) => {
       serviceCounts.set(siteId, (serviceCounts.get(siteId) ?? 0) + 1);
+      if (submittedSiteIds.has(siteId)) {
+        serviceSuccessCounts.set(siteId, (serviceSuccessCounts.get(siteId) ?? 0) + 1);
+      }
     });
+    if (localDateKey) {
+      const dailyEntry = dailyCounts.find((item) => item.key === localDateKey);
+      if (dailyEntry) {
+        dailyEntry.count += 1;
+      }
+    }
+    if (Number.isFinite(createdAt.getTime())) {
+      const dayIndex = getHeatmapDayIndex(createdAt);
+      const hour = createdAt.getHours();
+      heatmapRows[dayIndex].counts[hour] += 1;
+      heatmapRows[dayIndex].total += 1;
+    }
+    const failedSiteIds = normalizeSiteIds(entry?.failedSiteIds);
+    const siteResultValues = Object.values(siteResults);
+    if (siteResultValues.length === 0 && failedSiteIds.length > 0) {
+      failedSiteIds.forEach(() => {
+        failureReasonCounts.set("unexpected_error", (failureReasonCounts.get("unexpected_error") ?? 0) + 1);
+      });
+    } else {
+      siteResultValues.forEach((result) => {
+        const code = normalizeResultCode(result?.code);
+        if (code === "submitted") {
+          return;
+        }
+        failureReasonCounts.set(code, (failureReasonCounts.get(code) ?? 0) + 1);
+      });
+    }
   });
   const mostUsed = [...serviceCounts.entries()].sort((left, right) => right[1] - left[1])[0];
-  const weekStart = getStartOfCurrentWeek();
-  const weekCount = history.filter((entry) => new Date(entry.createdAt) >= weekStart).length;
+  const weekStart = getStartOfCurrentWeek(now);
+  const weekCount = history.filter((entry) => new Date(String(entry?.createdAt ?? "")).getTime() >= weekStart.getTime()).length;
   const averagePromptLength = history.length > 0 ? Math.round(totalPromptLength / history.length) : 0;
   const donutItems = [...serviceCounts.entries()].sort((left, right) => right[1] - left[1]).map(([siteId, count]) => ({
     id: siteId,
-    label: getSiteLabel(siteId, state.runtimeSites),
+    label: getSiteLabel2(siteId, runtimeSites),
     count
   }));
-  const dailyCounts = [];
-  for (let index = 6; index >= 0; index -= 1) {
-    const date = /* @__PURE__ */ new Date();
-    date.setHours(0, 0, 0, 0);
-    date.setDate(date.getDate() - index);
-    const dateKey = getRelativeLocalDateKey(-index);
-    dailyCounts.push({
-      key: dateKey,
-      label: formatShortDate(date),
-      count: history.filter((entry) => getLocalDateKey(entry.createdAt) === dateKey).length
+  const heatmapMax = Math.max(...heatmapRows.flatMap((row) => row.counts), 0);
+  const serviceTrendItems = [...serviceCounts.entries()].sort((left, right) => right[1] - left[1]).slice(0, 5).map(([siteId, requestCount]) => {
+    const dailySeries = dailyKeys.map((key) => ({
+      key,
+      requests: 0,
+      successes: 0,
+      successRate: 0
+    }));
+    history.forEach((entry) => {
+      const requestedSiteIds = getRequestedSiteIds(entry);
+      if (!requestedSiteIds.includes(siteId)) {
+        return;
+      }
+      const dailyPoint = dailySeries.find((item) => item.key === getLocalDateKey(String(entry?.createdAt ?? "")));
+      if (!dailyPoint) {
+        return;
+      }
+      dailyPoint.requests += 1;
+      if (getSubmittedSiteIds(entry).includes(siteId)) {
+        dailyPoint.successes += 1;
+      }
     });
-  }
+    dailySeries.forEach((point) => {
+      point.successRate = point.requests > 0 ? Math.round(point.successes / point.requests * 100) : 0;
+    });
+    const successCount = serviceSuccessCounts.get(siteId) ?? 0;
+    return {
+      id: siteId,
+      label: getSiteLabel2(siteId, runtimeSites),
+      requestCount,
+      successCount,
+      successRate: requestCount > 0 ? Math.round(successCount / requestCount * 100) : 0,
+      dailySeries
+    };
+  });
+  const failureReasonItems = [...failureReasonCounts.entries()].sort((left, right) => right[1] - left[1]).map(([code, count]) => ({ code, count }));
+  const strategySummaryItems = Object.entries(strategyStats ?? {}).map(([siteId, siteStats]) => {
+    const strategies = Object.entries(siteStats ?? {}).map(([strategyName, counts]) => {
+      const success = Math.max(0, Math.round(Number(counts?.success) || 0));
+      const fail = Math.max(0, Math.round(Number(counts?.fail) || 0));
+      const attempts = success + fail;
+      return {
+        strategyName,
+        success,
+        fail,
+        attempts,
+        successRate: attempts > 0 ? Math.round(success / attempts * 100) : 0
+      };
+    }).filter((strategy) => strategy.attempts > 0).sort((left, right) => {
+      if (right.successRate !== left.successRate) {
+        return right.successRate - left.successRate;
+      }
+      return right.attempts - left.attempts;
+    });
+    const totalAttempts = strategies.reduce((sum, strategy) => sum + strategy.attempts, 0);
+    if (totalAttempts <= 0) {
+      return null;
+    }
+    return {
+      siteId,
+      label: getSiteLabel2(siteId, runtimeSites),
+      totalAttempts,
+      bestStrategy: strategies[0]?.strategyName ?? "",
+      bestSuccessRate: strategies[0]?.successRate ?? 0
+    };
+  }).filter(isDefined).sort((left, right) => right.totalAttempts - left.totalAttempts);
   return {
     totalTransmissions: history.length,
-    mostUsedService: mostUsed ? getSiteLabel(mostUsed[0], state.runtimeSites) : "-",
+    mostUsedService: mostUsed ? getSiteLabel2(mostUsed[0], runtimeSites) : "-",
     weekCount,
     averagePromptLength,
     donutItems,
-    dailyCounts
+    dailyCounts,
+    heatmap: {
+      rows: heatmapRows,
+      maxCount: heatmapMax
+    },
+    serviceTrendItems,
+    failureReasonItems,
+    strategySummaryItems
   };
 }
+
+// src/options/features/dashboard.ts
+var {
+  activityHeatmap,
+  dailyBarChart,
+  dashboardCards,
+  failureReasons,
+  serviceDonut,
+  serviceTrend,
+  strategySummary
+} = optionsDom.dashboard;
+function getWeekdayLabels() {
+  const formatter = new Intl.DateTimeFormat(locale, { weekday: "short" });
+  const monday = /* @__PURE__ */ new Date("2026-01-05T00:00:00");
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(monday);
+    date.setDate(monday.getDate() + index);
+    return formatter.format(date);
+  });
+}
+function formatDailyLabel(dateKey) {
+  return formatShortDate(`${dateKey}T00:00:00`);
+}
+function buildFailureReasonsMarkup(items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return createEmptyState2(t.charts.noFailure);
+  }
+  return `
+    <div class="summary-list">
+      ${items.slice(0, 6).map((item) => {
+    const label = t.settings.resultCodeLabels[item.code] || item.code;
+    return `
+          <div class="summary-row">
+            <div class="summary-copy">
+              <strong>${escapeHTML(label)}</strong>
+              <span>${escapeHTML(item.code)}</span>
+            </div>
+            <div class="summary-meta">${escapeHTML(String(item.count))}</div>
+          </div>
+        `;
+  }).join("")}
+    </div>
+  `;
+}
+function buildStrategySummaryMarkup(items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return createEmptyState2(t.charts.noStrategy);
+  }
+  return `
+    <div class="summary-list">
+      ${items.slice(0, 6).map((item) => `
+        <div class="summary-row">
+          <div class="summary-copy">
+            <strong>${escapeHTML(item.label)}</strong>
+            <span>${escapeHTML(`${t.charts.bestStrategyLabel}: ${item.bestStrategy || "-"}`)}</span>
+          </div>
+          <div class="summary-meta">
+            ${escapeHTML(`${item.totalAttempts} ${t.charts.attemptsLabel}`)}
+            <br />
+            ${escapeHTML(`${item.bestSuccessRate}%`)}
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
 function renderDashboard() {
-  const metrics = buildDashboardMetrics(state.history);
+  const metrics = buildDashboardMetrics(
+    state.history,
+    state.runtimeSites,
+    state.strategyStats
+  );
   const cards = [
     { label: t.cards.totalTransmissions, value: metrics.totalTransmissions },
     { label: t.cards.mostUsedService, value: metrics.mostUsedService },
@@ -2718,10 +3072,42 @@ function renderDashboard() {
     totalSent: t.charts.totalSent,
     donutAria: t.charts.donutAria
   });
-  dailyBarChart.innerHTML = buildBarChartMarkup(metrics.dailyCounts, {
-    noDaily: t.charts.noDaily,
-    barAria: t.charts.barAria
-  });
+  dailyBarChart.innerHTML = buildBarChartMarkup(
+    metrics.dailyCounts.map((item) => ({
+      ...item,
+      label: formatDailyLabel(item.key)
+    })),
+    {
+      noDaily: t.charts.noDaily,
+      barAria: t.charts.barAria
+    }
+  );
+  activityHeatmap.innerHTML = buildHeatmapMarkup(
+    metrics.heatmap.rows.map((row) => ({
+      ...row,
+      label: getWeekdayLabels()[row.dayIndex] ?? `D${row.dayIndex + 1}`
+    })),
+    {
+      noHeatmap: t.charts.noHeatmap,
+      heatmapAria: t.charts.heatmapAria,
+      hourLabel: t.charts.hourLabel
+    }
+  );
+  serviceTrend.innerHTML = buildTrendMarkup(
+    metrics.serviceTrendItems.map((item) => ({
+      ...item,
+      dailySeries: (item.dailySeries ?? []).map((point) => ({
+        ...point,
+        label: formatDailyLabel(point.key)
+      }))
+    })),
+    {
+      noTrend: t.charts.noTrend,
+      requestsLabel: t.charts.requestsLabel
+    }
+  );
+  failureReasons.innerHTML = buildFailureReasonsMarkup(metrics.failureReasonItems);
+  strategySummary.innerHTML = buildStrategySummaryMarkup(metrics.strategySummaryItems);
 }
 
 // src/shared/export/csv.ts
@@ -2735,6 +3121,50 @@ function escapeCsvCell(value) {
 }
 function buildCsvLine(values) {
   return (Array.isArray(values) ? values : []).map((value) => escapeCsvCell(value)).join(",");
+}
+
+// src/shared/chrome/messaging.ts
+var DEFAULT_RUNTIME_MESSAGE_TIMEOUT_MS = 5e3;
+function normalizeTimeoutMs(timeoutMs) {
+  const numericValue = Number(timeoutMs);
+  if (!Number.isFinite(numericValue) || numericValue <= 0) {
+    return 0;
+  }
+  return Math.max(0, Math.round(numericValue));
+}
+function sendRuntimeMessage(message, timeoutMs = 0, fallbackValue = null) {
+  return new Promise((resolve) => {
+    let settled = false;
+    let timeoutId = 0;
+    const finish = (value) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timeoutId) {
+        globalThis.clearTimeout(timeoutId);
+      }
+      resolve(value ?? fallbackValue);
+    };
+    const normalizedTimeoutMs = normalizeTimeoutMs(timeoutMs);
+    if (normalizedTimeoutMs > 0) {
+      timeoutId = globalThis.setTimeout(() => finish(fallbackValue), normalizedTimeoutMs);
+    }
+    try {
+      chrome.runtime.sendMessage(message, (response) => {
+        if (chrome.runtime.lastError) {
+          finish(fallbackValue);
+          return;
+        }
+        finish(response ?? fallbackValue);
+      });
+    } catch (_error) {
+      finish(fallbackValue);
+    }
+  });
+}
+function sendRuntimeMessageWithTimeout(message, timeoutMs = DEFAULT_RUNTIME_MESSAGE_TIMEOUT_MS, fallbackValue = null) {
+  return sendRuntimeMessage(message, timeoutMs, fallbackValue);
 }
 
 // src/options/core/modal.ts
@@ -2904,6 +3334,68 @@ function bindStatusEvents() {
   registerModalCloseHandler(importReportModal, closeImportReportModal);
 }
 
+// src/options/features/schedule-summary.ts
+function normalizeFavoriteId(value) {
+  return safeText(value).trim();
+}
+function getLatestScheduledFavoriteRun(historyItems = [], favoriteId) {
+  const normalizedFavoriteId = normalizeFavoriteId(favoriteId);
+  if (!normalizedFavoriteId) {
+    return null;
+  }
+  return safeArray(historyItems).filter(
+    (entry) => normalizeFavoriteId(entry?.originFavoriteId) === normalizedFavoriteId && entry?.trigger === "scheduled"
+  ).sort((left, right) => Date.parse(String(right?.createdAt ?? "")) - Date.parse(String(left?.createdAt ?? "")))[0] ?? null;
+}
+function getRepresentativeFailure(entry) {
+  const siteResults = entry?.siteResults && typeof entry.siteResults === "object" ? Object.values(entry.siteResults) : [];
+  const counts = /* @__PURE__ */ new Map();
+  const messages = /* @__PURE__ */ new Map();
+  siteResults.forEach((result) => {
+    const code2 = normalizeResultCode(result?.code);
+    if (code2 === "submitted") {
+      return;
+    }
+    counts.set(code2, (counts.get(code2) ?? 0) + 1);
+    const message = safeText(result?.message).trim();
+    if (message && !messages.has(code2)) {
+      messages.set(code2, message);
+    }
+  });
+  if (counts.size === 0) {
+    const fallbackCount = normalizeSiteIdList(entry?.failedSiteIds).length;
+    if (fallbackCount <= 0 && entry?.status !== "failed" && entry?.status !== "partial") {
+      return null;
+    }
+    return {
+      code: "unexpected_error",
+      count: Math.max(1, fallbackCount),
+      message: ""
+    };
+  }
+  const [code, count] = [...counts.entries()].sort((left, right) => right[1] - left[1])[0];
+  return {
+    code,
+    count,
+    message: messages.get(code) ?? ""
+  };
+}
+function buildScheduledFavoriteRunSummary(historyItems = [], favoriteId) {
+  const latest = getLatestScheduledFavoriteRun(historyItems, favoriteId);
+  if (!latest) {
+    return null;
+  }
+  const representativeFailure = getRepresentativeFailure(latest);
+  return {
+    favoriteId: normalizeFavoriteId(favoriteId),
+    createdAt: safeText(latest.createdAt),
+    status: safeText(latest.status).trim() || "unknown",
+    representativeCode: representativeFailure?.code ?? null,
+    representativeMessage: representativeFailure?.message ?? "",
+    representativeCount: representativeFailure?.count ?? 0
+  };
+}
+
 // src/options/features/schedules.ts
 var { schedulesList } = optionsDom.schedules;
 function getScheduleRepeatLabel(repeat) {
@@ -2919,8 +3411,21 @@ function getScheduleRepeatLabel(repeat) {
       return t.schedules.repeatNone;
   }
 }
-function getLastFavoriteRun(favoriteId) {
-  return state.history.find((entry) => String(entry.originFavoriteId ?? "") === String(favoriteId)) ?? null;
+function buildScheduledRunDetailMarkup(summary) {
+  if (!summary?.representativeCode && !summary?.representativeMessage) {
+    return "";
+  }
+  const codeLabel = summary?.representativeCode ? t.settings.resultCodeLabels[summary.representativeCode] || summary.representativeCode : "";
+  const detailText = summary?.representativeMessage ? `${codeLabel ? `${codeLabel}: ` : ""}${summary.representativeMessage}` : codeLabel;
+  if (!detailText) {
+    return "";
+  }
+  return `
+    <div class="schedule-result-detail">
+      <strong>${escapeHTML(t.schedules.failureDetail)}</strong>
+      <div>${escapeHTML(detailText)}</div>
+    </div>
+  `;
 }
 function buildFavoriteJobStatusMarkup(favoriteId) {
   const job = getLatestFavoriteRunJobByFavoriteId(state.favoriteJobs, favoriteId);
@@ -2943,11 +3448,11 @@ function renderSchedulesSection() {
     return leftTime - rightTime;
   });
   if (scheduledFavorites.length === 0) {
-    schedulesList.innerHTML = createEmptyState2(t.schedules.empty);
+    schedulesList.innerHTML = createEmptyState(t.schedules.empty);
     return;
   }
   schedulesList.innerHTML = scheduledFavorites.map((favorite) => {
-    const lastRun = getLastFavoriteRun(favorite.id);
+    const scheduledRunSummary = buildScheduledFavoriteRunSummary(state.history, favorite.id);
     return `
         <article class="settings-control schedule-card" data-schedule-favorite-id="${escapeHTML(favorite.id)}">
           <div class="schedule-card-head">
@@ -2976,14 +3481,15 @@ function renderSchedulesSection() {
               <div>${escapeHTML(getScheduleRepeatLabel(favorite.scheduleRepeat))}</div>
             </div>
             <div>
-              <strong>${escapeHTML(t.schedules.lastRun)}</strong>
-              <div>${escapeHTML(lastRun?.createdAt ? formatDateTime(lastRun.createdAt) : t.schedules.never)}</div>
+              <strong>${escapeHTML(t.schedules.lastScheduledRun)}</strong>
+              <div>${escapeHTML(scheduledRunSummary?.createdAt ? formatDateTime(scheduledRunSummary.createdAt) : t.schedules.never)}</div>
             </div>
             <div>
-              <strong>${escapeHTML(t.history.tableStatus)}</strong>
-              <div>${escapeHTML(lastRun ? getStatusInfo(lastRun.status).label : t.schedules.never)}</div>
+              <strong>${escapeHTML(t.schedules.scheduledResult)}</strong>
+              <div>${escapeHTML(scheduledRunSummary ? getStatusInfo(scheduledRunSummary.status).label : t.schedules.never)}</div>
             </div>
           </div>
+          ${buildScheduledRunDetailMarkup(scheduledRunSummary)}
           <div class="schedule-card-actions">
             <button class="btn" type="button" data-action="run-schedule-favorite" data-favorite-id="${escapeHTML(favorite.id)}">${escapeHTML(t.schedules.runNow)}</button>
             <button class="btn ghost" type="button" data-action="open-schedule-favorite" data-favorite-id="${escapeHTML(favorite.id)}">${escapeHTML(t.schedules.openInPopup)}</button>
@@ -2993,12 +3499,12 @@ function renderSchedulesSection() {
   }).join("");
 }
 async function runFavoriteFromOptions(favoriteId) {
-  const response = await chrome.runtime.sendMessage({
+  const response = await sendRuntimeMessageWithTimeout({
     action: "favorite:run",
     favoriteId,
     trigger: "options",
     allowPopupFallback: true
-  });
+  }, 5e3);
   if (response?.ok && response?.popupFallback) {
     setStatus(t.schedules.popupFallback, "success");
     showAppToast(t.schedules.popupFallback, "success", 2200);
@@ -3013,11 +3519,11 @@ async function runFavoriteFromOptions(favoriteId) {
   throw new Error(response?.error ?? t.saveFailed);
 }
 async function openFavoriteInPopup(favoriteId) {
-  const response = await chrome.runtime.sendMessage({
+  const response = await sendRuntimeMessageWithTimeout({
     action: "favorite:openEditor",
     favoriteId,
     source: "options-edit"
-  });
+  }, 5e3);
   if (!response?.ok) {
     throw new Error(response?.error ?? t.schedules.openFailed);
   }
@@ -3095,6 +3601,10 @@ function renderServicesSection() {
           <div>${escapeHTML(t.services.lastUsed)}</div><div>${escapeHTML(lastUsed)}</div>
           <div>${escapeHTML(t.services.defaultColor)}</div><div><span class="swatch" style="background:${escapeHTML(site.color || CHART_COLORS[index % CHART_COLORS.length])}"></span></div>
         </div>
+        <div class="settings-actions">
+          <button class="btn ghost" type="button" data-move-site="${escapeHTML(site.id)}" data-direction="up" ${index === 0 ? "disabled" : ""}>${escapeHTML(t.services.moveUp)}</button>
+          <button class="btn ghost" type="button" data-move-site="${escapeHTML(site.id)}" data-direction="down" ${index === state.runtimeSites.length - 1 ? "disabled" : ""}>${escapeHTML(t.services.moveDown)}</button>
+        </div>
         <label class="settings-control" for="wait-range-${escapeHTML(site.id)}">
           <strong>${escapeHTML(t.services.waitTime)}</strong>
           <input
@@ -3114,10 +3624,40 @@ function renderServicesSection() {
 }
 async function saveSiteWaitMs(siteId, waitMs) {
   await updateRuntimeSite(siteId, { waitMs: Number(waitMs) });
-  state.runtimeSites = await getRuntimeSites();
+  state.runtimeSites = sortSitesByOrder(await getRuntimeSites(), state.settings.siteOrder);
   renderServiceFilterOptions();
   renderServicesSection();
   showAppToast(t.settings.waitSaved, "success", 1600);
+}
+function moveRuntimeSite(siteId, direction) {
+  const currentIndex = state.runtimeSites.findIndex((site) => site.id === siteId);
+  if (currentIndex === -1) {
+    return null;
+  }
+  const offset = direction === "up" ? -1 : 1;
+  const nextIndex = currentIndex + offset;
+  if (nextIndex < 0 || nextIndex >= state.runtimeSites.length) {
+    return null;
+  }
+  const nextSites = [...state.runtimeSites];
+  const [movedSite] = nextSites.splice(currentIndex, 1);
+  nextSites.splice(nextIndex, 0, movedSite);
+  return nextSites;
+}
+async function saveSiteOrder(siteId, direction) {
+  const nextSites = moveRuntimeSite(siteId, direction);
+  if (!nextSites) {
+    return;
+  }
+  const nextSettings = await updateAppSettings({
+    siteOrder: nextSites.map((site) => site.id)
+  });
+  state.settings = nextSettings;
+  state.runtimeSites = nextSites;
+  renderServiceFilterOptions();
+  renderServicesSection();
+  setStatus(t.services.orderSaved, "success");
+  showAppToast(t.services.orderSaved, "success", 1600);
 }
 function bindServiceEvents() {
   servicesOpenManagerBtn.addEventListener("click", () => {
@@ -3156,6 +3696,17 @@ function bindServiceEvents() {
     }
     void saveSiteWaitMs(slider.dataset.waitmsSiteId, slider.value).catch((error) => {
       console.error("[AI Prompt Broadcaster] Failed to save waitMs.", error);
+      setStatus(error?.message ?? t.saveFailed, "error");
+      showAppToast(error?.message ?? t.saveFailed, "error", 3e3);
+    });
+  });
+  servicesGrid.addEventListener("click", (event) => {
+    const moveButton = event.target.closest("[data-move-site][data-direction]");
+    if (!moveButton) {
+      return;
+    }
+    void saveSiteOrder(moveButton.dataset.moveSite, moveButton.dataset.direction).catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to save site order.", error);
       setStatus(error?.message ?? t.saveFailed, "error");
       showAppToast(error?.message ?? t.saveFailed, "error", 3e3);
     });
@@ -3217,7 +3768,7 @@ function renderHistoryTable() {
   const currentPageIds = currentPageRows.map((entry) => Number(entry.id));
   const allCurrentPageSelected = currentPageIds.length > 0 && currentPageIds.every((historyId) => state.selectedHistoryIds.has(historyId));
   if (currentPageRows.length === 0) {
-    historyTableWrap.innerHTML = createEmptyState2(t.history.emptyFiltered);
+    historyTableWrap.innerHTML = createEmptyState(t.history.emptyFiltered);
   } else {
     historyTableWrap.innerHTML = `
       <table>
@@ -3541,7 +4092,7 @@ async function saveSettings(partialSettings) {
   showAppToast(t.statusSaved, "success", 1800);
 }
 async function resetAllData(loadData2) {
-  const response = await chrome.runtime.sendMessage({ action: "resetAllData" });
+  const response = await sendRuntimeMessageWithTimeout({ action: "resetAllData" }, 1e4);
   if (!response?.ok) {
     throw new Error(response?.error ?? t.settings.resetFailed);
   }
@@ -3660,18 +4211,20 @@ function bindSettingsEvents({ loadData: loadData2 }) {
 
 // src/options/core/data.ts
 async function loadData() {
-  const [history, favorites, favoriteJobs, settings, runtimeSites] = await Promise.all([
+  const [history, favorites, favoriteJobs, settings, runtimeSites, strategyStats] = await Promise.all([
     getStoredPromptHistory(),
     getPromptFavorites(),
     getFavoriteRunJobs(),
     getAppSettings(),
-    getRuntimeSites()
+    getRuntimeSites(),
+    getStrategyStats()
   ]);
   state.history = history;
   state.favorites = favorites;
   state.favoriteJobs = favoriteJobs;
+  state.strategyStats = strategyStats;
   state.selectedHistoryIds.clear();
-  state.runtimeSites = runtimeSites;
+  state.runtimeSites = sortSitesByOrder(runtimeSites, settings.siteOrder);
   state.settings = settings;
   renderServiceFilterOptions();
   renderDashboard();

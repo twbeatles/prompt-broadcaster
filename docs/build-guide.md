@@ -75,20 +75,27 @@ The smoke flow loads local fixtures from `qa/fixtures/` and validates the built 
 - `click`, `enter`, and `shift+enter` submit flows
 - selector checker `ok` and `auth_page` reporting
 - selector checker `input-only` mode for conditional-submit UIs
+- internal-only runtime router trust checks and timeout-safe runtime messaging fallback
+- selection helper double-injection guard
 - JSON import repair for invalid, duplicate, and unauthorized custom services
 - alias-based custom-service permission requests and cleanup of unused optional origins
 - built-in override import repair for `click` configurations with empty selectors
 - `broadcastCounter` export/import/reset consistency
 - import migration and export `version: 6` normalization
+- `siteOrder` normalization and ordering reuse
 - favorite chain/schedule field backfill for legacy imports
 - favorite run job dedupe behavior, chain target fallback, and prepared clipboard context
+- favorite `{{counter}}` serialization across concurrent runs
+- chain stop on non-`submitted` completion
 - favorite failure-history recording for queue failures before broadcast creation
+- scheduled-run summary isolation from manual runs
 - quick palette overlay filtering and execution handoff
 - favorites search matching title, text, tags, folders, and `#tag`
 - per-service override template resolution and retry prompt preservation
 - CSV export escaping for spreadsheet formula-leading values
 - pending broadcast state accumulation across sequential site completions with structured `siteResults`
 - adaptive strategy-stat accumulation for injector attempts
+- dashboard metrics for heatmap, trends, failure reasons, and strategy summary
 - reusable-tab preflight filtering for auth/settings/non-input tabs
 - reset helper cleanup across local and session runtime state
 
@@ -172,9 +179,11 @@ The generated ZIP contains the built extension from `dist/` only.
 15. Trigger the quick palette with `Alt+Shift+F` on an injectable page and confirm both direct execution and popup fallback flows
 16. Confirm popup fallback resumes automatically when only popup-resolvable context was missing, and opens the editor only when user-variable input is still required
 17. Confirm that cancelling a broadcast leaves reused tabs open and closes only newly opened tabs
-18. Trigger **Reset data** and confirm it clears both local prompt data and in-memory/session runtime state, including strategy stats
-19. Run the packaging script for your platform
-20. Upload the generated ZIP to Chrome Web Store or attach it to a GitHub release
+18. In options `Dashboard`, confirm the heatmap, service trend, top failure reason, and strategy summary panels render with sane labels and escaped content
+19. In options `Services`, reorder services with `Move up` / `Move down` and confirm the same order appears in popup compose and favorite editor target checklists
+20. Trigger **Reset data** and confirm it clears both local prompt data and in-memory/session runtime state, including strategy stats
+21. Run the packaging script for your platform
+22. Upload the generated ZIP to Chrome Web Store or attach it to a GitHub release
 
 ## Chrome Web Store Release Checklist
 
@@ -199,6 +208,8 @@ Before uploading, run these manual checks in a real Chrome window:
 - custom-service add/import/delete/reset keeps optional host permissions aligned with `url + hostnameAliases`
 - per-service override retry still sends the originally resolved prompt
 - reusable-tab discovery excludes auth/settings/non-input tabs
+- options dashboard analytics panels render without broken labels or escaping issues
+- options services ordering persists across reopen and affects popup/favorite editor service order
 - reset-data clears both local prompt data and session runtime state
 - options page, history, favorites, and service editor text render correctly in Korean
 - standalone popup fallback still opens when Chrome cannot surface the toolbar action popup

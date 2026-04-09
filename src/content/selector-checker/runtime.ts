@@ -1,24 +1,14 @@
 // @ts-nocheck
+import { sendRuntimeMessageWithTimeout } from "../../shared/chrome/messaging";
+
 export function logSelectorCheckerError(context, error) {
   console.error(`[AI Prompt Broadcaster] ${context}`, error);
 }
 
 export function sendRuntimeMessage(message) {
-  return new Promise((resolve) => {
-    try {
-      chrome.runtime.sendMessage(message, (response) => {
-        if (chrome.runtime.lastError) {
-          logSelectorCheckerError("Runtime message failed.", chrome.runtime.lastError);
-          resolve(null);
-          return;
-        }
-
-        resolve(response ?? null);
-      });
-    } catch (error) {
-      logSelectorCheckerError("Failed to send runtime message.", error);
-      resolve(null);
-    }
+  return sendRuntimeMessageWithTimeout(message, 4000).catch((error) => {
+    logSelectorCheckerError("Failed to send runtime message.", error);
+    return null;
   });
 }
 

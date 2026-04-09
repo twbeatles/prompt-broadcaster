@@ -9,6 +9,10 @@ export const optionsDom = {
     dashboardCards: document.getElementById("dashboard-cards"),
     serviceDonut: document.getElementById("service-donut"),
     dailyBarChart: document.getElementById("daily-bar-chart"),
+    activityHeatmap: document.getElementById("activity-heatmap"),
+    serviceTrend: document.getElementById("service-trend"),
+    failureReasons: document.getElementById("failure-reasons"),
+    strategySummary: document.getElementById("strategy-summary"),
   },
   history: {
     historyServiceFilter: document.getElementById("history-service-filter"),

@@ -42,6 +42,7 @@ const SCHEDULED_VARIABLE_BLOCKLIST = new Set([
 ]);
 const FAVORITE_JOB_ALARM_PREFIX = "apb-favorite-job:";
 const FAVORITE_JOB_INITIAL_DELAY_MS = 50;
+let favoriteExecutionChain = Promise.resolve();
 
 interface FavoriteWorkflowDeps {
   getBroadcastTriggerLabel: (trigger: unknown) => FavoriteExecutionTrigger;
@@ -113,6 +114,12 @@ function replaceFavoriteRunJob(
   const nextJobs = jobs.filter((job) => job.jobId !== nextJob.jobId);
   nextJobs.unshift(nextJob);
   return nextJobs;
+}
+
+function queueFavoriteExecution<T>(task: () => Promise<T>): Promise<T> {
+  const resultPromise = favoriteExecutionChain.then(task, task);
+  favoriteExecutionChain = resultPromise.then(() => undefined, () => undefined);
+  return resultPromise;
 }
 
 export function createFavoriteWorkflow(deps: FavoriteWorkflowDeps) {
@@ -586,46 +593,74 @@ export function createFavoriteWorkflow(deps: FavoriteWorkflowDeps) {
     steps: ChainStep[],
     defaults: Record<string, string>
   ) {
-    const existingJobs = await getFavoriteRunJobs();
-    const dedupedJob = findFavoriteRunDedupedJob(existingJobs, favorite.id);
+    const createdAt = nowIso();
+    const queueState: {
+      queuedJob: FavoriteRunJobRecord | null;
+      dedupedJob: FavoriteRunJobRecord | null;
+    } = {
+      queuedJob: null,
+      dedupedJob: null,
+    };
 
-    if (dedupedJob) {
+    await updateFavoriteRunJobs((jobs) => {
+      queueState.dedupedJob = findFavoriteRunDedupedJob(jobs, favorite.id);
+      if (queueState.dedupedJob) {
+        return jobs;
+      }
+
+      queueState.queuedJob = {
+        jobId: createFavoriteRunJobId(),
+        favoriteId: favorite.id,
+        trigger,
+        status: "queued",
+        mode: favorite.mode === "chain" ? "chain" : "single",
+        stepCount: steps.length,
+        completedSteps: 0,
+        currentStepIndex: steps.length > 0 ? 0 : null,
+        chainRunId: favorite.mode === "chain" ? buildChainRunId() : null,
+        currentBroadcastId: null,
+        message: getQueuedMessage(),
+        createdAt,
+        updatedAt: createdAt,
+        favoriteTitle: favorite.title || previewFavoriteText(favorite),
+        steps,
+        templateDefaults: { ...(defaults ?? {}) },
+        executionContext: { ...executionContext },
+      };
+
+      return replaceFavoriteRunJob(jobs, queueState.queuedJob);
+    });
+
+    const finalDedupedJob = queueState.dedupedJob;
+    if (finalDedupedJob) {
       return {
         ok: true,
         deduped: true,
-        jobId: dedupedJob.jobId,
+        jobId: finalDedupedJob.jobId,
         message: getDedupedMessage(),
       };
     }
 
-    const createdAt = nowIso();
-    const job: FavoriteRunJobRecord = {
-      jobId: createFavoriteRunJobId(),
-      favoriteId: favorite.id,
-      trigger,
-      status: "queued",
-      mode: favorite.mode === "chain" ? "chain" : "single",
-      stepCount: steps.length,
-      completedSteps: 0,
-      currentStepIndex: steps.length > 0 ? 0 : null,
-      chainRunId: favorite.mode === "chain" ? buildChainRunId() : null,
-      currentBroadcastId: null,
-      message: getQueuedMessage(),
-      createdAt,
-      updatedAt: createdAt,
-      favoriteTitle: favorite.title || previewFavoriteText(favorite),
-      steps,
-      templateDefaults: { ...(defaults ?? {}) },
-      executionContext: { ...executionContext },
-    };
+    const finalQueuedJob = queueState.queuedJob;
+    if (!finalQueuedJob) {
+      return {
+        ok: false,
+        deduped: false,
+        jobId: "",
+        message: getWorkflowMessage(
+          "favorite_run_error_queue_failed",
+          [],
+          "Favorite execution could not be queued.",
+        ),
+      };
+    }
 
-    await updateFavoriteRunJobs((jobs) => replaceFavoriteRunJob(jobs, job));
-    await scheduleFavoriteJobAlarm(job.jobId);
+    await scheduleFavoriteJobAlarm(finalQueuedJob.jobId);
 
     return {
       ok: true,
       deduped: false,
-      jobId: job.jobId,
+      jobId: finalQueuedJob.jobId,
       message: getQueuedMessage(),
     };
   }
@@ -764,23 +799,26 @@ export function createFavoriteWorkflow(deps: FavoriteWorkflowDeps) {
         return;
       }
 
-      const prompt = await buildFavoriteStepPrompt(
-        step,
-        job.templateDefaults,
-        job.executionContext,
-      );
       const targetSiteIds = normalizeSiteIdList(step.targetSiteIds);
-      const response = await queueBroadcastRequest(
-        prompt,
-        targetSiteIds.map((siteId) => ({ id: siteId })),
-        {
-          originFavoriteId: job.favoriteId,
-          chainRunId: job.chainRunId,
-          chainStepIndex: job.mode === "chain" ? stepIndex : null,
-          chainStepCount: job.mode === "chain" ? job.stepCount : null,
-          trigger: job.trigger,
-        },
-      );
+      const response = await queueFavoriteExecution(async () => {
+        const prompt = await buildFavoriteStepPrompt(
+          step,
+          job.templateDefaults,
+          job.executionContext,
+        );
+
+        return queueBroadcastRequest(
+          prompt,
+          targetSiteIds.map((siteId) => ({ id: siteId })),
+          {
+            originFavoriteId: job.favoriteId,
+            chainRunId: job.chainRunId,
+            chainStepIndex: job.mode === "chain" ? stepIndex : null,
+            chainStepCount: job.mode === "chain" ? job.stepCount : null,
+            trigger: job.trigger,
+          },
+        );
+      });
 
       if (!response?.ok || !response?.broadcastId) {
         const errorMessage = response?.error ?? getWorkflowMessage(
@@ -818,7 +856,7 @@ export function createFavoriteWorkflow(deps: FavoriteWorkflowDeps) {
       }));
 
       const lastBroadcast = await getLastBroadcast().catch(() => null);
-      if (lastBroadcast?.broadcastId === response.broadcastId && lastBroadcast.status !== "sending") {
+      if (lastBroadcast && lastBroadcast.broadcastId === response.broadcastId && lastBroadcast.status !== "sending") {
         await handleFavoriteBroadcastCompletion(lastBroadcast);
       }
     } catch (error) {

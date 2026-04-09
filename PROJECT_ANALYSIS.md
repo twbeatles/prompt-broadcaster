@@ -1,7 +1,7 @@
 # AI Prompt Broadcaster - 프로젝트 구조 분석
 
-> 기준일: 2026-04-03
-> 최종 업데이트: 2026-04-03 (favorite workflow 보강, v6 데이터 모델, popup context 준비 경로 반영)
+> 기준일: 2026-04-09
+> 최종 업데이트: 2026-04-09 (runtime messaging hardening, siteOrder, dashboard 확장, schedules 결과 요약 반영)
 > 분석 범위: 전체 소스코드, 빌드 시스템, 데이터 흐름, UI 구조
 
 ---
@@ -15,6 +15,8 @@ Chrome Manifest V3 기반 확장 프로그램이다. 프롬프트 하나를 Chat
 - 다중 AI 방송 + 재사용 탭/새 탭/특정 탭 라우팅
 - 템플릿 변수, 히스토리, 즐겨찾기, 커스텀 서비스 관리
 - 즐겨찾기 체인/예약/빠른 팔레트 기반 실행 확장
+- runtime messaging / sender trust boundary 하드닝
+- options dashboard / schedules / services 운영성 강화
 - background/popup/options의 기능 기준 모듈 분리 리팩터링
 
 ---
@@ -139,6 +141,7 @@ prompt-broadcaster/
 
 - `src/background/messages/router.ts`
   - runtime message action 라우팅
+  - 내부 extension page / content script sender만 허용
 - `src/background/popup/favorites-workflow.ts`
   - 즐겨찾기 실행
   - chain step 순차 실행
@@ -160,6 +163,8 @@ prompt-broadcaster/
   - wait multiplier
   - selector/result normalization
   - adaptive strategy order 계산
+- `src/shared/chrome/messaging.ts`
+  - popup/options/content의 timeout-safe runtime message helper
 
 ### 4.2 Popup
 
@@ -198,12 +203,16 @@ prompt-broadcaster/
   - history service filter option 동기화
 - `src/options/features/dashboard.ts`
   - 메트릭 카드/차트 데이터
+- `src/options/features/dashboard-metrics.ts`
+  - heatmap / service trend / failure reason / strategy summary 집계
 - `src/options/features/history.ts`
   - 히스토리 필터, 페이지네이션, bulk delete, 상세 모달
 - `src/options/features/schedules.ts`
   - 예약 즐겨찾기 목록, toggle, run-now, popup editor handoff
+- `src/options/features/schedule-summary.ts`
+  - 최근 scheduled 실행 결과 요약 계산
 - `src/options/features/services.ts`
-  - 서비스 카드 및 `waitMs` 편집
+  - 서비스 카드, `waitMs`, `siteOrder` 편집
 - `src/options/features/settings.ts`
   - import/export/reset/shortcut 표시
 - `src/options/ui/charts.ts`
@@ -235,6 +244,7 @@ interface AppSettings {
   waitMsMultiplier: number;
   historySort: "latest" | "oldest" | "mostSuccess" | "mostFailure";
   favoriteSort: "recentUsed" | "usageCount" | "title" | "createdAt";
+  siteOrder: string[];
 }
 ```
 
@@ -324,6 +334,7 @@ interface SiteInjectionResult {
 - `failedSelectors`
 - `onboardingCompleted`
 - `strategyStats`
+- `appSettings.siteOrder` (inside `appSettings`)
 
 세션 스토리지 주요 키:
 
@@ -397,6 +408,7 @@ siteResults / history / lastBroadcast 업데이트
 - `none` 반복은 1회 실행 후 disable
 - `daily`, `weekday`, `weekly`는 다음 `scheduledAt` 갱신 후 재등록
 - `url/title/selection/clipboard`가 필요한 템플릿은 schedule 실행 시 block
+- options `Schedules`는 manual run과 분리된 최근 scheduled 실행 시각/상태/대표 실패 상세를 별도로 노출
 
 ### 7.5 Quick palette
 
@@ -407,6 +419,12 @@ siteResults / history / lastBroadcast 업데이트
 - fully resolvable favorite면 즉시 실행
 - popup이 자동으로 해결 가능한 입력만 부족하면 popup fallback 후 자동 재실행
 - user variable 같은 수동 입력이 남아 있으면 favorite editor로 handoff
+
+### 7.6 서비스 순서와 Dashboard 운영성
+
+- `appSettings.siteOrder`는 runtime site 전체 순서를 저장하고 popup compose 서비스 카드, favorite editor 대상 체크리스트, options 서비스 목록에 동일 적용된다.
+- options `Services`는 drag-and-drop 대신 `Move up` / `Move down`으로 접근성 있는 순서 편집을 제공한다.
+- options `Dashboard`는 기본 overview 카드 외에 요일×시간대 heatmap, 서비스 성공률 추이, 상위 실패 원인, `strategyStats` 요약을 함께 렌더링한다.
 
 ---
 
@@ -470,7 +488,9 @@ siteResults / history / lastBroadcast 업데이트
 - 현재 필터 결과 전체 삭제
 - `7/30/90일 이전 삭제`
 - schedules toggle / run now / open in popup
+- schedules last scheduled result summary
 - service `waitMs` 편집
+- service ordering (`Move up` / `Move down`)
 - shortcut 목록 표시
 
 ---
@@ -491,17 +511,21 @@ npm run qa:smoke
 - delayed submit enablement
 - `click` / `enter` / `shift+enter`
 - selector checker `ok` / `auth_page`
+- router trusted sender / runtime messaging timeout fallback
 - custom service permission cleanup
 - invalid built-in override import repair
 - `broadcastCounter` export/import/reset
 - export `version: 6` migration
+- `siteOrder` normalization / ordering reuse
 - favorite chain/schedule field backfill
-- favorite run job dedupe / chain target fallback
+- favorite run job dedupe / chain target fallback / counter serialization
 - prepared clipboard context / pre-broadcast failure history
+- scheduled summary isolation from manual run
 - quick palette filtering 및 실행
 - favorites search
 - structured `siteResults`
 - strategy stats accumulation
+- dashboard metrics aggregation
 - reusable-tab preflight
 - reset helper cleanup
 
@@ -531,9 +555,13 @@ npm run qa:smoke
 
 - [x] 구조화된 `siteResults`
 - [x] adaptive strategy stats
+- [x] timeout-safe runtime messaging helper
+- [x] router sender trust boundary
 - [x] import/export `v6`
 - [x] 상세 import 리포트
 - [x] background mutation chain
+- [x] `siteOrder` 기반 서비스 순서 커스터마이징
+- [x] dashboard heatmap / trend / failure / strategy summary
 - [x] reset-data 일원화
 
 ### UI/문서화/리팩터링
@@ -552,8 +580,7 @@ npm run qa:smoke
 
 | 우선순위 | 기능 | 메모 |
 |---|---|---|
-| 2순위 | 방송 순서 커스터마이징 | `siteOrder` 미구현 |
-| 2순위 | 히스토리 통계 강화 | heatmap / trend / keyword 분석 미구현 |
+| 2순위 | 고급 통계 확장 | prompt-length 분포 / keyword 분석은 아직 미구현 |
 | 2순위 | 신규 내장 AI 서비스 | Copilot / Mistral / DeepSeek / HuggingChat 후보 |
 | 보류 | 다국어 확장 | `ja`, `zh_CN` 미구현 |
 

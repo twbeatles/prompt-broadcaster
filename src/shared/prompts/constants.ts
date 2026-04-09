@@ -26,4 +26,5 @@ export const DEFAULT_SETTINGS = Object.freeze({
   waitMsMultiplier: DEFAULT_WAIT_MS_MULTIPLIER,
   historySort: DEFAULT_HISTORY_SORT,
   favoriteSort: DEFAULT_FAVORITE_SORT,
+  siteOrder: [],
 }) as Readonly<AppSettings>;

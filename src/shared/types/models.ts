@@ -82,6 +82,7 @@ export interface AppSettings {
   waitMsMultiplier: number;
   historySort: HistorySort;
   favoriteSort: FavoriteSort;
+  siteOrder: string[];
 }
 
 export interface TemplateVariableDescriptor {

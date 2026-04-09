@@ -26,6 +26,11 @@ import {
 function sortStrings(values) {
   return [...values].sort();
 }
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function main() {
   await Promise.all([
     ensureFileExists(injectorPath),
@@ -382,6 +387,247 @@ async function main() {
 
   await browser.close();
 
+  await runStep("runtime router trusts only internal extension senders", async () => {
+    const listeners = [];
+    const chromeMock = {
+      runtime: {
+        id: "ext-1",
+        onMessage: {
+          addListener(listener) {
+            listeners.push(listener);
+          },
+        },
+      },
+    };
+    const module = await loadBundledModule("src/background/messages/router.ts", chromeMock);
+    let syncCalls = 0;
+    let asyncCalls = 0;
+
+    module.registerRuntimeMessageRouter({
+      ping: {
+        sync: true,
+        run: () => {
+          syncCalls += 1;
+          return { ok: true, type: "sync" };
+        },
+      },
+      asyncPing: {
+        run: async () => {
+          asyncCalls += 1;
+          return { ok: true, type: "async" };
+        },
+      },
+    });
+
+    assert.equal(listeners.length, 1);
+    const listener = listeners[0];
+
+    let blockedCalled = false;
+    assert.equal(
+      listener({ action: "ping" }, { id: "foreign-extension" }, () => {
+        blockedCalled = true;
+      }),
+      false,
+    );
+    assert.equal(syncCalls, 0);
+    assert.equal(blockedCalled, false);
+
+    let popupResponse = null;
+    assert.equal(
+      listener({ action: "ping" }, { id: "ext-1" }, (payload) => {
+        popupResponse = payload;
+      }),
+      false,
+    );
+    assert.equal(syncCalls, 1);
+    assert.deepEqual(popupResponse, { ok: true, type: "sync" });
+
+    let contentResponse = null;
+    assert.equal(
+      listener({ action: "ping" }, { tab: { id: 42 } }, (payload) => {
+        contentResponse = payload;
+      }),
+      false,
+    );
+    assert.equal(syncCalls, 2);
+    assert.deepEqual(contentResponse, { ok: true, type: "sync" });
+
+    assert.equal(
+      listener({ action: "asyncPing" }, { id: "ext-1" }, () => {
+        throw new Error("port closed");
+      }),
+      true,
+    );
+    await delay(20);
+    assert.equal(asyncCalls, 1);
+  });
+
+  await runStep("runtime messaging helper falls back on timeout and closed ports", async () => {
+    const chromeMock = {
+      runtime: {
+        lastError: null,
+        sendMessage() {},
+      },
+    };
+    const module = await loadBundledModule("src/shared/chrome/messaging.ts", chromeMock);
+
+    const timeoutFallback = { ok: false, reason: "timeout" };
+    assert.deepEqual(
+      await module.sendRuntimeMessageWithTimeout({ action: "ping" }, 20, timeoutFallback),
+      timeoutFallback,
+    );
+
+    chromeMock.runtime.sendMessage = (_message, callback) => {
+      chromeMock.runtime.lastError = {
+        message: "The message port closed before a response was received.",
+      };
+      callback(undefined);
+      chromeMock.runtime.lastError = null;
+    };
+    const portFallback = { ok: false, reason: "closed" };
+    assert.deepEqual(
+      await module.sendRuntimeMessageWithTimeout({ action: "ping" }, 20, portFallback),
+      portFallback,
+    );
+
+    chromeMock.runtime.sendMessage = (_message, callback) => {
+      callback({ ok: true, handled: true });
+    };
+    assert.deepEqual(
+      await module.sendRuntimeMessageWithTimeout({ action: "ping" }, 20, null),
+      { ok: true, handled: true },
+    );
+  });
+
+  await runStep("selector wait observer limits watched attributes", async () => {
+    const previousGlobals = {
+      document: globalThis.document,
+      window: globalThis.window,
+      performance: globalThis.performance,
+      MutationObserver: globalThis.MutationObserver,
+      NodeFilter: globalThis.NodeFilter,
+    };
+    const observedOptions = [];
+
+    try {
+      globalThis.document = {
+        documentElement: {},
+        querySelectorAll() {
+          return [];
+        },
+        createTreeWalker() {
+          return {
+            currentNode: null,
+            nextNode() {
+              return null;
+            },
+          };
+        },
+      };
+      globalThis.window = {
+        setTimeout,
+        clearTimeout,
+        setInterval,
+        clearInterval,
+        getComputedStyle() {
+          return {
+            display: "block",
+            visibility: "visible",
+          };
+        },
+      };
+      globalThis.performance = { now: () => Date.now() };
+      globalThis.NodeFilter = { SHOW_ELEMENT: 1 };
+      globalThis.MutationObserver = class {
+        observe(_target, options) {
+          observedOptions.push(options);
+        }
+
+        disconnect() {}
+      };
+
+      const module = await loadBundledModule("src/content/injector/selectors.ts", createChromeMock());
+      assert.equal(await module.waitForElement(["#delayed"], 5), null);
+      assert.deepEqual(observedOptions[0]?.attributeFilter, [
+        "class",
+        "id",
+        "style",
+        "disabled",
+        "aria-disabled",
+      ]);
+    } finally {
+      Object.assign(globalThis, previousGlobals);
+    }
+  });
+
+  await runStep("selection helper avoids duplicate listener registration", async () => {
+    const previousGlobals = {
+      document: globalThis.document,
+      window: globalThis.window,
+      selectionLoaded: globalThis.__aiPromptBroadcasterSelectionScriptLoaded,
+    };
+    let documentListenerCount = 0;
+    let windowListenerCount = 0;
+    let runtimeListenerCount = 0;
+    let runtimeSendCount = 0;
+    const chromeMock = {
+      runtime: {
+        lastError: null,
+        sendMessage(_message, callback) {
+          runtimeSendCount += 1;
+          callback?.({ ok: true });
+        },
+        onMessage: {
+          addListener() {
+            runtimeListenerCount += 1;
+          },
+        },
+      },
+    };
+
+    try {
+      delete globalThis.__aiPromptBroadcasterSelectionScriptLoaded;
+      globalThis.document = {
+        addEventListener() {
+          documentListenerCount += 1;
+        },
+      };
+      globalThis.window = {
+        addEventListener() {
+          windowListenerCount += 1;
+        },
+        setTimeout(handler) {
+          handler();
+          return 1;
+        },
+        clearTimeout() {},
+        getSelection() {
+          return {
+            toString() {
+              return "selected text";
+            },
+          };
+        },
+      };
+
+      await loadBundledModule("src/content/selection/helper.ts", chromeMock);
+      await loadBundledModule("src/content/selection/helper.ts", chromeMock);
+
+      assert.equal(runtimeListenerCount, 1);
+      assert.equal(documentListenerCount, 3);
+      assert.equal(windowListenerCount, 1);
+      assert.equal(runtimeSendCount, 1);
+    } finally {
+      globalThis.document = previousGlobals.document;
+      globalThis.window = previousGlobals.window;
+      if (previousGlobals.selectionLoaded === undefined) {
+        delete globalThis.__aiPromptBroadcasterSelectionScriptLoaded;
+      } else {
+        globalThis.__aiPromptBroadcasterSelectionScriptLoaded = previousGlobals.selectionLoaded;
+      }
+    }
+  });
+
   await runStep("custom site permission cleanup removes only unused origins", async () => {
     const chromeMock = createChromeMock({
       grantedOrigins: [
@@ -595,6 +841,7 @@ async function main() {
     assert.equal(exported.version, 6);
     assert.equal(exported.broadcastCounter, 1);
     assert.deepEqual(exported.settings, module.DEFAULT_SETTINGS);
+    assert.deepEqual(exported.settings.siteOrder, []);
 
     await module.setBroadcastCounter(9);
     const legacyImport = await module.importPromptData(JSON.stringify({
@@ -608,6 +855,7 @@ async function main() {
     assert.equal(legacyImport.settings.waitMsMultiplier, 1);
     assert.equal(legacyImport.settings.historySort, "latest");
     assert.equal(legacyImport.settings.favoriteSort, "recentUsed");
+    assert.deepEqual(legacyImport.settings.siteOrder, []);
 
     const modernImport = await module.importPromptData(JSON.stringify({
       version: 4,
@@ -641,6 +889,7 @@ async function main() {
     assert.equal(modernImport.settings.waitMsMultiplier, 1);
     assert.equal(modernImport.settings.historySort, "latest");
     assert.equal(modernImport.settings.favoriteSort, "recentUsed");
+    assert.deepEqual(modernImport.settings.siteOrder, []);
     assert.equal(modernImport.history[0].siteResults.chatgpt.code, "submitted");
     assert.equal(modernImport.history[0].siteResults.claude.code, "selector_timeout");
     assert.deepEqual(modernImport.history[0].submittedSiteIds, ["chatgpt"]);
@@ -1017,6 +1266,253 @@ async function main() {
     assert.deepEqual(queuedSiteRefs, [{ id: "claude" }]);
   });
 
+  await runStep("favorite workflow dedupes concurrent queue requests for the same favorite", async () => {
+    const chromeMock = createChromeMock();
+    const module = await loadBundledModule("src/background/popup/favorites-workflow.ts", chromeMock);
+    const nowIso = "2026-04-03T00:00:00.000Z";
+
+    await chromeMock.storage.local.set({
+      promptFavorites: [{
+        id: "fav-dedupe",
+        title: "Deduped favorite",
+        text: "Run once",
+        sentTo: ["claude"],
+        createdAt: nowIso,
+        favoritedAt: nowIso,
+        templateDefaults: {},
+        tags: [],
+        folder: "",
+        pinned: false,
+        usageCount: 0,
+        lastUsedAt: null,
+        mode: "single",
+        steps: [],
+        scheduleEnabled: false,
+        scheduledAt: null,
+        scheduleRepeat: "none",
+      }],
+      templateVariableCache: {},
+      broadcastCounter: 0,
+    });
+
+    const workflow = module.createFavoriteWorkflow({
+      getBroadcastTriggerLabel: (trigger) => trigger ?? "popup",
+      getI18nMessage: () => "",
+      rememberNormalTab: async () => null,
+      getPreferredNormalActiveTab: async () => null,
+      isInjectableTabUrl: () => true,
+      getSelectedTextFromTab: async () => "",
+      openPopupWithPrompt: async () => {},
+      nowIso: () => nowIso,
+      buildChainRunId: () => "chain-dedupe",
+      queueBroadcastRequest: async () => ({ ok: true, broadcastId: "broadcast-dedupe" }),
+    });
+
+    const responses = await Promise.all([
+      workflow.handleFavoriteRunMessage({
+        favoriteId: "fav-dedupe",
+        trigger: "popup",
+        allowPopupFallback: false,
+      }, {}),
+      workflow.handleFavoriteRunMessage({
+        favoriteId: "fav-dedupe",
+        trigger: "popup",
+        allowPopupFallback: false,
+      }, {}),
+    ]);
+
+    const jobs = chromeMock.__getStorage().session.favoriteRunJobs ?? [];
+    assert.equal(jobs.length, 1);
+    assert.equal(responses.filter((response) => response?.deduped).length, 1);
+    assert.equal(responses.filter((response) => response?.ok).length, 2);
+  });
+
+  await runStep("favorite workflow serializes counter variables across concurrent alarms", async () => {
+    const chromeMock = createChromeMock();
+    const module = await loadBundledModule("src/background/popup/favorites-workflow.ts", chromeMock);
+    const nowIso = "2026-04-03T00:00:00.000Z";
+    const queuedPrompts = [];
+    let broadcastIndex = 0;
+
+    await chromeMock.storage.local.set({
+      promptFavorites: [
+        {
+          id: "fav-counter-a",
+          title: "Counter A",
+          text: "Counter {{counter}}",
+          sentTo: ["chatgpt"],
+          createdAt: nowIso,
+          favoritedAt: nowIso,
+          templateDefaults: {},
+          tags: [],
+          folder: "",
+          pinned: false,
+          usageCount: 0,
+          lastUsedAt: null,
+          mode: "single",
+          steps: [],
+          scheduleEnabled: false,
+          scheduledAt: null,
+          scheduleRepeat: "none",
+        },
+        {
+          id: "fav-counter-b",
+          title: "Counter B",
+          text: "Counter {{counter}}",
+          sentTo: ["claude"],
+          createdAt: nowIso,
+          favoritedAt: nowIso,
+          templateDefaults: {},
+          tags: [],
+          folder: "",
+          pinned: false,
+          usageCount: 0,
+          lastUsedAt: null,
+          mode: "single",
+          steps: [],
+          scheduleEnabled: false,
+          scheduledAt: null,
+          scheduleRepeat: "none",
+        },
+      ],
+      templateVariableCache: {},
+      broadcastCounter: 0,
+    });
+
+    const workflow = module.createFavoriteWorkflow({
+      getBroadcastTriggerLabel: (trigger) => trigger ?? "popup",
+      getI18nMessage: () => "",
+      rememberNormalTab: async () => null,
+      getPreferredNormalActiveTab: async () => null,
+      isInjectableTabUrl: () => true,
+      getSelectedTextFromTab: async () => "",
+      openPopupWithPrompt: async () => {},
+      nowIso: () => nowIso,
+      buildChainRunId: () => `chain-${Date.now()}`,
+      queueBroadcastRequest: async (prompt) => {
+        queuedPrompts.push(prompt);
+        const currentCounter = chromeMock.__getStorage().local.broadcastCounter ?? 0;
+        await chromeMock.storage.local.set({
+          broadcastCounter: currentCounter + 1,
+        });
+        broadcastIndex += 1;
+        return {
+          ok: true,
+          broadcastId: `broadcast-${broadcastIndex}`,
+        };
+      },
+    });
+
+    await Promise.all([
+      workflow.handleFavoriteRunMessage({
+        favoriteId: "fav-counter-a",
+        trigger: "popup",
+        allowPopupFallback: false,
+      }, {}),
+      workflow.handleFavoriteRunMessage({
+        favoriteId: "fav-counter-b",
+        trigger: "popup",
+        allowPopupFallback: false,
+      }, {}),
+    ]);
+
+    const jobs = chromeMock.__getStorage().session.favoriteRunJobs ?? [];
+    await Promise.all(
+      jobs.map((job) => workflow.handleFavoriteRunJobAlarm(`apb-favorite-job:${job.jobId}`)),
+    );
+
+    assert.deepEqual(sortStrings(queuedPrompts), ["Counter 1", "Counter 2"]);
+    assert.equal(chromeMock.__getStorage().local.broadcastCounter, 2);
+  });
+
+  await runStep("favorite workflow stops chains after non-submitted broadcasts", async () => {
+    const chromeMock = createChromeMock();
+    const module = await loadBundledModule("src/background/popup/favorites-workflow.ts", chromeMock);
+    const nowIso = new Date().toISOString();
+    let broadcastCount = 0;
+    let alarmCreateCount = 0;
+    const originalAlarmCreate = chromeMock.alarms.create.bind(chromeMock.alarms);
+    chromeMock.alarms.create = (...args) => {
+      alarmCreateCount += 1;
+      return originalAlarmCreate(...args);
+    };
+
+    await chromeMock.storage.local.set({
+      promptFavorites: [{
+        id: "fav-chain-stop",
+        title: "Chain stop",
+        text: "Step 1",
+        sentTo: ["chatgpt"],
+        createdAt: nowIso,
+        favoritedAt: nowIso,
+        templateDefaults: {},
+        tags: [],
+        folder: "",
+        pinned: false,
+        usageCount: 0,
+        lastUsedAt: null,
+        mode: "chain",
+        steps: [
+          {
+            id: "step-1",
+            text: "Step 1",
+            delayMs: 0,
+            targetSiteIds: ["chatgpt"],
+          },
+          {
+            id: "step-2",
+            text: "Step 2",
+            delayMs: 0,
+            targetSiteIds: ["claude"],
+          },
+        ],
+        scheduleEnabled: false,
+        scheduledAt: null,
+        scheduleRepeat: "none",
+      }],
+      templateVariableCache: {},
+      broadcastCounter: 0,
+    });
+
+    const workflow = module.createFavoriteWorkflow({
+      getBroadcastTriggerLabel: (trigger) => trigger ?? "popup",
+      getI18nMessage: () => "",
+      rememberNormalTab: async () => null,
+      getPreferredNormalActiveTab: async () => null,
+      isInjectableTabUrl: () => true,
+      getSelectedTextFromTab: async () => "",
+      openPopupWithPrompt: async () => {},
+      nowIso: () => nowIso,
+      buildChainRunId: () => "chain-stop",
+      queueBroadcastRequest: async () => {
+        broadcastCount += 1;
+        return {
+          ok: true,
+          broadcastId: `broadcast-${broadcastCount}`,
+        };
+      },
+    });
+
+    await workflow.handleFavoriteRunMessage({
+      favoriteId: "fav-chain-stop",
+      trigger: "popup",
+      allowPopupFallback: false,
+    }, {});
+
+    const queuedJob = chromeMock.__getStorage().session.favoriteRunJobs?.[0];
+    await workflow.handleFavoriteRunJobAlarm(`apb-favorite-job:${queuedJob.jobId}`);
+    await workflow.handleFavoriteBroadcastCompletion({
+      broadcastId: "broadcast-1",
+      status: "failed",
+    });
+
+    const storedJob = chromeMock.__getStorage().session.favoriteRunJobs?.[0];
+    assert.equal(storedJob.status, "failed");
+    assert.equal(storedJob.completedSteps, 1);
+    assert.equal(broadcastCount, 1);
+    assert.equal(alarmCreateCount, 1);
+  });
+
   await runStep("favorite workflow accepts prepared clipboard context", async () => {
     const chromeMock = createChromeMock();
     const module = await loadBundledModule("src/background/popup/favorites-workflow.ts", chromeMock);
@@ -1233,6 +1729,168 @@ async function main() {
     });
   });
 
+  await runStep("site order sorting normalizes saved ids and appends new sites", async () => {
+    const orderModule = await loadBundledModule("src/shared/sites/order.ts", createChromeMock());
+    const promptsModule = await loadBundledModule("src/shared/prompts/index.ts", createChromeMock());
+
+    assert.deepEqual(
+      orderModule.sortSitesByOrder(
+        [
+          { id: "chatgpt", name: "ChatGPT" },
+          { id: "claude", name: "Claude" },
+          { id: "gemini", name: "Gemini" },
+        ],
+        ["claude", "", "unknown", "claude"],
+      ).map((site) => site.id),
+      ["claude", "chatgpt", "gemini"],
+    );
+    assert.deepEqual(
+      promptsModule.normalizeSettings({
+        siteOrder: ["claude", "", "claude", "custom-site"],
+      }).siteOrder,
+      ["claude", "custom-site"],
+    );
+  });
+
+  await runStep("import migration tolerates null partial v3 and v4 payloads", async () => {
+    const module = await loadBundledModule("src/shared/stores/prompt-store.ts", createChromeMock());
+
+    const v3Import = await module.importPromptData(JSON.stringify({
+      version: 3,
+      settings: {
+        historyLimit: null,
+        siteOrder: ["claude", "", "claude", "custom-1"],
+        reuseExistingTabs: null,
+      },
+      history: null,
+      favorites: null,
+      templateVariableCache: null,
+      customSites: null,
+      builtInSiteStates: null,
+      builtInSiteOverrides: null,
+    }));
+    assert.equal(v3Import.importSummary.migratedFromVersion, 3);
+    assert.equal(v3Import.settings.historyLimit, 10);
+    assert.equal(v3Import.settings.reuseExistingTabs, true);
+    assert.deepEqual(v3Import.settings.siteOrder, ["claude", "custom-1"]);
+    assert.deepEqual(v3Import.history, []);
+    assert.deepEqual(v3Import.favorites, []);
+
+    const v4Import = await module.importPromptData(JSON.stringify({
+      version: 4,
+      settings: null,
+      history: [{
+        id: 1,
+        text: "Legacy",
+        createdAt: "2026-04-01T00:00:00.000Z",
+        siteResults: null,
+      }],
+      favorites: [{
+        id: "fav-v4",
+        text: "Legacy favorite",
+        createdAt: "2026-04-01T00:00:00.000Z",
+        favoritedAt: "2026-04-01T00:00:00.000Z",
+      }],
+    }));
+    assert.equal(v4Import.importSummary.migratedFromVersion, 4);
+    assert.deepEqual(v4Import.settings.siteOrder, []);
+    assert.equal(v4Import.history[0].text, "Legacy");
+    assert.equal(v4Import.favorites[0].id, "fav-v4");
+  });
+
+  await runStep("scheduled run summary ignores manual runs and preserves failure details", async () => {
+    const module = await loadBundledModule("src/options/features/schedule-summary.ts", createChromeMock());
+    const summary = module.buildScheduledFavoriteRunSummary([
+      {
+        originFavoriteId: "fav-1",
+        trigger: "options",
+        createdAt: "2026-04-04T12:00:00.000Z",
+        status: "submitted",
+        siteResults: {
+          chatgpt: { code: "submitted" },
+        },
+      },
+      {
+        originFavoriteId: "fav-1",
+        trigger: "scheduled",
+        createdAt: "2026-04-03T12:00:00.000Z",
+        status: "failed",
+        failedSiteIds: ["claude"],
+        siteResults: {
+          claude: {
+            code: "submit_failed",
+            message: "Composer button stayed disabled",
+          },
+        },
+      },
+    ], "fav-1");
+
+    assert.equal(summary.createdAt, "2026-04-03T12:00:00.000Z");
+    assert.equal(summary.status, "failed");
+    assert.equal(summary.representativeCode, "submit_failed");
+    assert.equal(summary.representativeMessage, "Composer button stayed disabled");
+  });
+
+  await runStep("dashboard metrics include heatmap trends failures and strategy summary", async () => {
+    const module = await loadBundledModule("src/options/features/dashboard-metrics.ts", createChromeMock());
+    const metrics = module.buildDashboardMetrics(
+      [
+        {
+          text: "Prompt A",
+          createdAt: "2026-04-09T10:15:00.000Z",
+          requestedSiteIds: ["chatgpt"],
+          submittedSiteIds: ["chatgpt"],
+          siteResults: {
+            chatgpt: { code: "submitted" },
+          },
+          status: "submitted",
+        },
+        {
+          text: "Prompt B",
+          createdAt: "2026-04-08T09:00:00.000Z",
+          requestedSiteIds: ["chatgpt", "claude"],
+          submittedSiteIds: ["chatgpt"],
+          failedSiteIds: ["claude"],
+          siteResults: {
+            chatgpt: { code: "submitted" },
+            claude: { code: "submit_failed", message: "Button disabled" },
+          },
+          status: "partial",
+        },
+        {
+          text: "Prompt C",
+          createdAt: "2026-04-07T08:30:00.000Z",
+          requestedSiteIds: ["claude"],
+          submittedSiteIds: [],
+          failedSiteIds: ["claude"],
+          siteResults: {},
+          status: "failed",
+        },
+      ],
+      [
+        { id: "chatgpt", name: "ChatGPT" },
+        { id: "claude", name: "Claude" },
+      ],
+      {
+        chatgpt: {
+          execCommand: { success: 2, fail: 1 },
+        },
+        claude: {
+          paste: { success: 1, fail: 3 },
+        },
+      },
+      new Date("2026-04-09T12:00:00.000Z"),
+    );
+
+    assert.equal(metrics.totalTransmissions, 3);
+    assert.ok(metrics.donutItems.some((item) => item.label === "ChatGPT" && item.count === 2));
+    assert.ok(metrics.heatmap.maxCount >= 1);
+    assert.ok(metrics.serviceTrendItems.some((item) => item.id === "chatgpt"));
+    assert.ok(metrics.failureReasonItems.some((item) => item.code === "submit_failed" && item.count === 1));
+    assert.ok(metrics.failureReasonItems.some((item) => item.code === "unexpected_error" && item.count === 1));
+    assert.ok(metrics.strategySummaryItems.some((item) => item.siteId === "chatgpt" && item.bestStrategy === "execCommand"));
+  });
+
   await runStep("reusable tab preflight excludes auth settings and invalid composer surfaces", async () => {
     const module = await loadBundledModule("src/shared/sites/reuse-preflight.ts", createChromeMock());
 
@@ -1342,6 +2000,7 @@ async function main() {
       waitMsMultiplier: 1,
       historySort: "latest",
       favoriteSort: "recentUsed",
+      siteOrder: [],
     });
     assert.equal(storage.local.broadcastCounter, 0);
     assert.deepEqual(storage.local.failedSelectors, []);

@@ -193,6 +193,7 @@ export async function waitForElement(selectors: string[], timeoutMs: number = 80
       childList: true,
       subtree: true,
       attributes: true,
+      attributeFilter: ["class", "id", "style", "disabled", "aria-disabled"],
     });
 
     const intervalId = window.setInterval(tryMatch, 150);

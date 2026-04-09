@@ -1,5 +1,49 @@
 "use strict";
 var AIPromptBroadcasterQuickPaletteBundle = (() => {
+  // src/shared/chrome/messaging.ts
+  var DEFAULT_RUNTIME_MESSAGE_TIMEOUT_MS = 5e3;
+  function normalizeTimeoutMs(timeoutMs) {
+    const numericValue = Number(timeoutMs);
+    if (!Number.isFinite(numericValue) || numericValue <= 0) {
+      return 0;
+    }
+    return Math.max(0, Math.round(numericValue));
+  }
+  function sendRuntimeMessage(message, timeoutMs = 0, fallbackValue = null) {
+    return new Promise((resolve) => {
+      let settled = false;
+      let timeoutId = 0;
+      const finish = (value) => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        if (timeoutId) {
+          globalThis.clearTimeout(timeoutId);
+        }
+        resolve(value ?? fallbackValue);
+      };
+      const normalizedTimeoutMs = normalizeTimeoutMs(timeoutMs);
+      if (normalizedTimeoutMs > 0) {
+        timeoutId = globalThis.setTimeout(() => finish(fallbackValue), normalizedTimeoutMs);
+      }
+      try {
+        chrome.runtime.sendMessage(message, (response) => {
+          if (chrome.runtime.lastError) {
+            finish(fallbackValue);
+            return;
+          }
+          finish(response ?? fallbackValue);
+        });
+      } catch (_error) {
+        finish(fallbackValue);
+      }
+    });
+  }
+  function sendRuntimeMessageWithTimeout(message, timeoutMs = DEFAULT_RUNTIME_MESSAGE_TIMEOUT_MS, fallbackValue = null) {
+    return sendRuntimeMessage(message, timeoutMs, fallbackValue);
+  }
+
   // src/shared/prompts/constants.ts
   var LOCAL_STORAGE_KEYS = Object.freeze({
     history: "promptHistory",
@@ -19,7 +63,8 @@ var AIPromptBroadcasterQuickPaletteBundle = (() => {
     reuseExistingTabs: true,
     waitMsMultiplier: DEFAULT_WAIT_MS_MULTIPLIER,
     historySort: DEFAULT_HISTORY_SORT,
-    favoriteSort: DEFAULT_FAVORITE_SORT
+    favoriteSort: DEFAULT_FAVORITE_SORT,
+    siteOrder: []
   });
 
   // src/shared/prompts/normalizers.ts
@@ -335,7 +380,7 @@ var AIPromptBroadcasterQuickPaletteBundle = (() => {
       }
     }
     async function loadFavorites() {
-      const response = await chrome.runtime.sendMessage({ action: "quickPalette:getState" });
+      const response = await sendRuntimeMessageWithTimeout({ action: "quickPalette:getState" }, 5e3);
       if (!response?.ok) {
         throw new Error(response?.error ?? "Failed to load favorites.");
       }
@@ -364,10 +409,10 @@ var AIPromptBroadcasterQuickPaletteBundle = (() => {
       if (!favorite?.id) {
         return;
       }
-      const response = await chrome.runtime.sendMessage({
+      const response = await sendRuntimeMessageWithTimeout({
         action: "quickPalette:execute",
         favoriteId: favorite.id
-      });
+      }, 5e3);
       if (response?.ok) {
         closePalette();
         return;

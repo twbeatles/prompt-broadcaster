@@ -72,7 +72,7 @@
 - 선택 호스트 권한(`https://*/*`, `http://*/*`)은 매니페스트에 넓게 선언되어 있지만, 실제 권한 요청은 사용자가 사용자 정의 AI 서비스를 추가할 때 그 서비스의 `url`과 `hostnameAliases`에서 파생된 정확한 origin 패턴 집합에 대해서만 런타임에 수행됩니다.
 - 사용자 정의 서비스 권한이 승인되지 않으면 해당 서비스에는 selector test, 열린 탭 재사용, 자동 입력/전송 기능을 적용하지 않으며 부분 적용도 하지 않습니다.
 - 사용자 정의 서비스를 삭제하거나 서비스 설정을 리셋하거나 가져오기로 교체하면 더 이상 쓰이지 않는 optional origin permission만 자동 제거됩니다.
-- 제출 시에는 [web-store-copy.md](/d:/twbeatles-repos/prompt-broadcaster/docs/web-store-copy.md)와 [privacy-policy.md](/d:/twbeatles-repos/prompt-broadcaster/docs/privacy-policy.md)의 동일한 설명과 표현을 맞춰 두는 것이 좋습니다.
+- 제출 시에는 [web-store-copy.md](web-store-copy.md)와 [privacy-policy.md](privacy-policy.md)의 동일한 설명과 표현을 맞춰 두는 것이 좋습니다.
 
 ## 4. 보안 및 정책 확인
 
@@ -142,7 +142,10 @@ bash ./package.sh
 - 단축키와 컨텍스트 메뉴 동작을 확인
 - ChatGPT, Gemini, Claude, Grok, Perplexity에 각각 한 번씩 실제 전송을 시도하고 특히 Claude와 Perplexity의 전송 버튼 경로를 확인
 - 현재 창의 열린 AI 탭 재사용 설정과 서비스별 특정 탭 선택 UI를 확인
+- options `Services`에서 서비스 순서를 바꾼 뒤 popup compose와 favorite editor에도 같은 순서가 반영되는지 확인
+- options `Dashboard`의 heatmap / success trend / failure / strategy summary 패널이 깨지지 않는지 확인
 - `{{clipboard}}`, `{{url}}`, `{{selection}}`가 포함된 즐겨찾기를 popup과 quick palette/options fallback 경로에서 각각 확인
+- options `Schedules`에서 최근 scheduled 실행 시각 / 상태 / 실패 상세가 manual run과 분리되어 유지되는지 확인
 - 커스텀 서비스 추가/삭제/리셋 후 optional host permission이 필요한 origin에만 남는지 확인
 - 알림 권한, optional clipboard permission 요청 흐름을 확인
 - 공개된 개인정보처리방침 URL을 준비했는지 확인

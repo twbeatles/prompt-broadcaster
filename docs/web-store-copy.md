@@ -1,6 +1,6 @@
 # Chrome Web Store Copy Pack
 
-Last updated: 2026-04-03
+Last updated: 2026-04-09
 
 ## Korean
 
@@ -19,6 +19,7 @@ AI Prompt Broadcaster는 반복 복붙 없이 하나의 프롬프트를 여러 A
 - 서비스별로 특정 열린 탭 선택 또는 새 탭 강제 열기
 - 선택한 텍스트를 우클릭 메뉴나 단축키로 바로 프롬프트로 사용
 - 단일/체인/예약 즐겨찾기, 빠른 팔레트, 템플릿 변수 지원
+- 옵션 페이지에서 서비스 순서 편집, dashboard 분석, 예약 실행 결과 확인 지원
 - 프롬프트 히스토리와 즐겨찾기 재실행, 즐겨찾기 자동화 흐름 지원
 - 로컬 브라우저 저장소 기반 데이터 보관
 - 사용자 정의 AI 서비스 추가/비활성화/편집 지원
@@ -73,6 +74,7 @@ Key features:
 - Pick a specific open tab or force a fresh tab per service from the popup
 - Use selected text from any page through shortcuts or the context menu
 - Single favorites, chain favorites, scheduled runs, quick palette, and template variables
+- Service ordering, dashboard analytics, and scheduled-run summaries from the options page
 - Prompt history replay plus favorite-based automation flows
 - Local browser storage for user data
 - Add, disable, and edit custom AI services
