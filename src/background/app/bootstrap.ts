@@ -38,8 +38,11 @@ import {
   setPopupFavoriteIntent,
 } from "../../shared/runtime-state";
 import {
+  buildSubmitRequirement,
   getEnabledRuntimeSites,
   getRuntimeSites,
+  shouldProbeSubmitAfterInput,
+  shouldRequireVisibleSubmitSurface,
 } from "../../shared/sites";
 import { evaluateReusableTabSnapshot } from "../../shared/sites/reuse-preflight";
 import {
@@ -641,13 +644,9 @@ async function runReusableTabPreflight(tabId, site) {
       ...(Array.isArray(site?.fallbackSelectors) ? site.fallbackSelectors : []),
     ]);
     const authSelectors = normalizeSelectorEntries(site?.authSelectors);
-    const submitSelectors = (
-      site?.submitMethod === "click" &&
-      site?.selectorCheckMode !== "input-only" &&
-      typeof site?.submitSelector === "string" &&
-      site.submitSelector.trim()
-    )
-      ? normalizeSelectorEntries([site.submitSelector])
+    const submitRequirement = buildSubmitRequirement(site);
+    const submitSelectors = shouldRequireVisibleSubmitSurface(submitRequirement)
+      ? normalizeSelectorEntries([site?.submitSelector])
       : [];
 
     const [result] = await chrome.scripting.executeScript({
@@ -741,7 +740,7 @@ async function runReusableTabPreflight(tabId, site) {
       hasPromptSurface: snapshot.hasPromptSurface,
       hasAuthSurface: snapshot.hasAuthSurface,
       hasSubmitSurface: snapshot.hasSubmitSurface,
-      requiresSubmitSurface: submitSelectors.length > 0,
+      submitRequirement,
     }).ok === true;
   } catch (_error) {
     return false;
@@ -1050,9 +1049,10 @@ async function getPreferredInjectableNormalTab() {
 
 async function runServiceTestOnTab(tabId, draft) {
   const probeText = "__apb_probe__";
+  const submitRequirement = buildSubmitRequirement(draft);
   const [result] = await chrome.scripting.executeScript({
     target: { tabId },
-    func: async (siteDraft, nextProbeText) => {
+    func: async (siteDraft, nextProbeText, nextSubmitRequirement) => {
       function isElementVisible(element) {
         if (!(element instanceof HTMLElement) && !(element instanceof SVGElement)) {
           return true;
@@ -1246,7 +1246,10 @@ async function runServiceTestOnTab(tabId, draft) {
           },
         };
 
-        if (String(siteDraft.submitMethod) !== "click") {
+        if (
+          String(siteDraft.submitMethod) !== "click" ||
+          (nextSubmitRequirement !== "required" && nextSubmitRequirement !== "conditional")
+        ) {
           response.submit = {
             status: "skipped",
             method: String(siteDraft.submitMethod ?? "enter"),
@@ -1278,7 +1281,7 @@ async function runServiceTestOnTab(tabId, draft) {
         };
       }
     },
-    args: [draft, probeText],
+    args: [draft, probeText, submitRequirement],
   });
 
   return result?.result ?? {
@@ -1705,93 +1708,15 @@ async function injectIntoTab(tabId, prompt, site, runtimeOverrides = {}) {
   const config = buildInjectionConfig(site, runtimeOverrides);
 
   if (site?.id === "perplexity") {
+    const promptSelectors = normalizeSelectorEntries([
+      config?.inputSelector,
+      ...(Array.isArray(config?.fallbackSelectors) ? config.fallbackSelectors : []),
+    ]);
     const [executionResult] = await chrome.scripting.executeScript({
       target: { tabId },
       world: "MAIN",
-      func: async (injectedPrompt, injectedConfig) => {
+      func: async (injectedPrompt, injectedConfig, injectedSelectors) => {
         const sleep = (ms) => new Promise((resolve) => window.setTimeout(resolve, Math.max(Number(ms) || 0, 0)));
-
-        const splitSelectorList = (selectorGroup) => {
-          const source = typeof selectorGroup === "string" ? selectorGroup.trim() : "";
-          if (!source) {
-            return [];
-          }
-
-          const parts = [];
-          let current = "";
-          let bracketDepth = 0;
-          let parenDepth = 0;
-          let quote = null;
-          let escaping = false;
-
-          for (const character of source) {
-            current += character;
-
-            if (escaping) {
-              escaping = false;
-              continue;
-            }
-
-            if (character === "\\") {
-              escaping = true;
-              continue;
-            }
-
-            if (quote) {
-              if (character === quote) {
-                quote = null;
-              }
-              continue;
-            }
-
-            if (character === "'" || character === "\"") {
-              quote = character;
-              continue;
-            }
-
-            if (character === "[") {
-              bracketDepth += 1;
-              continue;
-            }
-
-            if (character === "]") {
-              bracketDepth = Math.max(0, bracketDepth - 1);
-              continue;
-            }
-
-            if (character === "(") {
-              parenDepth += 1;
-              continue;
-            }
-
-            if (character === ")") {
-              parenDepth = Math.max(0, parenDepth - 1);
-              continue;
-            }
-
-            if (character === "," && bracketDepth === 0 && parenDepth === 0) {
-              current = current.slice(0, -1);
-              const normalized = current.trim();
-              if (normalized) {
-                parts.push(normalized);
-              }
-              current = "";
-            }
-          }
-
-          const trailing = current.trim();
-          if (trailing) {
-            parts.push(trailing);
-          }
-
-          return parts;
-        };
-
-        const normalizeSelectorEntries = (selectors) =>
-          (Array.isArray(selectors) ? selectors : [])
-            .filter((selector) => typeof selector === "string" && selector.trim())
-            .flatMap((selector) => splitSelectorList(selector))
-            .filter((selector, index, list) => list.indexOf(selector) === index);
 
         const normalizeText = (value) =>
           String(value ?? "")
@@ -1829,12 +1754,7 @@ async function injectIntoTab(tabId, prompt, site, runtimeOverrides = {}) {
         };
 
         const findPromptMatch = () => {
-          const selectors = normalizeSelectorEntries([
-            injectedConfig?.inputSelector,
-            ...(Array.isArray(injectedConfig?.fallbackSelectors) ? injectedConfig.fallbackSelectors : []),
-          ]);
-
-          for (const selector of selectors) {
+          for (const selector of Array.isArray(injectedSelectors) ? injectedSelectors : []) {
             const candidates = Array.from(document.querySelectorAll(selector));
             const element = candidates.find((candidate) => isVisible(candidate) && isEditable(candidate));
             if (element) {
@@ -1999,7 +1919,7 @@ async function injectIntoTab(tabId, prompt, site, runtimeOverrides = {}) {
           attempts,
         };
       },
-      args: [prompt, config],
+      args: [prompt, config, promptSelectors],
     });
 
     const injectionResult = executionResult?.result ?? null;

@@ -291,16 +291,16 @@ async function main() {
     assert.equal(report.siteId, "selector-auth");
   });
 
-  await runStep("selector checker ignores conditional submit when input-only mode is used", async () => {
+  await runStep("selector checker ignores conditional submit when conditional mode is used", async () => {
     await openFixture(page, "selector-check-conditional-submit.html");
     await configureSelectorChecker(page, {
-      id: "selector-input-only",
+      id: "selector-conditional-submit",
       name: "Conditional Submit Fixture",
       inputSelector: "#editor",
       inputType: "contenteditable",
-      submitSelector: "#send-btn",
+      submitSelector: "button[aria-label*='제출' i]",
       submitMethod: "click",
-      selectorCheckMode: "input-only",
+      selectorCheckMode: "input-and-conditional-submit",
       waitMs: 0,
       authSelectors: [],
     });
@@ -312,7 +312,60 @@ async function main() {
     );
 
     assert.equal(report.status, "ok");
-    assert.equal(report.siteId, "selector-input-only");
+    assert.equal(report.siteId, "selector-conditional-submit");
+  });
+
+  await runStep("selector checker accepts textarea-first Grok variants", async () => {
+    await openFixture(page, "grok-textarea-conditional-submit.html");
+    await configureSelectorChecker(page, {
+      id: "selector-grok-textarea",
+      name: "Grok Fixture",
+      inputSelector: "textarea[aria-label*='grok' i], textarea[placeholder*='help' i], textarea",
+      fallbackSelectors: [
+        "div.tiptap.ProseMirror[contenteditable='true']",
+        "div.ProseMirror[contenteditable='true'][translate='no']",
+      ],
+      inputType: "textarea",
+      submitSelector: "button[aria-label*='제출' i]",
+      submitMethod: "click",
+      selectorCheckMode: "input-and-conditional-submit",
+      waitMs: 0,
+      authSelectors: ["a[href*='/sign-in']"],
+    });
+    await runSelectorChecker(page);
+
+    const report = await waitForRuntimeMessage(
+      page,
+      (message) => message?.action === "selector-check:report",
+    );
+
+    assert.equal(report.status, "ok");
+    assert.equal(report.siteId, "selector-grok-textarea");
+  });
+
+  await runStep("selector checker does not treat soft-gated pages as auth-only", async () => {
+    await openFixture(page, "soft-gated-auth-modal.html");
+    await configureSelectorChecker(page, {
+      id: "selector-soft-gated",
+      name: "Soft Gated Fixture",
+      inputSelector: "#ask-input[data-lexical-editor='true'][role='textbox'], #ask-input[contenteditable='true'][role='textbox']",
+      fallbackSelectors: ["div[contenteditable='true'][role='textbox']"],
+      inputType: "contenteditable",
+      submitSelector: "button[aria-label*='보내기' i], button[aria-label*='submit' i]",
+      submitMethod: "click",
+      selectorCheckMode: "input-and-conditional-submit",
+      waitMs: 0,
+      authSelectors: ["button[data-testid='login-button']", "input[type='email']"],
+    });
+    await runSelectorChecker(page);
+
+    const report = await waitForRuntimeMessage(
+      page,
+      (message) => message?.action === "selector-check:report",
+    );
+
+    assert.equal(report.status, "ok");
+    assert.equal(report.siteId, "selector-soft-gated");
   });
 
   await runStep("quick palette filters favorites and executes the active result", async () => {
@@ -678,6 +731,43 @@ async function main() {
     ]);
   });
 
+  await runStep("site helpers derive verification metadata and submit requirements", async () => {
+    const module = await loadBundledModule("src/shared/sites/index.ts", createChromeMock());
+
+    assert.equal(
+      module.buildSubmitRequirement({
+        submitMethod: "click",
+        submitSelector: "button[type='submit']",
+        selectorCheckMode: "input-and-conditional-submit",
+      }),
+      "conditional",
+    );
+    assert.equal(module.shouldRequireVisibleSubmitSurface("conditional"), false);
+    assert.equal(module.shouldProbeSubmitAfterInput("conditional"), true);
+
+    const normalizedSite = module.normalizeCustomSite({
+      id: "verified-site",
+      name: "Verified Site",
+      url: "https://verified.example.com/",
+      inputSelector: "#prompt",
+      inputType: "textarea",
+      submitMethod: "enter",
+      lastVerified: "2026-03",
+      verifiedAt: "2026-04-10",
+      verifiedRoute: "/compose",
+      verifiedAuthState: "soft-gated",
+      verifiedLocale: "ko-KR",
+      verifiedVersion: "verified-site-apr-2026",
+    });
+
+    assert.equal(normalizedSite.lastVerified, "2026-04");
+    assert.equal(normalizedSite.verifiedAt, "2026-04-10");
+    assert.equal(normalizedSite.verifiedRoute, "/compose");
+    assert.equal(normalizedSite.verifiedAuthState, "soft-gated");
+    assert.equal(normalizedSite.verifiedLocale, "ko-KR");
+    assert.equal(normalizedSite.verifiedVersion, "verified-site-apr-2026");
+  });
+
   await runStep("import repair keeps valid sites and rejects invalid or unauthorized ones", async () => {
     const chromeMock = createChromeMock({
       grantedOrigins: [
@@ -819,7 +909,10 @@ async function main() {
     assert.deepEqual(Object.keys(result.builtInSiteOverrides), ["chatgpt"]);
     assert.equal(result.builtInSiteOverrides.chatgpt.inputSelector, "#override");
     assert.equal(result.builtInSiteOverrides.chatgpt.inputType, "contenteditable");
-    assert.equal(result.builtInSiteOverrides.chatgpt.selectorCheckMode, "input-and-submit");
+    assert.equal(
+      result.builtInSiteOverrides.chatgpt.selectorCheckMode,
+      "input-and-conditional-submit",
+    );
     assert.equal(
       result.builtInSiteOverrides.chatgpt.submitSelector,
       "button[data-testid='send-button'], button[aria-label*='send' i], button[aria-label*='보내기' i]",
@@ -838,7 +931,7 @@ async function main() {
     assert.equal(await module.getBroadcastCounter(), 1);
 
     const exported = await module.exportPromptData();
-    assert.equal(exported.version, 6);
+    assert.equal(exported.version, 7);
     assert.equal(exported.broadcastCounter, 1);
     assert.deepEqual(exported.settings, module.DEFAULT_SETTINGS);
     assert.deepEqual(exported.settings.siteOrder, []);
@@ -850,7 +943,7 @@ async function main() {
     }));
     assert.equal(legacyImport.broadcastCounter, 0);
     assert.equal(await module.getBroadcastCounter(), 0);
-    assert.equal(legacyImport.importSummary.version, 6);
+    assert.equal(legacyImport.importSummary.version, 7);
     assert.equal(legacyImport.importSummary.migratedFromVersion, 2);
     assert.equal(legacyImport.settings.waitMsMultiplier, 1);
     assert.equal(legacyImport.settings.historySort, "latest");
@@ -884,7 +977,7 @@ async function main() {
     }));
     assert.equal(modernImport.broadcastCounter, 4);
     assert.equal(await module.getBroadcastCounter(), 4);
-    assert.equal(modernImport.importSummary.version, 6);
+    assert.equal(modernImport.importSummary.version, 7);
     assert.equal(modernImport.importSummary.migratedFromVersion, 4);
     assert.equal(modernImport.settings.waitMsMultiplier, 1);
     assert.equal(modernImport.settings.historySort, "latest");
@@ -919,6 +1012,46 @@ async function main() {
     assert.equal(modernImport.favorites[0].scheduleEnabled, false);
     assert.equal(modernImport.favorites[0].scheduledAt, null);
     assert.equal(modernImport.favorites[0].scheduleRepeat, "none");
+
+    const v7VerificationImport = await module.importPromptData(JSON.stringify({
+      version: 7,
+      builtInSiteOverrides: {
+        chatgpt: {
+          verifiedAt: "2026-04-10",
+          verifiedRoute: "/",
+          verifiedAuthState: "logged-out",
+          verifiedLocale: "ko-KR",
+          verifiedVersion: "chatgpt-web-apr-2026",
+        },
+      },
+    }));
+    assert.equal(v7VerificationImport.importSummary.version, 7);
+    assert.equal(v7VerificationImport.importSummary.migratedFromVersion, 7);
+    assert.equal(v7VerificationImport.builtInSiteOverrides.chatgpt.lastVerified, "2026-04");
+    assert.equal(v7VerificationImport.builtInSiteOverrides.chatgpt.verifiedAt, "2026-04-10");
+    assert.equal(v7VerificationImport.builtInSiteOverrides.chatgpt.verifiedRoute, "/");
+    assert.equal(v7VerificationImport.builtInSiteOverrides.chatgpt.verifiedAuthState, "logged-out");
+    assert.equal(v7VerificationImport.builtInSiteOverrides.chatgpt.verifiedLocale, "ko-KR");
+    assert.equal(v7VerificationImport.builtInSiteOverrides.chatgpt.verifiedVersion, "chatgpt-web-apr-2026");
+
+    const legacyVerificationImport = await module.importPromptData(JSON.stringify({
+      version: 6,
+      customSites: [
+        {
+          id: "legacy-verification",
+          name: "Legacy Verification",
+          url: "https://legacy-verification.example.com/",
+          inputSelector: "#prompt",
+          inputType: "textarea",
+          submitMethod: "enter",
+          lastVerified: "2026-03",
+        },
+      ],
+    }));
+    assert.equal(legacyVerificationImport.importSummary.version, 7);
+    assert.equal(legacyVerificationImport.importSummary.migratedFromVersion, 6);
+    assert.equal(legacyVerificationImport.customSites[0].lastVerified, "2026-03");
+    assert.equal(legacyVerificationImport.customSites[0].verifiedAt ?? "", "");
 
     assert.equal(
       module.matchesFavoriteSearch(
@@ -1921,7 +2054,7 @@ async function main() {
         pathname: "/chat",
         hasPromptSurface: true,
         hasSubmitSurface: false,
-        requiresSubmitSurface: true,
+        submitRequirement: "required",
       }),
       { ok: false, reason: "missing_submit" },
     );
@@ -1929,8 +2062,17 @@ async function main() {
       module.evaluateReusableTabSnapshot({
         pathname: "/chat",
         hasPromptSurface: true,
+        hasSubmitSurface: false,
+        submitRequirement: "conditional",
+      }),
+      { ok: true },
+    );
+    assert.deepEqual(
+      module.evaluateReusableTabSnapshot({
+        pathname: "/chat",
+        hasPromptSurface: true,
         hasSubmitSurface: true,
-        requiresSubmitSurface: true,
+        submitRequirement: "required",
       }),
       { ok: true },
     );

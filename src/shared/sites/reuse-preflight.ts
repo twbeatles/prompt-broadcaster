@@ -2,27 +2,20 @@ import type {
   ReusableTabPreflightResult,
   ReusableTabSurfaceSnapshot,
 } from "../types/models";
-
-const AUTH_PATH_SEGMENTS = ["/login", "/logout", "/sign-in", "/signin", "/auth"];
-const SETTINGS_PATH_SEGMENTS = ["/settings", "/preferences", "/account", "/billing"];
-
-function normalizePathname(pathname: unknown) {
-  return typeof pathname === "string" ? pathname.trim().toLowerCase() : "";
-}
-
-function hasPathSegment(pathname: string, segments: string[]) {
-  return segments.some((segment) => pathname.includes(segment));
-}
+import {
+  hasKnownAuthPath,
+  hasKnownSettingsPath,
+  shouldRequireVisibleSubmitSurface,
+} from "./selector-utils";
 
 export function evaluateReusableTabSnapshot(
   snapshot: ReusableTabSurfaceSnapshot | null | undefined
 ): ReusableTabPreflightResult {
-  const pathname = normalizePathname(snapshot?.pathname);
-  if (hasPathSegment(pathname, AUTH_PATH_SEGMENTS)) {
+  if (hasKnownAuthPath(snapshot?.pathname)) {
     return { ok: false, reason: "auth_path" };
   }
 
-  if (hasPathSegment(pathname, SETTINGS_PATH_SEGMENTS)) {
+  if (hasKnownSettingsPath(snapshot?.pathname)) {
     return { ok: false, reason: "settings_path" };
   }
 
@@ -33,7 +26,10 @@ export function evaluateReusableTabSnapshot(
     };
   }
 
-  if (snapshot?.requiresSubmitSurface && !snapshot?.hasSubmitSurface) {
+  if (
+    shouldRequireVisibleSubmitSurface(snapshot?.submitRequirement) &&
+    !snapshot?.hasSubmitSurface
+  ) {
     return { ok: false, reason: "missing_submit" };
   }
 

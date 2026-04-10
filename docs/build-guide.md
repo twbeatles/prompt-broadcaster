@@ -65,6 +65,7 @@ Run the fixture-based smoke QA after building:
 
 ```bash
 npm run qa:smoke
+npm run selector:audit
 ```
 
 The smoke flow loads local fixtures from `qa/fixtures/` and validates the built runtime in `dist/`. The top-level runner is `scripts/qa-smoke.mjs`, and reusable helpers live under `scripts/qa-smoke/`. Coverage includes:
@@ -74,14 +75,15 @@ The smoke flow loads local fixtures from `qa/fixtures/` and validates the built 
 - delayed submit-button enablement after async contenteditable input
 - `click`, `enter`, and `shift+enter` submit flows
 - selector checker `ok` and `auth_page` reporting
-- selector checker `input-only` mode for conditional-submit UIs
+- selector checker conditional-submit mode for empty composer UIs
+- Grok textarea-first selector preference and soft-gated auth coexistence fixtures
 - internal-only runtime router trust checks and timeout-safe runtime messaging fallback
 - selection helper double-injection guard
 - JSON import repair for invalid, duplicate, and unauthorized custom services
 - alias-based custom-service permission requests and cleanup of unused optional origins
 - built-in override import repair for `click` configurations with empty selectors
 - `broadcastCounter` export/import/reset consistency
-- import migration and export `version: 6` normalization
+- import migration and export `version: 7` normalization
 - `siteOrder` normalization and ordering reuse
 - favorite chain/schedule field backfill for legacy imports
 - favorite run job dedupe behavior, chain target fallback, and prepared clipboard context
@@ -101,6 +103,14 @@ The smoke flow loads local fixtures from `qa/fixtures/` and validates the built 
 
 The smoke suite still does not cover full live Chrome popup behavior such as real-window open-tab discovery or explicit tab targeting. Check those manually in a real browser window before release.
 Run `npm run build` first and then `npm run qa:smoke` after the build finishes. The smoke script reads the built files from `dist/` and should not be started in parallel with the build.
+
+Use the Playwright-based selector audit when you want a Markdown snapshot of the current built-in site surfaces:
+
+```bash
+npm run selector:audit
+```
+
+The audit writes Markdown reports under `output/selector-audit/` and is intended as a live verification aid, not as a replacement for the local smoke fixtures.
 
 If Playwright does not have a browser installed yet, run:
 

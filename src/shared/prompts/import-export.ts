@@ -48,7 +48,7 @@ import type {
   PromptHistoryItem,
 } from "../types/models";
 
-const CURRENT_EXPORT_VERSION = 6;
+const CURRENT_EXPORT_VERSION = 7;
 type AcceptedCustomSite = Record<string, unknown> & {
   id: string;
   name: string;
@@ -211,6 +211,15 @@ function migrateV5ToV6(payload: Record<string, unknown>) {
   };
 }
 
+function migrateV6ToV7(payload: Record<string, unknown>) {
+  return {
+    ...payload,
+    version: 7,
+    history: safeArray(payload.history).map((entry) => buildHistoryEntry(entry)),
+    favorites: safeArray(payload.favorites).map((entry) => buildFavoriteEntry(entry)),
+  };
+}
+
 function migrateImportData(rawValue: unknown) {
   let payload = asImportPayload(rawValue);
   const sourceVersion = normalizeImportVersion(payload.version);
@@ -239,6 +248,11 @@ function migrateImportData(rawValue: unknown) {
   if (workingVersion < 6) {
     payload = migrateV5ToV6(payload);
     workingVersion = 6;
+  }
+
+  if (workingVersion < 7) {
+    payload = migrateV6ToV7(payload);
+    workingVersion = 7;
   }
 
   return {

@@ -5,6 +5,7 @@ export {
   VALID_INPUT_TYPES,
   VALID_SELECTOR_CHECK_MODES,
   VALID_SUBMIT_METHODS,
+  VALID_VERIFIED_AUTH_STATES,
 } from "./constants";
 export {
   buildOriginPattern,
@@ -30,6 +31,26 @@ export {
   sanitizeBuiltInOverride,
   stringifyComparable,
 } from "./normalizers";
+export {
+  AUTH_PATH_SEGMENTS,
+  SETTINGS_PATH_SEGMENTS,
+  buildSubmitRequirement,
+  hasKnownAuthPath,
+  hasKnownSettingsPath,
+  hasPathSegment,
+  normalizePathname,
+  normalizeSelectorEntries,
+  shouldProbeSubmitAfterInput,
+  shouldRequireVisibleSubmitSurface,
+  splitSelectorList,
+} from "./selector-utils";
+export {
+  buildVerificationMetadata,
+  deriveLegacyLastVerified,
+  normalizeLegacyLastVerified,
+  normalizeVerifiedAt,
+  normalizeVerifiedAuthState,
+} from "./verification";
 export {
   normalizeHostnameAliasEntry,
   validateHostnameAliases,

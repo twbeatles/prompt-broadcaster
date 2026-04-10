@@ -73,13 +73,11 @@ prompt-broadcaster/
 │       └── types/
 ├── popup/
 │   ├── popup.html
-│   ├── popup.css
 │   └── styles/
 │       ├── app.css
 │       └── partials/
 ├── options/
 │   ├── options.html
-│   ├── options.css
 │   └── styles/
 │       ├── app.css
 │       └── partials/
@@ -90,6 +88,7 @@ prompt-broadcaster/
 ├── scripts/
 │   ├── build.mjs
 │   ├── qa-smoke.mjs
+│   ├── selector-audit.mjs
 │   └── qa-smoke/
 ├── manifest.json
 └── dist/
@@ -110,6 +109,7 @@ npm install
 npm run typecheck
 npm run build
 npm run qa:smoke
+npm run selector:audit
 ```
 
 ### Runtime Entry Mapping
@@ -212,6 +212,7 @@ Responsibilities:
 - verify configured selectors against the live page
 - report selector failures back to the background worker
 - detect dedicated auth/login pages
+- ignore empty-state submit absence for services using conditional submit preflight semantics
 - clear stale warnings when later checks recover
 
 Main statuses:
@@ -272,7 +273,11 @@ Runtime site records can include:
 - `authSelectors`
 - `hostnameAliases`
 - `permissionPatterns`
-- `lastVerified`
+- `lastVerified` (legacy `YYYY-MM` compatibility field)
+- `verifiedAt`
+- `verifiedRoute`
+- `verifiedAuthState`
+- `verifiedLocale`
 - `verifiedVersion`
 
 Custom service permissions are derived from `url + hostnameAliases`. Save, import, and runtime execution checks are all-or-nothing for that required origin set.
@@ -358,11 +363,12 @@ Favorite prompt rendering plus queue submission is serialized so concurrent `{{c
 
 ### Broadcast Counter and Export Version
 
-`broadcastCounter` is stored in local storage and exported with prompt data JSON `version: 6`.
+`broadcastCounter` is stored in local storage and exported with prompt data JSON `version: 7`.
 
 - popup preview resolves `{{counter}}` as `current + 1`
 - the stored counter increments only when a broadcast queues at least one target site
-- import migrates older payloads through `v1 -> v2 -> v3 -> v4 -> v5 -> v6`
+- import migrates older payloads through `v1 -> v2 -> v3 -> v4 -> v5 -> v6 -> v7`
+- runtime site verification metadata is preserved as structured fields, while `lastVerified` is derived from `verifiedAt` when available
 - `appSettings.historyLimit` is a non-destructive default visible cap. Popup/options history lists apply it at read time, while storage and JSON export keep the full history set.
 - reset-data clears the counter together with the rest of the user data
 
@@ -455,11 +461,12 @@ Current smoke coverage includes:
 - delayed click-submit activation
 - `click`, `enter`, and `shift+enter` submission paths
 - selector checker `ok` and `auth_page` reporting
+- conditional-submit / Grok textarea-first / soft-gated auth coexistence fixtures
 - internal-only runtime router trust checks and timeout-safe runtime messaging fallback
 - custom service permission cleanup and alias-origin handling
 - built-in override repair for invalid click-submit imports
 - `broadcastCounter` export/import/reset semantics
-- import migration to export `version: 6`
+- import migration to export `version: 7`
 - `siteOrder` normalization and ordering reuse
 - favorite chain/schedule field normalization for legacy imports
 - favorite run job dedupe, effective chain-target fallback, and prepared clipboard context

@@ -3,14 +3,28 @@ import {
   VALID_INPUT_TYPES,
   VALID_SELECTOR_CHECK_MODES,
   VALID_SUBMIT_METHODS,
+  VALID_VERIFIED_AUTH_STATES,
 } from "./constants";
 import { validateHostnameAliases } from "./hostname-aliases";
 import { safeText } from "./normalizers";
+import { normalizeVerifiedAt } from "./verification";
 
 export interface SiteDraftValidationResult {
   valid: boolean;
   errors: string[];
-  fieldErrors: Partial<Record<"name" | "url" | "inputSelector" | "inputType" | "submitMethod" | "submitSelector" | "selectorCheckMode" | "hostnameAliases", string[]>>;
+  fieldErrors: Partial<Record<
+    | "name"
+    | "url"
+    | "inputSelector"
+    | "inputType"
+    | "submitMethod"
+    | "submitSelector"
+    | "selectorCheckMode"
+    | "hostnameAliases"
+    | "verifiedAt"
+    | "verifiedAuthState",
+    string[]
+  >>;
 }
 
 function pushFieldError(
@@ -64,6 +78,16 @@ export function validateSiteDraft(
   const selectorCheckMode = safeText(draft?.selectorCheckMode);
   if (selectorCheckMode && !VALID_SELECTOR_CHECK_MODES.has(selectorCheckMode as never)) {
     pushFieldError(fieldErrors, "selectorCheckMode", "Selector check mode is invalid.");
+  }
+
+  const verifiedAt = safeText(draft?.verifiedAt);
+  if (verifiedAt && normalizeVerifiedAt(verifiedAt) !== verifiedAt) {
+    pushFieldError(fieldErrors, "verifiedAt", "Verified date must use YYYY-MM-DD.");
+  }
+
+  const verifiedAuthState = safeText(draft?.verifiedAuthState);
+  if (verifiedAuthState && !VALID_VERIFIED_AUTH_STATES.has(verifiedAuthState as never)) {
+    pushFieldError(fieldErrors, "verifiedAuthState", "Verified auth state is invalid.");
   }
 
   if (safeText(draft?.submitMethod) === "click" && !safeText(draft?.submitSelector)) {

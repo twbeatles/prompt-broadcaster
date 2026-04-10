@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Grok Textarea Conditional Submit Fixture</title>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      margin: 24px;
+    }
+
+    main {
+      display: grid;
+      gap: 12px;
+      max-width: 720px;
+    }
+
+    textarea {
+      min-height: 140px;
+      border: 1px solid #c9d4de;
+      border-radius: 12px;
+      padding: 12px;
+      font: inherit;
+      resize: vertical;
+    }
+
+    .legacy-editor {
+      min-height: 140px;
+      border: 1px dashed #c9d4de;
+      border-radius: 12px;
+      padding: 12px;
+      white-space: pre-wrap;
+      opacity: 0.5;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Grok Textarea Conditional Submit Fixture</h1>
+    <textarea aria-label="Ask Grok" placeholder="Help me think"></textarea>
+    <div class="legacy-editor ProseMirror" contenteditable="true" translate="no" hidden></div>
+    <div id="button-host"></div>
+  </main>
+
+  <script>
+    const editor = document.querySelector("textarea");
+    const buttonHost = document.getElementById("button-host");
+
+    editor.addEventListener("input", () => {
+      if (!editor.value.trim()) {
+        buttonHost.innerHTML = "";
+        return;
+      }
+
+      window.setTimeout(() => {
+        if (buttonHost.querySelector("button")) {
+          return;
+        }
+
+        const button = document.createElement("button");
+        button.type = "button";
+        button.setAttribute("aria-label", "제출");
+        button.textContent = "Submit";
+        buttonHost.appendChild(button);
+      }, 200);
+    });
+  </script>
+</body>
+</html>

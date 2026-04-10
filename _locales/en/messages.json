@@ -599,11 +599,32 @@
   "popup_service_field_hostname_aliases": {
     "message": "Hostname aliases"
   },
-  "popup_service_field_last_verified": {
-    "message": "Last verified"
+  "popup_service_field_verified_at": {
+    "message": "Verified date"
+  },
+  "popup_service_field_verified_route": {
+    "message": "Verified route"
+  },
+  "popup_service_field_verified_auth_state": {
+    "message": "Verified auth state"
+  },
+  "popup_service_field_verified_locale": {
+    "message": "Verified locale"
   },
   "popup_service_field_verified_version": {
     "message": "Verified version"
+  },
+  "popup_service_verified_auth_state_unknown": {
+    "message": "Unknown"
+  },
+  "popup_service_verified_auth_state_logged_in": {
+    "message": "logged-in"
+  },
+  "popup_service_verified_auth_state_logged_out": {
+    "message": "logged-out"
+  },
+  "popup_service_verified_auth_state_soft_gated": {
+    "message": "soft-gated"
   },
   "popup_service_field_wait": {
     "message": "Page wait time"

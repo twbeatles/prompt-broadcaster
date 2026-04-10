@@ -196,16 +196,39 @@
               </label>
 
               <div class="inline-field-grid">
-                <label class="field-stack" for="service-last-verified-input">
-                  <span id="service-last-verified-label"></span>
-                  <input id="service-last-verified-input" class="search-input" type="text" />
+                <label class="field-stack" for="service-verified-at-input">
+                  <span id="service-verified-at-label"></span>
+                  <input id="service-verified-at-input" class="search-input" type="date" />
                 </label>
 
-                <label class="field-stack" for="service-verified-version-input">
-                  <span id="service-verified-version-label"></span>
-                  <input id="service-verified-version-input" class="search-input" type="text" />
+                <label class="field-stack" for="service-verified-auth-state-select">
+                  <span id="service-verified-auth-state-label"></span>
+                  <select id="service-verified-auth-state-select" class="search-input">
+                    <option value=""></option>
+                    <option value="logged-in">logged-in</option>
+                    <option value="logged-out">logged-out</option>
+                    <option value="soft-gated">soft-gated</option>
+                  </select>
                 </label>
               </div>
+
+              <div class="inline-field-grid">
+                <label class="field-stack" for="service-verified-route-input">
+                  <span id="service-verified-route-label"></span>
+                  <input id="service-verified-route-input" class="search-input" type="text" />
+                </label>
+
+                <label class="field-stack" for="service-verified-locale-input">
+                  <span id="service-verified-locale-label"></span>
+                  <input id="service-verified-locale-input" class="search-input" type="text" />
+                </label>
+              </div>
+
+              <label class="field-stack" for="service-verified-version-input">
+                <span id="service-verified-version-label"></span>
+                <input id="service-verified-version-input" class="search-input" type="text" />
+              </label>
+
             </div>
 
             <div class="field-stack">

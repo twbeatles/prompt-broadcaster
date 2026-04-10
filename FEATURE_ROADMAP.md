@@ -1,7 +1,7 @@
 # AI Prompt Broadcaster - 잔여 기능 로드맵
 
 > 작성일: 2026-03-31
-> 최종 업데이트: 2026-04-09 (siteOrder, dashboard 확장, schedules 결과 요약, runtime hardening 반영)
+> 최종 업데이트: 2026-04-10 (selector maintenance wave 1, structured verification metadata, selector audit CLI 반영)
 > 기준 코드: 현재 `main` 브랜치의 `src/`, `popup/`, `options/`, `manifest.json`
 
 이 문서는 **아직 남아 있는 항목만** 정리한다. 이미 구현된 기능과 현재 동작은 `README.md`, `PROJECT_ANALYSIS.md`, `CLAUDE.md`, `docs/extension-architecture.md`를 기준으로 본다.
@@ -19,6 +19,13 @@
   - strategy summary
 - options `Schedules`의 최근 scheduled 실행 결과 분리 표시
 - timeout-safe runtime messaging helper와 background router sender trust boundary 보강
+- selector maintenance wave 1
+  - `SelectorCheckMode: "input-and-conditional-submit"` 추가
+  - reusable-tab preflight / selector-checker / service-test semantics 정렬
+  - Grok textarea-first selector 재정렬
+  - structured verification metadata(`verifiedAt`, `verifiedRoute`, `verifiedAuthState`, `verifiedLocale`, `verifiedVersion`) 도입
+  - import/export `v7` 마이그레이션 추가
+  - `npm run selector:audit` 및 Playwright audit report 추가
 - 관련 smoke 회귀 추가
 
 ---
@@ -79,7 +86,7 @@
 - 각 서비스의 input selector / submit selector 실기 검증
 - auth page 탐지 selector 보강
 - `waitMs`, submit 방식(`click` / `enter` / `shift+enter`) 튜닝
-- `lastVerified` 기록
+- structured verification metadata 갱신
 - host permissions / content script match 확장
 
 **수정 파일 후보**
@@ -129,8 +136,9 @@
 - [ ] `npm run typecheck` 통과
 - [ ] `npm run build` 통과
 - [ ] `npm run qa:smoke` 회귀 확인
+- [ ] `npm run selector:audit` 실행 결과 확인
 - [ ] 새 i18n 키는 `_locales/en/messages.json`와 `_locales/ko/messages.json`를 기본으로 함께 추가
 - [ ] 새 저장 필드는 import/export 및 기존 로컬 데이터와 하위 호환되게 처리
 - [ ] 새 권한이 필요하면 `manifest.json`과 사용자 안내 문구를 함께 갱신
-- [ ] 새 built-in 서비스는 실제 DOM 검증 후 `lastVerified`를 기록
+- [ ] 새 built-in 서비스는 실제 DOM 검증 후 `verifiedAt`와 관련 metadata를 기록하고 legacy `lastVerified` derive를 확인
 - [ ] 문서 변경이 필요하면 `README.md`, `PROJECT_ANALYSIS.md`, `docs/extension-architecture.md`도 함께 동기화

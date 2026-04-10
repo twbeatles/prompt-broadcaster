@@ -8,7 +8,16 @@ export const SITE_STORAGE_KEYS = Object.freeze({
 
 export const VALID_INPUT_TYPES = new Set(["textarea", "contenteditable", "input"]);
 export const VALID_SUBMIT_METHODS = new Set(["click", "enter", "shift+enter"]);
-export const VALID_SELECTOR_CHECK_MODES = new Set(["input-and-submit", "input-only"]);
+export const VALID_SELECTOR_CHECK_MODES = new Set([
+  "input-and-submit",
+  "input-and-conditional-submit",
+  "input-only",
+]);
+export const VALID_VERIFIED_AUTH_STATES = new Set([
+  "logged-in",
+  "logged-out",
+  "soft-gated",
+]);
 export const BUILT_IN_SITE_IDS = new Set(
   AI_SITES.map((site) => String(site?.id ?? "")).filter(Boolean)
 );

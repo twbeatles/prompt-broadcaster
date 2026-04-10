@@ -9,6 +9,7 @@
     "build": "node ./scripts/build.mjs",
     "rebuild": "npm run clean && npm run build",
     "qa:smoke": "node ./scripts/qa-smoke.mjs",
+    "selector:audit": "node ./scripts/selector-audit.mjs",
     "package:win": "powershell -ExecutionPolicy Bypass -File .\\package.ps1",
     "package:unix": "bash ./package.sh"
   },

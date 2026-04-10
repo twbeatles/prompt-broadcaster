@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Soft Gated Auth Modal Fixture</title>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      margin: 24px;
+    }
+
+    main {
+      display: grid;
+      gap: 12px;
+      max-width: 720px;
+      position: relative;
+    }
+
+    [contenteditable="true"] {
+      min-height: 140px;
+      border: 1px solid #c9d4de;
+      border-radius: 12px;
+      padding: 12px;
+      white-space: pre-wrap;
+    }
+
+    .auth-modal {
+      border: 1px solid #d5a4a4;
+      border-radius: 12px;
+      padding: 16px;
+      background: rgba(255, 250, 250, 0.96);
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Soft Gated Auth Modal Fixture</h1>
+    <div id="ask-input" contenteditable="true" role="textbox" aria-label="Ask anything"></div>
+    <button type="button" aria-label="프롬프트 보내기">Send</button>
+    <section class="auth-modal" aria-label="Login modal">
+      <p>Continue by logging in</p>
+      <button data-testid="login-button" type="button">Log in</button>
+      <input type="email" placeholder="Email" />
+    </section>
+  </main>
+</body>
+</html>

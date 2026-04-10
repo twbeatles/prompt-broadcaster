@@ -1,6 +1,11 @@
 export type InputType = "textarea" | "contenteditable" | "input";
 export type SubmitMethod = "click" | "enter" | "shift+enter";
-export type SelectorCheckMode = "input-and-submit" | "input-only";
+export type SelectorCheckMode =
+  | "input-and-submit"
+  | "input-and-conditional-submit"
+  | "input-only";
+export type SubmitSurfaceRequirement = "none" | "required" | "conditional";
+export type VerifiedAuthState = "logged-in" | "logged-out" | "soft-gated";
 export type TemplateVariableKind = "system" | "user";
 export type HistorySort = "latest" | "oldest" | "mostSuccess" | "mostFailure";
 export type FavoriteSort = "recentUsed" | "usageCount" | "title" | "createdAt";
@@ -113,6 +118,10 @@ export interface SiteConfig {
   fallback: boolean;
   authSelectors?: string[];
   lastVerified?: string;
+  verifiedAt?: string;
+  verifiedRoute?: string;
+  verifiedAuthState?: VerifiedAuthState;
+  verifiedLocale?: string;
   verifiedVersion?: string;
 }
 
@@ -319,7 +328,7 @@ export interface ReusableTabSurfaceSnapshot {
   hasPromptSurface?: boolean;
   hasAuthSurface?: boolean;
   hasSubmitSurface?: boolean;
-  requiresSubmitSurface?: boolean;
+  submitRequirement?: SubmitSurfaceRequirement;
 }
 
 export interface ReusableTabPreflightResult {

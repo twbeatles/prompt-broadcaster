@@ -1039,11 +1039,15 @@ var AI_SITES = Object.freeze([
     inputType: "contenteditable",
     submitSelector: "button[data-testid='send-button'], button[aria-label*='send' i], button[aria-label*='보내기' i]",
     submitMethod: "click",
-    selectorCheckMode: "input-and-submit",
+    selectorCheckMode: "input-and-conditional-submit",
     waitMs: 2e3,
     fallback: true,
-    lastVerified: "2026-03",
-    verifiedVersion: "web-ui-mar-2026",
+    lastVerified: "2026-04",
+    verifiedAt: "2026-04-10",
+    verifiedRoute: "/",
+    verifiedAuthState: "logged-out",
+    verifiedLocale: "ko",
+    verifiedVersion: "chatgpt-web-apr-2026",
     authSelectors: [
       "form[action*='/auth']",
       "input[name='email']",
@@ -1069,6 +1073,10 @@ var AI_SITES = Object.freeze([
     waitMs: 2500,
     fallback: true,
     lastVerified: "2026-04",
+    verifiedAt: "2026-04-10",
+    verifiedRoute: "/app",
+    verifiedAuthState: "logged-out",
+    verifiedLocale: "en-US",
     verifiedVersion: "gemini-app-apr-2026",
     authSelectors: [
       "input[type='email']",
@@ -1095,6 +1103,10 @@ var AI_SITES = Object.freeze([
     waitMs: 1500,
     fallback: true,
     lastVerified: "2026-04",
+    verifiedAt: "2026-04-10",
+    verifiedRoute: "/new",
+    verifiedAuthState: "logged-out",
+    verifiedLocale: "en-US",
     verifiedVersion: "claude-web-apr-2026",
     authSelectors: [
       "input#email",
@@ -1108,26 +1120,32 @@ var AI_SITES = Object.freeze([
     name: "Grok",
     url: "https://grok.com/",
     hostname: "grok.com",
-    inputSelector: "div.tiptap.ProseMirror[contenteditable='true'], div.ProseMirror[contenteditable='true'][translate='no'], div.ProseMirror[contenteditable='true']",
+    inputSelector: "textarea[aria-label*='grok' i], textarea[placeholder*='help' i], textarea",
     fallbackSelectors: [
-      "div.tiptap.ProseMirror[contenteditable='true']",
-      "div.ProseMirror[contenteditable='true'][translate='no']",
-      "div.ProseMirror[contenteditable='true']",
       "textarea[aria-label*='grok' i]",
       "textarea[placeholder*='help' i]",
-      "textarea"
+      "textarea",
+      "div.tiptap.ProseMirror[contenteditable='true']",
+      "div.ProseMirror[contenteditable='true'][translate='no']",
+      "div.ProseMirror[contenteditable='true']"
     ],
-    inputType: "contenteditable",
+    inputType: "textarea",
     submitSelector: "button[aria-label*='submit' i], button[aria-label*='제출' i]",
     submitMethod: "click",
-    selectorCheckMode: "input-and-submit",
+    selectorCheckMode: "input-and-conditional-submit",
     waitMs: 2e3,
     fallback: true,
-    lastVerified: "2026-03",
-    verifiedVersion: "grok-web-mar-2026",
+    lastVerified: "2026-04",
+    verifiedAt: "2026-04-10",
+    verifiedRoute: "/",
+    verifiedAuthState: "logged-out",
+    verifiedLocale: "ko",
+    verifiedVersion: "grok-web-apr-2026",
     authSelectors: [
       "input[autocomplete='username']",
-      "input[type='password']"
+      "input[type='password']",
+      "a[href*='/sign-in']",
+      "a[href*='/login']"
     ]
   },
   {
@@ -1150,11 +1168,15 @@ var AI_SITES = Object.freeze([
     inputType: "contenteditable",
     submitSelector: "button[aria-label*='Submit'][type='submit'], button[type='submit'][aria-label*='검색'], button[aria-label*='submit' i], button[aria-label*='제출' i]",
     submitMethod: "click",
-    selectorCheckMode: "input-only",
+    selectorCheckMode: "input-and-conditional-submit",
     waitMs: 2e3,
     fallback: true,
-    lastVerified: "2026-03",
-    verifiedVersion: "perplexity-web-mar-2026",
+    lastVerified: "2026-04",
+    verifiedAt: "2026-04-10",
+    verifiedRoute: "/",
+    verifiedAuthState: "soft-gated",
+    verifiedLocale: "en-US",
+    verifiedVersion: "perplexity-web-apr-2026",
     authSelectors: [
       "input[type='email']",
       "input[type='password']",
@@ -1171,7 +1193,16 @@ var SITE_STORAGE_KEYS = Object.freeze({
 });
 var VALID_INPUT_TYPES = /* @__PURE__ */ new Set(["textarea", "contenteditable", "input"]);
 var VALID_SUBMIT_METHODS = /* @__PURE__ */ new Set(["click", "enter", "shift+enter"]);
-var VALID_SELECTOR_CHECK_MODES = /* @__PURE__ */ new Set(["input-and-submit", "input-only"]);
+var VALID_SELECTOR_CHECK_MODES = /* @__PURE__ */ new Set([
+  "input-and-submit",
+  "input-and-conditional-submit",
+  "input-only"
+]);
+var VALID_VERIFIED_AUTH_STATES = /* @__PURE__ */ new Set([
+  "logged-in",
+  "logged-out",
+  "soft-gated"
+]);
 var BUILT_IN_SITE_IDS = new Set(
   AI_SITES.map((site) => String(site?.id ?? "")).filter(Boolean)
 );
@@ -1182,6 +1213,54 @@ var BUILT_IN_SITE_STYLE_MAP = Object.freeze({
   grok: { color: "#000000", icon: "Gk" },
   perplexity: { color: "#20808d", icon: "Px" }
 });
+
+// src/shared/sites/verification.ts
+var ISO_MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+var ISO_DATE_PATTERN = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+function normalizeText(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+function hasOwnKey(value, key) {
+  return Boolean(value) && typeof value === "object" && Object.prototype.hasOwnProperty.call(value, key);
+}
+function resolveTextField(primary, fallback, key) {
+  if (hasOwnKey(primary, key)) {
+    return normalizeText(primary[key]);
+  }
+  return normalizeText(fallback[key]);
+}
+function normalizeLegacyLastVerified(value) {
+  const normalized = normalizeText(value);
+  return ISO_MONTH_PATTERN.test(normalized) ? normalized : "";
+}
+function normalizeVerifiedAt(value) {
+  const normalized = normalizeText(value);
+  return ISO_DATE_PATTERN.test(normalized) ? normalized : "";
+}
+function normalizeVerifiedAuthState(value) {
+  const normalized = normalizeText(value);
+  return VALID_VERIFIED_AUTH_STATES.has(normalized) ? normalized : "";
+}
+function deriveLegacyLastVerified(verifiedAt) {
+  return normalizeVerifiedAt(verifiedAt).slice(0, 7);
+}
+function buildVerificationMetadata(primaryValue, fallbackValue = {}) {
+  const primary = primaryValue && typeof primaryValue === "object" && !Array.isArray(primaryValue) ? primaryValue : {};
+  const fallback = fallbackValue && typeof fallbackValue === "object" && !Array.isArray(fallbackValue) ? fallbackValue : {};
+  const primaryHasVerifiedAt = hasOwnKey(primary, "verifiedAt");
+  const primaryVerifiedAt = normalizeVerifiedAt(primary.verifiedAt);
+  const fallbackVerifiedAt = normalizeVerifiedAt(fallback.verifiedAt);
+  const verifiedAt = primaryHasVerifiedAt ? primaryVerifiedAt : primaryVerifiedAt || fallbackVerifiedAt;
+  const lastVerified = verifiedAt ? deriveLegacyLastVerified(verifiedAt) : primaryHasVerifiedAt ? "" : normalizeLegacyLastVerified(primary.lastVerified) || normalizeLegacyLastVerified(fallback.lastVerified);
+  return {
+    lastVerified,
+    verifiedAt,
+    verifiedRoute: resolveTextField(primary, fallback, "verifiedRoute"),
+    verifiedAuthState: hasOwnKey(primary, "verifiedAuthState") ? normalizeVerifiedAuthState(primary.verifiedAuthState) : normalizeVerifiedAuthState(primary.verifiedAuthState) || normalizeVerifiedAuthState(fallback.verifiedAuthState),
+    verifiedLocale: resolveTextField(primary, fallback, "verifiedLocale"),
+    verifiedVersion: resolveTextField(primary, fallback, "verifiedVersion")
+  };
+}
 
 // src/shared/sites/normalizers.ts
 function safeText2(value) {
@@ -1365,6 +1444,7 @@ function buildBaseSiteRecord(site, builtInMeta = {}) {
   const hostname = normalizeHostname(site.hostname || deriveHostname(url));
   const hostnameAliases = normalizeHostnameAliases(site.hostnameAliases, hostname);
   const normalizedSelectors = normalizePerplexitySelectors(site);
+  const verification = buildVerificationMetadata(site);
   return {
     id: safeText2(site.id),
     name: safeText2(site.name) || "AI Service",
@@ -1380,8 +1460,12 @@ function buildBaseSiteRecord(site, builtInMeta = {}) {
     fallbackSelectors: normalizedSelectors.fallbackSelectors,
     fallback: normalizeBoolean2(site.fallback, true),
     authSelectors: Array.isArray(site.authSelectors) ? site.authSelectors.filter((entry) => typeof entry === "string" && entry.trim()) : [],
-    lastVerified: safeText2(site.lastVerified),
-    verifiedVersion: safeText2(site.verifiedVersion),
+    lastVerified: verification.lastVerified,
+    verifiedAt: verification.verifiedAt,
+    verifiedRoute: verification.verifiedRoute,
+    verifiedAuthState: verification.verifiedAuthState,
+    verifiedLocale: verification.verifiedLocale,
+    verifiedVersion: verification.verifiedVersion,
     enabled: normalizeBoolean2(site.enabled, true),
     color: normalizeColor(site.color, style.color ?? "#c24f2e"),
     icon: normalizeIcon(site.icon, style.icon ?? "AI"),
@@ -1395,6 +1479,7 @@ function buildBaseSiteRecord(site, builtInMeta = {}) {
 function sanitizeBuiltInOverride(override = {}, originalSite = {}) {
   const submitMethod = normalizeSubmitMethod(override.submitMethod, originalSite.submitMethod);
   const submitSelector = submitMethod === "click" ? safeText2(override.submitSelector) || safeText2(originalSite.submitSelector) : safeText2(override.submitSelector);
+  const verification = buildVerificationMetadata(override, originalSite);
   return {
     name: safeText2(override.name) || originalSite.name,
     inputSelector: safeText2(override.inputSelector) || originalSite.inputSelector,
@@ -1408,8 +1493,12 @@ function sanitizeBuiltInOverride(override = {}, originalSite = {}) {
     waitMs: normalizeWaitMs(override.waitMs, originalSite.waitMs),
     fallbackSelectors: Array.isArray(override.fallbackSelectors) ? override.fallbackSelectors.filter((entry) => typeof entry === "string" && entry.trim()) : Array.isArray(originalSite.fallbackSelectors) ? [...originalSite.fallbackSelectors] : [],
     authSelectors: Array.isArray(override.authSelectors) ? override.authSelectors.filter((entry) => typeof entry === "string" && entry.trim()) : Array.isArray(originalSite.authSelectors) ? [...originalSite.authSelectors] : [],
-    lastVerified: safeText2(override.lastVerified) || safeText2(originalSite.lastVerified),
-    verifiedVersion: safeText2(override.verifiedVersion) || safeText2(originalSite.verifiedVersion),
+    lastVerified: verification.lastVerified,
+    verifiedAt: verification.verifiedAt,
+    verifiedRoute: verification.verifiedRoute,
+    verifiedAuthState: verification.verifiedAuthState,
+    verifiedLocale: verification.verifiedLocale,
+    verifiedVersion: verification.verifiedVersion,
     color: normalizeColor(
       override.color,
       BUILT_IN_SITE_STYLE_MAP[originalSite.id]?.color ?? "#c24f2e"
@@ -1423,6 +1512,25 @@ function sanitizeBuiltInOverride(override = {}, originalSite = {}) {
 function normalizeCustomSite(site) {
   const url = safeText2(site?.url);
   const hostname = normalizeHostname(site?.hostname || deriveHostname(url));
+  const verificationFields = {};
+  if (Object.prototype.hasOwnProperty.call(site ?? {}, "lastVerified")) {
+    verificationFields.lastVerified = safeText2(site?.lastVerified);
+  }
+  if (Object.prototype.hasOwnProperty.call(site ?? {}, "verifiedAt")) {
+    verificationFields.verifiedAt = safeText2(site?.verifiedAt);
+  }
+  if (Object.prototype.hasOwnProperty.call(site ?? {}, "verifiedRoute")) {
+    verificationFields.verifiedRoute = safeText2(site?.verifiedRoute);
+  }
+  if (Object.prototype.hasOwnProperty.call(site ?? {}, "verifiedAuthState")) {
+    verificationFields.verifiedAuthState = safeText2(site?.verifiedAuthState);
+  }
+  if (Object.prototype.hasOwnProperty.call(site ?? {}, "verifiedLocale")) {
+    verificationFields.verifiedLocale = safeText2(site?.verifiedLocale);
+  }
+  if (Object.prototype.hasOwnProperty.call(site ?? {}, "verifiedVersion")) {
+    verificationFields.verifiedVersion = safeText2(site?.verifiedVersion);
+  }
   return buildBaseSiteRecord(
     {
       id: safeText2(site?.id) || createCustomSiteId(site?.name),
@@ -1442,8 +1550,7 @@ function normalizeCustomSite(site) {
       fallbackSelectors: normalizeStringList(site?.fallbackSelectors),
       fallback: normalizeBoolean2(site?.fallback, true),
       authSelectors: normalizeStringList(site?.authSelectors),
-      lastVerified: safeText2(site?.lastVerified),
-      verifiedVersion: safeText2(site?.verifiedVersion),
+      ...verificationFields,
       enabled: normalizeBoolean2(site?.enabled, true),
       color: normalizeColor(site?.color, "#c24f2e"),
       icon: normalizeIcon(site?.icon, "AI")
@@ -1451,6 +1558,21 @@ function normalizeCustomSite(site) {
     { isCustom: true }
   );
 }
+
+// src/shared/sites/selector-utils.ts
+var AUTH_PATH_SEGMENTS = Object.freeze([
+  "/login",
+  "/logout",
+  "/sign-in",
+  "/signin",
+  "/auth"
+]);
+var SETTINGS_PATH_SEGMENTS = Object.freeze([
+  "/settings",
+  "/preferences",
+  "/account",
+  "/billing"
+]);
 
 // src/shared/sites/hostname-aliases.ts
 function validateBareHostPort(value) {
@@ -1569,6 +1691,14 @@ function validateSiteDraft(draft, { isBuiltIn = false } = {}) {
   if (selectorCheckMode && !VALID_SELECTOR_CHECK_MODES.has(selectorCheckMode)) {
     pushFieldError(fieldErrors, "selectorCheckMode", "Selector check mode is invalid.");
   }
+  const verifiedAt = safeText2(draft?.verifiedAt);
+  if (verifiedAt && normalizeVerifiedAt(verifiedAt) !== verifiedAt) {
+    pushFieldError(fieldErrors, "verifiedAt", "Verified date must use YYYY-MM-DD.");
+  }
+  const verifiedAuthState = safeText2(draft?.verifiedAuthState);
+  if (verifiedAuthState && !VALID_VERIFIED_AUTH_STATES.has(verifiedAuthState)) {
+    pushFieldError(fieldErrors, "verifiedAuthState", "Verified auth state is invalid.");
+  }
   if (safeText2(draft?.submitMethod) === "click" && !safeText2(draft?.submitSelector)) {
     pushFieldError(fieldErrors, "submitSelector", "Submit selector is required when using click submit.");
   }
@@ -1606,6 +1736,10 @@ function detectBuiltInOverrideAdjustment(rawEntry, sanitized, source) {
     "fallbackSelectors",
     "authSelectors",
     "lastVerified",
+    "verifiedAt",
+    "verifiedRoute",
+    "verifiedAuthState",
+    "verifiedLocale",
     "verifiedVersion",
     "color",
     "icon"
@@ -1621,6 +1755,10 @@ function detectBuiltInOverrideAdjustment(rawEntry, sanitized, source) {
     ["submitMethod", safeText2(rawRecord.submitMethod), sanitized.submitMethod],
     ["selectorCheckMode", safeText2(rawRecord.selectorCheckMode), sanitized.selectorCheckMode],
     ["lastVerified", safeText2(rawRecord.lastVerified), sanitized.lastVerified],
+    ["verifiedAt", safeText2(rawRecord.verifiedAt), sanitized.verifiedAt],
+    ["verifiedRoute", safeText2(rawRecord.verifiedRoute), sanitized.verifiedRoute],
+    ["verifiedAuthState", safeText2(rawRecord.verifiedAuthState), sanitized.verifiedAuthState],
+    ["verifiedLocale", safeText2(rawRecord.verifiedLocale), sanitized.verifiedLocale],
     ["verifiedVersion", safeText2(rawRecord.verifiedVersion), sanitized.verifiedVersion],
     ["color", safeText2(rawRecord.color), sanitized.color],
     ["icon", safeText2(rawRecord.icon), sanitized.icon]
@@ -1937,7 +2075,7 @@ async function setTemplateVariableCache(cache) {
 }
 
 // src/shared/prompts/import-export.ts
-var CURRENT_EXPORT_VERSION = 6;
+var CURRENT_EXPORT_VERSION = 7;
 function asImportPayload(value) {
   return safeObject(value);
 }
@@ -2065,6 +2203,14 @@ function migrateV5ToV6(payload) {
     favorites: safeArray(payload.favorites).map((entry) => buildFavoriteEntry(entry))
   };
 }
+function migrateV6ToV7(payload) {
+  return {
+    ...payload,
+    version: 7,
+    history: safeArray(payload.history).map((entry) => buildHistoryEntry(entry)),
+    favorites: safeArray(payload.favorites).map((entry) => buildFavoriteEntry(entry))
+  };
+}
 function migrateImportData(rawValue) {
   let payload = asImportPayload(rawValue);
   const sourceVersion = normalizeImportVersion(payload.version);
@@ -2088,6 +2234,10 @@ function migrateImportData(rawValue) {
   if (workingVersion < 6) {
     payload = migrateV5ToV6(payload);
     workingVersion = 6;
+  }
+  if (workingVersion < 7) {
+    payload = migrateV6ToV7(payload);
+    workingVersion = 7;
   }
   return {
     migrated: payload,

@@ -169,8 +169,14 @@ const {
   serviceHostnameAliasesLabel,
   serviceHostnameAliasesInput,
   servicePermissionPreview,
-  serviceLastVerifiedLabel,
-  serviceLastVerifiedInput,
+  serviceVerifiedAtLabel,
+  serviceVerifiedAtInput,
+  serviceVerifiedRouteLabel,
+  serviceVerifiedRouteInput,
+  serviceVerifiedAuthStateLabel,
+  serviceVerifiedAuthStateSelect,
+  serviceVerifiedLocaleLabel,
+  serviceVerifiedLocaleInput,
   serviceVerifiedVersionLabel,
   serviceVerifiedVersionInput,
   serviceWaitLabel,
@@ -332,12 +338,14 @@ function getSiteSelectorIssueUrl(site) {
 }
 
 function getSiteLastVerifiedStatus(site) {
+  const verifiedAt = site?.verifiedAt ? String(site.verifiedAt).trim() : "";
   const lastVerified = site?.lastVerified ? String(site.lastVerified).trim() : "";
-  if (!lastVerified) {
-    return "";
-  }
+  const parsedDate = verifiedAt
+    ? Date.parse(`${verifiedAt}T00:00:00Z`)
+    : lastVerified
+      ? Date.parse(`${lastVerified}-01T00:00:00Z`)
+      : Number.NaN;
 
-  const parsedDate = Date.parse(`${lastVerified}-01`);
   if (!Number.isFinite(parsedDate)) {
     return "";
   }
@@ -2008,8 +2016,27 @@ function renderTabLabels() {
   serviceFallbackSelectorsLabel.textContent = t.serviceFieldFallbackSelectors;
   serviceAuthSelectorsLabel.textContent = t.serviceFieldAuthSelectors;
   serviceHostnameAliasesLabel.textContent = t.serviceFieldHostnameAliases;
-  serviceLastVerifiedLabel.textContent = t.serviceFieldLastVerified;
+  serviceVerifiedAtLabel.textContent = t.serviceFieldVerifiedAt;
+  serviceVerifiedRouteLabel.textContent = t.serviceFieldVerifiedRoute;
+  serviceVerifiedAuthStateLabel.textContent = t.serviceFieldVerifiedAuthState;
+  serviceVerifiedLocaleLabel.textContent = t.serviceFieldVerifiedLocale;
   serviceVerifiedVersionLabel.textContent = t.serviceFieldVerifiedVersion;
+  const verifiedAuthUnknownOption = serviceVerifiedAuthStateSelect.querySelector("option[value='']");
+  const verifiedAuthLoggedInOption = serviceVerifiedAuthStateSelect.querySelector("option[value='logged-in']");
+  const verifiedAuthLoggedOutOption = serviceVerifiedAuthStateSelect.querySelector("option[value='logged-out']");
+  const verifiedAuthSoftGatedOption = serviceVerifiedAuthStateSelect.querySelector("option[value='soft-gated']");
+  if (verifiedAuthUnknownOption) {
+    verifiedAuthUnknownOption.textContent = t.serviceVerifiedAuthStateUnknown;
+  }
+  if (verifiedAuthLoggedInOption) {
+    verifiedAuthLoggedInOption.textContent = t.serviceVerifiedAuthStateLoggedIn;
+  }
+  if (verifiedAuthLoggedOutOption) {
+    verifiedAuthLoggedOutOption.textContent = t.serviceVerifiedAuthStateLoggedOut;
+  }
+  if (verifiedAuthSoftGatedOption) {
+    verifiedAuthSoftGatedOption.textContent = t.serviceVerifiedAuthStateSoftGated;
+  }
   serviceWaitLabel.textContent = t.serviceFieldWait;
   serviceColorLabel.textContent = t.serviceFieldColor;
   serviceIconLabel.textContent = t.serviceFieldIcon;
@@ -2365,7 +2392,10 @@ function resetServiceEditorForm() {
   serviceAuthSelectorsInput.value = "";
   serviceHostnameAliasesInput.value = "";
   serviceHostnameAliasesInput.disabled = false;
-  serviceLastVerifiedInput.value = "";
+  serviceVerifiedAtInput.value = "";
+  serviceVerifiedRouteInput.value = "";
+  serviceVerifiedAuthStateSelect.value = "";
+  serviceVerifiedLocaleInput.value = "";
   serviceVerifiedVersionInput.value = "";
   serviceWaitRange.value = "2000";
   serviceWaitValue.textContent = "2000ms";
@@ -2409,7 +2439,10 @@ function populateServiceEditor(site) {
   serviceAuthSelectorsInput.value = joinMultilineValues(site?.authSelectors);
   serviceHostnameAliasesInput.value = joinMultilineValues(site?.hostnameAliases);
   serviceHostnameAliasesInput.disabled = Boolean(site?.isBuiltIn);
-  serviceLastVerifiedInput.value = site?.lastVerified ?? "";
+  serviceVerifiedAtInput.value = site?.verifiedAt ?? "";
+  serviceVerifiedRouteInput.value = site?.verifiedRoute ?? "";
+  serviceVerifiedAuthStateSelect.value = site?.verifiedAuthState ?? "";
+  serviceVerifiedLocaleInput.value = site?.verifiedLocale ?? "";
   serviceVerifiedVersionInput.value = site?.verifiedVersion ?? "";
   serviceWaitRange.value = String(site?.waitMs ?? 2000);
   serviceWaitValue.textContent = `${site?.waitMs ?? 2000}ms`;
@@ -2501,7 +2534,10 @@ function readServiceEditorDraft() {
     fallbackSelectors: splitMultilineValues(serviceFallbackSelectorsInput.value),
     authSelectors: splitMultilineValues(serviceAuthSelectorsInput.value),
     hostnameAliases: splitMultilineValues(serviceHostnameAliasesInput.value),
-    lastVerified: serviceLastVerifiedInput.value.trim(),
+    verifiedAt: serviceVerifiedAtInput.value.trim(),
+    verifiedRoute: serviceVerifiedRouteInput.value.trim(),
+    verifiedAuthState: serviceVerifiedAuthStateSelect.value,
+    verifiedLocale: serviceVerifiedLocaleInput.value.trim(),
     verifiedVersion: serviceVerifiedVersionInput.value.trim(),
     waitMs: Number(serviceWaitRange.value),
     color: serviceColorInput.value,

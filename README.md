@@ -41,12 +41,13 @@
 - **확장 Dashboard 분석** – 서비스 점유율 외에 활동 히트맵, 서비스별 성공률 추이, 상위 실패 원인, 전략 요약 제공
 - **예약 실행 결과 요약** – options `Schedules`에서 최근 scheduled 실행 시각, 상태, 실패 상세를 별도로 확인 가능
 - **서비스별 프롬프트 오버라이드** – 서비스 카드마다 메인 프롬프트와 다른 별도 프롬프트를 지정 가능
-- 히스토리/즐겨찾기/템플릿 캐시/설정/서비스 구성을 JSON으로 내보내기 및 가져오기 (`v6`, 체인/예약 메타, 재전송 스냅샷, `{{counter}}` 포함)
+- 히스토리/즐겨찾기/템플릿 캐시/설정/서비스 구성을 JSON으로 내보내기 및 가져오기 (`v7`, 체인/예약 메타, 재전송 스냅샷, 구조화된 selector verification metadata, `{{counter}}` 포함)
 - **상세 import 리포트 + 구조화된 전송 결과 코드** – 권한 거부/ID 재작성/built-in 보정 내역과 서비스별 결과 코드 표시
 - **확장 템플릿 변수** – `{{url}}`, `{{title}}`, `{{selection}}`, `{{counter}}`, `{{random}}` 등 9개 이상의 시스템 변수 지원
 - Chrome MV3 기반, 백엔드 없음
 - `chrome.scripting.executeScript` 기반 동적 주입
 - 사이트별 셀렉터와 전략을 `src/config/sites/builtins.ts`에서 중앙 관리
+- ChatGPT / Grok / Perplexity는 selector check 단계에서 `input-and-conditional-submit` semantics를 사용해 empty composer false negative를 줄입니다.
 - Perplexity는 `#ask-input[data-lexical-editor='true']`를 최우선으로 잡고, `MAIN` world에서 Lexical 상태를 갱신한 뒤 기존 submit 경로로 전송
 - **전역 대기 배율(wait multiplier)** 과 서비스별 적응형 주입 전략 통계(내부 저장) 지원
 - 입력 실패 시 클립보드 복사 + 비차단 폴백 배너 제공
@@ -61,7 +62,7 @@
 | ChatGPT | `https://chatgpt.com/` | `contenteditable` + 버튼 클릭 | 지원, Best effort |
 | Gemini | `https://gemini.google.com/app` | `contenteditable` + 버튼 클릭 | 지원, Best effort |
 | Claude | `https://claude.ai/new` | `contenteditable` + 버튼 클릭 | 지원, Best effort |
-| Grok | `https://grok.com/` | `contenteditable` + 버튼 클릭 | 지원, Best effort |
+| Grok | `https://grok.com/` | `textarea` 우선 + 버튼 클릭 | 지원, Best effort |
 | Perplexity | `https://www.perplexity.ai/` | `contenteditable` + 버튼 클릭 | 지원, Best effort |
 
 `Best effort`는 대상 사이트의 DOM 구조 변경, 로그인 상태, 반자동화 정책에 따라 주입 성공률이 달라질 수 있음을 의미합니다.
@@ -193,9 +194,9 @@ GIF 자리표시자: `docs/assets/usage-demo.gif`
 서비스별 결과는 문자열 한 개가 아니라 구조화된 결과 코드로 저장됩니다. 현재 주요 코드는 `submitted`, `selector_timeout`, `auth_required`, `submit_failed`, `strategy_exhausted`, `injection_timeout`, `cancelled`, `unexpected_error` 등입니다.
 
 ### 가져오기/내보내기와 상세 리포트
-- JSON export는 항상 `version: 6`으로 기록됩니다.
-- import는 `v1 -> v2 -> v3 -> v4 -> v5 -> v6` 단계형 마이그레이션을 거쳐 기존 데이터를 정규화합니다.
-- `v6`에서는 즐겨찾기 `mode`, `steps`, `scheduleEnabled`, `scheduledAt`, `scheduleRepeat`, 히스토리 chain metadata와 함께 history resend용 `targetSnapshots`까지 보강합니다.
+- JSON export는 항상 `version: 7`으로 기록됩니다.
+- import는 `v1 -> v2 -> v3 -> v4 -> v5 -> v6 -> v7` 단계형 마이그레이션을 거쳐 기존 데이터를 정규화합니다.
+- `v7`은 구조화된 selector verification metadata(`verifiedAt`, `verifiedRoute`, `verifiedAuthState`, `verifiedLocale`, `verifiedVersion`)를 유지합니다. legacy `lastVerified`는 호환용 month 필드로 남고, `verifiedAt`가 있으면 `YYYY-MM`으로 자동 derive됩니다.
 - popup과 options 모두 import 직후 상세 리포트 모달을 띄워 적용된 서비스, 거부된 서비스, 권한 거부 origin, ID 재작성, alias 검증 오류, built-in 보정 내역을 보여줍니다.
 
 ### Reset data
@@ -283,14 +284,15 @@ For build and packaging steps, see [docs/build-guide.md](docs/build-guide.md). F
 - **Expanded dashboard analytics** — activity heatmap, per-service success trends, top failure reasons, and strategy summary on the options dashboard
 - **Scheduled-run result summary** — the options `Schedules` section separates the last scheduled run from manual runs and surfaces its status plus representative failure detail
 - **Per-service prompt overrides** — assign a different prompt to individual service cards without changing the main prompt
-- JSON export/import for history, favorites, template cache, settings, and service configuration, including `broadcastCounter`, history resend snapshots, and export `version: 6`
+- JSON export/import for history, favorites, template cache, settings, and service configuration, including `broadcastCounter`, history resend snapshots, structured selector verification metadata, and export `version: 7`
 - History keeps requested, submitted, failed, and per-site snapshot prompt data so partial broadcasts can be replayed accurately
-- **Detailed import reports and structured result codes** — popup/options show rejected services, rewritten ids, built-in adjustments, and service-level result codes
+- **Detailed import reports and structured result codes** — popup/options show rejected services, rewritten ids, built-in adjustments, service-level result codes, and selector verification metadata
 - **Extended template variables** — 9+ system variables including `{{url}}`, `{{title}}`, `{{selection}}`, `{{counter}}`, and `{{random}}`
 - Custom services can store fallback selectors, auth selectors, hostname aliases, and verification metadata
 - Pure MV3 extension, no backend required
 - Dynamic prompt injection using `chrome.scripting.executeScript`
 - Central site configuration in `src/config/sites/builtins.ts`
+- ChatGPT, Grok, and Perplexity use `input-and-conditional-submit` selector-check semantics so empty composers do not fail preflight before a submit surface appears.
 - Perplexity prefers `#ask-input[data-lexical-editor='true']`, updates Lexical state from the page's `MAIN` world, and keeps the legacy submit path for dispatch
 - Global wait scaling (`waitMsMultiplier`) and internally persisted adaptive strategy stats improve reliability on slow or changing sites
 - Click-submit flows wait for the submit button to become enabled so async React editors can finish state updates before submission
@@ -307,7 +309,7 @@ For build and packaging steps, see [docs/build-guide.md](docs/build-guide.md). F
 | ChatGPT | `https://chatgpt.com/` | `contenteditable` + click submit | Supported, Best effort |
 | Gemini | `https://gemini.google.com/app` | `contenteditable` + click submit | Supported, Best effort |
 | Claude | `https://claude.ai/new` | `contenteditable` + click submit | Supported, Best effort |
-| Grok | `https://grok.com/` | `contenteditable` + click submit | Supported, Best effort |
+| Grok | `https://grok.com/` | `textarea` first + click submit | Supported, Best effort |
 | Perplexity | `https://www.perplexity.ai/` | `contenteditable` + click submit | Supported, Best effort |
 
 `Best effort` means injection can break when a target site changes its DOM, redirects to login, or blocks synthetic input events.
@@ -443,9 +445,9 @@ Each stored service result now uses a structured code rather than a free-form st
 - History rows can carry `originFavoriteId`, `chainRunId`, `chainStepIndex`, `chainStepCount`, and `trigger` so chain runs and scheduled executions remain traceable.
 
 ### Import / Export and Detailed Reports
-- JSON export always writes `version: 6`.
-- Import applies staged migrations from older payloads (`v1 -> v2 -> v3 -> v4 -> v5 -> v6`) before normalizing settings, favorites, and history records.
-- `v6` backfills history resend `targetSnapshots` in addition to prior favorite chain/schedule fields, chain-related history metadata, and result normalization.
+- JSON export always writes `version: 7`.
+- Import applies staged migrations from older payloads (`v1 -> v2 -> v3 -> v4 -> v5 -> v6 -> v7`) before normalizing settings, favorites, and history records.
+- `v7` preserves structured selector verification metadata (`verifiedAt`, `verifiedRoute`, `verifiedAuthState`, `verifiedLocale`, `verifiedVersion`). Legacy `lastVerified` remains for compatibility and is derived from `verifiedAt` when available.
 - Both popup and options show a detailed import report modal listing accepted services, rejected services, denied origins, rewritten ids, alias validation errors, and built-in override adjustments.
 
 ### Custom Service Advanced Settings
@@ -454,8 +456,12 @@ The popup service editor supports the following advanced fields for custom servi
 - `fallbackSelectors`: alternate selectors checked when the primary input selector fails
 - `authSelectors`: selectors that indicate a dedicated login or auth screen when no prompt surface is visible
 - `hostnameAliases`: extra allowed hostnames for redirects or alternate app domains
-- `lastVerified`: a free-form verification date such as `2026-03`
+- `verifiedAt`: a structured verification date in `YYYY-MM-DD`
+- `verifiedRoute`: the route used during the latest selector verification
+- `verifiedAuthState`: `logged-in`, `logged-out`, or `soft-gated`
+- `verifiedLocale`: the locale observed during selector verification
 - `verifiedVersion`: a free-form UI or app build tag
+- `lastVerified`: a legacy compatibility month derived automatically from `verifiedAt` when present
 
 If `submitMethod` is `click`, `submitSelector` is required and validation blocks saving until it is provided.
 
@@ -507,8 +513,11 @@ Example:
     "a[href*='login']",
     "input[type='password']"
   ],
-  lastVerified: "2026-03",
-  verifiedVersion: "newai-web-mar-2026"
+  verifiedAt: "2026-04-10",
+  verifiedRoute: "/compose",
+  verifiedAuthState: "logged-in",
+  verifiedLocale: "en-US",
+  verifiedVersion: "newai-web-apr-2026"
 }
 ```
 
@@ -526,6 +535,7 @@ Run the local smoke flow with:
 ```bash
 npm run build
 npm run qa:smoke
+npm run selector:audit
 ```
 
 The smoke script verifies:
@@ -537,10 +547,12 @@ The smoke script verifies:
 - `click`, `enter`, and `shift+enter` submission paths
 - selector checker `ok` reporting
 - auth page detection through `authSelectors`
+- conditional-submit preflight semantics for empty composers
+- textarea-first Grok selector preference and soft-gated auth coexistence
 - custom service permission cleanup for shared and unused origins
 - JSON import repair for alias-based custom service permissions and invalid built-in click-submit overrides
 - `broadcastCounter` export/import/reset semantics
-- import migration to export `version: 6` defaults
+- import migration to export `version: 7` defaults
 - history replay snapshot fallback and resend routing safety
 - draft-first popup restore and popup handoff consumption
 - favorite background job dedupe helpers and runtime-state cleanup

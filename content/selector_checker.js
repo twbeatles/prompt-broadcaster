@@ -159,7 +159,213 @@ var AIPromptBroadcasterSelectorCheckerBundle = (() => {
     });
   }
 
-  // src/content/selector-checker/checks.ts
+  // src/config/sites/builtins.ts
+  var AI_SITES = Object.freeze([
+    {
+      id: "chatgpt",
+      name: "ChatGPT",
+      url: "https://chatgpt.com/",
+      hostname: "chatgpt.com",
+      inputSelector: "#prompt-textarea, div#prompt-textarea[contenteditable='true'], textarea[aria-label*='chatgpt' i], textarea[aria-label*='채팅' i]",
+      fallbackSelectors: [
+        "#prompt-textarea",
+        "div#prompt-textarea[contenteditable='true']",
+        "textarea[aria-label*='chatgpt' i]",
+        "textarea[aria-label*='채팅' i]",
+        "textarea.wcDTda_fallbackTextarea",
+        "div[contenteditable='true'][data-id='root']",
+        "main div[contenteditable='true']"
+      ],
+      inputType: "contenteditable",
+      submitSelector: "button[data-testid='send-button'], button[aria-label*='send' i], button[aria-label*='보내기' i]",
+      submitMethod: "click",
+      selectorCheckMode: "input-and-conditional-submit",
+      waitMs: 2e3,
+      fallback: true,
+      lastVerified: "2026-04",
+      verifiedAt: "2026-04-10",
+      verifiedRoute: "/",
+      verifiedAuthState: "logged-out",
+      verifiedLocale: "ko",
+      verifiedVersion: "chatgpt-web-apr-2026",
+      authSelectors: [
+        "form[action*='/auth']",
+        "input[name='email']",
+        "input[name='username']"
+      ]
+    },
+    {
+      id: "gemini",
+      name: "Gemini",
+      url: "https://gemini.google.com/app",
+      hostname: "gemini.google.com",
+      inputSelector: "div[contenteditable='true'][role='textbox'], div.ql-editor.textarea.new-input-ui[contenteditable='true'], div.ql-editor[contenteditable='true'][role='textbox']",
+      fallbackSelectors: [
+        "div[contenteditable='true'][role='textbox']",
+        "div.ql-editor.textarea.new-input-ui[contenteditable='true']",
+        "div.ql-editor[contenteditable='true'][role='textbox']",
+        "textarea, div[contenteditable='true']"
+      ],
+      inputType: "contenteditable",
+      submitSelector: "button.send-button, button[aria-label*='send' i], button[aria-label*='보내기' i]",
+      submitMethod: "click",
+      selectorCheckMode: "input-and-submit",
+      waitMs: 2500,
+      fallback: true,
+      lastVerified: "2026-04",
+      verifiedAt: "2026-04-10",
+      verifiedRoute: "/app",
+      verifiedAuthState: "logged-out",
+      verifiedLocale: "en-US",
+      verifiedVersion: "gemini-app-apr-2026",
+      authSelectors: [
+        "input[type='email']",
+        "input[type='password']"
+      ]
+    },
+    {
+      id: "claude",
+      name: "Claude",
+      url: "https://claude.ai/new",
+      hostname: "claude.ai",
+      inputSelector: "div[contenteditable='true'][role='textbox'], div[contenteditable='true'][aria-label*='Claude' i], div[contenteditable='true'][aria-label*='prompt' i]",
+      fallbackSelectors: [
+        "div[contenteditable='true'][role='textbox']",
+        "div[contenteditable='true'][aria-label*='Claude' i]",
+        "div[contenteditable='true'][aria-label*='prompt' i]",
+        "div[contenteditable='true']",
+        "textarea"
+      ],
+      inputType: "contenteditable",
+      submitSelector: "button[aria-label='Send message'], button[aria-label*='send' i], button[aria-label*='submit' i], button[aria-label*='보내' i], button[aria-label*='전송' i]",
+      submitMethod: "click",
+      selectorCheckMode: "input-and-submit",
+      waitMs: 1500,
+      fallback: true,
+      lastVerified: "2026-04",
+      verifiedAt: "2026-04-10",
+      verifiedRoute: "/new",
+      verifiedAuthState: "logged-out",
+      verifiedLocale: "en-US",
+      verifiedVersion: "claude-web-apr-2026",
+      authSelectors: [
+        "input#email",
+        "input[type='email']",
+        "input[type='password']",
+        "form[action*='login']"
+      ]
+    },
+    {
+      id: "grok",
+      name: "Grok",
+      url: "https://grok.com/",
+      hostname: "grok.com",
+      inputSelector: "textarea[aria-label*='grok' i], textarea[placeholder*='help' i], textarea",
+      fallbackSelectors: [
+        "textarea[aria-label*='grok' i]",
+        "textarea[placeholder*='help' i]",
+        "textarea",
+        "div.tiptap.ProseMirror[contenteditable='true']",
+        "div.ProseMirror[contenteditable='true'][translate='no']",
+        "div.ProseMirror[contenteditable='true']"
+      ],
+      inputType: "textarea",
+      submitSelector: "button[aria-label*='submit' i], button[aria-label*='제출' i]",
+      submitMethod: "click",
+      selectorCheckMode: "input-and-conditional-submit",
+      waitMs: 2e3,
+      fallback: true,
+      lastVerified: "2026-04",
+      verifiedAt: "2026-04-10",
+      verifiedRoute: "/",
+      verifiedAuthState: "logged-out",
+      verifiedLocale: "ko",
+      verifiedVersion: "grok-web-apr-2026",
+      authSelectors: [
+        "input[autocomplete='username']",
+        "input[type='password']",
+        "a[href*='/sign-in']",
+        "a[href*='/login']"
+      ]
+    },
+    {
+      id: "perplexity",
+      name: "Perplexity",
+      url: "https://www.perplexity.ai/",
+      hostname: "www.perplexity.ai",
+      hostnameAliases: ["perplexity.ai"],
+      inputSelector: "#ask-input[data-lexical-editor='true'][role='textbox']",
+      fallbackSelectors: [
+        "div#ask-input[data-lexical-editor='true'][role='textbox']",
+        "div#ask-input[contenteditable='true'][role='textbox']",
+        "#ask-input[contenteditable='true']",
+        "div[contenteditable='true'][role='textbox']",
+        "textarea[placeholder*='Ask'][data-testid='search-input']",
+        "textarea[placeholder*='Ask']",
+        "textarea[placeholder*='질문']",
+        "textarea"
+      ],
+      inputType: "contenteditable",
+      submitSelector: "button[aria-label*='Submit'][type='submit'], button[type='submit'][aria-label*='검색'], button[aria-label*='submit' i], button[aria-label*='제출' i]",
+      submitMethod: "click",
+      selectorCheckMode: "input-and-conditional-submit",
+      waitMs: 2e3,
+      fallback: true,
+      lastVerified: "2026-04",
+      verifiedAt: "2026-04-10",
+      verifiedRoute: "/",
+      verifiedAuthState: "soft-gated",
+      verifiedLocale: "en-US",
+      verifiedVersion: "perplexity-web-apr-2026",
+      authSelectors: [
+        "input[type='email']",
+        "input[type='password']",
+        "button[data-testid='login-button']"
+      ]
+    }
+  ]);
+
+  // src/shared/sites/constants.ts
+  var SITE_STORAGE_KEYS = Object.freeze({
+    customSites: "customSites",
+    builtInSiteStates: "builtInSiteStates",
+    builtInSiteOverrides: "builtInSiteOverrides"
+  });
+  var BUILT_IN_SITE_IDS = new Set(
+    AI_SITES.map((site) => String(site?.id ?? "")).filter(Boolean)
+  );
+  var BUILT_IN_SITE_STYLE_MAP = Object.freeze({
+    chatgpt: { color: "#10a37f", icon: "GPT" },
+    gemini: { color: "#4285f4", icon: "Gem" },
+    claude: { color: "#d97706", icon: "Cl" },
+    grok: { color: "#000000", icon: "Gk" },
+    perplexity: { color: "#20808d", icon: "Px" }
+  });
+
+  // src/shared/sites/selector-utils.ts
+  var AUTH_PATH_SEGMENTS = Object.freeze([
+    "/login",
+    "/logout",
+    "/sign-in",
+    "/signin",
+    "/auth"
+  ]);
+  var SETTINGS_PATH_SEGMENTS = Object.freeze([
+    "/settings",
+    "/preferences",
+    "/account",
+    "/billing"
+  ]);
+  function normalizePathname(pathname) {
+    return typeof pathname === "string" ? pathname.trim().toLowerCase() : "";
+  }
+  function hasPathSegment(pathname, segments) {
+    const normalizedPathname = normalizePathname(pathname);
+    return segments.some((segment) => normalizedPathname.includes(segment));
+  }
+  function hasKnownAuthPath(pathname) {
+    return hasPathSegment(pathname, AUTH_PATH_SEGMENTS);
+  }
   function splitSelectorList(selectorGroup) {
     const source = typeof selectorGroup === "string" ? selectorGroup.trim() : "";
     if (!source) {
@@ -223,12 +429,32 @@ var AIPromptBroadcasterSelectorCheckerBundle = (() => {
     return parts;
   }
   function normalizeSelectorEntries(selectors) {
-    return (Array.isArray(selectors) ? selectors : []).filter((selector) => typeof selector === "string" && selector.trim()).flatMap((selector) => splitSelectorList(selector)).filter((selector, index, list) => list.indexOf(selector) === index);
+    const rawSelectors = Array.isArray(selectors) ? selectors : [selectors];
+    return rawSelectors.filter((selector) => typeof selector === "string" && Boolean(selector.trim())).flatMap((selector) => splitSelectorList(selector)).filter((selector, index, entries) => entries.indexOf(selector) === index);
   }
+  function buildSubmitRequirement(options) {
+    if (options?.submitMethod !== "click") {
+      return "none";
+    }
+    if (typeof options?.submitSelector !== "string" || !options.submitSelector.trim()) {
+      return "none";
+    }
+    if (options?.selectorCheckMode === "input-and-conditional-submit") {
+      return "conditional";
+    }
+    if (options?.selectorCheckMode === "input-only") {
+      return "none";
+    }
+    return "required";
+  }
+  function shouldRequireVisibleSubmitSurface(submitRequirement) {
+    return submitRequirement === "required";
+  }
+
+  // src/content/selector-checker/checks.ts
   function isLikelyAuthPage(site) {
     try {
-      const pathname = window.location.pathname.toLowerCase();
-      if (pathname.includes("/login") || pathname.includes("/logout") || pathname.includes("/sign-in") || pathname.includes("/signin") || pathname.includes("/auth")) {
+      if (hasKnownAuthPath(window.location.pathname)) {
         return true;
       }
       const promptSelectors = normalizeSelectorEntries([
@@ -272,6 +498,7 @@ var AIPromptBroadcasterSelectorCheckerBundle = (() => {
         return;
       }
       await sleep(Math.max(site.waitMs ?? 0, 1200));
+      const submitRequirement = buildSubmitRequirement(site);
       const checks = [
         {
           field: "inputSelector",
@@ -282,7 +509,7 @@ var AIPromptBroadcasterSelectorCheckerBundle = (() => {
           options: { visibleOnly: true, editableOnly: true }
         }
       ];
-      if (site.submitMethod === "click" && site.submitSelector && site.selectorCheckMode !== "input-only") {
+      if (shouldRequireVisibleSubmitSurface(submitRequirement) && site.submitSelector) {
         checks.push({
           field: "submitSelector",
           selectors: normalizeSelectorEntries([site.submitSelector]),

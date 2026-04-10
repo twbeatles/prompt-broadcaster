@@ -168,8 +168,19 @@ export const t = {
   serviceFieldFallbackSelectors: msg("popup_service_field_fallback_selectors") || "Fallback Selectors",
   serviceFieldAuthSelectors: msg("popup_service_field_auth_selectors") || "Auth Selectors",
   serviceFieldHostnameAliases: msg("popup_service_field_hostname_aliases") || "Hostname Aliases",
-  serviceFieldLastVerified: msg("popup_service_field_last_verified") || "Last Verified",
+  serviceFieldVerifiedAt: msg("popup_service_field_verified_at") || "Verified Date",
+  serviceFieldVerifiedRoute: msg("popup_service_field_verified_route") || "Verified Route",
+  serviceFieldVerifiedAuthState: msg("popup_service_field_verified_auth_state") || "Verified Auth State",
+  serviceFieldVerifiedLocale: msg("popup_service_field_verified_locale") || "Verified Locale",
   serviceFieldVerifiedVersion: msg("popup_service_field_verified_version") || "Verified Version",
+  serviceVerifiedAuthStateUnknown:
+    msg("popup_service_verified_auth_state_unknown") || "Unknown",
+  serviceVerifiedAuthStateLoggedIn:
+    msg("popup_service_verified_auth_state_logged_in") || "logged-in",
+  serviceVerifiedAuthStateLoggedOut:
+    msg("popup_service_verified_auth_state_logged_out") || "logged-out",
+  serviceVerifiedAuthStateSoftGated:
+    msg("popup_service_verified_auth_state_soft_gated") || "soft-gated",
   serviceFieldWait: msg("popup_service_field_wait") || "Wait Time",
   serviceFieldColor: msg("popup_service_field_color") || "Color",
   serviceFieldIcon: msg("popup_service_field_icon") || "Icon",

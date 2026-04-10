@@ -15,6 +15,7 @@ npm install
 npm run build
 npm run typecheck
 npm run qa:smoke
+npm run selector:audit
 ```
 
 After any source change, run `npm run build` before testing in Chrome.
@@ -109,6 +110,7 @@ Favorite runs use the same popup-side context preparation for `{{url}}`, `{{titl
 - Service cards can target a specific tab, force a new tab, or follow the default reuse policy.
 - Default reuse behavior is stored in `appSettings.reuseExistingTabs` and can be changed from the popup or options page.
 - Matching hostname alone is not enough for reuse. Background also preflights the tab for non-auth/non-settings route, visible editable prompt surface, and required submit controls.
+- `SelectorCheckMode` now supports `input-and-conditional-submit` for services whose submit button appears only after text entry. Reusable-tab preflight skips the empty-state submit check for that mode, while actual injection still waits through `submitPrompt()`.
 - Cancelling a broadcast only closes tabs opened for that broadcast. Reused tabs are preserved.
 
 ### Custom service permissions
@@ -117,7 +119,8 @@ Favorite runs use the same popup-side context preparation for `{{url}}`, `{{titl
 - Deleting custom services, resetting service settings, or replacing imported custom services should remove unused optional host permissions.
 
 ### Import/export and counter semantics
-- JSON export now writes `version: 6` and import migrates older payloads through `v1 -> v2 -> v3 -> v4 -> v5 -> v6`.
+- JSON export now writes `version: 7` and import migrates older payloads through `v1 -> v2 -> v3 -> v4 -> v5 -> v6 -> v7`.
+- Runtime sites keep structured selector verification metadata: `verifiedAt`, `verifiedRoute`, `verifiedAuthState`, `verifiedLocale`, `verifiedVersion`. Legacy `lastVerified` remains for compatibility and is derived from `verifiedAt` when present.
 - `{{counter}}` preview uses `current + 1`, but the stored counter only increments when at least one target site is successfully queued.
 - `appSettings.historyLimit` is now a default visible history cap only. Lower values hide older rows in popup/options without deleting stored history, and export/import still operate on the full stored history.
 - History and last-broadcast records store structured `siteResults` (`SiteInjectionResult`) instead of plain status strings.
@@ -179,6 +182,7 @@ Smoke QA lives in `qa/` and uses Playwright against local fixtures.
 ```bash
 npx playwright install chromium
 npm run qa:smoke
+npm run selector:audit
 ```
 
 Smoke coverage includes:
@@ -188,12 +192,13 @@ Smoke coverage includes:
 - delayed submit-button activation for async click-submit editors
 - `click`, `enter`, and `shift+enter` submit methods
 - selector checker `ok` and `auth_page` reporting
-- selector checker `input-only` mode for conditional submit UIs
+- selector checker conditional-submit mode for empty composer UIs
+- textarea-first Grok selector preference and soft-gated auth coexistence fixtures
 - custom-site optional permission cleanup and alias-origin handling
 - built-in override import repair for invalid `click` + empty selector combinations
 - internal-only runtime router trust checks and timeout-safe runtime messaging fallback
 - `broadcastCounter` export/import/reset lifecycle
-- import migration to export `version: 6`
+- import migration to export `version: 7`
 - `siteOrder` normalization and ordering reuse
 - history replay snapshot fallback and resend routing safety
 - prompt draft/sent separation plus popup handoff consumption

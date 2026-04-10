@@ -599,11 +599,32 @@
   "popup_service_field_hostname_aliases": {
     "message": "호스트명 별칭"
   },
-  "popup_service_field_last_verified": {
-    "message": "최종 검증"
+  "popup_service_field_verified_at": {
+    "message": "검증 날짜"
+  },
+  "popup_service_field_verified_route": {
+    "message": "검증 경로"
+  },
+  "popup_service_field_verified_auth_state": {
+    "message": "검증 인증 상태"
+  },
+  "popup_service_field_verified_locale": {
+    "message": "검증 로케일"
   },
   "popup_service_field_verified_version": {
     "message": "검증 버전"
+  },
+  "popup_service_verified_auth_state_unknown": {
+    "message": "미지정"
+  },
+  "popup_service_verified_auth_state_logged_in": {
+    "message": "로그인됨"
+  },
+  "popup_service_verified_auth_state_logged_out": {
+    "message": "로그아웃됨"
+  },
+  "popup_service_verified_auth_state_soft_gated": {
+    "message": "소프트 게이트"
   },
   "popup_service_field_wait": {
     "message": "페이지 대기 시간"

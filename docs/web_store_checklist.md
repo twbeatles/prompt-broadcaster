@@ -93,9 +93,10 @@ npm install
 npm run typecheck
 npm run build
 npm run qa:smoke
+npm run selector:audit
 ```
 
-`qa:smoke`는 `dist/` 기준 주입/전송 경로를 로컬 fixture로 검증합니다. 여기에는 custom service optional permission 정리, import repair, `broadcastCounter` 수명주기, 즐겨찾기 검색 범위, favorite run job dedupe, clipboard/context 준비 경로도 포함됩니다. 다만 실제 Chrome 툴바 팝업 동작, 열린 탭 재사용, 실서비스 Claude 전송 성공 여부는 수동 검수가 필요합니다.
+`qa:smoke`는 `dist/` 기준 주입/전송 경로를 로컬 fixture로 검증합니다. 여기에는 custom service optional permission 정리, import repair, `broadcastCounter` 수명주기, 즐겨찾기 검색 범위, favorite run job dedupe, clipboard/context 준비 경로도 포함됩니다. `selector:audit`는 built-in 사이트의 현재 surface를 Markdown으로 남깁니다. 다만 실제 Chrome 툴바 팝업 동작, 열린 탭 재사용, 실서비스 Claude logged-in composer 전송 성공 여부는 수동 검수가 필요합니다.
 
 ### 로컬 테스트
 

@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { BUILT_IN_SITE_STYLE_MAP, VALID_INPUT_TYPES, VALID_SELECTOR_CHECK_MODES, VALID_SUBMIT_METHODS } from "./constants";
+import { buildVerificationMetadata } from "./verification";
 
 export function safeText(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -252,6 +253,7 @@ export function buildBaseSiteRecord(site, builtInMeta = {}) {
   const hostname = normalizeHostname(site.hostname || deriveHostname(url));
   const hostnameAliases = normalizeHostnameAliases(site.hostnameAliases, hostname);
   const normalizedSelectors = normalizePerplexitySelectors(site);
+  const verification = buildVerificationMetadata(site);
 
   return {
     id: safeText(site.id),
@@ -270,8 +272,12 @@ export function buildBaseSiteRecord(site, builtInMeta = {}) {
     authSelectors: Array.isArray(site.authSelectors)
       ? site.authSelectors.filter((entry) => typeof entry === "string" && entry.trim())
       : [],
-    lastVerified: safeText(site.lastVerified),
-    verifiedVersion: safeText(site.verifiedVersion),
+    lastVerified: verification.lastVerified,
+    verifiedAt: verification.verifiedAt,
+    verifiedRoute: verification.verifiedRoute,
+    verifiedAuthState: verification.verifiedAuthState,
+    verifiedLocale: verification.verifiedLocale,
+    verifiedVersion: verification.verifiedVersion,
     enabled: normalizeBoolean(site.enabled, true),
     color: normalizeColor(site.color, style.color ?? "#c24f2e"),
     icon: normalizeIcon(site.icon, style.icon ?? "AI"),
@@ -289,6 +295,7 @@ export function sanitizeBuiltInOverride(override = {}, originalSite = {}) {
     submitMethod === "click"
       ? safeText(override.submitSelector) || safeText(originalSite.submitSelector)
       : safeText(override.submitSelector);
+  const verification = buildVerificationMetadata(override, originalSite);
 
   return {
     name: safeText(override.name) || originalSite.name,
@@ -311,9 +318,12 @@ export function sanitizeBuiltInOverride(override = {}, originalSite = {}) {
       : Array.isArray(originalSite.authSelectors)
         ? [...originalSite.authSelectors]
         : [],
-    lastVerified: safeText(override.lastVerified) || safeText(originalSite.lastVerified),
-    verifiedVersion:
-      safeText(override.verifiedVersion) || safeText(originalSite.verifiedVersion),
+    lastVerified: verification.lastVerified,
+    verifiedAt: verification.verifiedAt,
+    verifiedRoute: verification.verifiedRoute,
+    verifiedAuthState: verification.verifiedAuthState,
+    verifiedLocale: verification.verifiedLocale,
+    verifiedVersion: verification.verifiedVersion,
     color: normalizeColor(
       override.color,
       BUILT_IN_SITE_STYLE_MAP[originalSite.id]?.color ?? "#c24f2e"
@@ -328,6 +338,31 @@ export function sanitizeBuiltInOverride(override = {}, originalSite = {}) {
 export function normalizeCustomSite(site) {
   const url = safeText(site?.url);
   const hostname = normalizeHostname(site?.hostname || deriveHostname(url));
+  const verificationFields = {};
+
+  if (Object.prototype.hasOwnProperty.call(site ?? {}, "lastVerified")) {
+    verificationFields.lastVerified = safeText(site?.lastVerified);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(site ?? {}, "verifiedAt")) {
+    verificationFields.verifiedAt = safeText(site?.verifiedAt);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(site ?? {}, "verifiedRoute")) {
+    verificationFields.verifiedRoute = safeText(site?.verifiedRoute);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(site ?? {}, "verifiedAuthState")) {
+    verificationFields.verifiedAuthState = safeText(site?.verifiedAuthState);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(site ?? {}, "verifiedLocale")) {
+    verificationFields.verifiedLocale = safeText(site?.verifiedLocale);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(site ?? {}, "verifiedVersion")) {
+    verificationFields.verifiedVersion = safeText(site?.verifiedVersion);
+  }
 
   return buildBaseSiteRecord(
     {
@@ -348,8 +383,7 @@ export function normalizeCustomSite(site) {
       fallbackSelectors: normalizeStringList(site?.fallbackSelectors),
       fallback: normalizeBoolean(site?.fallback, true),
       authSelectors: normalizeStringList(site?.authSelectors),
-      lastVerified: safeText(site?.lastVerified),
-      verifiedVersion: safeText(site?.verifiedVersion),
+      ...verificationFields,
       enabled: normalizeBoolean(site?.enabled, true),
       color: normalizeColor(site?.color, "#c24f2e"),
       icon: normalizeIcon(site?.icon, "AI"),

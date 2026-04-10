@@ -1,7 +1,7 @@
 # AI Prompt Broadcaster - 프로젝트 구조 분석
 
-> 기준일: 2026-04-09
-> 최종 업데이트: 2026-04-09 (runtime messaging hardening, siteOrder, dashboard 확장, schedules 결과 요약 반영)
+> 기준일: 2026-04-10
+> 최종 업데이트: 2026-04-10 (selector maintenance wave 1, structured verification metadata, selector audit CLI 반영)
 > 분석 범위: 전체 소스코드, 빌드 시스템, 데이터 흐름, UI 구조
 
 ---
@@ -18,6 +18,7 @@ Chrome Manifest V3 기반 확장 프로그램이다. 프롬프트 하나를 Chat
 - runtime messaging / sender trust boundary 하드닝
 - options dashboard / schedules / services 운영성 강화
 - background/popup/options의 기능 기준 모듈 분리 리팩터링
+- selector maintenance / preflight semantics 공통화
 
 ---
 
@@ -95,6 +96,7 @@ prompt-broadcaster/
 ├── scripts/
 │   ├── build.mjs
 │   ├── qa-smoke.mjs
+│   ├── selector-audit.mjs
 │   └── qa-smoke/
 ├── manifest.json
 ├── dist/
@@ -318,6 +320,22 @@ interface SiteInjectionResult {
 }
 ```
 
+### 5.5 SiteConfig / RuntimeSite verification metadata
+
+```ts
+interface SiteConfig {
+  selectorCheckMode?: "input-and-submit" | "input-and-conditional-submit" | "input-only";
+  lastVerified?: string; // legacy YYYY-MM compatibility field
+  verifiedAt?: string; // YYYY-MM-DD
+  verifiedRoute?: string;
+  verifiedAuthState?: "logged-in" | "logged-out" | "soft-gated";
+  verifiedLocale?: string;
+  verifiedVersion?: string;
+}
+```
+
+`lastVerified`는 새 저장 기준이 아니라 호환용 파생 필드다. `verifiedAt`가 있으면 저장 시 `YYYY-MM`으로 자동 derive된다.
+
 ---
 
 ## 6. 저장소와 마이그레이션
@@ -349,8 +367,8 @@ interface SiteInjectionResult {
 
 JSON export/import:
 
-- 현재 export version: `6`
-- 지원 migration: `v1 -> v2 -> v3 -> v4 -> v5 -> v6`
+- 현재 export version: `7`
+- 지원 migration: `v1 -> v2 -> v3 -> v4 -> v5 -> v6 -> v7`
 - `v6`에서 backfill 되는 대표 항목:
   - favorite `mode`
   - `steps`
@@ -359,6 +377,13 @@ JSON export/import:
   - `scheduleRepeat`
   - history chain metadata
   - history `targetSnapshots`
+- `v7`에서 유지되는 대표 항목:
+  - `verifiedAt`
+  - `verifiedRoute`
+  - `verifiedAuthState`
+  - `verifiedLocale`
+  - `verifiedVersion`
+  - legacy `lastVerified` derive/fallback
 
 ---
 
@@ -443,7 +468,9 @@ siteResults / history / lastBroadcast 업데이트
 
 - `textarea`, `input`, `contenteditable` 지원
 - `click`, `enter`, `shift+enter` 제출 지원
+- selector preflight는 `required` / `conditional` / `none` submit requirement로 평가
 - Claude/Gemini는 언어 비의존 textbox/contenteditable 계열 fallback 우선 강화
+- Grok은 textarea-first selector와 contenteditable fallback을 함께 유지
 - Perplexity는 Lexical editor 특수 경로 유지
 - submit 실패 시 1회 재시도
 - adaptive strategy stats 저장
@@ -511,11 +538,12 @@ npm run qa:smoke
 - delayed submit enablement
 - `click` / `enter` / `shift+enter`
 - selector checker `ok` / `auth_page`
+- conditional-submit / Grok textarea-first / soft-gated auth coexistence fixture
 - router trusted sender / runtime messaging timeout fallback
 - custom service permission cleanup
 - invalid built-in override import repair
 - `broadcastCounter` export/import/reset
-- export `version: 6` migration
+- export `version: 7` migration
 - `siteOrder` normalization / ordering reuse
 - favorite chain/schedule field backfill
 - favorite run job dedupe / chain target fallback / counter serialization
@@ -555,9 +583,11 @@ npm run qa:smoke
 
 - [x] 구조화된 `siteResults`
 - [x] adaptive strategy stats
+- [x] structured verification metadata
+- [x] selector audit CLI
 - [x] timeout-safe runtime messaging helper
 - [x] router sender trust boundary
-- [x] import/export `v6`
+- [x] import/export `v7`
 - [x] 상세 import 리포트
 - [x] background mutation chain
 - [x] `siteOrder` 기반 서비스 순서 커스터마이징
