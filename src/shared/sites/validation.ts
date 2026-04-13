@@ -21,6 +21,7 @@ export interface SiteDraftValidationResult {
     | "submitSelector"
     | "selectorCheckMode"
     | "hostnameAliases"
+    | "supportedRoutes"
     | "verifiedAt"
     | "verifiedAuthState",
     string[]
@@ -96,6 +97,24 @@ export function validateSiteDraft(
 
   const aliasValidation = validateHostnameAliases(draft?.hostnameAliases);
   aliasValidation.errors.forEach((message) => pushFieldError(fieldErrors, "hostnameAliases", message));
+
+  const rawSupportedRoutes = Array.isArray(draft?.supportedRoutes)
+    ? draft.supportedRoutes
+    : typeof draft?.supportedRoutes === "string"
+      ? draft.supportedRoutes.split(/\r?\n/g)
+      : [];
+  const invalidSupportedRoutes = rawSupportedRoutes
+    .map((entry) => safeText(entry).trim())
+    .filter(Boolean)
+    .filter((route) => !route.startsWith("/") || route.includes("?") || route.includes("#"));
+
+  if (invalidSupportedRoutes.length > 0) {
+    pushFieldError(
+      fieldErrors,
+      "supportedRoutes",
+      "Supported routes must use path prefixes that start with / and must not include query strings or hashes."
+    );
+  }
 
   Object.values(fieldErrors).forEach((messages) => {
     (messages ?? []).forEach((message) => {

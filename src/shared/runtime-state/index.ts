@@ -13,6 +13,10 @@ export {
   setLastBroadcast,
 } from "./last-broadcast";
 export {
+  getPendingSelectorChecks,
+  setPendingSelectorChecks,
+} from "./pending-selector-checks";
+export {
   consumePopupFavoriteIntent,
   getPopupFavoriteIntent,
   setPopupFavoriteIntent,

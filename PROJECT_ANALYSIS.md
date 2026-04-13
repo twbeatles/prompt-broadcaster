@@ -1,7 +1,7 @@
 # AI Prompt Broadcaster - 프로젝트 구조 분석
 
-> 기준일: 2026-04-10
-> 최종 업데이트: 2026-04-10 (selector maintenance wave 1, structured verification metadata, selector audit CLI 반영)
+> 기준일: 2026-04-13
+> 최종 업데이트: 2026-04-13 (selector noise hardening, route-aware site model, export v8 반영)
 > 분석 범위: 전체 소스코드, 빌드 시스템, 데이터 흐름, UI 구조
 
 ---
@@ -19,6 +19,7 @@ Chrome Manifest V3 기반 확장 프로그램이다. 프롬프트 하나를 Chat
 - options dashboard / schedules / services 운영성 강화
 - background/popup/options의 기능 기준 모듈 분리 리팩터링
 - selector maintenance / preflight semantics 공통화
+- route-aware site model과 pending selector escalation
 
 ---
 
@@ -31,7 +32,9 @@ prompt-broadcaster/
 │   │   ├── app/
 │   │   │   ├── bootstrap.ts
 │   │   │   ├── constants.ts
-│   │   │   └── injection-helpers.ts
+│   │   │   ├── injection-helpers.ts
+│   │   │   ├── selector-alerts.ts
+│   │   │   └── selector-pending.ts
 │   │   ├── commands/
 │   │   │   └── quick-palette.ts
 │   │   ├── context-menu/
@@ -165,6 +168,10 @@ prompt-broadcaster/
   - wait multiplier
   - selector/result normalization
   - adaptive strategy order 계산
+- `src/background/app/selector-alerts.ts`
+  - selector warning dedupe signature 계산
+- `src/background/app/selector-pending.ts`
+  - proactive selector miss의 session pending -> confirmed promotion 규칙 관리
 - `src/shared/chrome/messaging.ts`
   - popup/options/content의 timeout-safe runtime message helper
 
@@ -325,6 +332,7 @@ interface SiteInjectionResult {
 ```ts
 interface SiteConfig {
   selectorCheckMode?: "input-and-submit" | "input-and-conditional-submit" | "input-only";
+  supportedRoutes?: string[]; // normalized pathname prefix allowlist
   lastVerified?: string; // legacy YYYY-MM compatibility field
   verifiedAt?: string; // YYYY-MM-DD
   verifiedRoute?: string;
@@ -334,6 +342,7 @@ interface SiteConfig {
 }
 ```
 
+`supportedRoutes`는 selector checker와 reusable-tab preflight가 공통으로 사용하는 route gate다. 빈 배열은 wildcard 허용을 뜻한다.
 `lastVerified`는 새 저장 기준이 아니라 호환용 파생 필드다. `verifiedAt`가 있으면 저장 시 `YYYY-MM`으로 자동 derive된다.
 
 ---
@@ -358,6 +367,7 @@ interface SiteConfig {
 
 - `pendingInjections`
 - `pendingBroadcasts`
+- `pendingSelectorChecks`
 - `selectorAlerts`
 - `lastBroadcast`
 - `pendingUiToasts`
@@ -367,8 +377,8 @@ interface SiteConfig {
 
 JSON export/import:
 
-- 현재 export version: `7`
-- 지원 migration: `v1 -> v2 -> v3 -> v4 -> v5 -> v6 -> v7`
+- 현재 export version: `8`
+- 지원 migration: `v1 -> v2 -> v3 -> v4 -> v5 -> v6 -> v7 -> v8`
 - `v6`에서 backfill 되는 대표 항목:
   - favorite `mode`
   - `steps`
@@ -384,6 +394,9 @@ JSON export/import:
   - `verifiedLocale`
   - `verifiedVersion`
   - legacy `lastVerified` derive/fallback
+- `v8`에서 유지되는 대표 항목:
+  - `supportedRoutes`
+  - built-in/custom route normalization
 
 ---
 
@@ -469,6 +482,7 @@ siteResults / history / lastBroadcast 업데이트
 - `textarea`, `input`, `contenteditable` 지원
 - `click`, `enter`, `shift+enter` 제출 지원
 - selector preflight는 `required` / `conditional` / `none` submit requirement로 평가
+- selector checker와 reusable-tab preflight는 동일한 route gate(`auth_path` / `settings_path` / `unsupported_route`)를 사용
 - Claude/Gemini는 언어 비의존 textbox/contenteditable 계열 fallback 우선 강화
 - Grok은 textarea-first selector와 contenteditable fallback을 함께 유지
 - Perplexity는 Lexical editor 특수 경로 유지
@@ -543,7 +557,8 @@ npm run qa:smoke
 - custom service permission cleanup
 - invalid built-in override import repair
 - `broadcastCounter` export/import/reset
-- export `version: 7` migration
+- export `version: 8` migration
+- supported-route normalization / pending selector escalation
 - `siteOrder` normalization / ordering reuse
 - favorite chain/schedule field backfill
 - favorite run job dedupe / chain target fallback / counter serialization
@@ -584,10 +599,12 @@ npm run qa:smoke
 - [x] 구조화된 `siteResults`
 - [x] adaptive strategy stats
 - [x] structured verification metadata
+- [x] `supportedRoutes` 기반 route-aware site model
+- [x] pending selector escalation (`pendingSelectorChecks`)
 - [x] selector audit CLI
 - [x] timeout-safe runtime messaging helper
 - [x] router sender trust boundary
-- [x] import/export `v7`
+- [x] import/export `v8`
 - [x] 상세 import 리포트
 - [x] background mutation chain
 - [x] `siteOrder` 기반 서비스 순서 커스터마이징

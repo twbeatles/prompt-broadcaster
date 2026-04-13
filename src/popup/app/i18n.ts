@@ -168,6 +168,7 @@ export const t = {
   serviceFieldFallbackSelectors: msg("popup_service_field_fallback_selectors") || "Fallback Selectors",
   serviceFieldAuthSelectors: msg("popup_service_field_auth_selectors") || "Auth Selectors",
   serviceFieldHostnameAliases: msg("popup_service_field_hostname_aliases") || "Hostname Aliases",
+  serviceFieldSupportedRoutes: msg("popup_service_field_supported_routes") || "Supported Routes",
   serviceFieldVerifiedAt: msg("popup_service_field_verified_at") || "Verified Date",
   serviceFieldVerifiedRoute: msg("popup_service_field_verified_route") || "Verified Route",
   serviceFieldVerifiedAuthState: msg("popup_service_field_verified_auth_state") || "Verified Auth State",

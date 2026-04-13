@@ -166,6 +166,7 @@ var AIPromptBroadcasterSelectorCheckerBundle = (() => {
       name: "ChatGPT",
       url: "https://chatgpt.com/",
       hostname: "chatgpt.com",
+      supportedRoutes: [],
       inputSelector: "#prompt-textarea, div#prompt-textarea[contenteditable='true'], textarea[aria-label*='chatgpt' i], textarea[aria-label*='채팅' i]",
       fallbackSelectors: [
         "#prompt-textarea",
@@ -199,6 +200,7 @@ var AIPromptBroadcasterSelectorCheckerBundle = (() => {
       name: "Gemini",
       url: "https://gemini.google.com/app",
       hostname: "gemini.google.com",
+      supportedRoutes: ["/app"],
       inputSelector: "div[contenteditable='true'][role='textbox'], div.ql-editor.textarea.new-input-ui[contenteditable='true'], div.ql-editor[contenteditable='true'][role='textbox']",
       fallbackSelectors: [
         "div[contenteditable='true'][role='textbox']",
@@ -228,6 +230,7 @@ var AIPromptBroadcasterSelectorCheckerBundle = (() => {
       name: "Claude",
       url: "https://claude.ai/new",
       hostname: "claude.ai",
+      supportedRoutes: ["/new"],
       inputSelector: "div[contenteditable='true'][role='textbox'], div[contenteditable='true'][aria-label*='Claude' i], div[contenteditable='true'][aria-label*='prompt' i]",
       fallbackSelectors: [
         "div[contenteditable='true'][role='textbox']",
@@ -260,6 +263,7 @@ var AIPromptBroadcasterSelectorCheckerBundle = (() => {
       name: "Grok",
       url: "https://grok.com/",
       hostname: "grok.com",
+      supportedRoutes: [],
       inputSelector: "textarea[aria-label*='grok' i], textarea[placeholder*='help' i], textarea",
       fallbackSelectors: [
         "textarea[aria-label*='grok' i]",
@@ -294,6 +298,7 @@ var AIPromptBroadcasterSelectorCheckerBundle = (() => {
       url: "https://www.perplexity.ai/",
       hostname: "www.perplexity.ai",
       hostnameAliases: ["perplexity.ai"],
+      supportedRoutes: [],
       inputSelector: "#ask-input[data-lexical-editor='true'][role='textbox']",
       fallbackSelectors: [
         "div#ask-input[data-lexical-editor='true'][role='textbox']",
@@ -365,6 +370,66 @@ var AIPromptBroadcasterSelectorCheckerBundle = (() => {
   }
   function hasKnownAuthPath(pathname) {
     return hasPathSegment(pathname, AUTH_PATH_SEGMENTS);
+  }
+  function hasKnownSettingsPath(pathname) {
+    return hasPathSegment(pathname, SETTINGS_PATH_SEGMENTS);
+  }
+  function normalizeRoutePrefix(value) {
+    const normalized = normalizePathname(value);
+    if (!normalized) {
+      return "";
+    }
+    const basePath = normalized.split("#")[0]?.split("?")[0] ?? "";
+    if (!basePath.startsWith("/")) {
+      return "";
+    }
+    const trimmed = basePath.replace(/\/+$/g, "");
+    return trimmed || "/";
+  }
+  function normalizeSupportedRoutes(value) {
+    const rawEntries = Array.isArray(value) ? value : typeof value === "string" ? value.split(/\r?\n/g) : [];
+    return Array.from(
+      new Set(
+        rawEntries.map((entry) => normalizeRoutePrefix(entry)).filter(Boolean)
+      )
+    );
+  }
+  function getConfiguredSupportedRoutes(site) {
+    const explicitRoutes = normalizeSupportedRoutes(site?.supportedRoutes);
+    if (explicitRoutes.length > 0) {
+      return explicitRoutes;
+    }
+    const fallbackRoute = normalizeRoutePrefix(site?.verifiedRoute);
+    return fallbackRoute && fallbackRoute !== "/" ? [fallbackRoute] : [];
+  }
+  function routePrefixMatches(pathname, prefix) {
+    if (prefix === "/") {
+      return true;
+    }
+    return pathname === prefix || pathname.startsWith(`${prefix}/`);
+  }
+  function isPathnameSupported(pathname, supportedRoutes) {
+    const routes = normalizeSupportedRoutes(supportedRoutes);
+    if (routes.length === 0) {
+      return true;
+    }
+    const normalizedPathname = normalizeRoutePrefix(pathname) || "/";
+    return routes.some((prefix) => routePrefixMatches(normalizedPathname, prefix));
+  }
+  function isSitePathSupported(site, pathname) {
+    return isPathnameSupported(pathname, getConfiguredSupportedRoutes(site));
+  }
+  function getSitePathBlockReason(site, pathname) {
+    if (hasKnownAuthPath(pathname)) {
+      return "auth_path";
+    }
+    if (hasKnownSettingsPath(pathname)) {
+      return "settings_path";
+    }
+    if (!isSitePathSupported(site, pathname)) {
+      return "unsupported_route";
+    }
+    return "";
   }
   function splitSelectorList(selectorGroup) {
     const source = typeof selectorGroup === "string" ? selectorGroup.trim() : "";
@@ -454,7 +519,7 @@ var AIPromptBroadcasterSelectorCheckerBundle = (() => {
   // src/content/selector-checker/checks.ts
   function isLikelyAuthPage(site) {
     try {
-      if (hasKnownAuthPath(window.location.pathname)) {
+      if (getSitePathBlockReason(site, window.location.pathname) === "auth_path") {
         return true;
       }
       const promptSelectors = normalizeSelectorEntries([
@@ -486,6 +551,17 @@ var AIPromptBroadcasterSelectorCheckerBundle = (() => {
       });
       const site = initResponse?.site;
       if (!site) {
+        return;
+      }
+      const pathBlockReason = getSitePathBlockReason(site, window.location.pathname);
+      if (pathBlockReason === "settings_path" || pathBlockReason === "unsupported_route") {
+        await sendSelectorCheckReport({
+          status: "skipped",
+          reason: pathBlockReason,
+          siteId: site.id,
+          siteName: site.name,
+          pageUrl: window.location.href
+        });
         return;
       }
       if (isLikelyAuthPage(site)) {

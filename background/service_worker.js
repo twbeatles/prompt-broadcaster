@@ -761,6 +761,7 @@ var AI_SITES = Object.freeze([
     name: "ChatGPT",
     url: "https://chatgpt.com/",
     hostname: "chatgpt.com",
+    supportedRoutes: [],
     inputSelector: "#prompt-textarea, div#prompt-textarea[contenteditable='true'], textarea[aria-label*='chatgpt' i], textarea[aria-label*='채팅' i]",
     fallbackSelectors: [
       "#prompt-textarea",
@@ -794,6 +795,7 @@ var AI_SITES = Object.freeze([
     name: "Gemini",
     url: "https://gemini.google.com/app",
     hostname: "gemini.google.com",
+    supportedRoutes: ["/app"],
     inputSelector: "div[contenteditable='true'][role='textbox'], div.ql-editor.textarea.new-input-ui[contenteditable='true'], div.ql-editor[contenteditable='true'][role='textbox']",
     fallbackSelectors: [
       "div[contenteditable='true'][role='textbox']",
@@ -823,6 +825,7 @@ var AI_SITES = Object.freeze([
     name: "Claude",
     url: "https://claude.ai/new",
     hostname: "claude.ai",
+    supportedRoutes: ["/new"],
     inputSelector: "div[contenteditable='true'][role='textbox'], div[contenteditable='true'][aria-label*='Claude' i], div[contenteditable='true'][aria-label*='prompt' i]",
     fallbackSelectors: [
       "div[contenteditable='true'][role='textbox']",
@@ -855,6 +858,7 @@ var AI_SITES = Object.freeze([
     name: "Grok",
     url: "https://grok.com/",
     hostname: "grok.com",
+    supportedRoutes: [],
     inputSelector: "textarea[aria-label*='grok' i], textarea[placeholder*='help' i], textarea",
     fallbackSelectors: [
       "textarea[aria-label*='grok' i]",
@@ -889,6 +893,7 @@ var AI_SITES = Object.freeze([
     url: "https://www.perplexity.ai/",
     hostname: "www.perplexity.ai",
     hostnameAliases: ["perplexity.ai"],
+    supportedRoutes: [],
     inputSelector: "#ask-input[data-lexical-editor='true'][role='textbox']",
     fallbackSelectors: [
       "div#ask-input[data-lexical-editor='true'][role='textbox']",
@@ -995,6 +1000,175 @@ function buildVerificationMetadata(primaryValue, fallbackValue = {}) {
     verifiedLocale: resolveTextField(primary, fallback, "verifiedLocale"),
     verifiedVersion: resolveTextField(primary, fallback, "verifiedVersion")
   };
+}
+
+// src/shared/sites/selector-utils.ts
+var AUTH_PATH_SEGMENTS = Object.freeze([
+  "/login",
+  "/logout",
+  "/sign-in",
+  "/signin",
+  "/auth"
+]);
+var SETTINGS_PATH_SEGMENTS = Object.freeze([
+  "/settings",
+  "/preferences",
+  "/account",
+  "/billing"
+]);
+function normalizePathname(pathname) {
+  return typeof pathname === "string" ? pathname.trim().toLowerCase() : "";
+}
+function hasPathSegment(pathname, segments) {
+  const normalizedPathname = normalizePathname(pathname);
+  return segments.some((segment) => normalizedPathname.includes(segment));
+}
+function hasKnownAuthPath(pathname) {
+  return hasPathSegment(pathname, AUTH_PATH_SEGMENTS);
+}
+function hasKnownSettingsPath(pathname) {
+  return hasPathSegment(pathname, SETTINGS_PATH_SEGMENTS);
+}
+function normalizeRoutePrefix(value) {
+  const normalized = normalizePathname(value);
+  if (!normalized) {
+    return "";
+  }
+  const basePath = normalized.split("#")[0]?.split("?")[0] ?? "";
+  if (!basePath.startsWith("/")) {
+    return "";
+  }
+  const trimmed = basePath.replace(/\/+$/g, "");
+  return trimmed || "/";
+}
+function normalizeSupportedRoutes(value) {
+  const rawEntries = Array.isArray(value) ? value : typeof value === "string" ? value.split(/\r?\n/g) : [];
+  return Array.from(
+    new Set(
+      rawEntries.map((entry) => normalizeRoutePrefix(entry)).filter(Boolean)
+    )
+  );
+}
+function getConfiguredSupportedRoutes(site) {
+  const explicitRoutes = normalizeSupportedRoutes(site?.supportedRoutes);
+  if (explicitRoutes.length > 0) {
+    return explicitRoutes;
+  }
+  const fallbackRoute = normalizeRoutePrefix(site?.verifiedRoute);
+  return fallbackRoute && fallbackRoute !== "/" ? [fallbackRoute] : [];
+}
+function routePrefixMatches(pathname, prefix) {
+  if (prefix === "/") {
+    return true;
+  }
+  return pathname === prefix || pathname.startsWith(`${prefix}/`);
+}
+function isPathnameSupported(pathname, supportedRoutes) {
+  const routes = normalizeSupportedRoutes(supportedRoutes);
+  if (routes.length === 0) {
+    return true;
+  }
+  const normalizedPathname = normalizeRoutePrefix(pathname) || "/";
+  return routes.some((prefix) => routePrefixMatches(normalizedPathname, prefix));
+}
+function isSitePathSupported(site, pathname) {
+  return isPathnameSupported(pathname, getConfiguredSupportedRoutes(site));
+}
+function getSitePathBlockReason(site, pathname) {
+  if (hasKnownAuthPath(pathname)) {
+    return "auth_path";
+  }
+  if (hasKnownSettingsPath(pathname)) {
+    return "settings_path";
+  }
+  if (!isSitePathSupported(site, pathname)) {
+    return "unsupported_route";
+  }
+  return "";
+}
+function splitSelectorList(selectorGroup) {
+  const source = typeof selectorGroup === "string" ? selectorGroup.trim() : "";
+  if (!source) {
+    return [];
+  }
+  const parts = [];
+  let current = "";
+  let bracketDepth = 0;
+  let parenDepth = 0;
+  let quote = null;
+  let escaping = false;
+  for (const character of source) {
+    current += character;
+    if (escaping) {
+      escaping = false;
+      continue;
+    }
+    if (character === "\\") {
+      escaping = true;
+      continue;
+    }
+    if (quote) {
+      if (character === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      quote = character;
+      continue;
+    }
+    if (character === "[") {
+      bracketDepth += 1;
+      continue;
+    }
+    if (character === "]") {
+      bracketDepth = Math.max(0, bracketDepth - 1);
+      continue;
+    }
+    if (character === "(") {
+      parenDepth += 1;
+      continue;
+    }
+    if (character === ")") {
+      parenDepth = Math.max(0, parenDepth - 1);
+      continue;
+    }
+    if (character === "," && bracketDepth === 0 && parenDepth === 0) {
+      current = current.slice(0, -1);
+      const normalized = current.trim();
+      if (normalized) {
+        parts.push(normalized);
+      }
+      current = "";
+    }
+  }
+  const trailing = current.trim();
+  if (trailing) {
+    parts.push(trailing);
+  }
+  return parts;
+}
+function normalizeSelectorEntries(selectors) {
+  const rawSelectors = Array.isArray(selectors) ? selectors : [selectors];
+  return rawSelectors.filter((selector) => typeof selector === "string" && Boolean(selector.trim())).flatMap((selector) => splitSelectorList(selector)).filter((selector, index, entries) => entries.indexOf(selector) === index);
+}
+function buildSubmitRequirement(options) {
+  if (options?.submitMethod !== "click") {
+    return "none";
+  }
+  if (typeof options?.submitSelector !== "string" || !options.submitSelector.trim()) {
+    return "none";
+  }
+  if (options?.selectorCheckMode === "input-and-conditional-submit") {
+    return "conditional";
+  }
+  if (options?.selectorCheckMode === "input-only") {
+    return "none";
+  }
+  return "required";
+}
+function shouldRequireVisibleSubmitSurface(submitRequirement) {
+  return submitRequirement === "required";
 }
 
 // src/shared/sites/normalizers.ts
@@ -1160,12 +1334,14 @@ function buildBaseSiteRecord(site, builtInMeta = {}) {
   const hostnameAliases = normalizeHostnameAliases(site.hostnameAliases, hostname);
   const normalizedSelectors = normalizePerplexitySelectors(site);
   const verification = buildVerificationMetadata(site);
+  const supportedRoutes = getConfiguredSupportedRoutes(site);
   return {
     id: safeText2(site.id),
     name: safeText2(site.name) || "AI Service",
     url,
     hostname,
     hostnameAliases,
+    supportedRoutes,
     inputSelector: normalizedSelectors.inputSelector,
     inputType: normalizeInputType(site.inputType, "textarea"),
     submitSelector: safeText2(site.submitSelector),
@@ -1195,8 +1371,10 @@ function sanitizeBuiltInOverride(override = {}, originalSite = {}) {
   const submitMethod = normalizeSubmitMethod(override.submitMethod, originalSite.submitMethod);
   const submitSelector = submitMethod === "click" ? safeText2(override.submitSelector) || safeText2(originalSite.submitSelector) : safeText2(override.submitSelector);
   const verification = buildVerificationMetadata(override, originalSite);
+  const supportedRoutes = Object.prototype.hasOwnProperty.call(override ?? {}, "supportedRoutes") ? normalizeSupportedRoutes(override.supportedRoutes) : getConfiguredSupportedRoutes(originalSite);
   return {
     name: safeText2(override.name) || originalSite.name,
+    supportedRoutes,
     inputSelector: safeText2(override.inputSelector) || originalSite.inputSelector,
     inputType: normalizeInputType(override.inputType, originalSite.inputType),
     submitSelector,
@@ -1253,6 +1431,7 @@ function normalizeCustomSite(site) {
       url,
       hostname,
       hostnameAliases: normalizeHostnameAliases(site?.hostnameAliases, hostname),
+      supportedRoutes: Object.prototype.hasOwnProperty.call(site ?? {}, "supportedRoutes") ? site?.supportedRoutes : void 0,
       inputSelector: safeText2(site?.inputSelector),
       inputType: normalizeInputType(site?.inputType, "textarea"),
       submitSelector: safeText2(site?.submitSelector),
@@ -1272,118 +1451,6 @@ function normalizeCustomSite(site) {
     },
     { isCustom: true }
   );
-}
-
-// src/shared/sites/selector-utils.ts
-var AUTH_PATH_SEGMENTS = Object.freeze([
-  "/login",
-  "/logout",
-  "/sign-in",
-  "/signin",
-  "/auth"
-]);
-var SETTINGS_PATH_SEGMENTS = Object.freeze([
-  "/settings",
-  "/preferences",
-  "/account",
-  "/billing"
-]);
-function normalizePathname(pathname) {
-  return typeof pathname === "string" ? pathname.trim().toLowerCase() : "";
-}
-function hasPathSegment(pathname, segments) {
-  const normalizedPathname = normalizePathname(pathname);
-  return segments.some((segment) => normalizedPathname.includes(segment));
-}
-function hasKnownAuthPath(pathname) {
-  return hasPathSegment(pathname, AUTH_PATH_SEGMENTS);
-}
-function hasKnownSettingsPath(pathname) {
-  return hasPathSegment(pathname, SETTINGS_PATH_SEGMENTS);
-}
-function splitSelectorList(selectorGroup) {
-  const source = typeof selectorGroup === "string" ? selectorGroup.trim() : "";
-  if (!source) {
-    return [];
-  }
-  const parts = [];
-  let current = "";
-  let bracketDepth = 0;
-  let parenDepth = 0;
-  let quote = null;
-  let escaping = false;
-  for (const character of source) {
-    current += character;
-    if (escaping) {
-      escaping = false;
-      continue;
-    }
-    if (character === "\\") {
-      escaping = true;
-      continue;
-    }
-    if (quote) {
-      if (character === quote) {
-        quote = null;
-      }
-      continue;
-    }
-    if (character === "'" || character === '"') {
-      quote = character;
-      continue;
-    }
-    if (character === "[") {
-      bracketDepth += 1;
-      continue;
-    }
-    if (character === "]") {
-      bracketDepth = Math.max(0, bracketDepth - 1);
-      continue;
-    }
-    if (character === "(") {
-      parenDepth += 1;
-      continue;
-    }
-    if (character === ")") {
-      parenDepth = Math.max(0, parenDepth - 1);
-      continue;
-    }
-    if (character === "," && bracketDepth === 0 && parenDepth === 0) {
-      current = current.slice(0, -1);
-      const normalized = current.trim();
-      if (normalized) {
-        parts.push(normalized);
-      }
-      current = "";
-    }
-  }
-  const trailing = current.trim();
-  if (trailing) {
-    parts.push(trailing);
-  }
-  return parts;
-}
-function normalizeSelectorEntries(selectors) {
-  const rawSelectors = Array.isArray(selectors) ? selectors : [selectors];
-  return rawSelectors.filter((selector) => typeof selector === "string" && Boolean(selector.trim())).flatMap((selector) => splitSelectorList(selector)).filter((selector, index, entries) => entries.indexOf(selector) === index);
-}
-function buildSubmitRequirement(options) {
-  if (options?.submitMethod !== "click") {
-    return "none";
-  }
-  if (typeof options?.submitSelector !== "string" || !options.submitSelector.trim()) {
-    return "none";
-  }
-  if (options?.selectorCheckMode === "input-and-conditional-submit") {
-    return "conditional";
-  }
-  if (options?.selectorCheckMode === "input-only") {
-    return "none";
-  }
-  return "required";
-}
-function shouldRequireVisibleSubmitSurface(submitRequirement) {
-  return submitRequirement === "required";
 }
 
 // src/shared/sites/hostname-aliases.ts
@@ -1510,6 +1577,15 @@ function validateSiteDraft(draft, { isBuiltIn = false } = {}) {
   }
   const aliasValidation = validateHostnameAliases(draft?.hostnameAliases);
   aliasValidation.errors.forEach((message) => pushFieldError(fieldErrors, "hostnameAliases", message));
+  const rawSupportedRoutes = Array.isArray(draft?.supportedRoutes) ? draft.supportedRoutes : typeof draft?.supportedRoutes === "string" ? draft.supportedRoutes.split(/\r?\n/g) : [];
+  const invalidSupportedRoutes = rawSupportedRoutes.map((entry) => safeText2(entry).trim()).filter(Boolean).filter((route) => !route.startsWith("/") || route.includes("?") || route.includes("#"));
+  if (invalidSupportedRoutes.length > 0) {
+    pushFieldError(
+      fieldErrors,
+      "supportedRoutes",
+      "Supported routes must use path prefixes that start with / and must not include query strings or hashes."
+    );
+  }
   Object.values(fieldErrors).forEach((messages) => {
     (messages ?? []).forEach((message) => {
       errors.push(message);
@@ -1533,6 +1609,7 @@ function detectBuiltInOverrideAdjustment(rawEntry, sanitized, source) {
   }
   const allowedKeys = /* @__PURE__ */ new Set([
     "name",
+    "supportedRoutes",
     "inputSelector",
     "inputType",
     "submitSelector",
@@ -1555,6 +1632,7 @@ function detectBuiltInOverrideAdjustment(rawEntry, sanitized, source) {
   }
   const simpleComparisons = [
     ["name", safeText2(rawRecord.name), sanitized.name],
+    ["supportedRoutes", stringifyComparable(normalizeSupportedRoutes(rawRecord.supportedRoutes)), stringifyComparable(sanitized.supportedRoutes)],
     ["inputSelector", safeText2(rawRecord.inputSelector), sanitized.inputSelector],
     ["inputType", safeText2(rawRecord.inputType), sanitized.inputType],
     ["submitSelector", safeText2(rawRecord.submitSelector), sanitized.submitSelector],
@@ -1871,6 +1949,7 @@ var LOCAL_RUNTIME_KEYS = Object.freeze({
 var SESSION_RUNTIME_KEYS = Object.freeze({
   pendingUiToasts: "pendingUiToasts",
   lastBroadcast: "lastBroadcast",
+  pendingSelectorChecks: "pendingSelectorChecks",
   popupFavoriteIntent: "popupFavoriteIntent",
   favoriteRunJobs: "favoriteRunJobs"
 });
@@ -2313,6 +2392,7 @@ async function resetPersistedExtensionState(options = {}) {
     LOCAL_PROMPT_STATE_KEYS.legacyLastPrompt
   ]);
   const sessionKeys = normalizeStorageKeys(options.additionalSessionKeys, [
+    SESSION_RUNTIME_KEYS.pendingSelectorChecks,
     SESSION_RUNTIME_KEYS.popupFavoriteIntent,
     SESSION_RUNTIME_KEYS.favoriteRunJobs,
     SESSION_PROMPT_STATE_KEYS.popupPromptIntent
@@ -2344,11 +2424,18 @@ async function resetPersistedExtensionState(options = {}) {
 
 // src/shared/sites/reuse-preflight.ts
 function evaluateReusableTabSnapshot(snapshot) {
-  if (hasKnownAuthPath(snapshot?.pathname)) {
+  const pathBlockReason = getSitePathBlockReason(
+    { supportedRoutes: snapshot?.supportedRoutes },
+    snapshot?.pathname
+  );
+  if (pathBlockReason === "auth_path") {
     return { ok: false, reason: "auth_path" };
   }
-  if (hasKnownSettingsPath(snapshot?.pathname)) {
+  if (pathBlockReason === "settings_path") {
     return { ok: false, reason: "settings_path" };
+  }
+  if (pathBlockReason === "unsupported_route") {
+    return { ok: false, reason: "unsupported_route" };
   }
   if (!snapshot?.hasPromptSurface) {
     return {
@@ -2371,6 +2458,7 @@ var ONBOARDING_URL = "onboarding/onboarding.html";
 var POPUP_PAGE_URL = "popup/popup.html";
 var PENDING_INJECTIONS_KEY = "pendingInjections";
 var PENDING_BROADCASTS_KEY = "pendingBroadcasts";
+var PENDING_SELECTOR_CHECKS_KEY = "pendingSelectorChecks";
 var SELECTOR_ALERTS_KEY = "selectorAlerts";
 var NOTIFICATION_ICON_PATH = "icons/icon-128.png";
 var CONTEXT_MENU_ROOT_ID = "apb-root";
@@ -2446,6 +2534,7 @@ function buildInjectionConfig(site, runtimeOverrides = {}) {
     url: site?.url ?? "",
     hostname: site?.hostname ?? "",
     hostnameAliases: Array.isArray(site?.hostnameAliases) ? site.hostnameAliases : [],
+    supportedRoutes: Array.isArray(site?.supportedRoutes) ? site.supportedRoutes : [],
     inputSelector: site?.inputSelector ?? "",
     fallbackSelectors: Array.isArray(site?.fallbackSelectors) ? site.fallbackSelectors : [],
     inputType: site?.inputType ?? "textarea",
@@ -2467,6 +2556,107 @@ function buildInjectionConfig(site, runtimeOverrides = {}) {
     submitRetryCount: Number.isFinite(Number(runtimeOverrides?.submitRetryCount)) ? Number(runtimeOverrides.submitRetryCount) : void 0,
     strategyOrder: Array.isArray(runtimeOverrides?.strategyOrder) ? runtimeOverrides.strategyOrder : [],
     waitMsMultiplier: Number.isFinite(Number(runtimeOverrides?.waitMsMultiplier)) ? Number(runtimeOverrides.waitMsMultiplier) : void 0
+  };
+}
+
+// src/background/app/selector-alerts.ts
+function normalizeText2(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+function buildSelectorAlertSignature(report) {
+  const siteId = normalizeText2(report?.siteId) || "unknown";
+  const missingEntries = (Array.isArray(report?.missing) ? report.missing : []).map((entry) => `${normalizeText2(entry?.field)}:${normalizeText2(entry?.selector)}`).filter((entry) => entry !== ":").sort();
+  return [siteId, ...missingEntries].join("|");
+}
+
+// src/background/app/selector-pending.ts
+function normalizeText3(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+function normalizeMissingEntries(value) {
+  return (Array.isArray(value) ? value : []).map((entry) => ({
+    field: normalizeText3(entry?.field),
+    selector: normalizeText3(entry?.selector)
+  })).filter((entry) => entry.field || entry.selector);
+}
+function clonePendingRecords(records) {
+  if (!records || typeof records !== "object") {
+    return {};
+  }
+  return Object.entries(records).reduce(
+    (accumulator, [key, value]) => {
+      const signature = normalizeText3(key) || normalizeText3(value?.signature);
+      const serviceId = normalizeText3(value?.serviceId);
+      if (!signature || !serviceId) {
+        return accumulator;
+      }
+      const count = Number(value?.count);
+      const firstSeenAt = Number(value?.firstSeenAt);
+      const lastSeenAt = Number(value?.lastSeenAt);
+      const fallbackNow = Date.now();
+      accumulator[signature] = {
+        serviceId,
+        signature,
+        missing: Array.isArray(value?.missing) ? value.missing.map((entry) => normalizeText3(entry)).filter(Boolean) : [],
+        count: Number.isFinite(count) ? Math.max(1, Math.round(count)) : 1,
+        firstSeenAt: Number.isFinite(firstSeenAt) ? firstSeenAt : fallbackNow,
+        lastSeenAt: Number.isFinite(lastSeenAt) ? lastSeenAt : fallbackNow
+      };
+      return accumulator;
+    },
+    {}
+  );
+}
+function clearPendingSelectorChecksForService(records, serviceId) {
+  const normalizedServiceId = normalizeText3(serviceId);
+  if (!normalizedServiceId) {
+    return clonePendingRecords(records);
+  }
+  return Object.fromEntries(
+    Object.entries(clonePendingRecords(records)).filter(
+      ([, record]) => normalizeText3(record?.serviceId) !== normalizedServiceId
+    )
+  );
+}
+function registerPendingSelectorCheck(records, report, nowMs = Date.now()) {
+  const siteId = normalizeText3(report?.siteId) || "unknown";
+  const missingEntries = normalizeMissingEntries(report?.missing);
+  const signature = buildSelectorAlertSignature({
+    siteId,
+    missing: missingEntries
+  });
+  const next = clonePendingRecords(records);
+  const existing = next[signature];
+  if (existing && normalizeText3(existing.serviceId) === siteId) {
+    const promotedRecord = {
+      ...existing,
+      count: Math.max(2, Math.round(Number(existing.count) || 1) + 1),
+      lastSeenAt: nowMs
+    };
+    delete next[signature];
+    return {
+      next,
+      signature,
+      promoted: true,
+      record: promotedRecord
+    };
+  }
+  const record = {
+    serviceId: siteId,
+    signature,
+    missing: missingEntries.map(
+      (entry) => entry.field ? `${entry.field}:${entry.selector}` : entry.selector
+    ),
+    count: 1,
+    firstSeenAt: nowMs,
+    lastSeenAt: nowMs
+  };
+  next[signature] = record;
+  return {
+    next,
+    signature,
+    promoted: false,
+    record
   };
 }
 
@@ -3853,6 +4043,7 @@ var backgroundSessionState = {
   loaded: false,
   pendingInjections: {},
   pendingBroadcasts: {},
+  pendingSelectorChecks: {},
   selectorAlerts: {}
 };
 var lastNormalWindowId = null;
@@ -4111,15 +4302,18 @@ async function ensureBackgroundSessionStateLoaded() {
     const result = await chrome.storage.session.get([
       PENDING_INJECTIONS_KEY,
       PENDING_BROADCASTS_KEY,
+      PENDING_SELECTOR_CHECKS_KEY,
       SELECTOR_ALERTS_KEY
     ]);
     backgroundSessionState.pendingInjections = clonePlainValue(result[PENDING_INJECTIONS_KEY] ?? {}) ?? {};
     backgroundSessionState.pendingBroadcasts = clonePlainValue(result[PENDING_BROADCASTS_KEY] ?? {}) ?? {};
+    backgroundSessionState.pendingSelectorChecks = clonePlainValue(result[PENDING_SELECTOR_CHECKS_KEY] ?? {}) ?? {};
     backgroundSessionState.selectorAlerts = clonePlainValue(result[SELECTOR_ALERTS_KEY] ?? {}) ?? {};
   } catch (error) {
     console.error("[AI Prompt Broadcaster] Failed to initialize session-state cache.", error);
     backgroundSessionState.pendingInjections = {};
     backgroundSessionState.pendingBroadcasts = {};
+    backgroundSessionState.pendingSelectorChecks = {};
     backgroundSessionState.selectorAlerts = {};
   }
   backgroundSessionState.loaded = true;
@@ -4128,6 +4322,7 @@ async function persistBackgroundSessionState() {
   await chrome.storage.session.set({
     [PENDING_INJECTIONS_KEY]: backgroundSessionState.pendingInjections,
     [PENDING_BROADCASTS_KEY]: backgroundSessionState.pendingBroadcasts,
+    [PENDING_SELECTOR_CHECKS_KEY]: backgroundSessionState.pendingSelectorChecks,
     [SELECTOR_ALERTS_KEY]: backgroundSessionState.selectorAlerts
   });
 }
@@ -4149,6 +4344,28 @@ async function getPendingInjections() {
 async function getPendingBroadcasts() {
   await ensureBackgroundSessionStateLoaded();
   return clonePlainValue(backgroundSessionState.pendingBroadcasts) ?? {};
+}
+async function clearPendingSelectorChecksForSiteId(serviceId) {
+  if (!(typeof serviceId === "string" && serviceId.trim())) {
+    return {};
+  }
+  return queueBackgroundStateMutation((state) => {
+    state.pendingSelectorChecks = clearPendingSelectorChecksForService(
+      state.pendingSelectorChecks,
+      serviceId
+    );
+    return clonePlainValue(state.pendingSelectorChecks) ?? {};
+  });
+}
+async function registerPendingSelectorCheckReport(report) {
+  return queueBackgroundStateMutation((state) => {
+    const result = registerPendingSelectorCheck(
+      state.pendingSelectorChecks,
+      report
+    );
+    state.pendingSelectorChecks = result.next;
+    return clonePlainValue(result) ?? result;
+  });
 }
 async function updatePendingInjection(tabId, updater) {
   return queueBackgroundStateMutation((state) => {
@@ -4335,6 +4552,7 @@ async function runReusableTabPreflight(tabId, site) {
     const snapshot = result?.result ?? {};
     return evaluateReusableTabSnapshot({
       pathname: snapshot.pathname,
+      supportedRoutes: Array.isArray(site?.supportedRoutes) ? site.supportedRoutes : [],
       hasPromptSurface: snapshot.hasPromptSurface,
       hasAuthSurface: snapshot.hasAuthSurface,
       hasSubmitSurface: snapshot.hasSubmitSurface,
@@ -4873,11 +5091,11 @@ async function createPendingBroadcast(prompt, targets, metadata = {}) {
 }
 async function maybeCreateSelectorNotification(report) {
   try {
-    const signature = [
-      report.siteId,
-      report.pageUrl,
-      ...(report.missing ?? []).map((entry) => `${entry.field}:${entry.selector}`)
-    ].join("|");
+    const settings = await getAppSettings();
+    if (!settings.desktopNotifications) {
+      return;
+    }
+    const signature = buildSelectorAlertSignature(report);
     const shouldNotify = await queueBackgroundStateMutation((state) => {
       const selectorAlerts = state.selectorAlerts ?? {};
       if (selectorAlerts[signature]) {
@@ -5139,7 +5357,7 @@ async function injectIntoTab(tabId, prompt, site, runtimeOverrides = {}) {
       world: "MAIN",
       func: async (injectedPrompt, injectedConfig, injectedSelectors) => {
         const sleep2 = (ms) => new Promise((resolve) => window.setTimeout(resolve, Math.max(Number(ms) || 0, 0)));
-        const normalizeText2 = (value) => String(value ?? "").replace(/\u00A0/g, " ").replace(/[\u200B-\u200D\uFEFF]/g, "").replace(/\r\n?/g, "\n").trim();
+        const normalizeText4 = (value) => String(value ?? "").replace(/\u00A0/g, " ").replace(/[\u200B-\u200D\uFEFF]/g, "").replace(/\r\n?/g, "\n").trim();
         const isVisible = (element2) => {
           if (!(element2 instanceof HTMLElement) && !(element2 instanceof SVGElement)) {
             return true;
@@ -5253,7 +5471,7 @@ async function injectIntoTab(tabId, prompt, site, runtimeOverrides = {}) {
             element2.focus();
           }
           placeCaretAtEnd(element2);
-          return normalizeText2(element2.innerText ?? element2.textContent ?? "") === normalizeText2(nextPrompt);
+          return normalizeText4(element2.innerText ?? element2.textContent ?? "") === normalizeText4(nextPrompt);
         };
         if ((Number(injectedConfig?.waitMs) || 0) > 0) {
           await sleep2(injectedConfig.waitMs);
@@ -5276,7 +5494,7 @@ async function injectIntoTab(tabId, prompt, site, runtimeOverrides = {}) {
           element.focus();
           selectAllEditableContents(element);
           const inserted = document.execCommand("insertText", false, injectedPrompt);
-          injected = Boolean(inserted) || normalizeText2(element.innerText ?? element.textContent ?? "") === normalizeText2(injectedPrompt);
+          injected = Boolean(inserted) || normalizeText4(element.innerText ?? element.textContent ?? "") === normalizeText4(injectedPrompt);
           attempts.push({ name: "mainWorldExecCommand", success: injected });
         }
         if (!injected) {
@@ -5663,8 +5881,11 @@ async function handleSelectorCheckInit(message) {
   };
 }
 async function handleSelectorCheckReport(message) {
-  if (message?.status === "ok" && message?.siteId) {
-    await clearFailedSelector(message.siteId);
+  if ((message?.status === "ok" || message?.status === "auth_page" || message?.status === "skipped") && message?.siteId) {
+    await clearPendingSelectorChecksForSiteId(message.siteId);
+    if (message.status === "ok") {
+      await clearFailedSelector(message.siteId);
+    }
     return { ok: true };
   }
   if (message?.status !== "selector_missing") {
@@ -5674,19 +5895,40 @@ async function handleSelectorCheckReport(message) {
   if (missing.length === 0) {
     return { ok: true };
   }
-  await maybeCreateSelectorNotification({
+  const report = {
     siteId: message.siteId ?? "unknown",
     siteName: message.siteName ?? "AI service",
     pageUrl: message.pageUrl ?? "",
     missing
-  });
-  await markFailedSelector(message.siteId ?? "unknown", missing[0]?.selector ?? "", "selector-checker");
+  };
+  const pendingResult = await registerPendingSelectorCheckReport(report);
+  if (!pendingResult?.promoted) {
+    return { ok: true };
+  }
+  await maybeCreateSelectorNotification(report);
+  await markFailedSelector(
+    message.siteId ?? "unknown",
+    missing[0]?.selector ?? "",
+    "selector-checker"
+  );
   return { ok: true };
 }
 async function handleSelectorFailedMessage(message) {
   const serviceId = message?.serviceId ?? "";
   const selector = message?.selector ?? "";
   const site = await getSiteById(serviceId);
+  await clearPendingSelectorChecksForSiteId(serviceId);
+  await maybeCreateSelectorNotification({
+    siteId: serviceId || "unknown",
+    siteName: site?.name || serviceId || "AI service",
+    pageUrl: "",
+    missing: [
+      {
+        field: "inputSelector",
+        selector
+      }
+    ]
+  });
   await markFailedSelector(serviceId, selector, "injector");
   await enqueueUiToast({
     message: getI18nMessage("toast_selector_failed", [site?.name ?? serviceId]) || `${site?.name ?? serviceId} selector was not found.`,
@@ -5697,6 +5939,7 @@ async function handleSelectorFailedMessage(message) {
 }
 async function handleInjectSuccessMessage(message) {
   if (message?.serviceId) {
+    await clearPendingSelectorChecksForSiteId(message.serviceId);
     await clearFailedSelector(message.serviceId);
   }
   return { ok: true };
@@ -5771,6 +6014,7 @@ async function resetAllExtensionData() {
   await queueBackgroundStateMutation((state) => {
     state.pendingInjections = {};
     state.pendingBroadcasts = {};
+    state.pendingSelectorChecks = {};
     state.selectorAlerts = {};
     return true;
   });
@@ -5778,6 +6022,7 @@ async function resetAllExtensionData() {
     additionalSessionKeys: [
       PENDING_INJECTIONS_KEY,
       PENDING_BROADCASTS_KEY,
+      PENDING_SELECTOR_CHECKS_KEY,
       SELECTOR_ALERTS_KEY
     ],
     clearAlarmName: BADGE_CLEAR_ALARM

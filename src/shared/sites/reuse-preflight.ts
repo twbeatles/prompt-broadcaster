@@ -3,20 +3,28 @@ import type {
   ReusableTabSurfaceSnapshot,
 } from "../types/models";
 import {
-  hasKnownAuthPath,
-  hasKnownSettingsPath,
+  getSitePathBlockReason,
   shouldRequireVisibleSubmitSurface,
 } from "./selector-utils";
 
 export function evaluateReusableTabSnapshot(
   snapshot: ReusableTabSurfaceSnapshot | null | undefined
 ): ReusableTabPreflightResult {
-  if (hasKnownAuthPath(snapshot?.pathname)) {
+  const pathBlockReason = getSitePathBlockReason(
+    { supportedRoutes: snapshot?.supportedRoutes },
+    snapshot?.pathname
+  );
+
+  if (pathBlockReason === "auth_path") {
     return { ok: false, reason: "auth_path" };
   }
 
-  if (hasKnownSettingsPath(snapshot?.pathname)) {
+  if (pathBlockReason === "settings_path") {
     return { ok: false, reason: "settings_path" };
+  }
+
+  if (pathBlockReason === "unsupported_route") {
+    return { ok: false, reason: "unsupported_route" };
   }
 
   if (!snapshot?.hasPromptSurface) {

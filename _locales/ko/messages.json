@@ -599,6 +599,9 @@
   "popup_service_field_hostname_aliases": {
     "message": "호스트명 별칭"
   },
+  "popup_service_field_supported_routes": {
+    "message": "지원 경로"
+  },
   "popup_service_field_verified_at": {
     "message": "검증 날짜"
   },

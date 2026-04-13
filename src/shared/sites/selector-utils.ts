@@ -36,6 +36,103 @@ export function hasKnownSettingsPath(pathname: unknown): boolean {
   return hasPathSegment(pathname, SETTINGS_PATH_SEGMENTS);
 }
 
+export function normalizeRoutePrefix(value: unknown): string {
+  const normalized = normalizePathname(value);
+  if (!normalized) {
+    return "";
+  }
+
+  const basePath = normalized.split("#")[0]?.split("?")[0] ?? "";
+  if (!basePath.startsWith("/")) {
+    return "";
+  }
+
+  const trimmed = basePath.replace(/\/+$/g, "");
+  return trimmed || "/";
+}
+
+export function normalizeSupportedRoutes(value: unknown): string[] {
+  const rawEntries = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(/\r?\n/g)
+      : [];
+
+  return Array.from(
+    new Set(
+      rawEntries
+        .map((entry) => normalizeRoutePrefix(entry))
+        .filter(Boolean)
+    )
+  );
+}
+
+export function getConfiguredSupportedRoutes(site: {
+  supportedRoutes?: unknown;
+  verifiedRoute?: unknown;
+} | null | undefined): string[] {
+  const explicitRoutes = normalizeSupportedRoutes(site?.supportedRoutes);
+  if (explicitRoutes.length > 0) {
+    return explicitRoutes;
+  }
+
+  const fallbackRoute = normalizeRoutePrefix(site?.verifiedRoute);
+  return fallbackRoute && fallbackRoute !== "/" ? [fallbackRoute] : [];
+}
+
+function routePrefixMatches(pathname: string, prefix: string): boolean {
+  if (prefix === "/") {
+    return true;
+  }
+
+  return pathname === prefix || pathname.startsWith(`${prefix}/`);
+}
+
+export function isPathnameSupported(
+  pathname: unknown,
+  supportedRoutes: unknown,
+): boolean {
+  const routes = normalizeSupportedRoutes(supportedRoutes);
+  if (routes.length === 0) {
+    return true;
+  }
+
+  const normalizedPathname = normalizeRoutePrefix(pathname) || "/";
+  return routes.some((prefix) => routePrefixMatches(normalizedPathname, prefix));
+}
+
+export function isSitePathSupported(
+  site: {
+    supportedRoutes?: unknown;
+    verifiedRoute?: unknown;
+  } | null | undefined,
+  pathname: unknown,
+): boolean {
+  return isPathnameSupported(pathname, getConfiguredSupportedRoutes(site));
+}
+
+export function getSitePathBlockReason(
+  site: {
+    supportedRoutes?: unknown;
+    verifiedRoute?: unknown;
+  } | null | undefined,
+  pathname: unknown,
+): "" | "auth_path" | "settings_path" | "unsupported_route" {
+  if (hasKnownAuthPath(pathname)) {
+    return "auth_path";
+  }
+
+  if (hasKnownSettingsPath(pathname)) {
+    return "settings_path";
+  }
+
+  if (!isSitePathSupported(site, pathname)) {
+    return "unsupported_route";
+  }
+
+  return "";
+}
+
 export function splitSelectorList(selectorGroup: unknown): string[] {
   const source = typeof selectorGroup === "string" ? selectorGroup.trim() : "";
   if (!source) {

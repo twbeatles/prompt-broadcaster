@@ -11,6 +11,7 @@ import {
   sanitizeBuiltInOverride,
   stringifyComparable,
 } from "./normalizers";
+import { normalizeSupportedRoutes } from "./selector-utils";
 import { validateSiteDraft } from "./validation";
 
 type PlainRecord = Record<string, unknown>;
@@ -33,6 +34,7 @@ function detectBuiltInOverrideAdjustment(
 
   const allowedKeys = new Set([
     "name",
+    "supportedRoutes",
     "inputSelector",
     "inputType",
     "submitSelector",
@@ -57,6 +59,7 @@ function detectBuiltInOverrideAdjustment(
 
   const simpleComparisons = [
     ["name", safeText(rawRecord.name), sanitized.name],
+    ["supportedRoutes", stringifyComparable(normalizeSupportedRoutes(rawRecord.supportedRoutes)), stringifyComparable(sanitized.supportedRoutes)],
     ["inputSelector", safeText(rawRecord.inputSelector), sanitized.inputSelector],
     ["inputType", safeText(rawRecord.inputType), sanitized.inputType],
     ["submitSelector", safeText(rawRecord.submitSelector), sanitized.submitSelector],

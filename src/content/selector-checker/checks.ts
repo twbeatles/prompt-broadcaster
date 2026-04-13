@@ -4,14 +4,14 @@ import { sendSelectorCheckReport } from "./report";
 import { logSelectorCheckerError, sendRuntimeMessage } from "./runtime";
 import {
   buildSubmitRequirement,
-  hasKnownAuthPath,
+  getSitePathBlockReason,
   normalizeSelectorEntries,
   shouldRequireVisibleSubmitSurface,
 } from "../../shared/sites";
 
 export function isLikelyAuthPage(site) {
   try {
-    if (hasKnownAuthPath(window.location.pathname)) {
+    if (getSitePathBlockReason(site, window.location.pathname) === "auth_path") {
       return true;
     }
 
@@ -50,6 +50,21 @@ export async function runSelectorCheck() {
 
     const site = initResponse?.site;
     if (!site) {
+      return;
+    }
+
+    const pathBlockReason = getSitePathBlockReason(site, window.location.pathname);
+    if (
+      pathBlockReason === "settings_path" ||
+      pathBlockReason === "unsupported_route"
+    ) {
+      await sendSelectorCheckReport({
+        status: "skipped",
+        reason: pathBlockReason,
+        siteId: site.id,
+        siteName: site.name,
+        pageUrl: window.location.href,
+      });
       return;
     }
 

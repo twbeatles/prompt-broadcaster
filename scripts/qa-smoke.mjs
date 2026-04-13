@@ -368,6 +368,86 @@ async function main() {
     assert.equal(report.siteId, "selector-soft-gated");
   });
 
+  await runStep("selector route helpers normalize supported routes and gate unsupported paths", async () => {
+    const module = await loadBundledModule("src/shared/sites/selector-utils.ts", createChromeMock());
+
+    assert.equal(module.hasKnownSettingsPath("/settings/profile"), true);
+    assert.deepEqual(
+      module.normalizeSupportedRoutes([" /APP ", "/app#composer", "/new/", "/new?x=1"]),
+      ["/app", "/new"],
+    );
+    assert.equal(
+      module.getSitePathBlockReason(
+        { url: "https://claude.ai/new", supportedRoutes: ["/new"] },
+        "/projects",
+      ),
+      "unsupported_route",
+    );
+    assert.equal(
+      module.getSitePathBlockReason(
+        { url: "https://claude.ai/new", supportedRoutes: ["/new"] },
+        "/new/chat",
+      ),
+      "",
+    );
+    assert.equal(
+      module.getSitePathBlockReason(
+        { url: "https://chatgpt.com/", supportedRoutes: [] },
+        "/c/123",
+      ),
+      "",
+    );
+  });
+
+  await runStep("site draft validation rejects invalid supported routes", async () => {
+    const module = await loadBundledModule("src/shared/sites/validation.ts", createChromeMock());
+    const validDraft = {
+      name: "Route Site",
+      url: "https://route.example.com/",
+      inputSelector: "#prompt",
+      inputType: "textarea",
+      submitMethod: "enter",
+      supportedRoutes: ["/app", "/chat/new"],
+    };
+
+    assert.equal(module.validateSiteDraft(validDraft).valid, true);
+    assert.equal(
+      module.validateSiteDraft({
+        ...validDraft,
+        supportedRoutes: ["app"],
+      }).valid,
+      false,
+    );
+    assert.equal(
+      module.validateSiteDraft({
+        ...validDraft,
+        supportedRoutes: ["/app?draft=1"],
+      }).valid,
+      false,
+    );
+  });
+
+  await runStep("selector alert signature ignores route-specific URLs for identical missing selectors", async () => {
+    const module = await loadBundledModule("src/background/app/selector-alerts.ts", createChromeMock());
+    const primaryMissing = [{
+      field: "inputSelector",
+      selector: "div[contenteditable='true'][role='textbox']",
+    }];
+
+    assert.equal(
+      module.buildSelectorAlertSignature({
+        siteId: "claude",
+        pageUrl: "https://claude.ai/new",
+        missing: primaryMissing,
+      }),
+      module.buildSelectorAlertSignature({
+        siteId: "claude",
+        pageUrl: "https://claude.ai/chat/123",
+        missing: [...primaryMissing].reverse(),
+      }),
+    );
+  });
+
   await runStep("quick palette filters favorites and executes the active result", async () => {
     await openFixture(page, "textarea-click.html");
     await page.evaluate(() => {
@@ -931,7 +1011,7 @@ async function main() {
     assert.equal(await module.getBroadcastCounter(), 1);
 
     const exported = await module.exportPromptData();
-    assert.equal(exported.version, 7);
+    assert.equal(exported.version, 8);
     assert.equal(exported.broadcastCounter, 1);
     assert.deepEqual(exported.settings, module.DEFAULT_SETTINGS);
     assert.deepEqual(exported.settings.siteOrder, []);
@@ -943,7 +1023,7 @@ async function main() {
     }));
     assert.equal(legacyImport.broadcastCounter, 0);
     assert.equal(await module.getBroadcastCounter(), 0);
-    assert.equal(legacyImport.importSummary.version, 7);
+    assert.equal(legacyImport.importSummary.version, 8);
     assert.equal(legacyImport.importSummary.migratedFromVersion, 2);
     assert.equal(legacyImport.settings.waitMsMultiplier, 1);
     assert.equal(legacyImport.settings.historySort, "latest");
@@ -977,7 +1057,7 @@ async function main() {
     }));
     assert.equal(modernImport.broadcastCounter, 4);
     assert.equal(await module.getBroadcastCounter(), 4);
-    assert.equal(modernImport.importSummary.version, 7);
+    assert.equal(modernImport.importSummary.version, 8);
     assert.equal(modernImport.importSummary.migratedFromVersion, 4);
     assert.equal(modernImport.settings.waitMsMultiplier, 1);
     assert.equal(modernImport.settings.historySort, "latest");
@@ -1015,6 +1095,17 @@ async function main() {
 
     const v7VerificationImport = await module.importPromptData(JSON.stringify({
       version: 7,
+      customSites: [
+        {
+          id: "route-aware-custom",
+          name: "Route Aware",
+          url: "https://route-aware.example.com/",
+          inputSelector: "#prompt",
+          inputType: "textarea",
+          submitMethod: "enter",
+          supportedRoutes: [" /APP ", "/app#composer", "/chat/"],
+        },
+      ],
       builtInSiteOverrides: {
         chatgpt: {
           verifiedAt: "2026-04-10",
@@ -1023,9 +1114,12 @@ async function main() {
           verifiedLocale: "ko-KR",
           verifiedVersion: "chatgpt-web-apr-2026",
         },
+        claude: {
+          supportedRoutes: [" /NEW ", "/new/projects/"],
+        },
       },
     }));
-    assert.equal(v7VerificationImport.importSummary.version, 7);
+    assert.equal(v7VerificationImport.importSummary.version, 8);
     assert.equal(v7VerificationImport.importSummary.migratedFromVersion, 7);
     assert.equal(v7VerificationImport.builtInSiteOverrides.chatgpt.lastVerified, "2026-04");
     assert.equal(v7VerificationImport.builtInSiteOverrides.chatgpt.verifiedAt, "2026-04-10");
@@ -1033,6 +1127,12 @@ async function main() {
     assert.equal(v7VerificationImport.builtInSiteOverrides.chatgpt.verifiedAuthState, "logged-out");
     assert.equal(v7VerificationImport.builtInSiteOverrides.chatgpt.verifiedLocale, "ko-KR");
     assert.equal(v7VerificationImport.builtInSiteOverrides.chatgpt.verifiedVersion, "chatgpt-web-apr-2026");
+    assert.deepEqual(v7VerificationImport.builtInSiteOverrides.claude.supportedRoutes, ["/new", "/new/projects"]);
+    assert.deepEqual(v7VerificationImport.customSites[0].supportedRoutes, ["/app", "/chat"]);
+
+    const reExported = await module.exportPromptData();
+    assert.equal(reExported.version, 8);
+    assert.deepEqual(reExported.customSites[0].supportedRoutes, ["/app", "/chat"]);
 
     const legacyVerificationImport = await module.importPromptData(JSON.stringify({
       version: 6,
@@ -1048,7 +1148,7 @@ async function main() {
         },
       ],
     }));
-    assert.equal(legacyVerificationImport.importSummary.version, 7);
+    assert.equal(legacyVerificationImport.importSummary.version, 8);
     assert.equal(legacyVerificationImport.importSummary.migratedFromVersion, 6);
     assert.equal(legacyVerificationImport.customSites[0].lastVerified, "2026-03");
     assert.equal(legacyVerificationImport.customSites[0].verifiedAt ?? "", "");
@@ -2043,6 +2143,14 @@ async function main() {
     );
     assert.deepEqual(
       module.evaluateReusableTabSnapshot({
+        pathname: "/projects",
+        supportedRoutes: ["/new"],
+        hasPromptSurface: true,
+      }),
+      { ok: false, reason: "unsupported_route" },
+    );
+    assert.deepEqual(
+      module.evaluateReusableTabSnapshot({
         pathname: "/chat",
         hasPromptSurface: false,
         hasAuthSurface: false,
@@ -2075,6 +2183,47 @@ async function main() {
         submitRequirement: "required",
       }),
       { ok: true },
+    );
+  });
+
+  await runStep("pending selector checks only promote on repeated session misses", async () => {
+    const module = await loadBundledModule("src/background/app/selector-pending.ts", createChromeMock());
+    const report = {
+      siteId: "claude",
+      missing: [
+        {
+          field: "inputSelector",
+          selector: "div[contenteditable='true'][role='textbox']",
+        },
+      ],
+    };
+
+    const first = module.registerPendingSelectorCheck({}, report, 1000);
+    assert.equal(first.promoted, false);
+    assert.equal(Object.keys(first.next).length, 1);
+
+    const second = module.registerPendingSelectorCheck(first.next, report, 2000);
+    assert.equal(second.promoted, true);
+    assert.equal(Object.keys(second.next).length, 0);
+
+    const withDifferentSignature = module.registerPendingSelectorCheck(first.next, {
+      siteId: "claude",
+      missing: [
+        {
+          field: "submitSelector",
+          selector: "button[aria-label='Send']",
+        },
+      ],
+    }, 3000);
+    assert.equal(withDifferentSignature.promoted, false);
+    assert.equal(
+      Object.keys(
+        module.clearPendingSelectorChecksForService(
+          withDifferentSignature.next,
+          "claude",
+        ),
+      ).length,
+      0,
     );
   });
 
@@ -2113,6 +2262,7 @@ async function main() {
     await chromeMock.storage.session.set({
       pendingUiToasts: [{ message: "queued" }],
       lastBroadcast: { broadcastId: "broadcast-1" },
+      pendingSelectorChecks: [{ serviceId: "claude", signature: "claude|input:#prompt" }],
       pendingInjections: { 1: { broadcastId: "broadcast-1" } },
       pendingBroadcasts: { "broadcast-1": { id: "broadcast-1" } },
       selectorAlerts: { signature: 1 },
@@ -2153,6 +2303,7 @@ async function main() {
     assert.deepEqual(storage.local.builtInSiteOverrides, {});
     assert.deepEqual(storage.session.pendingUiToasts, []);
     assert.equal(storage.session.lastBroadcast, null);
+    assert.equal(storage.session.pendingSelectorChecks, undefined);
     assert.equal(storage.session.pendingInjections, undefined);
     assert.equal(storage.session.pendingBroadcasts, undefined);
     assert.equal(storage.session.selectorAlerts, undefined);

@@ -1026,6 +1026,7 @@ var AI_SITES = Object.freeze([
     name: "ChatGPT",
     url: "https://chatgpt.com/",
     hostname: "chatgpt.com",
+    supportedRoutes: [],
     inputSelector: "#prompt-textarea, div#prompt-textarea[contenteditable='true'], textarea[aria-label*='chatgpt' i], textarea[aria-label*='채팅' i]",
     fallbackSelectors: [
       "#prompt-textarea",
@@ -1059,6 +1060,7 @@ var AI_SITES = Object.freeze([
     name: "Gemini",
     url: "https://gemini.google.com/app",
     hostname: "gemini.google.com",
+    supportedRoutes: ["/app"],
     inputSelector: "div[contenteditable='true'][role='textbox'], div.ql-editor.textarea.new-input-ui[contenteditable='true'], div.ql-editor[contenteditable='true'][role='textbox']",
     fallbackSelectors: [
       "div[contenteditable='true'][role='textbox']",
@@ -1088,6 +1090,7 @@ var AI_SITES = Object.freeze([
     name: "Claude",
     url: "https://claude.ai/new",
     hostname: "claude.ai",
+    supportedRoutes: ["/new"],
     inputSelector: "div[contenteditable='true'][role='textbox'], div[contenteditable='true'][aria-label*='Claude' i], div[contenteditable='true'][aria-label*='prompt' i]",
     fallbackSelectors: [
       "div[contenteditable='true'][role='textbox']",
@@ -1120,6 +1123,7 @@ var AI_SITES = Object.freeze([
     name: "Grok",
     url: "https://grok.com/",
     hostname: "grok.com",
+    supportedRoutes: [],
     inputSelector: "textarea[aria-label*='grok' i], textarea[placeholder*='help' i], textarea",
     fallbackSelectors: [
       "textarea[aria-label*='grok' i]",
@@ -1154,6 +1158,7 @@ var AI_SITES = Object.freeze([
     url: "https://www.perplexity.ai/",
     hostname: "www.perplexity.ai",
     hostnameAliases: ["perplexity.ai"],
+    supportedRoutes: [],
     inputSelector: "#ask-input[data-lexical-editor='true'][role='textbox']",
     fallbackSelectors: [
       "div#ask-input[data-lexical-editor='true'][role='textbox']",
@@ -1260,6 +1265,52 @@ function buildVerificationMetadata(primaryValue, fallbackValue = {}) {
     verifiedLocale: resolveTextField(primary, fallback, "verifiedLocale"),
     verifiedVersion: resolveTextField(primary, fallback, "verifiedVersion")
   };
+}
+
+// src/shared/sites/selector-utils.ts
+var AUTH_PATH_SEGMENTS = Object.freeze([
+  "/login",
+  "/logout",
+  "/sign-in",
+  "/signin",
+  "/auth"
+]);
+var SETTINGS_PATH_SEGMENTS = Object.freeze([
+  "/settings",
+  "/preferences",
+  "/account",
+  "/billing"
+]);
+function normalizePathname(pathname) {
+  return typeof pathname === "string" ? pathname.trim().toLowerCase() : "";
+}
+function normalizeRoutePrefix(value) {
+  const normalized = normalizePathname(value);
+  if (!normalized) {
+    return "";
+  }
+  const basePath = normalized.split("#")[0]?.split("?")[0] ?? "";
+  if (!basePath.startsWith("/")) {
+    return "";
+  }
+  const trimmed = basePath.replace(/\/+$/g, "");
+  return trimmed || "/";
+}
+function normalizeSupportedRoutes(value) {
+  const rawEntries = Array.isArray(value) ? value : typeof value === "string" ? value.split(/\r?\n/g) : [];
+  return Array.from(
+    new Set(
+      rawEntries.map((entry) => normalizeRoutePrefix(entry)).filter(Boolean)
+    )
+  );
+}
+function getConfiguredSupportedRoutes(site) {
+  const explicitRoutes = normalizeSupportedRoutes(site?.supportedRoutes);
+  if (explicitRoutes.length > 0) {
+    return explicitRoutes;
+  }
+  const fallbackRoute = normalizeRoutePrefix(site?.verifiedRoute);
+  return fallbackRoute && fallbackRoute !== "/" ? [fallbackRoute] : [];
 }
 
 // src/shared/sites/normalizers.ts
@@ -1445,12 +1496,14 @@ function buildBaseSiteRecord(site, builtInMeta = {}) {
   const hostnameAliases = normalizeHostnameAliases(site.hostnameAliases, hostname);
   const normalizedSelectors = normalizePerplexitySelectors(site);
   const verification = buildVerificationMetadata(site);
+  const supportedRoutes = getConfiguredSupportedRoutes(site);
   return {
     id: safeText2(site.id),
     name: safeText2(site.name) || "AI Service",
     url,
     hostname,
     hostnameAliases,
+    supportedRoutes,
     inputSelector: normalizedSelectors.inputSelector,
     inputType: normalizeInputType(site.inputType, "textarea"),
     submitSelector: safeText2(site.submitSelector),
@@ -1480,8 +1533,10 @@ function sanitizeBuiltInOverride(override = {}, originalSite = {}) {
   const submitMethod = normalizeSubmitMethod(override.submitMethod, originalSite.submitMethod);
   const submitSelector = submitMethod === "click" ? safeText2(override.submitSelector) || safeText2(originalSite.submitSelector) : safeText2(override.submitSelector);
   const verification = buildVerificationMetadata(override, originalSite);
+  const supportedRoutes = Object.prototype.hasOwnProperty.call(override ?? {}, "supportedRoutes") ? normalizeSupportedRoutes(override.supportedRoutes) : getConfiguredSupportedRoutes(originalSite);
   return {
     name: safeText2(override.name) || originalSite.name,
+    supportedRoutes,
     inputSelector: safeText2(override.inputSelector) || originalSite.inputSelector,
     inputType: normalizeInputType(override.inputType, originalSite.inputType),
     submitSelector,
@@ -1538,6 +1593,7 @@ function normalizeCustomSite(site) {
       url,
       hostname,
       hostnameAliases: normalizeHostnameAliases(site?.hostnameAliases, hostname),
+      supportedRoutes: Object.prototype.hasOwnProperty.call(site ?? {}, "supportedRoutes") ? site?.supportedRoutes : void 0,
       inputSelector: safeText2(site?.inputSelector),
       inputType: normalizeInputType(site?.inputType, "textarea"),
       submitSelector: safeText2(site?.submitSelector),
@@ -1558,21 +1614,6 @@ function normalizeCustomSite(site) {
     { isCustom: true }
   );
 }
-
-// src/shared/sites/selector-utils.ts
-var AUTH_PATH_SEGMENTS = Object.freeze([
-  "/login",
-  "/logout",
-  "/sign-in",
-  "/signin",
-  "/auth"
-]);
-var SETTINGS_PATH_SEGMENTS = Object.freeze([
-  "/settings",
-  "/preferences",
-  "/account",
-  "/billing"
-]);
 
 // src/shared/sites/hostname-aliases.ts
 function validateBareHostPort(value) {
@@ -1704,6 +1745,15 @@ function validateSiteDraft(draft, { isBuiltIn = false } = {}) {
   }
   const aliasValidation = validateHostnameAliases(draft?.hostnameAliases);
   aliasValidation.errors.forEach((message) => pushFieldError(fieldErrors, "hostnameAliases", message));
+  const rawSupportedRoutes = Array.isArray(draft?.supportedRoutes) ? draft.supportedRoutes : typeof draft?.supportedRoutes === "string" ? draft.supportedRoutes.split(/\r?\n/g) : [];
+  const invalidSupportedRoutes = rawSupportedRoutes.map((entry) => safeText2(entry).trim()).filter(Boolean).filter((route) => !route.startsWith("/") || route.includes("?") || route.includes("#"));
+  if (invalidSupportedRoutes.length > 0) {
+    pushFieldError(
+      fieldErrors,
+      "supportedRoutes",
+      "Supported routes must use path prefixes that start with / and must not include query strings or hashes."
+    );
+  }
   Object.values(fieldErrors).forEach((messages) => {
     (messages ?? []).forEach((message) => {
       errors.push(message);
@@ -1727,6 +1777,7 @@ function detectBuiltInOverrideAdjustment(rawEntry, sanitized, source) {
   }
   const allowedKeys = /* @__PURE__ */ new Set([
     "name",
+    "supportedRoutes",
     "inputSelector",
     "inputType",
     "submitSelector",
@@ -1749,6 +1800,7 @@ function detectBuiltInOverrideAdjustment(rawEntry, sanitized, source) {
   }
   const simpleComparisons = [
     ["name", safeText2(rawRecord.name), sanitized.name],
+    ["supportedRoutes", stringifyComparable(normalizeSupportedRoutes(rawRecord.supportedRoutes)), stringifyComparable(sanitized.supportedRoutes)],
     ["inputSelector", safeText2(rawRecord.inputSelector), sanitized.inputSelector],
     ["inputType", safeText2(rawRecord.inputType), sanitized.inputType],
     ["submitSelector", safeText2(rawRecord.submitSelector), sanitized.submitSelector],
@@ -2075,7 +2127,7 @@ async function setTemplateVariableCache(cache) {
 }
 
 // src/shared/prompts/import-export.ts
-var CURRENT_EXPORT_VERSION = 7;
+var CURRENT_EXPORT_VERSION = 8;
 function asImportPayload(value) {
   return safeObject(value);
 }
@@ -2211,6 +2263,14 @@ function migrateV6ToV7(payload) {
     favorites: safeArray(payload.favorites).map((entry) => buildFavoriteEntry(entry))
   };
 }
+function migrateV7ToV8(payload) {
+  return {
+    ...payload,
+    version: 8,
+    history: safeArray(payload.history).map((entry) => buildHistoryEntry(entry)),
+    favorites: safeArray(payload.favorites).map((entry) => buildFavoriteEntry(entry))
+  };
+}
 function migrateImportData(rawValue) {
   let payload = asImportPayload(rawValue);
   const sourceVersion = normalizeImportVersion(payload.version);
@@ -2238,6 +2298,10 @@ function migrateImportData(rawValue) {
   if (workingVersion < 7) {
     payload = migrateV6ToV7(payload);
     workingVersion = 7;
+  }
+  if (workingVersion < 8) {
+    payload = migrateV7ToV8(payload);
+    workingVersion = 8;
   }
   return {
     migrated: payload,
@@ -2455,6 +2519,7 @@ var LOCAL_RUNTIME_KEYS = Object.freeze({
 var SESSION_RUNTIME_KEYS = Object.freeze({
   pendingUiToasts: "pendingUiToasts",
   lastBroadcast: "lastBroadcast",
+  pendingSelectorChecks: "pendingSelectorChecks",
   popupFavoriteIntent: "popupFavoriteIntent",
   favoriteRunJobs: "favoriteRunJobs"
 });

@@ -1,7 +1,7 @@
 # AI Prompt Broadcaster - 잔여 기능 로드맵
 
 > 작성일: 2026-03-31
-> 최종 업데이트: 2026-04-10 (selector maintenance wave 1, structured verification metadata, selector audit CLI 반영)
+> 최종 업데이트: 2026-04-13 (selector noise hardening, route-aware site model, export v8 반영)
 > 기준 코드: 현재 `main` 브랜치의 `src/`, `popup/`, `options/`, `manifest.json`
 
 이 문서는 **아직 남아 있는 항목만** 정리한다. 이미 구현된 기능과 현재 동작은 `README.md`, `PROJECT_ANALYSIS.md`, `CLAUDE.md`, `docs/extension-architecture.md`를 기준으로 본다.
@@ -26,6 +26,14 @@
   - structured verification metadata(`verifiedAt`, `verifiedRoute`, `verifiedAuthState`, `verifiedLocale`, `verifiedVersion`) 도입
   - import/export `v7` 마이그레이션 추가
   - `npm run selector:audit` 및 Playwright audit report 추가
+- selector maintenance wave 2
+  - proactive selector miss를 `pendingSelectorChecks` session state로 1차 저장
+  - 같은 service/signature 재발 또는 injector selector failure 때만 confirmed warning 승격
+  - `supportedRoutes` 기반 route allowlist 도입
+  - selector-checker / reusable-tab preflight route gating 공통화
+  - popup service editor 및 JSON import/export에 `supportedRoutes` 노출
+  - import/export `v8` 마이그레이션 추가
+  - release selector verification checklist 문서 추가
 - 관련 smoke 회귀 추가
 
 ---
@@ -71,6 +79,7 @@
 
 **현재 상태**
 - built-in 서비스는 ChatGPT, Gemini, Claude, Grok, Perplexity까지다.
+- Gemini는 `/app`, Claude는 `/new`로 `supportedRoutes`가 고정되어 있고, ChatGPT / Grok / Perplexity는 현재 wildcard route policy를 유지한다.
 - Copilot / Le Chat / DeepSeek / HuggingChat 등은 아직 코드베이스에 추가하지 않았다.
 
 **추가 검토 대상**
@@ -85,8 +94,11 @@
 **남은 작업**
 - 각 서비스의 input selector / submit selector 실기 검증
 - auth page 탐지 selector 보강
+- 서비스별 `supportedRoutes` 정책 정교화
+  - ChatGPT / Grok / Perplexity는 현재 wildcard 허용이라 canonical route 데이터가 더 쌓이면 tighten 가능
 - `waitMs`, submit 방식(`click` / `enter` / `shift+enter`) 튜닝
 - structured verification metadata 갱신
+- release checklist 기반 수동 검증 루프 운영
 - host permissions / content script match 확장
 
 **수정 파일 후보**
@@ -99,6 +111,7 @@
 **체크리스트**
 - [ ] 실제 로그인/대화 화면 DOM 확인
 - [ ] 인증 페이지 오탐 여부 확인
+- [ ] unsupported route에서 warning 대신 skip 되는지 확인
 - [ ] 재사용 탭 후보 탐지 조건 검증
 - [ ] smoke 또는 fixture 회귀 추가 가능 여부 검토
 
@@ -137,6 +150,7 @@
 - [ ] `npm run build` 통과
 - [ ] `npm run qa:smoke` 회귀 확인
 - [ ] `npm run selector:audit` 실행 결과 확인
+- [ ] `docs/release-selector-verification-checklist.md` 기준 built-in 수동 검증
 - [ ] 새 i18n 키는 `_locales/en/messages.json`와 `_locales/ko/messages.json`를 기본으로 함께 추가
 - [ ] 새 저장 필드는 import/export 및 기존 로컬 데이터와 하위 호환되게 처리
 - [ ] 새 권한이 필요하면 `manifest.json`과 사용자 안내 문구를 함께 갱신

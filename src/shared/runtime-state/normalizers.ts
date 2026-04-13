@@ -2,6 +2,7 @@ import { ensureBroadcastTargetSnapshots } from "../broadcast/target-snapshots";
 import type {
   FailedSelectorRecord,
   LastBroadcastSummary,
+  PendingSelectorCheckRecord,
   UiToast,
   UiToastAction,
 } from "../types/models";
@@ -48,6 +49,34 @@ export function normalizeToastAction(action: unknown): UiToastAction {
     id: safeText(source.id) || `action-${Date.now()}`,
     label: safeText(source.label) || "Action",
     variant: safeText(source.variant) || "default",
+  };
+}
+
+export function normalizePendingSelectorCheckEntry(
+  entry: unknown
+): PendingSelectorCheckRecord | null {
+  const source = isPlainObject(entry) ? entry : {};
+  const serviceId = safeText(source.serviceId);
+  const signature = safeText(source.signature);
+  if (!serviceId || !signature) {
+    return null;
+  }
+
+  const missing = normalizeArray(source.missing)
+    .map((item) => safeText(item))
+    .filter(Boolean);
+  const firstSeenAt = Number(source.firstSeenAt);
+  const lastSeenAt = Number(source.lastSeenAt);
+  const count = Number(source.count);
+  const fallbackNow = Date.now();
+
+  return {
+    serviceId,
+    signature,
+    missing,
+    count: Number.isFinite(count) ? Math.max(1, Math.round(count)) : 1,
+    firstSeenAt: Number.isFinite(firstSeenAt) ? firstSeenAt : fallbackNow,
+    lastSeenAt: Number.isFinite(lastSeenAt) ? lastSeenAt : fallbackNow,
   };
 }
 

@@ -59,6 +59,7 @@ import {
   PALETTE_SCRIPT_PATH,
   PENDING_BROADCASTS_KEY,
   PENDING_INJECTIONS_KEY,
+  PENDING_SELECTOR_CHECKS_KEY,
   PENDING_TIMEOUT_MS,
   POPUP_PAGE_URL,
   QUICK_PALETTE_COMMAND,
@@ -79,6 +80,11 @@ import {
   normalizeSelectorEntries,
   scaleTimeout,
 } from "./injection-helpers";
+import { buildSelectorAlertSignature } from "./selector-alerts";
+import {
+  clearPendingSelectorChecksForService,
+  registerPendingSelectorCheck,
+} from "./selector-pending";
 import { createPopupLauncher } from "../popup/launcher";
 import { createQuickPaletteCommand } from "../commands/quick-palette";
 import { createSelectionRuntime } from "../selection/runtime";
@@ -98,6 +104,7 @@ const backgroundSessionState = {
   loaded: false,
   pendingInjections: {},
   pendingBroadcasts: {},
+  pendingSelectorChecks: {},
   selectorAlerts: {},
 };
 let lastNormalWindowId = null;
@@ -420,15 +427,18 @@ async function ensureBackgroundSessionStateLoaded() {
     const result = await chrome.storage.session.get([
       PENDING_INJECTIONS_KEY,
       PENDING_BROADCASTS_KEY,
+      PENDING_SELECTOR_CHECKS_KEY,
       SELECTOR_ALERTS_KEY,
     ]);
     backgroundSessionState.pendingInjections = clonePlainValue(result[PENDING_INJECTIONS_KEY] ?? {}) ?? {};
     backgroundSessionState.pendingBroadcasts = clonePlainValue(result[PENDING_BROADCASTS_KEY] ?? {}) ?? {};
+    backgroundSessionState.pendingSelectorChecks = clonePlainValue(result[PENDING_SELECTOR_CHECKS_KEY] ?? {}) ?? {};
     backgroundSessionState.selectorAlerts = clonePlainValue(result[SELECTOR_ALERTS_KEY] ?? {}) ?? {};
   } catch (error) {
     console.error("[AI Prompt Broadcaster] Failed to initialize session-state cache.", error);
     backgroundSessionState.pendingInjections = {};
     backgroundSessionState.pendingBroadcasts = {};
+    backgroundSessionState.pendingSelectorChecks = {};
     backgroundSessionState.selectorAlerts = {};
   }
 
@@ -439,6 +449,7 @@ async function persistBackgroundSessionState() {
   await chrome.storage.session.set({
     [PENDING_INJECTIONS_KEY]: backgroundSessionState.pendingInjections,
     [PENDING_BROADCASTS_KEY]: backgroundSessionState.pendingBroadcasts,
+    [PENDING_SELECTOR_CHECKS_KEY]: backgroundSessionState.pendingSelectorChecks,
     [SELECTOR_ALERTS_KEY]: backgroundSessionState.selectorAlerts,
   });
 }
@@ -493,6 +504,31 @@ async function setSelectorAlerts(value) {
   return queueBackgroundStateMutation((state) => {
     state.selectorAlerts = clonePlainValue(value) ?? {};
     return clonePlainValue(state.selectorAlerts) ?? {};
+  });
+}
+
+async function clearPendingSelectorChecksForSiteId(serviceId) {
+  if (!(typeof serviceId === "string" && serviceId.trim())) {
+    return {};
+  }
+
+  return queueBackgroundStateMutation((state) => {
+    state.pendingSelectorChecks = clearPendingSelectorChecksForService(
+      state.pendingSelectorChecks,
+      serviceId
+    );
+    return clonePlainValue(state.pendingSelectorChecks) ?? {};
+  });
+}
+
+async function registerPendingSelectorCheckReport(report) {
+  return queueBackgroundStateMutation((state) => {
+    const result = registerPendingSelectorCheck(
+      state.pendingSelectorChecks,
+      report
+    );
+    state.pendingSelectorChecks = result.next;
+    return clonePlainValue(result) ?? result;
   });
 }
 
@@ -737,6 +773,7 @@ async function runReusableTabPreflight(tabId, site) {
     const snapshot = result?.result ?? {};
     return evaluateReusableTabSnapshot({
       pathname: snapshot.pathname,
+      supportedRoutes: Array.isArray(site?.supportedRoutes) ? site.supportedRoutes : [],
       hasPromptSurface: snapshot.hasPromptSurface,
       hasAuthSurface: snapshot.hasAuthSurface,
       hasSubmitSurface: snapshot.hasSubmitSurface,
@@ -1387,11 +1424,12 @@ async function createPendingBroadcast(prompt, targets, metadata = {}) {
 
 async function maybeCreateSelectorNotification(report) {
   try {
-    const signature = [
-      report.siteId,
-      report.pageUrl,
-      ...(report.missing ?? []).map((entry) => `${entry.field}:${entry.selector}`),
-    ].join("|");
+    const settings = await getAppSettings();
+    if (!settings.desktopNotifications) {
+      return;
+    }
+
+    const signature = buildSelectorAlertSignature(report);
 
     const shouldNotify = await queueBackgroundStateMutation((state) => {
       const selectorAlerts = state.selectorAlerts ?? {};
@@ -2373,8 +2411,16 @@ async function handleSelectorCheckInit(message) {
 }
 
 async function handleSelectorCheckReport(message) {
-  if (message?.status === "ok" && message?.siteId) {
-    await clearFailedSelector(message.siteId);
+  if (
+    (message?.status === "ok" ||
+      message?.status === "auth_page" ||
+      message?.status === "skipped") &&
+    message?.siteId
+  ) {
+    await clearPendingSelectorChecksForSiteId(message.siteId);
+    if (message.status === "ok") {
+      await clearFailedSelector(message.siteId);
+    }
     return { ok: true };
   }
 
@@ -2387,13 +2433,24 @@ async function handleSelectorCheckReport(message) {
     return { ok: true };
   }
 
-  await maybeCreateSelectorNotification({
+  const report = {
     siteId: message.siteId ?? "unknown",
     siteName: message.siteName ?? "AI service",
     pageUrl: message.pageUrl ?? "",
     missing,
-  });
-  await markFailedSelector(message.siteId ?? "unknown", missing[0]?.selector ?? "", "selector-checker");
+  };
+
+  const pendingResult = await registerPendingSelectorCheckReport(report);
+  if (!pendingResult?.promoted) {
+    return { ok: true };
+  }
+
+  await maybeCreateSelectorNotification(report);
+  await markFailedSelector(
+    message.siteId ?? "unknown",
+    missing[0]?.selector ?? "",
+    "selector-checker"
+  );
   return { ok: true };
 }
 
@@ -2402,6 +2459,18 @@ async function handleSelectorFailedMessage(message) {
   const selector = message?.selector ?? "";
   const site = await getSiteById(serviceId);
 
+  await clearPendingSelectorChecksForSiteId(serviceId);
+  await maybeCreateSelectorNotification({
+    siteId: serviceId || "unknown",
+    siteName: site?.name || serviceId || "AI service",
+    pageUrl: "",
+    missing: [
+      {
+        field: "inputSelector",
+        selector,
+      },
+    ],
+  });
   await markFailedSelector(serviceId, selector, "injector");
   await enqueueUiToast({
     message:
@@ -2416,6 +2485,7 @@ async function handleSelectorFailedMessage(message) {
 
 async function handleInjectSuccessMessage(message) {
   if (message?.serviceId) {
+    await clearPendingSelectorChecksForSiteId(message.serviceId);
     await clearFailedSelector(message.serviceId);
   }
 
@@ -2517,6 +2587,7 @@ async function resetAllExtensionData() {
   await queueBackgroundStateMutation((state) => {
     state.pendingInjections = {};
     state.pendingBroadcasts = {};
+    state.pendingSelectorChecks = {};
     state.selectorAlerts = {};
     return true;
   });
@@ -2525,6 +2596,7 @@ async function resetAllExtensionData() {
     additionalSessionKeys: [
       PENDING_INJECTIONS_KEY,
       PENDING_BROADCASTS_KEY,
+      PENDING_SELECTOR_CHECKS_KEY,
       SELECTOR_ALERTS_KEY,
     ],
     clearAlarmName: BADGE_CLEAR_ALARM,

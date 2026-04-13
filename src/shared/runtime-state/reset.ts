@@ -41,6 +41,7 @@ export async function resetPersistedExtensionState(
     LOCAL_PROMPT_STATE_KEYS.legacyLastPrompt,
   ]);
   const sessionKeys = normalizeStorageKeys(options.additionalSessionKeys, [
+    SESSION_RUNTIME_KEYS.pendingSelectorChecks,
     SESSION_RUNTIME_KEYS.popupFavoriteIntent,
     SESSION_RUNTIME_KEYS.favoriteRunJobs,
     SESSION_PROMPT_STATE_KEYS.popupPromptIntent,

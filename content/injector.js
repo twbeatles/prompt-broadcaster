@@ -379,6 +379,7 @@ var AIPromptBroadcasterInjectorBundle = (() => {
       name: "ChatGPT",
       url: "https://chatgpt.com/",
       hostname: "chatgpt.com",
+      supportedRoutes: [],
       inputSelector: "#prompt-textarea, div#prompt-textarea[contenteditable='true'], textarea[aria-label*='chatgpt' i], textarea[aria-label*='채팅' i]",
       fallbackSelectors: [
         "#prompt-textarea",
@@ -412,6 +413,7 @@ var AIPromptBroadcasterInjectorBundle = (() => {
       name: "Gemini",
       url: "https://gemini.google.com/app",
       hostname: "gemini.google.com",
+      supportedRoutes: ["/app"],
       inputSelector: "div[contenteditable='true'][role='textbox'], div.ql-editor.textarea.new-input-ui[contenteditable='true'], div.ql-editor[contenteditable='true'][role='textbox']",
       fallbackSelectors: [
         "div[contenteditable='true'][role='textbox']",
@@ -441,6 +443,7 @@ var AIPromptBroadcasterInjectorBundle = (() => {
       name: "Claude",
       url: "https://claude.ai/new",
       hostname: "claude.ai",
+      supportedRoutes: ["/new"],
       inputSelector: "div[contenteditable='true'][role='textbox'], div[contenteditable='true'][aria-label*='Claude' i], div[contenteditable='true'][aria-label*='prompt' i]",
       fallbackSelectors: [
         "div[contenteditable='true'][role='textbox']",
@@ -473,6 +476,7 @@ var AIPromptBroadcasterInjectorBundle = (() => {
       name: "Grok",
       url: "https://grok.com/",
       hostname: "grok.com",
+      supportedRoutes: [],
       inputSelector: "textarea[aria-label*='grok' i], textarea[placeholder*='help' i], textarea",
       fallbackSelectors: [
         "textarea[aria-label*='grok' i]",
@@ -507,6 +511,7 @@ var AIPromptBroadcasterInjectorBundle = (() => {
       url: "https://www.perplexity.ai/",
       hostname: "www.perplexity.ai",
       hostnameAliases: ["perplexity.ai"],
+      supportedRoutes: [],
       inputSelector: "#ask-input[data-lexical-editor='true'][role='textbox']",
       fallbackSelectors: [
         "div#ask-input[data-lexical-editor='true'][role='textbox']",

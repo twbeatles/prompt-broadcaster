@@ -599,6 +599,9 @@
   "popup_service_field_hostname_aliases": {
     "message": "Hostname aliases"
   },
+  "popup_service_field_supported_routes": {
+    "message": "Supported routes"
+  },
   "popup_service_field_verified_at": {
     "message": "Verified date"
   },

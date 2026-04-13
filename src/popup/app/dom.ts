@@ -76,6 +76,8 @@ export const popupDom = {
     serviceAuthSelectorsInput: document.getElementById("service-auth-selectors-input"),
     serviceHostnameAliasesLabel: document.getElementById("service-hostname-aliases-label"),
     serviceHostnameAliasesInput: document.getElementById("service-hostname-aliases-input"),
+    serviceSupportedRoutesLabel: document.getElementById("service-supported-routes-label"),
+    serviceSupportedRoutesInput: document.getElementById("service-supported-routes-input"),
     servicePermissionPreview: document.getElementById("service-permission-preview"),
     serviceVerifiedAtLabel: document.getElementById("service-verified-at-label"),
     serviceVerifiedAtInput: document.getElementById("service-verified-at-input"),

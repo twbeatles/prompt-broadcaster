@@ -41,7 +41,7 @@
 - **확장 Dashboard 분석** – 서비스 점유율 외에 활동 히트맵, 서비스별 성공률 추이, 상위 실패 원인, 전략 요약 제공
 - **예약 실행 결과 요약** – options `Schedules`에서 최근 scheduled 실행 시각, 상태, 실패 상세를 별도로 확인 가능
 - **서비스별 프롬프트 오버라이드** – 서비스 카드마다 메인 프롬프트와 다른 별도 프롬프트를 지정 가능
-- 히스토리/즐겨찾기/템플릿 캐시/설정/서비스 구성을 JSON으로 내보내기 및 가져오기 (`v7`, 체인/예약 메타, 재전송 스냅샷, 구조화된 selector verification metadata, `{{counter}}` 포함)
+- 히스토리/즐겨찾기/템플릿 캐시/설정/서비스 구성을 JSON으로 내보내기 및 가져오기 (`v8`, 체인/예약 메타, 재전송 스냅샷, 구조화된 selector verification metadata, `supportedRoutes`, `{{counter}}` 포함)
 - **상세 import 리포트 + 구조화된 전송 결과 코드** – 권한 거부/ID 재작성/built-in 보정 내역과 서비스별 결과 코드 표시
 - **확장 템플릿 변수** – `{{url}}`, `{{title}}`, `{{selection}}`, `{{counter}}`, `{{random}}` 등 9개 이상의 시스템 변수 지원
 - Chrome MV3 기반, 백엔드 없음
@@ -187,6 +187,7 @@ GIF 자리표시자: `docs/assets/usage-demo.gif`
 
 ### 셀렉터 오류 신고
 셀렉터 경고(⚠)가 표시된 서비스는 설정 탭의 서비스 관리 카드에 **Report issue** 링크가 표시됩니다. 클릭하면 해당 서비스의 GitHub 이슈 검색 페이지가 열립니다.
+proactive selector checker의 첫 번째 미검출은 같은 브라우저 세션 안의 pending 상태로만 보관되고, 같은 서비스/같은 missing signature가 다시 발생하거나 실제 injector가 selector를 못 찾았을 때만 popup 경고와 OS 알림으로 승격됩니다.
 
 ### 전송 결과 비교 뷰
 옵션 페이지(`chrome://extensions` → AI Prompt Broadcaster → 세부정보 → 확장 옵션) 히스토리 탭에서 특정 전송 기록을 클릭하면 모달 하단에 서비스별 전송 결과(✅ 성공 / ❌ 실패 / ⏳ 요청만)가 카드 형태로 나열됩니다.
@@ -194,13 +195,13 @@ GIF 자리표시자: `docs/assets/usage-demo.gif`
 서비스별 결과는 문자열 한 개가 아니라 구조화된 결과 코드로 저장됩니다. 현재 주요 코드는 `submitted`, `selector_timeout`, `auth_required`, `submit_failed`, `strategy_exhausted`, `injection_timeout`, `cancelled`, `unexpected_error` 등입니다.
 
 ### 가져오기/내보내기와 상세 리포트
-- JSON export는 항상 `version: 7`으로 기록됩니다.
-- import는 `v1 -> v2 -> v3 -> v4 -> v5 -> v6 -> v7` 단계형 마이그레이션을 거쳐 기존 데이터를 정규화합니다.
-- `v7`은 구조화된 selector verification metadata(`verifiedAt`, `verifiedRoute`, `verifiedAuthState`, `verifiedLocale`, `verifiedVersion`)를 유지합니다. legacy `lastVerified`는 호환용 month 필드로 남고, `verifiedAt`가 있으면 `YYYY-MM`으로 자동 derive됩니다.
+- JSON export는 항상 `version: 8`로 기록됩니다.
+- import는 `v1 -> v2 -> v3 -> v4 -> v5 -> v6 -> v7 -> v8` 단계형 마이그레이션을 거쳐 기존 데이터를 정규화합니다.
+- `v8`은 구조화된 selector verification metadata(`verifiedAt`, `verifiedRoute`, `verifiedAuthState`, `verifiedLocale`, `verifiedVersion`)와 서비스별 `supportedRoutes`를 유지합니다. legacy `lastVerified`는 호환용 month 필드로 남고, `verifiedAt`가 있으면 `YYYY-MM`으로 자동 derive됩니다.
 - popup과 options 모두 import 직후 상세 리포트 모달을 띄워 적용된 서비스, 거부된 서비스, 권한 거부 origin, ID 재작성, alias 검증 오류, built-in 보정 내역을 보여줍니다.
 
 ### Reset data
-옵션 페이지의 **Reset data**는 background worker를 통해 실행됩니다. 진행 중인 방송을 먼저 정리한 뒤 히스토리, 즐겨찾기, 템플릿 캐시, 커스텀 서비스, `composeDraftPrompt`, `lastSentPrompt`, 전략 통계(`strategyStats`) 같은 local 데이터뿐 아니라 `pendingBroadcasts`, `pendingInjections`, `pendingUiToasts`, `lastBroadcast`, `popupPromptIntent`, `favoriteRunJobs` 같은 session/runtime 상태도 함께 초기화합니다.
+옵션 페이지의 **Reset data**는 background worker를 통해 실행됩니다. 진행 중인 방송을 먼저 정리한 뒤 히스토리, 즐겨찾기, 템플릿 캐시, 커스텀 서비스, `composeDraftPrompt`, `lastSentPrompt`, 전략 통계(`strategyStats`) 같은 local 데이터뿐 아니라 `pendingBroadcasts`, `pendingInjections`, `pendingSelectorChecks`, `pendingUiToasts`, `lastBroadcast`, `popupPromptIntent`, `favoriteRunJobs` 같은 session/runtime 상태도 함께 초기화합니다.
 
 ### 새 AI 서비스 추가 방법
 기본 내장 서비스 추가는 `src/config/sites/builtins.ts`에 새 항목을 추가하는 것입니다. `src/config/sites.ts`는 하위 호환용 re-export만 담당합니다.
@@ -213,6 +214,7 @@ GIF 자리표시자: `docs/assets/usage-demo.gif`
   name: "NewAI",
   url: "https://newai.example.com/",
   hostname: "newai.example.com",
+  supportedRoutes: ["/chat"],
   inputSelector: "textarea[name='prompt']",
   inputType: "textarea",
   submitSelector: "button[type='submit']",
@@ -229,8 +231,10 @@ GIF 자리표시자: `docs/assets/usage-demo.gif`
 추가 체크사항:
 - 기존 도메인이 아니라면 [manifest.json](manifest.json)의 `host_permissions`와 `content_scripts.matches`에도 새 도메인을 추가해야 합니다.
 - `inputSelector`는 가능한 한 안정적인 `id`, `data-testid`, `aria-label` 기반으로 잡는 것이 좋습니다.
+- `supportedRoutes`는 selector checker와 열린 탭 재사용 preflight가 공통으로 쓰는 pathname prefix allowlist입니다. 비워 두면 전체 경로를 허용합니다.
 - `waitMs`는 너무 짧게 잡지 말고 hydration 이후를 고려해 설정하세요.
 - 변경 후 `npm run build`를 다시 실행해 `dist/`를 갱신하세요.
+- 릴리스 전에는 [docs/release-selector-verification-checklist.md](docs/release-selector-verification-checklist.md)를 따라 auth route, canonical route, locale, prompt surface, submit surface를 다시 검증하세요.
 
 ### 셀렉터가 깨졌을 때 직접 수정하는 방법
 1. 문제 사이트를 Chrome에서 엽니다.
@@ -284,7 +288,7 @@ For build and packaging steps, see [docs/build-guide.md](docs/build-guide.md). F
 - **Expanded dashboard analytics** — activity heatmap, per-service success trends, top failure reasons, and strategy summary on the options dashboard
 - **Scheduled-run result summary** — the options `Schedules` section separates the last scheduled run from manual runs and surfaces its status plus representative failure detail
 - **Per-service prompt overrides** — assign a different prompt to individual service cards without changing the main prompt
-- JSON export/import for history, favorites, template cache, settings, and service configuration, including `broadcastCounter`, history resend snapshots, structured selector verification metadata, and export `version: 7`
+- JSON export/import for history, favorites, template cache, settings, and service configuration, including `broadcastCounter`, history resend snapshots, structured selector verification metadata, `supportedRoutes`, and export `version: 8`
 - History keeps requested, submitted, failed, and per-site snapshot prompt data so partial broadcasts can be replayed accurately
 - **Detailed import reports and structured result codes** — popup/options show rejected services, rewritten ids, built-in adjustments, service-level result codes, and selector verification metadata
 - **Extended template variables** — 9+ system variables including `{{url}}`, `{{title}}`, `{{selection}}`, `{{counter}}`, and `{{random}}`
@@ -429,6 +433,7 @@ Both the main prompt and per-service overrides go through the same template-vari
 
 ### Selector Error Reporting
 When the selector checker detects a stale or missing selector (⚠), a **Report issue** link appears in the settings tab's service management card for that service. Clicking it opens a GitHub issue search scoped to that service so you can check existing reports or file a new one.
+The first proactive selector miss stays session-local as a pending signal only. Popup warnings and desktop notifications appear only when the same service reports the same missing signature again in the same browser session or when the live injector itself fails to find the selector.
 
 ### Broadcast Result Comparison View
 The options page history detail modal now includes a **Broadcast results** section listing every requested service with its outcome: ✅ succeeded, ❌ failed, or ⏳ requested but no result recorded. Successful rows include an **Open** link pointing to the service URL.
@@ -445,9 +450,9 @@ Each stored service result now uses a structured code rather than a free-form st
 - History rows can carry `originFavoriteId`, `chainRunId`, `chainStepIndex`, `chainStepCount`, and `trigger` so chain runs and scheduled executions remain traceable.
 
 ### Import / Export and Detailed Reports
-- JSON export always writes `version: 7`.
-- Import applies staged migrations from older payloads (`v1 -> v2 -> v3 -> v4 -> v5 -> v6 -> v7`) before normalizing settings, favorites, and history records.
-- `v7` preserves structured selector verification metadata (`verifiedAt`, `verifiedRoute`, `verifiedAuthState`, `verifiedLocale`, `verifiedVersion`). Legacy `lastVerified` remains for compatibility and is derived from `verifiedAt` when available.
+- JSON export always writes `version: 8`.
+- Import applies staged migrations from older payloads (`v1 -> v2 -> v3 -> v4 -> v5 -> v6 -> v7 -> v8`) before normalizing settings, favorites, and history records.
+- `v8` preserves structured selector verification metadata (`verifiedAt`, `verifiedRoute`, `verifiedAuthState`, `verifiedLocale`, `verifiedVersion`) and `supportedRoutes`. Legacy `lastVerified` remains for compatibility and is derived from `verifiedAt` when available.
 - Both popup and options show a detailed import report modal listing accepted services, rejected services, denied origins, rewritten ids, alias validation errors, and built-in override adjustments.
 
 ### Custom Service Advanced Settings
@@ -456,6 +461,7 @@ The popup service editor supports the following advanced fields for custom servi
 - `fallbackSelectors`: alternate selectors checked when the primary input selector fails
 - `authSelectors`: selectors that indicate a dedicated login or auth screen when no prompt surface is visible
 - `hostnameAliases`: extra allowed hostnames for redirects or alternate app domains
+- `supportedRoutes`: pathname prefixes allowed for selector checking and reusable-tab preflight; leave empty to allow all routes
 - `verifiedAt`: a structured verification date in `YYYY-MM-DD`
 - `verifiedRoute`: the route used during the latest selector verification
 - `verifiedAuthState`: `logged-in`, `logged-out`, or `soft-gated`
@@ -496,6 +502,7 @@ Example:
   name: "NewAI",
   url: "https://newai.example.com/",
   hostname: "newai.example.com",
+  supportedRoutes: ["/compose"],
   hostnameAliases: [
     "app.newai.example.com"
   ],
@@ -524,8 +531,10 @@ Example:
 Additional notes:
 - If the service uses a new domain, also update `host_permissions` and `content_scripts.matches` in [manifest.json](manifest.json).
 - Prefer stable selectors using `id`, `data-testid`, or `aria-label`.
+- `supportedRoutes` is the shared pathname-prefix allowlist used by selector checking and reusable-tab preflight. Leave it empty only when the service genuinely supports multiple composer routes.
 - Set `waitMs` conservatively to account for hydration and delayed editors.
 - Run `npm run build` again after any source change so both `dist/` and the generated root runtime mirrors stay current.
+- Before a release, walk through [docs/release-selector-verification-checklist.md](docs/release-selector-verification-checklist.md) for auth route, canonical route, locale, prompt surface, submit surface, and soft-gated checks.
 
 ### Local Smoke QA
 The repository includes Playwright-based local fixtures under `qa/fixtures/`, orchestrated by `scripts/qa-smoke.mjs` with helper modules under `scripts/qa-smoke/`.
@@ -552,7 +561,7 @@ The smoke script verifies:
 - custom service permission cleanup for shared and unused origins
 - JSON import repair for alias-based custom service permissions and invalid built-in click-submit overrides
 - `broadcastCounter` export/import/reset semantics
-- import migration to export `version: 7` defaults
+- import migration to export `version: 8` defaults
 - history replay snapshot fallback and resend routing safety
 - draft-first popup restore and popup handoff consumption
 - favorite background job dedupe helpers and runtime-state cleanup

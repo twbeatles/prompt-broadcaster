@@ -7,6 +7,7 @@ export const ONBOARDING_URL = "onboarding/onboarding.html";
 export const POPUP_PAGE_URL = "popup/popup.html";
 export const PENDING_INJECTIONS_KEY = "pendingInjections";
 export const PENDING_BROADCASTS_KEY = "pendingBroadcasts";
+export const PENDING_SELECTOR_CHECKS_KEY = "pendingSelectorChecks";
 export const SELECTOR_ALERTS_KEY = "selectorAlerts";
 export const NOTIFICATION_ICON_PATH = "icons/icon-128.png";
 export const CONTEXT_MENU_ROOT_ID = "apb-root";

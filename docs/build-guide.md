@@ -83,7 +83,9 @@ The smoke flow loads local fixtures from `qa/fixtures/` and validates the built 
 - alias-based custom-service permission requests and cleanup of unused optional origins
 - built-in override import repair for `click` configurations with empty selectors
 - `broadcastCounter` export/import/reset consistency
-- import migration and export `version: 7` normalization
+- import migration and export `version: 8` normalization
+- `supportedRoutes` normalization and reusable-tab route gating
+- pending selector escalation (`pendingSelectorChecks` -> confirmed warning)
 - `siteOrder` normalization and ordering reuse
 - favorite chain/schedule field backfill for legacy imports
 - favorite run job dedupe behavior, chain target fallback, and prepared clipboard context
@@ -176,24 +178,25 @@ The generated ZIP contains the built extension from `dist/` only.
 6. Open the toolbar popup and confirm no modal is shown on initial load
 7. Open and close the favorites-save modal from the popup and confirm both `닫기` and `취소` work
 8. In the popup, verify that currently open AI tabs appear under the matching service cards and that `Reuse open AI tabs` behaves as expected
-   Confirm that auth pages, settings pages, and tabs without a usable prompt surface are not offered as reusable targets
+   Confirm that auth pages, settings pages, unsupported routes, and tabs without a usable prompt surface are not offered as reusable targets
 9. Verify prompt submission on all built-in services, with dedicated checks for Claude click-submit behavior and Perplexity conditional submit behavior
    For Perplexity specifically, confirm that the prompt is inserted once into `#ask-input[data-lexical-editor='true']` and that submission still succeeds through the standard submit path
-10. Verify that a per-service prompt override with template variables resolves correctly and that retry reuses the originally rendered prompt even after editing the popup text
-11. Add, import, delete, and reset a custom service and confirm optional host permissions are granted and cleaned up only for the required origins
-12. Confirm that popup sorting, favorite duplication, resend-service selection, import-report modals, and the integrated favorite editor all behave correctly
+10. Walk through [release-selector-verification-checklist.md](release-selector-verification-checklist.md) for every built-in touched by the release
+11. Verify that a per-service prompt override with template variables resolves correctly and that retry reuses the originally rendered prompt even after editing the popup text
+12. Add, import, delete, and reset a custom service and confirm optional host permissions are granted and cleaned up only for the required origins
+13. Confirm that popup sorting, favorite duplication, resend-service selection, import-report modals, and the integrated favorite editor all behave correctly
    Verify that single favorites can edit prompt body text inline and that single/chain mode switches preserve expected values
-13. Verify single favorites, chain favorites, scheduled favorites, and the options `Schedules` section
+14. Verify single favorites, chain favorites, scheduled favorites, and the options `Schedules` section
    Confirm the options action label is `Edit in popup`, and that the services section opens the popup manager for detailed editing
-14. Trigger popup-side favorite runs that use `{{clipboard}}`, `{{url}}`, or `{{selection}}` and confirm they queue without opening the editor unnecessarily
-15. Trigger the quick palette with `Alt+Shift+F` on an injectable page and confirm both direct execution and popup fallback flows
-16. Confirm popup fallback resumes automatically when only popup-resolvable context was missing, and opens the editor only when user-variable input is still required
-17. Confirm that cancelling a broadcast leaves reused tabs open and closes only newly opened tabs
-18. In options `Dashboard`, confirm the heatmap, service trend, top failure reason, and strategy summary panels render with sane labels and escaped content
-19. In options `Services`, reorder services with `Move up` / `Move down` and confirm the same order appears in popup compose and favorite editor target checklists
-20. Trigger **Reset data** and confirm it clears both local prompt data and in-memory/session runtime state, including strategy stats
-21. Run the packaging script for your platform
-22. Upload the generated ZIP to Chrome Web Store or attach it to a GitHub release
+15. Trigger popup-side favorite runs that use `{{clipboard}}`, `{{url}}`, or `{{selection}}` and confirm they queue without opening the editor unnecessarily
+16. Trigger the quick palette with `Alt+Shift+F` on an injectable page and confirm both direct execution and popup fallback flows
+17. Confirm popup fallback resumes automatically when only popup-resolvable context was missing, and opens the editor only when user-variable input is still required
+18. Confirm that cancelling a broadcast leaves reused tabs open and closes only newly opened tabs
+19. In options `Dashboard`, confirm the heatmap, service trend, top failure reason, and strategy summary panels render with sane labels and escaped content
+20. In options `Services`, reorder services with `Move up` / `Move down` and confirm the same order appears in popup compose and favorite editor target checklists
+21. Trigger **Reset data** and confirm it clears both local prompt data and in-memory/session runtime state, including `pendingSelectorChecks` and strategy stats
+22. Run the packaging script for your platform
+23. Upload the generated ZIP to Chrome Web Store or attach it to a GitHub release
 
 ## Chrome Web Store Release Checklist
 
@@ -267,5 +270,6 @@ Before uploading, run these manual checks in a real Chrome window:
 ## Related Docs
 
 - Architecture: [extension-architecture.md](extension-architecture.md)
+- Release selector checklist: [release-selector-verification-checklist.md](release-selector-verification-checklist.md)
 - Web Store checklist: [web_store_checklist.md](web_store_checklist.md)
 - Privacy policy draft: [privacy-policy.md](privacy-policy.md)

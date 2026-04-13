@@ -212,6 +212,7 @@ Responsibilities:
 - verify configured selectors against the live page
 - report selector failures back to the background worker
 - detect dedicated auth/login pages
+- skip unsupported routes and settings routes before escalating warnings
 - ignore empty-state submit absence for services using conditional submit preflight semantics
 - clear stale warnings when later checks recover
 
@@ -220,6 +221,7 @@ Main statuses:
 - `ok`
 - `selector_missing`
 - `auth_page`
+- `skipped`
 
 ### Selection Script
 
@@ -252,6 +254,7 @@ Responsibilities:
 - selectors and fallback selectors
 - submit strategies
 - authentication selectors
+- route allowlists (`supportedRoutes`)
 - default wait times
 - verification metadata
 
@@ -272,6 +275,7 @@ Runtime site records can include:
 - `fallbackSelectors`
 - `authSelectors`
 - `hostnameAliases`
+- `supportedRoutes`
 - `permissionPatterns`
 - `lastVerified` (legacy `YYYY-MM` compatibility field)
 - `verifiedAt`
@@ -303,6 +307,7 @@ Important session-storage keys:
 
 - `pendingInjections`
 - `pendingBroadcasts`
+- `pendingSelectorChecks`
 - `selectorAlerts`
 - `lastBroadcast`
 - `pendingUiToasts`
@@ -310,7 +315,7 @@ Important session-storage keys:
 - `popupFavoriteIntent`
 - `favoriteRunJobs`
 
-The background worker mirrors `pendingInjections`, `pendingBroadcasts`, and `selectorAlerts` in memory and updates them through a serialized mutation chain so overlapping completions and cancellations do not lose results. Favorite popup intents and favorite run jobs are stored through `src/shared/runtime-state/`.
+The background worker mirrors `pendingInjections`, `pendingBroadcasts`, `pendingSelectorChecks`, and `selectorAlerts` in memory and updates them through a serialized mutation chain so overlapping completions and cancellations do not lose results. Favorite popup intents and favorite run jobs are stored through `src/shared/runtime-state/`.
 
 ### Prompt History Schema
 
@@ -363,12 +368,13 @@ Favorite prompt rendering plus queue submission is serialized so concurrent `{{c
 
 ### Broadcast Counter and Export Version
 
-`broadcastCounter` is stored in local storage and exported with prompt data JSON `version: 7`.
+`broadcastCounter` is stored in local storage and exported with prompt data JSON `version: 8`.
 
 - popup preview resolves `{{counter}}` as `current + 1`
 - the stored counter increments only when a broadcast queues at least one target site
-- import migrates older payloads through `v1 -> v2 -> v3 -> v4 -> v5 -> v6 -> v7`
+- import migrates older payloads through `v1 -> v2 -> v3 -> v4 -> v5 -> v6 -> v7 -> v8`
 - runtime site verification metadata is preserved as structured fields, while `lastVerified` is derived from `verifiedAt` when available
+- runtime site route policy is preserved through normalized `supportedRoutes`
 - `appSettings.historyLimit` is a non-destructive default visible cap. Popup/options history lists apply it at read time, while storage and JSON export keep the full history set.
 - reset-data clears the counter together with the rest of the user data
 
@@ -466,7 +472,9 @@ Current smoke coverage includes:
 - custom service permission cleanup and alias-origin handling
 - built-in override repair for invalid click-submit imports
 - `broadcastCounter` export/import/reset semantics
-- import migration to export `version: 7`
+- import migration to export `version: 8`
+- `supportedRoutes` normalization and route-aware preflight
+- pending selector escalation (`pendingSelectorChecks`)
 - `siteOrder` normalization and ordering reuse
 - favorite chain/schedule field normalization for legacy imports
 - favorite run job dedupe, effective chain-target fallback, and prepared clipboard context

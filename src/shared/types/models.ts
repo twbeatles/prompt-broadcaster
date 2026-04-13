@@ -108,6 +108,7 @@ export interface SiteConfig {
   url: string;
   hostname?: string;
   hostnameAliases?: string[];
+  supportedRoutes?: string[];
   inputSelector: string;
   inputType: InputType;
   submitSelector?: string;
@@ -211,6 +212,15 @@ export interface FailedSelectorRecord {
   selector: string;
   source: string;
   timestamp: string;
+}
+
+export interface PendingSelectorCheckRecord {
+  serviceId: string;
+  signature: string;
+  missing: string[];
+  count: number;
+  firstSeenAt: number;
+  lastSeenAt: number;
 }
 
 export interface UiToastAction {
@@ -325,6 +335,7 @@ export interface FavoriteRunJobRecord extends FavoriteRunJobSummary {
 
 export interface ReusableTabSurfaceSnapshot {
   pathname?: string;
+  supportedRoutes?: string[];
   hasPromptSurface?: boolean;
   hasAuthSurface?: boolean;
   hasSubmitSurface?: boolean;

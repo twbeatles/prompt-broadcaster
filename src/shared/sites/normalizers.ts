@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { BUILT_IN_SITE_STYLE_MAP, VALID_INPUT_TYPES, VALID_SELECTOR_CHECK_MODES, VALID_SUBMIT_METHODS } from "./constants";
 import { buildVerificationMetadata } from "./verification";
+import { getConfiguredSupportedRoutes, normalizeSupportedRoutes } from "./selector-utils";
 
 export function safeText(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -254,6 +255,7 @@ export function buildBaseSiteRecord(site, builtInMeta = {}) {
   const hostnameAliases = normalizeHostnameAliases(site.hostnameAliases, hostname);
   const normalizedSelectors = normalizePerplexitySelectors(site);
   const verification = buildVerificationMetadata(site);
+  const supportedRoutes = getConfiguredSupportedRoutes(site);
 
   return {
     id: safeText(site.id),
@@ -261,6 +263,7 @@ export function buildBaseSiteRecord(site, builtInMeta = {}) {
     url,
     hostname,
     hostnameAliases,
+    supportedRoutes,
     inputSelector: normalizedSelectors.inputSelector,
     inputType: normalizeInputType(site.inputType, "textarea"),
     submitSelector: safeText(site.submitSelector),
@@ -296,9 +299,13 @@ export function sanitizeBuiltInOverride(override = {}, originalSite = {}) {
       ? safeText(override.submitSelector) || safeText(originalSite.submitSelector)
       : safeText(override.submitSelector);
   const verification = buildVerificationMetadata(override, originalSite);
+  const supportedRoutes = Object.prototype.hasOwnProperty.call(override ?? {}, "supportedRoutes")
+    ? normalizeSupportedRoutes(override.supportedRoutes)
+    : getConfiguredSupportedRoutes(originalSite);
 
   return {
     name: safeText(override.name) || originalSite.name,
+    supportedRoutes,
     inputSelector: safeText(override.inputSelector) || originalSite.inputSelector,
     inputType: normalizeInputType(override.inputType, originalSite.inputType),
     submitSelector,
@@ -371,6 +378,9 @@ export function normalizeCustomSite(site) {
       url,
       hostname,
       hostnameAliases: normalizeHostnameAliases(site?.hostnameAliases, hostname),
+      supportedRoutes: Object.prototype.hasOwnProperty.call(site ?? {}, "supportedRoutes")
+        ? site?.supportedRoutes
+        : undefined,
       inputSelector: safeText(site?.inputSelector),
       inputType: normalizeInputType(site?.inputType, "textarea"),
       submitSelector: safeText(site?.submitSelector),

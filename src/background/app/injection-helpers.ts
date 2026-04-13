@@ -76,6 +76,7 @@ export function buildInjectionConfig(site, runtimeOverrides = {}) {
     url: site?.url ?? "",
     hostname: site?.hostname ?? "",
     hostnameAliases: Array.isArray(site?.hostnameAliases) ? site.hostnameAliases : [],
+    supportedRoutes: Array.isArray(site?.supportedRoutes) ? site.supportedRoutes : [],
     inputSelector: site?.inputSelector ?? "",
     fallbackSelectors: Array.isArray(site?.fallbackSelectors) ? site.fallbackSelectors : [],
     inputType: site?.inputType ?? "textarea",

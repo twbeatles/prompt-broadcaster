@@ -168,6 +168,8 @@ const {
   serviceAuthSelectorsInput,
   serviceHostnameAliasesLabel,
   serviceHostnameAliasesInput,
+  serviceSupportedRoutesLabel,
+  serviceSupportedRoutesInput,
   servicePermissionPreview,
   serviceVerifiedAtLabel,
   serviceVerifiedAtInput,
@@ -2016,6 +2018,7 @@ function renderTabLabels() {
   serviceFallbackSelectorsLabel.textContent = t.serviceFieldFallbackSelectors;
   serviceAuthSelectorsLabel.textContent = t.serviceFieldAuthSelectors;
   serviceHostnameAliasesLabel.textContent = t.serviceFieldHostnameAliases;
+  serviceSupportedRoutesLabel.textContent = t.serviceFieldSupportedRoutes;
   serviceVerifiedAtLabel.textContent = t.serviceFieldVerifiedAt;
   serviceVerifiedRouteLabel.textContent = t.serviceFieldVerifiedRoute;
   serviceVerifiedAuthStateLabel.textContent = t.serviceFieldVerifiedAuthState;
@@ -2352,12 +2355,14 @@ function setServicePermissionPreview(message = "", isError = false) {
 
 function renderServicePermissionPreview(draft = readServiceEditorDraft(), validation = null) {
   const aliasErrors = validation?.fieldErrors?.hostnameAliases ?? [];
+  const supportedRouteErrors = validation?.fieldErrors?.supportedRoutes ?? [];
   const aliasValidation = aliasErrors.length > 0
     ? { valid: false, errors: aliasErrors }
     : validateHostnameAliases(draft.hostnameAliases);
   const hasAliasError = aliasValidation.errors.length > 0;
 
   serviceHostnameAliasesInput.setAttribute("aria-invalid", String(hasAliasError));
+  serviceSupportedRoutesInput.setAttribute("aria-invalid", String(supportedRouteErrors.length > 0));
 
   if (hasAliasError) {
     setServicePermissionPreview(aliasValidation.errors.join(" "), true);
@@ -2391,6 +2396,7 @@ function resetServiceEditorForm() {
   serviceFallbackSelectorsInput.value = "";
   serviceAuthSelectorsInput.value = "";
   serviceHostnameAliasesInput.value = "";
+  serviceSupportedRoutesInput.value = "";
   serviceHostnameAliasesInput.disabled = false;
   serviceVerifiedAtInput.value = "";
   serviceVerifiedRouteInput.value = "";
@@ -2438,6 +2444,7 @@ function populateServiceEditor(site) {
   serviceFallbackSelectorsInput.value = joinMultilineValues(site?.fallbackSelectors);
   serviceAuthSelectorsInput.value = joinMultilineValues(site?.authSelectors);
   serviceHostnameAliasesInput.value = joinMultilineValues(site?.hostnameAliases);
+  serviceSupportedRoutesInput.value = joinMultilineValues(site?.supportedRoutes);
   serviceHostnameAliasesInput.disabled = Boolean(site?.isBuiltIn);
   serviceVerifiedAtInput.value = site?.verifiedAt ?? "";
   serviceVerifiedRouteInput.value = site?.verifiedRoute ?? "";
@@ -2534,6 +2541,7 @@ function readServiceEditorDraft() {
     fallbackSelectors: splitMultilineValues(serviceFallbackSelectorsInput.value),
     authSelectors: splitMultilineValues(serviceAuthSelectorsInput.value),
     hostnameAliases: splitMultilineValues(serviceHostnameAliasesInput.value),
+    supportedRoutes: splitMultilineValues(serviceSupportedRoutesInput.value),
     verifiedAt: serviceVerifiedAtInput.value.trim(),
     verifiedRoute: serviceVerifiedRouteInput.value.trim(),
     verifiedAuthState: serviceVerifiedAuthStateSelect.value,
