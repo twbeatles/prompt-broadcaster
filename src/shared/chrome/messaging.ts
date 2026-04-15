@@ -1,3 +1,10 @@
+import type {
+  RuntimeAction,
+  RuntimeMessage,
+  RuntimeMessageOf,
+  RuntimeResponseOf,
+} from "../types/messages";
+
 const DEFAULT_RUNTIME_MESSAGE_TIMEOUT_MS = 5000;
 
 function normalizeTimeoutMs(timeoutMs: unknown): number {
@@ -9,16 +16,26 @@ function normalizeTimeoutMs(timeoutMs: unknown): number {
   return Math.max(0, Math.round(numericValue));
 }
 
-export function sendRuntimeMessage<T = unknown>(
-  message: unknown,
+export function sendRuntimeMessage<TAction extends RuntimeAction>(
+  message: RuntimeMessageOf<TAction>,
+  timeoutMs?: number,
+  fallbackValue?: RuntimeResponseOf<TAction> | null,
+): Promise<RuntimeResponseOf<TAction> | null>;
+export function sendRuntimeMessage<TResponse = unknown>(
+  message: RuntimeMessage | Record<string, unknown>,
+  timeoutMs?: number,
+  fallbackValue?: TResponse | null,
+): Promise<TResponse | null>;
+export function sendRuntimeMessage<TResponse = unknown>(
+  message: RuntimeMessage | Record<string, unknown>,
   timeoutMs = 0,
-  fallbackValue: T | null = null
-): Promise<T | null> {
+  fallbackValue: TResponse | null = null,
+): Promise<TResponse | null> {
   return new Promise((resolve) => {
     let settled = false;
     let timeoutId = 0;
 
-    const finish = (value: T | null) => {
+    const finish = (value: TResponse | null) => {
       if (settled) {
         return;
       }
@@ -42,7 +59,7 @@ export function sendRuntimeMessage<T = unknown>(
           return;
         }
 
-        finish((response ?? fallbackValue) as T | null);
+        finish((response ?? fallbackValue) as TResponse | null);
       });
     } catch (_error) {
       finish(fallbackValue);
@@ -50,10 +67,20 @@ export function sendRuntimeMessage<T = unknown>(
   });
 }
 
-export function sendRuntimeMessageWithTimeout<T = unknown>(
-  message: unknown,
+export function sendRuntimeMessageWithTimeout<TAction extends RuntimeAction>(
+  message: RuntimeMessageOf<TAction>,
+  timeoutMs?: number,
+  fallbackValue?: RuntimeResponseOf<TAction> | null,
+): Promise<RuntimeResponseOf<TAction> | null>;
+export function sendRuntimeMessageWithTimeout<TResponse = unknown>(
+  message: RuntimeMessage | Record<string, unknown>,
+  timeoutMs?: number,
+  fallbackValue?: TResponse | null,
+): Promise<TResponse | null>;
+export function sendRuntimeMessageWithTimeout<TResponse = unknown>(
+  message: RuntimeMessage | Record<string, unknown>,
   timeoutMs = DEFAULT_RUNTIME_MESSAGE_TIMEOUT_MS,
-  fallbackValue: T | null = null
-): Promise<T | null> {
+  fallbackValue: TResponse | null = null,
+): Promise<TResponse | null> {
   return sendRuntimeMessage(message, timeoutMs, fallbackValue);
 }

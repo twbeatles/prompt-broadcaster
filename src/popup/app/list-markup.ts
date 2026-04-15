@@ -1,5 +1,11 @@
-// @ts-nocheck
 import { getTargetSnapshotSiteIds } from "../../shared/broadcast/target-snapshots";
+import type {
+  FavoritePrompt,
+  FavoriteRunJobRecord,
+  ImportSummary,
+  PromptHistoryItem,
+  RuntimeSite,
+} from "../../shared/types/models";
 import { msg, t } from "./i18n";
 import {
   escapeAttribute,
@@ -10,7 +16,7 @@ import {
   previewText,
 } from "./helpers";
 
-export function buildEmptyState(message) {
+export function buildEmptyState(message: string): string {
   return `
     <div class="empty-state">
       <div>${escapeHtml(message)}</div>
@@ -19,11 +25,14 @@ export function buildEmptyState(message) {
   `;
 }
 
-export function getHistorySelectedSiteIds(item) {
+export function getHistorySelectedSiteIds(item: PromptHistoryItem): string[] {
   return normalizeSiteIdList(getTargetSnapshotSiteIds(item));
 }
 
-export function renderServiceBadges(siteIds = [], runtimeSites = []) {
+export function renderServiceBadges(
+  siteIds: string[] = [],
+  runtimeSites: RuntimeSite[] = [],
+): string {
   return siteIds
     .map((siteId) => {
       const site = runtimeSites.find((entry) => entry.id === siteId);
@@ -33,7 +42,17 @@ export function renderServiceBadges(siteIds = [], runtimeSites = []) {
     .join("");
 }
 
-export function buildHistoryItemMarkup(item, { openMenuKey = null, runtimeSites = [] } = {}) {
+export function buildHistoryItemMarkup(
+  item: PromptHistoryItem,
+  options: {
+    openMenuKey?: string | null;
+    runtimeSites?: RuntimeSite[];
+  } = {},
+): string {
+  const {
+    openMenuKey = null,
+    runtimeSites = [],
+  } = options;
   const menuKey = `history:${item.id}`;
 
   return `
@@ -57,22 +76,22 @@ export function buildHistoryItemMarkup(item, { openMenuKey = null, runtimeSites 
   `;
 }
 
-function buildFavoriteTagsMarkup(item) {
+function buildFavoriteTagsMarkup(item: FavoritePrompt): string {
   const tags = Array.isArray(item.tags) ? item.tags : [];
   const folder = typeof item.folder === "string" && item.folder.trim() ? item.folder.trim() : "";
   const pinIcon = item.pinned ? `<span class="fav-pin-icon" title="${escapeHtml(msg("popup_favorite_pinned") || "Pinned")}">📌</span>` : "";
   const folderBadge = folder ? `<span class="fav-folder-badge" data-filter-folder="${escapeAttribute(folder)}">📁 ${escapeHtml(folder)}</span>` : "";
-  const kindBadge = item?.mode === "chain"
+  const kindBadge = item.mode === "chain"
     ? `<span class="fav-type-badge chain">${escapeHtml(t.favoriteKindChain)}</span>`
     : `<span class="fav-type-badge">${escapeHtml(t.favoriteKindSingle)}</span>`;
-  const scheduleBadge = item?.scheduleEnabled && item?.scheduledAt
+  const scheduleBadge = item.scheduleEnabled && item.scheduledAt
     ? `<span class="fav-schedule-badge">${escapeHtml(t.favoriteScheduledBadge)}</span>`
     : "";
-  const stepCount = item?.mode === "chain" && Array.isArray(item?.steps) && item.steps.length > 0
+  const stepCount = item.mode === "chain" && Array.isArray(item.steps) && item.steps.length > 0
     ? `<span class="fav-step-count">${escapeHtml(t.favoriteStepCount(item.steps.length))}</span>`
     : "";
   const tagChips = tags.map(
-    (tag) => `<span class="fav-tag-chip" data-filter-tag="${escapeAttribute(tag)}">#${escapeHtml(tag)}</span>`
+    (tag) => `<span class="fav-tag-chip" data-filter-tag="${escapeAttribute(tag)}">#${escapeHtml(tag)}</span>`,
   ).join("");
 
   if (!pinIcon && !folderBadge && !tagChips && !kindBadge && !scheduleBadge && !stepCount) {
@@ -82,7 +101,7 @@ function buildFavoriteTagsMarkup(item) {
   return `<div class="fav-meta-row">${pinIcon}${kindBadge}${scheduleBadge}${stepCount}${folderBadge}${tagChips}</div>`;
 }
 
-function buildFavoriteJobMarkup(job) {
+function buildFavoriteJobMarkup(job: FavoriteRunJobRecord | null): string {
   if (!job?.jobId) {
     return "";
   }
@@ -109,13 +128,25 @@ function buildFavoriteJobMarkup(job) {
   `;
 }
 
-export function buildFavoriteItemMarkup(item, { openMenuKey = null, runtimeSites = [], latestJob = null } = {}) {
+export function buildFavoriteItemMarkup(
+  item: FavoritePrompt,
+  options: {
+    openMenuKey?: string | null;
+    runtimeSites?: RuntimeSite[];
+    latestJob?: FavoriteRunJobRecord | null;
+  } = {},
+): string {
+  const {
+    openMenuKey = null,
+    runtimeSites = [],
+    latestJob = null,
+  } = options;
   const menuKey = `favorite:${item.id}`;
   const safeFavoriteId = escapeAttribute(item.id);
   const pinLabel = item.pinned
     ? (msg("popup_favorite_unpin") || "Unpin")
     : (msg("popup_favorite_pin") || "Pin");
-  const primaryAction = item?.mode === "chain" ? "edit-favorite" : "load-favorite";
+  const primaryAction = item.mode === "chain" ? "edit-favorite" : "load-favorite";
 
   return `
     <article class="prompt-item${item.pinned ? " pinned-item" : ""}" data-favorite-id="${safeFavoriteId}" role="listitem">
@@ -152,33 +183,36 @@ export function buildFavoriteItemMarkup(item, { openMenuKey = null, runtimeSites
   `;
 }
 
-export function buildImportReportMarkup(summary) {
+export function buildImportReportMarkup(summary: ImportSummary | null | undefined): string {
   if (!summary) {
     return "";
   }
 
   const rejectedRows = (summary.customSites?.rejected ?? []).map((entry) => {
-    const origins = Array.isArray(entry?.origins) && entry.origins.length > 0
+    const origins = Array.isArray(entry.origins) && entry.origins.length > 0
       ? `<div class="helper-text">${escapeHtml(entry.origins.join(", "))}</div>`
       : "";
-    const errors = Array.isArray(entry?.errors) && entry.errors.length > 0
+    const errors = Array.isArray(entry.errors) && entry.errors.length > 0
       ? `<div class="helper-text">${escapeHtml(entry.errors.join(" "))}</div>`
       : "";
     return `
       <div class="import-report-row">
-        <strong>${escapeHtml(entry?.name ?? entry?.id ?? "-")}</strong>
-        <div>${escapeHtml(t.importRejectReason(entry?.reason ?? "unknown"))}</div>
+        <strong>${escapeHtml(entry.name ?? entry.id ?? "-")}</strong>
+        <div>${escapeHtml(t.importRejectReason(entry.reason ?? "unknown"))}</div>
         ${origins}
         ${errors}
       </div>
     `;
   }).join("");
+  const rewrittenSummary = (summary.customSites?.rewrittenIds ?? [])
+    .map((entry) => `${entry.from} -> ${entry.to}`)
+    .join(", ");
 
   return `
     <div class="import-report-grid">
       <div class="import-report-row"><strong>${escapeHtml(t.importReportVersion)}</strong><div>${escapeHtml(`v${summary.version} (from v${summary.migratedFromVersion})`)}</div></div>
       <div class="import-report-row"><strong>${escapeHtml(t.importReportAccepted)}</strong><div>${escapeHtml(String(summary.customSites?.acceptedNames?.join(", ") || "-"))}</div></div>
-      <div class="import-report-row"><strong>${escapeHtml(t.importReportRewritten)}</strong><div>${escapeHtml(String(summary.customSites?.rewrittenIds?.join(", ") || "-"))}</div></div>
+      <div class="import-report-row"><strong>${escapeHtml(t.importReportRewritten)}</strong><div>${escapeHtml(rewrittenSummary || "-")}</div></div>
       <div class="import-report-row"><strong>${escapeHtml(t.importReportBuiltins)}</strong><div>${escapeHtml([
         ...(summary.builtInSiteOverrides?.adjustedIds ?? []),
         ...(summary.builtInSiteOverrides?.droppedIds ?? []),

@@ -65,7 +65,11 @@ export interface ImportSummary {
     acceptedIds: string[];
     acceptedNames: string[];
     rejected: ImportRejectedSite[];
-    rewrittenIds: string[];
+    rewrittenIds: Array<{
+      from: string;
+      to: string;
+      name: string;
+    }>;
     deniedOrigins: string[];
   };
   builtInSiteStates: {
@@ -135,6 +139,13 @@ export interface RuntimeSite extends SiteConfig {
   deletable: boolean;
   editable: boolean;
   permissionPatterns: string[];
+}
+
+export interface RuntimeInjectionSiteConfig extends RuntimeSite {
+  submitTimeoutMs?: number;
+  submitRetryCount?: number;
+  strategyOrder?: string[];
+  waitMsMultiplier?: number;
 }
 
 export interface BroadcastTargetSelection {

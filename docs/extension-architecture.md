@@ -32,8 +32,11 @@ prompt-broadcaster/
 │   │   ├── popup/
 │   │   │   ├── favorites-workflow.ts
 │   │   │   └── launcher.ts
+│   │   ├── runtime/
+│   │   ├── session/
 │   │   ├── selection/
 │   │   │   └── runtime.ts
+│   │   ├── tabs/
 │   │   └── main.ts
 │   ├── config/
 │   │   ├── sites/
@@ -56,7 +59,11 @@ prompt-broadcaster/
 │   │   └── main.ts
 │   ├── popup/
 │   │   ├── app/
-│   │   ├── features/
+│   │   ├── compose/
+│   │   ├── favorites/
+│   │   ├── history/
+│   │   ├── overlays/
+│   │   ├── services/
 │   │   ├── ui/
 │   │   └── main.ts
 │   └── shared/
@@ -135,6 +142,9 @@ Responsibilities:
 
 - register Chrome listeners and wire runtime dependencies
 - route popup/content/runtime messages through `src/background/messages/router.ts`
+- keep typed runtime action handlers in `src/background/runtime/`
+- keep serialized session mirrors for pending injections/broadcasts in `src/background/session/`
+- keep normal-window focus, active-tab context, and open-AI-tab discovery helpers in `src/background/tabs/`
 - accept only internal extension pages and this extension's own content scripts at the runtime-message trust boundary
 - resolve tab routing, including reusable tabs, specific tab targets, and forced new tabs
 - open target tabs and track pending broadcasts
@@ -163,7 +173,10 @@ Popup helper boundaries:
 
 - `src/popup/app/dom.ts`: DOM registry
 - `src/popup/app/helpers.ts`, `sorting.ts`, `list-markup.ts`: pure formatting and markup helpers
-- `src/popup/features/favorite-editor.ts`: modal state, chain steps, schedule fields, favorite run/edit actions
+- `src/popup/app/shell.ts`: popup status, toast, tab-switch, draft-save, and composer shell helpers
+- `src/popup/compose/targets.ts`: open-tab discovery, target selection sync, and runtime target payload helpers
+- `src/popup/favorites/favorite-editor.ts`: modal state, chain steps, schedule fields, favorite run/edit actions
+- `src/popup/history/`, `src/popup/overlays/`, `src/popup/services/`: list interaction, modal/overlay coordination, and managed-site editing
 - `src/shared/chrome/messaging.ts`: timeout-safe runtime messaging helper shared by popup/options/content surfaces
 
 ### Options Page
@@ -234,7 +247,7 @@ Responsibilities:
 
 ### Quick Palette Overlay
 
-Source: `src/content/palette/main.ts`
+Source: `src/content/palette/`
 
 Responsibilities:
 
@@ -243,6 +256,7 @@ Responsibilities:
 - support arrow-key navigation, `Enter`, and `Escape`
 - request favorite execution from the background worker
 - close when the background asks for popup fallback or when the user dismisses it
+- keep state/render/event/runtime responsibilities split across `state.ts`, `render.ts`, `events.ts`, and `runtime.ts`
 
 ## Configuration and Data Flow
 

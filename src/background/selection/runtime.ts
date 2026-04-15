@@ -1,10 +1,10 @@
-// @ts-nocheck
 import {
   SELECTION_SCRIPT_PATH,
   SELECTOR_CHECKER_SCRIPT_PATH,
 } from "../app/constants";
+import type { RuntimeSite } from "../../shared/types/models";
 
-async function ensureSelectionScript(tabId) {
+async function ensureSelectionScript(tabId: number): Promise<boolean> {
   try {
     await chrome.tabs.sendMessage(tabId, { action: "selection:ping" });
     return true;
@@ -25,7 +25,7 @@ async function ensureSelectionScript(tabId) {
   }
 }
 
-async function ensureSelectorCheckerScript(tabId) {
+async function ensureSelectorCheckerScript(tabId: number): Promise<boolean> {
   try {
     await chrome.tabs.sendMessage(tabId, { action: "selector-check:ping" });
     return true;
@@ -46,7 +46,16 @@ async function ensureSelectorCheckerScript(tabId) {
   }
 }
 
-export function createSelectionRuntime(deps) {
+interface SelectionRuntimeDeps {
+  selectionCache: Map<number, string>;
+  getSiteForUrl: (url: string) => Promise<RuntimeSite | null>;
+  isInjectableTabUrl: (url: string) => boolean;
+  isCustomSitePermissionGranted: (site: RuntimeSite) => Promise<boolean>;
+}
+
+export function createSelectionRuntime(
+  deps: SelectionRuntimeDeps,
+) {
   const {
     selectionCache,
     getSiteForUrl,
@@ -58,7 +67,7 @@ export function createSelectionRuntime(deps) {
     ensureSelectionScript,
     ensureSelectorCheckerScript,
 
-    async getSelectedTextFromTab(tabId) {
+    async getSelectedTextFromTab(tabId: number): Promise<string> {
       try {
         const didInject = await ensureSelectionScript(tabId);
         if (!didInject) {
@@ -67,7 +76,7 @@ export function createSelectionRuntime(deps) {
 
         const response = await chrome.tabs.sendMessage(tabId, {
           action: "selection:get-text",
-        });
+        }) as { text?: string } | undefined;
 
         return typeof response?.text === "string"
           ? response.text.trim()
@@ -81,7 +90,10 @@ export function createSelectionRuntime(deps) {
       }
     },
 
-    async maybeInjectDynamicSelectorChecker(tabId, tab) {
+    async maybeInjectDynamicSelectorChecker(
+      tabId: number,
+      tab: chrome.tabs.Tab | undefined,
+    ): Promise<boolean> {
       const tabUrl = typeof tab?.url === "string" ? tab.url : "";
       if (!tabId || !isInjectableTabUrl(tabUrl)) {
         return false;
@@ -100,7 +112,10 @@ export function createSelectionRuntime(deps) {
       return ensureSelectorCheckerScript(tabId);
     },
 
-    handleSelectionUpdateMessage(message, sender) {
+    handleSelectionUpdateMessage(
+      message: { text?: string } | null | undefined,
+      sender: chrome.runtime.MessageSender,
+    ): { ok: boolean; error?: string } {
       try {
         if (typeof sender?.tab?.id !== "number") {
           return { ok: false };
@@ -118,7 +133,7 @@ export function createSelectionRuntime(deps) {
         console.error("[AI Prompt Broadcaster] Failed to store selection update.", error);
         return {
           ok: false,
-          error: error?.message ?? String(error),
+          error: error instanceof Error ? error.message : String(error),
         };
       }
     },

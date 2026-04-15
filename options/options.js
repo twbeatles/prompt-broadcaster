@@ -779,40 +779,44 @@ async function setBroadcastCounter(value) {
 
 // src/shared/prompts/favorites-store.ts
 function buildFavoriteEntry(entry) {
-  const text = safeText(entry?.text);
-  const sentTo = normalizeSentTo(entry?.sentTo);
-  const createdAt = normalizeIsoDate(entry?.createdAt);
-  const favoritedAt = normalizeIsoDate(entry?.favoritedAt, createdAt);
-  const usageCount = Math.max(0, Math.round(Number(entry?.usageCount) || 0));
-  const mode = normalizeFavoriteMode(entry?.mode);
-  const steps = mode === "chain" ? normalizeChainSteps(entry?.steps, {
+  const source = entry ?? {};
+  const text = safeText(source?.text);
+  const sentTo = normalizeSentTo(source?.sentTo);
+  const createdAt = normalizeIsoDate(source?.createdAt);
+  const favoritedAt = normalizeIsoDate(source?.favoritedAt, createdAt);
+  const usageCount = Math.max(0, Math.round(Number(source?.usageCount) || 0));
+  const mode = normalizeFavoriteMode(source?.mode);
+  const steps = mode === "chain" ? normalizeChainSteps(source?.steps, {
     text,
     delayMs: 0,
     targetSiteIds: sentTo
   }) : [];
   return {
-    id: typeof entry?.id === "string" && entry.id.trim() ? entry.id.trim() : `fav-${Date.now()}`,
-    sourceHistoryId: entry?.sourceHistoryId === null || entry?.sourceHistoryId === void 0 ? null : Number(entry.sourceHistoryId),
-    title: safeText(entry?.title),
+    id: typeof source?.id === "string" && source.id.trim() ? source.id.trim() : `fav-${Date.now()}`,
+    sourceHistoryId: source?.sourceHistoryId === null || source?.sourceHistoryId === void 0 ? null : Number(source.sourceHistoryId),
+    title: safeText(source?.title),
     text,
     sentTo,
     createdAt,
     favoritedAt,
-    templateDefaults: normalizeTemplateDefaults(entry?.templateDefaults),
-    tags: normalizeTags(entry?.tags),
-    folder: safeText(entry?.folder).slice(0, 50),
-    pinned: normalizeBoolean(entry?.pinned, false),
+    templateDefaults: normalizeTemplateDefaults(source?.templateDefaults),
+    tags: normalizeTags(source?.tags),
+    folder: safeText(source?.folder).slice(0, 50),
+    pinned: normalizeBoolean(source?.pinned, false),
     usageCount,
-    lastUsedAt: normalizeNullableIsoDate(entry?.lastUsedAt),
+    lastUsedAt: normalizeNullableIsoDate(source?.lastUsedAt),
     mode,
     steps,
-    scheduleEnabled: normalizeBoolean(entry?.scheduleEnabled, false),
-    scheduledAt: normalizeNullableIsoDate(entry?.scheduledAt),
-    scheduleRepeat: normalizeScheduleRepeat(entry?.scheduleRepeat)
+    scheduleEnabled: normalizeBoolean(source?.scheduleEnabled, false),
+    scheduledAt: normalizeNullableIsoDate(source?.scheduledAt),
+    scheduleRepeat: normalizeScheduleRepeat(source?.scheduleRepeat)
   };
 }
 async function getPromptFavorites() {
-  const rawFavorites = await readLocal(LOCAL_STORAGE_KEYS.favorites, []);
+  const rawFavorites = await readLocal(
+    LOCAL_STORAGE_KEYS.favorites,
+    []
+  );
   return sortByDateDesc(
     safeArray(rawFavorites).map((item) => buildFavoriteEntry(item)),
     "favoritedAt"
@@ -1314,6 +1318,7 @@ function getConfiguredSupportedRoutes(site) {
 }
 
 // src/shared/sites/normalizers.ts
+var BUILT_IN_SITE_STYLE_LOOKUP = BUILT_IN_SITE_STYLE_MAP;
 function safeText2(value) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -1377,7 +1382,7 @@ function normalizeHostnameAliases(value, primaryHostname = "") {
 }
 function deriveHostname(url) {
   try {
-    return new URL(url).hostname;
+    return new URL(String(url ?? "")).hostname;
   } catch (_error) {
     return "";
   }
@@ -1402,7 +1407,7 @@ function normalizeOriginHost(value) {
 }
 function buildOriginPatterns(url, hostnameAliases = []) {
   try {
-    const parsed = new URL(url);
+    const parsed = new URL(String(url ?? ""));
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       return [];
     }
@@ -1410,7 +1415,9 @@ function buildOriginPatterns(url, hostnameAliases = []) {
     const primaryHostname = normalizeHostname(parsed.hostname);
     const normalizedAliases = Array.from(
       new Set(
-        normalizeStringList(hostnameAliases).map((entry) => normalizeOriginHost(entry)).filter((entry) => entry && entry !== primaryHost && entry !== primaryHostname)
+        normalizeStringList(hostnameAliases).map((entry) => normalizeOriginHost(entry)).filter(
+          (entry) => entry && entry !== primaryHost && entry !== primaryHostname
+        )
       )
     );
     return Array.from(
@@ -1440,7 +1447,7 @@ function ensureUniqueImportedSiteId(baseId, usedIds) {
   let candidate = safeText2(baseId) || "custom-site";
   let suffix = 2;
   while (usedIds.has(candidate)) {
-    candidate = `${baseId}-${suffix}`;
+    candidate = `${safeText2(baseId)}-${suffix}`;
     suffix += 1;
   }
   usedIds.add(candidate);
@@ -1464,7 +1471,7 @@ var PERPLEXITY_SELECTOR_FALLBACKS = [
   "div[contenteditable='true'][role='textbox']"
 ];
 function normalizeSelectorArray(value) {
-  return Array.isArray(value) ? value.filter((entry) => typeof entry === "string" && entry.trim()).map((entry) => entry.trim()) : [];
+  return Array.isArray(value) ? value.filter((entry) => typeof entry === "string" && Boolean(entry.trim())).map((entry) => entry.trim()) : [];
 }
 function normalizePerplexitySelectors(site = {}) {
   if (safeText2(site?.id) !== "perplexity") {
@@ -1490,13 +1497,14 @@ function normalizePerplexitySelectors(site = {}) {
   };
 }
 function buildBaseSiteRecord(site, builtInMeta = {}) {
-  const style = BUILT_IN_SITE_STYLE_MAP[site.id] ?? {};
+  const style = BUILT_IN_SITE_STYLE_LOOKUP[safeText2(site.id)] ?? {};
   const url = safeText2(site.url);
   const hostname = normalizeHostname(site.hostname || deriveHostname(url));
   const hostnameAliases = normalizeHostnameAliases(site.hostnameAliases, hostname);
   const normalizedSelectors = normalizePerplexitySelectors(site);
   const verification = buildVerificationMetadata(site);
   const supportedRoutes = getConfiguredSupportedRoutes(site);
+  const verifiedAuthState = verification.verifiedAuthState || void 0;
   return {
     id: safeText2(site.id),
     name: safeText2(site.name) || "AI Service",
@@ -1508,15 +1516,20 @@ function buildBaseSiteRecord(site, builtInMeta = {}) {
     inputType: normalizeInputType(site.inputType, "textarea"),
     submitSelector: safeText2(site.submitSelector),
     submitMethod: normalizeSubmitMethod(site.submitMethod, "click"),
-    selectorCheckMode: normalizeSelectorCheckMode(site.selectorCheckMode, "input-and-submit"),
+    selectorCheckMode: normalizeSelectorCheckMode(
+      site.selectorCheckMode,
+      "input-and-submit"
+    ),
     waitMs: normalizeWaitMs(site.waitMs, 2e3),
     fallbackSelectors: normalizedSelectors.fallbackSelectors,
     fallback: normalizeBoolean2(site.fallback, true),
-    authSelectors: Array.isArray(site.authSelectors) ? site.authSelectors.filter((entry) => typeof entry === "string" && entry.trim()) : [],
+    authSelectors: Array.isArray(site.authSelectors) ? site.authSelectors.filter(
+      (entry) => typeof entry === "string" && Boolean(entry.trim())
+    ) : [],
     lastVerified: verification.lastVerified,
     verifiedAt: verification.verifiedAt,
     verifiedRoute: verification.verifiedRoute,
-    verifiedAuthState: verification.verifiedAuthState,
+    verifiedAuthState,
     verifiedLocale: verification.verifiedLocale,
     verifiedVersion: verification.verifiedVersion,
     enabled: normalizeBoolean2(site.enabled, true),
@@ -1530,86 +1543,108 @@ function buildBaseSiteRecord(site, builtInMeta = {}) {
   };
 }
 function sanitizeBuiltInOverride(override = {}, originalSite = {}) {
-  const submitMethod = normalizeSubmitMethod(override.submitMethod, originalSite.submitMethod);
+  const submitMethod = normalizeSubmitMethod(
+    override.submitMethod,
+    normalizeSubmitMethod(originalSite.submitMethod, "click")
+  );
   const submitSelector = submitMethod === "click" ? safeText2(override.submitSelector) || safeText2(originalSite.submitSelector) : safeText2(override.submitSelector);
   const verification = buildVerificationMetadata(override, originalSite);
-  const supportedRoutes = Object.prototype.hasOwnProperty.call(override ?? {}, "supportedRoutes") ? normalizeSupportedRoutes(override.supportedRoutes) : getConfiguredSupportedRoutes(originalSite);
+  const supportedRoutes = Object.prototype.hasOwnProperty.call(
+    override ?? {},
+    "supportedRoutes"
+  ) ? normalizeSupportedRoutes(override.supportedRoutes) : getConfiguredSupportedRoutes(originalSite);
+  const verifiedAuthState = verification.verifiedAuthState || void 0;
   return {
-    name: safeText2(override.name) || originalSite.name,
+    name: safeText2(override.name) || safeText2(originalSite.name),
     supportedRoutes,
-    inputSelector: safeText2(override.inputSelector) || originalSite.inputSelector,
-    inputType: normalizeInputType(override.inputType, originalSite.inputType),
+    inputSelector: safeText2(override.inputSelector) || safeText2(originalSite.inputSelector),
+    inputType: normalizeInputType(
+      override.inputType,
+      normalizeInputType(originalSite.inputType, "textarea")
+    ),
     submitSelector,
     submitMethod,
     selectorCheckMode: normalizeSelectorCheckMode(
       override.selectorCheckMode,
-      originalSite.selectorCheckMode || "input-and-submit"
+      normalizeSelectorCheckMode(
+        originalSite.selectorCheckMode,
+        "input-and-submit"
+      )
     ),
-    waitMs: normalizeWaitMs(override.waitMs, originalSite.waitMs),
-    fallbackSelectors: Array.isArray(override.fallbackSelectors) ? override.fallbackSelectors.filter((entry) => typeof entry === "string" && entry.trim()) : Array.isArray(originalSite.fallbackSelectors) ? [...originalSite.fallbackSelectors] : [],
-    authSelectors: Array.isArray(override.authSelectors) ? override.authSelectors.filter((entry) => typeof entry === "string" && entry.trim()) : Array.isArray(originalSite.authSelectors) ? [...originalSite.authSelectors] : [],
+    waitMs: normalizeWaitMs(override.waitMs, normalizeWaitMs(originalSite.waitMs, 2e3)),
+    fallbackSelectors: Array.isArray(override.fallbackSelectors) ? override.fallbackSelectors.filter(
+      (entry) => typeof entry === "string" && Boolean(entry.trim())
+    ) : Array.isArray(originalSite.fallbackSelectors) ? originalSite.fallbackSelectors.filter(
+      (entry) => typeof entry === "string" && Boolean(entry.trim())
+    ) : [],
+    authSelectors: Array.isArray(override.authSelectors) ? override.authSelectors.filter(
+      (entry) => typeof entry === "string" && Boolean(entry.trim())
+    ) : Array.isArray(originalSite.authSelectors) ? originalSite.authSelectors.filter(
+      (entry) => typeof entry === "string" && Boolean(entry.trim())
+    ) : [],
     lastVerified: verification.lastVerified,
     verifiedAt: verification.verifiedAt,
     verifiedRoute: verification.verifiedRoute,
-    verifiedAuthState: verification.verifiedAuthState,
+    verifiedAuthState,
     verifiedLocale: verification.verifiedLocale,
     verifiedVersion: verification.verifiedVersion,
     color: normalizeColor(
       override.color,
-      BUILT_IN_SITE_STYLE_MAP[originalSite.id]?.color ?? "#c24f2e"
+      BUILT_IN_SITE_STYLE_LOOKUP[safeText2(originalSite.id)]?.color ?? "#c24f2e"
     ),
     icon: normalizeIcon(
       override.icon,
-      BUILT_IN_SITE_STYLE_MAP[originalSite.id]?.icon ?? originalSite.name
+      BUILT_IN_SITE_STYLE_LOOKUP[safeText2(originalSite.id)]?.icon ?? safeText2(originalSite.name)
     )
   };
 }
 function normalizeCustomSite(site) {
-  const url = safeText2(site?.url);
-  const hostname = normalizeHostname(site?.hostname || deriveHostname(url));
+  const source = isPlainObject(site) ? site : {};
+  const url = safeText2(source?.url);
+  const hostname = normalizeHostname(source?.hostname || deriveHostname(url));
   const verificationFields = {};
-  if (Object.prototype.hasOwnProperty.call(site ?? {}, "lastVerified")) {
-    verificationFields.lastVerified = safeText2(site?.lastVerified);
+  if (Object.prototype.hasOwnProperty.call(source, "lastVerified")) {
+    verificationFields.lastVerified = safeText2(source?.lastVerified);
   }
-  if (Object.prototype.hasOwnProperty.call(site ?? {}, "verifiedAt")) {
-    verificationFields.verifiedAt = safeText2(site?.verifiedAt);
+  if (Object.prototype.hasOwnProperty.call(source, "verifiedAt")) {
+    verificationFields.verifiedAt = safeText2(source?.verifiedAt);
   }
-  if (Object.prototype.hasOwnProperty.call(site ?? {}, "verifiedRoute")) {
-    verificationFields.verifiedRoute = safeText2(site?.verifiedRoute);
+  if (Object.prototype.hasOwnProperty.call(source, "verifiedRoute")) {
+    verificationFields.verifiedRoute = safeText2(source?.verifiedRoute);
   }
-  if (Object.prototype.hasOwnProperty.call(site ?? {}, "verifiedAuthState")) {
-    verificationFields.verifiedAuthState = safeText2(site?.verifiedAuthState);
+  if (Object.prototype.hasOwnProperty.call(source, "verifiedAuthState")) {
+    verificationFields.verifiedAuthState = safeText2(source?.verifiedAuthState);
   }
-  if (Object.prototype.hasOwnProperty.call(site ?? {}, "verifiedLocale")) {
-    verificationFields.verifiedLocale = safeText2(site?.verifiedLocale);
+  if (Object.prototype.hasOwnProperty.call(source, "verifiedLocale")) {
+    verificationFields.verifiedLocale = safeText2(source?.verifiedLocale);
   }
-  if (Object.prototype.hasOwnProperty.call(site ?? {}, "verifiedVersion")) {
-    verificationFields.verifiedVersion = safeText2(site?.verifiedVersion);
+  if (Object.prototype.hasOwnProperty.call(source, "verifiedVersion")) {
+    verificationFields.verifiedVersion = safeText2(source?.verifiedVersion);
   }
   return buildBaseSiteRecord(
     {
-      id: safeText2(site?.id) || createCustomSiteId(site?.name),
-      name: safeText2(site?.name) || "Custom AI",
+      id: safeText2(source?.id) || createCustomSiteId(source?.name),
+      name: safeText2(source?.name) || "Custom AI",
       url,
       hostname,
-      hostnameAliases: normalizeHostnameAliases(site?.hostnameAliases, hostname),
-      supportedRoutes: Object.prototype.hasOwnProperty.call(site ?? {}, "supportedRoutes") ? site?.supportedRoutes : void 0,
-      inputSelector: safeText2(site?.inputSelector),
-      inputType: normalizeInputType(site?.inputType, "textarea"),
-      submitSelector: safeText2(site?.submitSelector),
-      submitMethod: normalizeSubmitMethod(site?.submitMethod, "click"),
+      hostnameAliases: normalizeHostnameAliases(source?.hostnameAliases, hostname),
+      supportedRoutes: Object.prototype.hasOwnProperty.call(source, "supportedRoutes") ? source?.supportedRoutes : void 0,
+      inputSelector: safeText2(source?.inputSelector),
+      inputType: normalizeInputType(source?.inputType, "textarea"),
+      submitSelector: safeText2(source?.submitSelector),
+      submitMethod: normalizeSubmitMethod(source?.submitMethod, "click"),
       selectorCheckMode: normalizeSelectorCheckMode(
-        site?.selectorCheckMode,
+        source?.selectorCheckMode,
         "input-and-submit"
       ),
-      waitMs: normalizeWaitMs(site?.waitMs, 2e3),
-      fallbackSelectors: normalizeStringList(site?.fallbackSelectors),
-      fallback: normalizeBoolean2(site?.fallback, true),
-      authSelectors: normalizeStringList(site?.authSelectors),
+      waitMs: normalizeWaitMs(source?.waitMs, 2e3),
+      fallbackSelectors: normalizeStringList(source?.fallbackSelectors),
+      fallback: normalizeBoolean2(source?.fallback, true),
+      authSelectors: normalizeStringList(source?.authSelectors),
       ...verificationFields,
-      enabled: normalizeBoolean2(site?.enabled, true),
-      color: normalizeColor(site?.color, "#c24f2e"),
-      icon: normalizeIcon(site?.icon, "AI")
+      enabled: normalizeBoolean2(source?.enabled, true),
+      color: normalizeColor(source?.color, "#c24f2e"),
+      icon: normalizeIcon(source?.icon, "AI")
     },
     { isCustom: true }
   );
@@ -1681,16 +1716,18 @@ function validateHostnameAliases(value) {
 
 // src/shared/security.ts
 function escapeHTML(str) {
-  if (typeof str !== "string") return "";
+  if (typeof str !== "string") {
+    return "";
+  }
   const div = document.createElement("div");
   div.appendChild(document.createTextNode(str));
   return div.innerHTML;
 }
-function isValidURL(string) {
+function isValidURL(value) {
   try {
-    const url = new URL(string);
+    const url = new URL(value);
     return url.protocol === "http:" || url.protocol === "https:";
-  } catch (_) {
+  } catch (_error) {
     return false;
   }
 }
@@ -3325,6 +3362,89 @@ function renderDashboard() {
   strategySummary.innerHTML = buildStrategySummaryMarkup(metrics.strategySummaryItems);
 }
 
+// src/options/features/history/filtering.ts
+var PAGE_SIZE = 10;
+function filteredHistory() {
+  return state.history.filter((entry) => {
+    const requestedServices = getRequestedServices(entry);
+    const matchesService = state.filters.service === "all" || requestedServices.includes(state.filters.service);
+    const dateKey = getLocalDateKey(entry.createdAt);
+    const matchesFrom = !state.filters.dateFrom || dateKey >= state.filters.dateFrom;
+    const matchesTo = !state.filters.dateTo || dateKey <= state.filters.dateTo;
+    return matchesService && matchesFrom && matchesTo;
+  });
+}
+function getVisibleFilteredHistory() {
+  return applyHistoryVisibleLimit(filteredHistory(), state.settings.historyLimit);
+}
+function syncHistorySelectionState() {
+  const availableIds = new Set(getVisibleFilteredHistory().map((entry) => Number(entry.id)));
+  state.selectedHistoryIds = new Set(
+    [...state.selectedHistoryIds].filter((historyId) => availableIds.has(Number(historyId)))
+  );
+}
+
+// src/options/features/history/render.ts
+var {
+  historyTableWrap,
+  historyPageInfo,
+  historyPrevPage,
+  historyNextPage,
+  historySelectAll,
+  historyDeleteSelected,
+  historyDeleteFiltered
+} = optionsDom.history;
+function renderHistoryTable() {
+  syncHistorySelectionState();
+  const filteredEntries = filteredHistory();
+  const visibleHistory = getVisibleFilteredHistory();
+  const pageCount = Math.max(1, Math.ceil(visibleHistory.length / PAGE_SIZE));
+  state.historyPage = Math.max(1, Math.min(state.historyPage, pageCount));
+  const startIndex = (state.historyPage - 1) * PAGE_SIZE;
+  const currentPageRows = visibleHistory.slice(startIndex, startIndex + PAGE_SIZE);
+  const currentPageIds = currentPageRows.map((entry) => Number(entry.id));
+  const allCurrentPageSelected = currentPageIds.length > 0 && currentPageIds.every((historyId) => state.selectedHistoryIds.has(historyId));
+  if (currentPageRows.length === 0) {
+    historyTableWrap.innerHTML = createEmptyState(t.history.emptyFiltered);
+  } else {
+    historyTableWrap.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>${escapeHTML(t.history.tableSelect)}</th>
+            <th>${escapeHTML(t.history.tableDate)}</th>
+            <th>${escapeHTML(t.history.tablePrompt)}</th>
+            <th>${escapeHTML(t.history.tableServices)}</th>
+            <th>${escapeHTML(t.history.tableStatus)}</th>
+            <th>${escapeHTML(t.history.tableActions)}</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${currentPageRows.map((entry) => {
+      const status = getStatusInfo(entry.status);
+      return `
+                <tr data-history-row="${entry.id}">
+                  <td><input type="checkbox" aria-label="${escapeHTML(t.history.tableSelect)}" data-history-select="${entry.id}" ${state.selectedHistoryIds.has(Number(entry.id)) ? "checked" : ""} /></td>
+                  <td>${escapeHTML(formatDateTime(entry.createdAt))}</td>
+                  <td>${escapeHTML(previewText(entry.text))}</td>
+                  <td><div class="service-badges">${getRequestedServices(entry).map((siteId) => buildBadgeMarkup(siteId, state.runtimeSites)).join("")}</div></td>
+                  <td><span class="status-pill ${status.className}">${escapeHTML(status.label)}</span></td>
+                  <td><button class="btn ghost history-detail-button" type="button" data-open-history-id="${entry.id}">${escapeHTML(t.history.openDetails)}</button></td>
+                </tr>
+              `;
+    }).join("")}
+        </tbody>
+      </table>
+    `;
+  }
+  historyPageInfo.textContent = t.history.pageInfo(state.historyPage, pageCount);
+  historyPrevPage.disabled = state.historyPage <= 1;
+  historyNextPage.disabled = state.historyPage >= pageCount;
+  historySelectAll.checked = allCurrentPageSelected;
+  historyDeleteSelected.disabled = state.selectedHistoryIds.size === 0;
+  historyDeleteFiltered.disabled = filteredEntries.length === 0;
+}
+
 // src/shared/export/csv.ts
 function normalizeCsvCellValue(value) {
   const text = String(value ?? "");
@@ -3336,50 +3456,6 @@ function escapeCsvCell(value) {
 }
 function buildCsvLine(values) {
   return (Array.isArray(values) ? values : []).map((value) => escapeCsvCell(value)).join(",");
-}
-
-// src/shared/chrome/messaging.ts
-var DEFAULT_RUNTIME_MESSAGE_TIMEOUT_MS = 5e3;
-function normalizeTimeoutMs(timeoutMs) {
-  const numericValue = Number(timeoutMs);
-  if (!Number.isFinite(numericValue) || numericValue <= 0) {
-    return 0;
-  }
-  return Math.max(0, Math.round(numericValue));
-}
-function sendRuntimeMessage(message, timeoutMs = 0, fallbackValue = null) {
-  return new Promise((resolve) => {
-    let settled = false;
-    let timeoutId = 0;
-    const finish = (value) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      if (timeoutId) {
-        globalThis.clearTimeout(timeoutId);
-      }
-      resolve(value ?? fallbackValue);
-    };
-    const normalizedTimeoutMs = normalizeTimeoutMs(timeoutMs);
-    if (normalizedTimeoutMs > 0) {
-      timeoutId = globalThis.setTimeout(() => finish(fallbackValue), normalizedTimeoutMs);
-    }
-    try {
-      chrome.runtime.sendMessage(message, (response) => {
-        if (chrome.runtime.lastError) {
-          finish(fallbackValue);
-          return;
-        }
-        finish(response ?? fallbackValue);
-      });
-    } catch (_error) {
-      finish(fallbackValue);
-    }
-  });
-}
-function sendRuntimeMessageWithTimeout(message, timeoutMs = DEFAULT_RUNTIME_MESSAGE_TIMEOUT_MS, fallbackValue = null) {
-  return sendRuntimeMessage(message, timeoutMs, fallbackValue);
 }
 
 // src/options/core/modal.ts
@@ -3549,6 +3625,107 @@ function bindStatusEvents() {
   registerModalCloseHandler(importReportModal, closeImportReportModal);
 }
 
+// src/options/features/history/export.ts
+function downloadBlob(filename, content, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+function exportFilteredHistoryAsCsv() {
+  const rows = filteredHistory();
+  const header = [
+    t.history.tableDate,
+    t.history.tableStatus,
+    t.history.tableServices,
+    t.history.tablePrompt
+  ];
+  const lines = rows.map((entry) => buildCsvLine([
+    entry.createdAt,
+    entry.status,
+    getRequestedServices(entry).join("|"),
+    entry.text
+  ]));
+  downloadBlob(
+    `ai-prompt-broadcaster-history-${(/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-")}.csv`,
+    [buildCsvLine(header), ...lines].join("\n"),
+    "text/csv;charset=utf-8"
+  );
+  setStatus(t.history.exportSuccess, "success");
+  showAppToast(t.history.exportSuccess, "success", 1800);
+}
+
+// src/options/features/history/modal.ts
+var {
+  historyModal,
+  historyModalClose,
+  historyModalMeta,
+  historyModalServices,
+  historyModalText
+} = optionsDom.modals;
+function buildResultComparisonMarkup(entry) {
+  const requested = getRequestedServices(entry);
+  const submitted = new Set(Array.isArray(entry.submittedSiteIds) ? entry.submittedSiteIds : entry.sentTo ?? []);
+  const failed = new Set(Array.isArray(entry.failedSiteIds) ? entry.failedSiteIds : []);
+  const siteResults = entry.siteResults ?? {};
+  if (requested.length === 0) {
+    return "";
+  }
+  const siteRows = requested.map((siteId) => {
+    const site = state.runtimeSites.find((siteEntry) => siteEntry.id === siteId);
+    const name = site?.name ?? siteId;
+    const color = site?.color ?? "#888";
+    const icon = site?.icon ?? siteId.slice(0, 2).toUpperCase();
+    const result = siteResults[siteId];
+    const rawStatus = normalizeResultCode(result?.code ?? (submitted.has(siteId) ? "submitted" : failed.has(siteId) ? "unexpected_error" : "unknown"));
+    const isOk = rawStatus === "submitted";
+    const isFailed = rawStatus !== "submitted" && rawStatus !== "unknown";
+    const statusEmoji = isOk ? "✅" : isFailed ? "❌" : "⏳";
+    const statusLabel = isOk ? msg("options_status_complete") || "Completed" : isFailed ? t.settings.resultCodeLabels[rawStatus] || rawStatus.replace(/_/g, " ") : msg("options_status_unknown") || "Unknown";
+    const siteUrl = site?.url ?? "#";
+    return `
+      <div class="result-compare-row">
+        <div class="result-compare-icon" style="background:${color};color:#fff;">${escapeHTML(icon)}</div>
+        <div class="result-compare-body">
+          <div class="result-compare-name">${escapeHTML(name)}</div>
+          <div class="result-compare-status ${isOk ? "ok" : isFailed ? "fail" : "unknown"}">${statusEmoji} ${escapeHTML(statusLabel)}</div>
+        </div>
+        ${isOk ? `<a class="ghost-button small-button" href="${escapeHTML(siteUrl)}" target="_blank" rel="noopener noreferrer">${msg("options_result_open_tab") || "Open"}</a>` : ""}
+      </div>
+    `;
+  }).join("");
+  return `
+    <div class="result-comparison">
+      <h3 class="result-comparison-title">${escapeHTML(msg("options_result_comparison_title") || "Service results")}</h3>
+      ${siteRows}
+    </div>
+  `;
+}
+function openHistoryModal(historyId) {
+  const entry = state.history.find((item) => Number(item.id) === Number(historyId));
+  if (!entry) {
+    return;
+  }
+  const status = getStatusInfo(entry.status);
+  historyModalMeta.textContent = `${formatDateTime(entry.createdAt)} · ${status.label}`;
+  historyModalServices.innerHTML = getRequestedServices(entry).map((siteId) => buildBadgeMarkup(siteId, state.runtimeSites)).join("");
+  historyModalText.textContent = entry.text;
+  let comparisonEl = document.getElementById("history-modal-comparison");
+  if (!comparisonEl) {
+    comparisonEl = document.createElement("div");
+    comparisonEl.id = "history-modal-comparison";
+    historyModalText.parentElement?.appendChild(comparisonEl);
+  }
+  comparisonEl.innerHTML = buildResultComparisonMarkup(entry);
+  openModal(historyModal, historyModalClose);
+}
+function closeHistoryModal() {
+  closeModal(historyModal);
+}
+
 // src/options/features/schedule-summary.ts
 function normalizeFavoriteId(value) {
   return safeText(value).trim();
@@ -3611,7 +3788,7 @@ function buildScheduledFavoriteRunSummary(historyItems = [], favoriteId) {
   };
 }
 
-// src/options/features/schedules.ts
+// src/options/features/schedules/render.ts
 var { schedulesList } = optionsDom.schedules;
 function getScheduleRepeatLabel(repeat) {
   switch (repeat) {
@@ -3713,6 +3890,53 @@ function renderSchedulesSection() {
       `;
   }).join("");
 }
+
+// src/shared/chrome/messaging.ts
+var DEFAULT_RUNTIME_MESSAGE_TIMEOUT_MS = 5e3;
+function normalizeTimeoutMs(timeoutMs) {
+  const numericValue = Number(timeoutMs);
+  if (!Number.isFinite(numericValue) || numericValue <= 0) {
+    return 0;
+  }
+  return Math.max(0, Math.round(numericValue));
+}
+function sendRuntimeMessage(message, timeoutMs = 0, fallbackValue = null) {
+  return new Promise((resolve) => {
+    let settled = false;
+    let timeoutId = 0;
+    const finish = (value) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timeoutId) {
+        globalThis.clearTimeout(timeoutId);
+      }
+      resolve(value ?? fallbackValue);
+    };
+    const normalizedTimeoutMs = normalizeTimeoutMs(timeoutMs);
+    if (normalizedTimeoutMs > 0) {
+      timeoutId = globalThis.setTimeout(() => finish(fallbackValue), normalizedTimeoutMs);
+    }
+    try {
+      chrome.runtime.sendMessage(message, (response) => {
+        if (chrome.runtime.lastError) {
+          finish(fallbackValue);
+          return;
+        }
+        finish(response ?? fallbackValue);
+      });
+    } catch (_error) {
+      finish(fallbackValue);
+    }
+  });
+}
+function sendRuntimeMessageWithTimeout(message, timeoutMs = DEFAULT_RUNTIME_MESSAGE_TIMEOUT_MS, fallbackValue = null) {
+  return sendRuntimeMessage(message, timeoutMs, fallbackValue);
+}
+
+// src/options/features/schedules/actions.ts
+var { schedulesList: schedulesList2 } = optionsDom.schedules;
 async function runFavoriteFromOptions(favoriteId) {
   const response = await sendRuntimeMessageWithTimeout({
     action: "favorite:run",
@@ -3746,7 +3970,7 @@ async function openFavoriteInPopup(favoriteId) {
   showAppToast(t.schedules.openInPopup, "success", 2e3);
 }
 function bindScheduleEvents({ reloadData }) {
-  schedulesList.addEventListener("change", (event) => {
+  schedulesList2.addEventListener("change", (event) => {
     const toggle = event.target.closest("[data-schedule-enabled]");
     if (!toggle) {
       return;
@@ -3759,7 +3983,7 @@ function bindScheduleEvents({ reloadData }) {
       showAppToast(error?.message ?? t.saveFailed, "error", 3e3);
     });
   });
-  schedulesList.addEventListener("click", (event) => {
+  schedulesList2.addEventListener("click", (event) => {
     const actionButton = event.target.closest("[data-action][data-favorite-id]");
     if (!actionButton) {
       return;
@@ -3928,134 +4152,25 @@ function bindServiceEvents() {
   });
 }
 
-// src/options/features/history.ts
-var PAGE_SIZE = 10;
+// src/options/features/history/events.ts
 var {
   historyServiceFilter: historyServiceFilter2,
   historyDateFrom,
   historyDateTo,
   historyExportCsv,
-  historyTableWrap,
-  historySelectAll,
-  historyDeleteSelected,
-  historyDeleteFiltered,
+  historyTableWrap: historyTableWrap2,
+  historySelectAll: historySelectAll2,
+  historyDeleteSelected: historyDeleteSelected2,
+  historyDeleteFiltered: historyDeleteFiltered2,
   historyDelete7d,
   historyDelete30d,
   historyDelete90d,
-  historyPrevPage,
-  historyNextPage,
-  historyPageInfo
+  historyPrevPage: historyPrevPage2,
+  historyNextPage: historyNextPage2
 } = optionsDom.history;
-var {
-  historyModal,
-  historyModalClose,
-  historyModalMeta,
-  historyModalServices,
-  historyModalText
-} = optionsDom.modals;
-function filteredHistory() {
-  return state.history.filter((entry) => {
-    const requestedServices = getRequestedServices(entry);
-    const matchesService = state.filters.service === "all" || requestedServices.includes(state.filters.service);
-    const dateKey = getLocalDateKey(entry.createdAt);
-    const matchesFrom = !state.filters.dateFrom || dateKey >= state.filters.dateFrom;
-    const matchesTo = !state.filters.dateTo || dateKey <= state.filters.dateTo;
-    return matchesService && matchesFrom && matchesTo;
-  });
-}
-function getVisibleFilteredHistory() {
-  return applyHistoryVisibleLimit(filteredHistory(), state.settings.historyLimit);
-}
-function syncHistorySelectionState() {
-  const availableIds = new Set(getVisibleFilteredHistory().map((entry) => Number(entry.id)));
-  state.selectedHistoryIds = new Set(
-    [...state.selectedHistoryIds].filter((historyId) => availableIds.has(Number(historyId)))
-  );
-}
-function renderHistoryTable() {
-  syncHistorySelectionState();
-  const filteredEntries = filteredHistory();
-  const visibleHistory = getVisibleFilteredHistory();
-  const pageCount = Math.max(1, Math.ceil(visibleHistory.length / PAGE_SIZE));
-  state.historyPage = Math.max(1, Math.min(state.historyPage, pageCount));
-  const startIndex = (state.historyPage - 1) * PAGE_SIZE;
-  const currentPageRows = visibleHistory.slice(startIndex, startIndex + PAGE_SIZE);
-  const currentPageIds = currentPageRows.map((entry) => Number(entry.id));
-  const allCurrentPageSelected = currentPageIds.length > 0 && currentPageIds.every((historyId) => state.selectedHistoryIds.has(historyId));
-  if (currentPageRows.length === 0) {
-    historyTableWrap.innerHTML = createEmptyState(t.history.emptyFiltered);
-  } else {
-    historyTableWrap.innerHTML = `
-      <table>
-        <thead>
-          <tr>
-            <th>${escapeHTML(t.history.tableSelect)}</th>
-            <th>${escapeHTML(t.history.tableDate)}</th>
-            <th>${escapeHTML(t.history.tablePrompt)}</th>
-            <th>${escapeHTML(t.history.tableServices)}</th>
-            <th>${escapeHTML(t.history.tableStatus)}</th>
-            <th>${escapeHTML(t.history.tableActions)}</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${currentPageRows.map((entry) => {
-      const status = getStatusInfo(entry.status);
-      return `
-                <tr data-history-row="${entry.id}">
-                  <td><input type="checkbox" aria-label="${escapeHTML(t.history.tableSelect)}" data-history-select="${entry.id}" ${state.selectedHistoryIds.has(Number(entry.id)) ? "checked" : ""} /></td>
-                  <td>${escapeHTML(formatDateTime(entry.createdAt))}</td>
-                  <td>${escapeHTML(previewText(entry.text))}</td>
-                  <td><div class="service-badges">${getRequestedServices(entry).map((siteId) => buildBadgeMarkup(siteId, state.runtimeSites)).join("")}</div></td>
-                  <td><span class="status-pill ${status.className}">${escapeHTML(status.label)}</span></td>
-                  <td><button class="btn ghost history-detail-button" type="button" data-open-history-id="${entry.id}">${escapeHTML(t.history.openDetails)}</button></td>
-                </tr>
-              `;
-    }).join("")}
-        </tbody>
-      </table>
-    `;
-  }
-  historyPageInfo.textContent = t.history.pageInfo(state.historyPage, pageCount);
-  historyPrevPage.disabled = state.historyPage <= 1;
-  historyNextPage.disabled = state.historyPage >= pageCount;
-  historySelectAll.checked = allCurrentPageSelected;
-  historyDeleteSelected.disabled = state.selectedHistoryIds.size === 0;
-  historyDeleteFiltered.disabled = filteredEntries.length === 0;
-}
-function downloadBlob(filename, content, type) {
-  const blob = new Blob([content], { type });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
-function exportFilteredHistoryAsCsv() {
-  const rows = filteredHistory();
-  const header = [
-    t.history.tableDate,
-    t.history.tableStatus,
-    t.history.tableServices,
-    t.history.tablePrompt
-  ];
-  const lines = rows.map((entry) => buildCsvLine([
-    entry.createdAt,
-    entry.status,
-    getRequestedServices(entry).join("|"),
-    entry.text
-  ]));
-  downloadBlob(
-    `ai-prompt-broadcaster-history-${(/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-")}.csv`,
-    [buildCsvLine(header), ...lines].join("\n"),
-    "text/csv;charset=utf-8"
-  );
-  setStatus(t.history.exportSuccess, "success");
-  showAppToast(t.history.exportSuccess, "success", 1800);
-}
+var { historyModal: historyModal2 } = optionsDom.modals;
 async function refreshHistoryAfterMutation() {
   state.history = await getStoredPromptHistory();
-  syncHistorySelectionState();
   renderDashboard();
   renderHistoryTable();
   renderSchedulesSection();
@@ -4078,65 +4193,6 @@ async function deleteHistoryOlderThanDays(days) {
   setStatus(t.history.deleteSuccess, "success");
   showAppToast(t.history.deleteSuccess, "success", 1800);
 }
-function buildResultComparisonMarkup(entry) {
-  const requested = getRequestedServices(entry);
-  const submitted = new Set(Array.isArray(entry.submittedSiteIds) ? entry.submittedSiteIds : entry.sentTo ?? []);
-  const failed = new Set(Array.isArray(entry.failedSiteIds) ? entry.failedSiteIds : []);
-  const siteResults = entry.siteResults ?? {};
-  if (requested.length === 0) {
-    return "";
-  }
-  const siteRows = requested.map((siteId) => {
-    const site = state.runtimeSites.find((siteEntry) => siteEntry.id === siteId);
-    const name = site?.name ?? siteId;
-    const color = site?.color ?? "#888";
-    const icon = site?.icon ?? siteId.slice(0, 2).toUpperCase();
-    const result = siteResults[siteId];
-    const rawStatus = normalizeResultCode(result?.code ?? (submitted.has(siteId) ? "submitted" : failed.has(siteId) ? "unexpected_error" : "unknown"));
-    const isOk = rawStatus === "submitted";
-    const isFailed = rawStatus !== "submitted" && rawStatus !== "unknown";
-    const statusEmoji = isOk ? "✅" : isFailed ? "❌" : "⏳";
-    const statusLabel = isOk ? msg("options_status_complete") || "Completed" : isFailed ? t.settings.resultCodeLabels[rawStatus] || rawStatus.replace(/_/g, " ") : msg("options_status_unknown") || "Unknown";
-    const siteUrl = site?.url ?? "#";
-    return `
-      <div class="result-compare-row">
-        <div class="result-compare-icon" style="background:${color};color:#fff;">${escapeHTML(icon)}</div>
-        <div class="result-compare-body">
-          <div class="result-compare-name">${escapeHTML(name)}</div>
-          <div class="result-compare-status ${isOk ? "ok" : isFailed ? "fail" : "unknown"}">${statusEmoji} ${escapeHTML(statusLabel)}</div>
-        </div>
-        ${isOk ? `<a class="ghost-button small-button" href="${escapeHTML(siteUrl)}" target="_blank" rel="noopener noreferrer">${msg("options_result_open_tab") || "Open"}</a>` : ""}
-      </div>
-    `;
-  }).join("");
-  return `
-    <div class="result-comparison">
-      <h3 class="result-comparison-title">${escapeHTML(msg("options_result_comparison_title") || "Service results")}</h3>
-      ${siteRows}
-    </div>
-  `;
-}
-function openHistoryModal(historyId) {
-  const entry = state.history.find((item) => Number(item.id) === Number(historyId));
-  if (!entry) {
-    return;
-  }
-  const status = getStatusInfo(entry.status);
-  historyModalMeta.textContent = `${formatDateTime(entry.createdAt)} · ${status.label}`;
-  historyModalServices.innerHTML = getRequestedServices(entry).map((siteId) => buildBadgeMarkup(siteId, state.runtimeSites)).join("");
-  historyModalText.textContent = entry.text;
-  let comparisonEl = document.getElementById("history-modal-comparison");
-  if (!comparisonEl) {
-    comparisonEl = document.createElement("div");
-    comparisonEl.id = "history-modal-comparison";
-    historyModalText.parentElement?.appendChild(comparisonEl);
-  }
-  comparisonEl.innerHTML = buildResultComparisonMarkup(entry);
-  openModal(historyModal, historyModalClose);
-}
-function closeHistoryModal() {
-  closeModal(historyModal);
-}
 function bindHistoryEvents() {
   historyServiceFilter2.addEventListener("change", (event) => {
     state.filters.service = event.target.value;
@@ -4154,7 +4210,7 @@ function bindHistoryEvents() {
     renderHistoryTable();
   });
   historyExportCsv.addEventListener("click", exportFilteredHistoryAsCsv);
-  historySelectAll.addEventListener("change", (event) => {
+  historySelectAll2.addEventListener("change", (event) => {
     const history = getVisibleFilteredHistory();
     const startIndex = (state.historyPage - 1) * PAGE_SIZE;
     const currentPageRows = history.slice(startIndex, startIndex + PAGE_SIZE);
@@ -4168,15 +4224,15 @@ function bindHistoryEvents() {
     });
     renderHistoryTable();
   });
-  historyPrevPage.addEventListener("click", () => {
+  historyPrevPage2.addEventListener("click", () => {
     state.historyPage = Math.max(1, state.historyPage - 1);
     renderHistoryTable();
   });
-  historyNextPage.addEventListener("click", () => {
+  historyNextPage2.addEventListener("click", () => {
     state.historyPage += 1;
     renderHistoryTable();
   });
-  historyTableWrap.addEventListener("click", (event) => {
+  historyTableWrap2.addEventListener("click", (event) => {
     const checkbox = event.target.closest("[data-history-select]");
     if (checkbox) {
       const historyId = Number(checkbox.dataset.historySelect);
@@ -4193,13 +4249,13 @@ function bindHistoryEvents() {
       openHistoryModal(detailButton.dataset.openHistoryId);
     }
   });
-  registerModalCloseHandler(historyModal, closeHistoryModal);
-  historyDeleteSelected.addEventListener("click", () => {
+  registerModalCloseHandler(historyModal2, closeHistoryModal);
+  historyDeleteSelected2.addEventListener("click", () => {
     showConfirmToast(t.history.deleteSelectedConfirm, async () => {
       await deleteSelectedHistoryRows([...state.selectedHistoryIds]);
     });
   });
-  historyDeleteFiltered.addEventListener("click", () => {
+  historyDeleteFiltered2.addEventListener("click", () => {
     const historyIds = filteredHistory().map((entry) => Number(entry.id));
     showConfirmToast(t.history.deleteFilteredConfirm(historyIds.length), async () => {
       await deleteSelectedHistoryRows(historyIds);
@@ -4222,53 +4278,91 @@ function bindHistoryEvents() {
   });
 }
 
-// src/options/features/settings.ts
+// src/options/features/settings/danger-zone.ts
+var { settingsResetData } = optionsDom.settings;
+async function resetAllData(loadData2) {
+  const response = await sendRuntimeMessageWithTimeout({ action: "resetAllData" }, 1e4);
+  if (!response?.ok) {
+    throw new Error(response?.error ?? t.settings.resetFailed);
+  }
+  await loadData2();
+  state.historyPage = 1;
+  setStatus(t.settings.resetSuccess, "success");
+  showAppToast(t.settings.resetSuccess, "success", 1800);
+}
+function bindDangerZoneEvents({ loadData: loadData2 }) {
+  settingsResetData.addEventListener("click", () => {
+    showConfirmToast(t.settings.resetConfirm, async () => {
+      try {
+        await resetAllData(loadData2);
+      } catch (error) {
+        console.error("[AI Prompt Broadcaster] Failed to reset data.", error);
+        setStatus(error?.message ?? t.settings.resetFailed, "error");
+        showAppToast(error?.message ?? t.settings.resetFailed, "error", 3e3);
+      }
+    });
+  });
+}
+
+// src/options/features/settings/export-import.ts
 var {
-  historyLimitSlider,
-  historyLimitValue,
-  historyLimitNote,
-  autoCloseToggle,
-  desktopNotificationToggle,
-  reuseTabsToggle,
-  reuseTabsSettingTitle,
-  reuseTabsSettingDesc,
-  waitMultiplierSettingTitle,
-  waitMultiplierSlider,
-  waitMultiplierSettingValue,
-  shortcutList,
-  openShortcutsBtn,
-  settingsResetData,
   settingsExportJson,
   settingsImportJson,
   settingsImportJsonInput
 } = optionsDom.settings;
-var {
-  historySelectAllLabel,
-  historyDeleteSelected: historyDeleteSelected2,
-  historyDeleteFiltered: historyDeleteFiltered2,
-  historyDelete7d: historyDelete7d2,
-  historyDelete30d: historyDelete30d2,
-  historyDelete90d: historyDelete90d2
-} = optionsDom.history;
-function applySettingsToControls() {
-  historyLimitSlider.value = String(state.settings.historyLimit);
-  historyLimitValue.textContent = t.settings.historyLimitValue(state.settings.historyLimit);
-  historyLimitNote.textContent = chrome.i18n.getMessage("options_settings_history_limit_note") || historyLimitNote.textContent;
-  autoCloseToggle.checked = state.settings.autoClosePopup;
-  desktopNotificationToggle.checked = state.settings.desktopNotifications;
-  reuseTabsToggle.checked = state.settings.reuseExistingTabs;
-  reuseTabsSettingTitle.textContent = t.settings.reuseTabsTitle;
-  reuseTabsSettingDesc.textContent = t.settings.reuseTabsDesc;
-  waitMultiplierSettingTitle.textContent = t.settings.waitMultiplierTitle;
-  waitMultiplierSlider.value = String(state.settings.waitMsMultiplier);
-  waitMultiplierSettingValue.textContent = t.settings.waitMultiplierValue(state.settings.waitMsMultiplier);
-  historySelectAllLabel.textContent = t.history.selectAllLabel;
-  historyDeleteSelected2.textContent = t.history.deleteSelected;
-  historyDeleteFiltered2.textContent = t.history.deleteFiltered;
-  historyDelete7d2.textContent = t.history.deleteOlderThan(7);
-  historyDelete30d2.textContent = t.history.deleteOlderThan(30);
-  historyDelete90d2.textContent = t.history.deleteOlderThan(90);
+function downloadBlob2(filename, content, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
+function bindExportImportEvents({ loadData: loadData2 }) {
+  settingsExportJson.addEventListener("click", async () => {
+    try {
+      const payload = await exportPromptData();
+      downloadBlob2(
+        `ai-prompt-broadcaster-${(/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-")}.json`,
+        JSON.stringify(payload, null, 2),
+        "application/json"
+      );
+      setStatus(t.settings.exportSuccess, "success");
+      showAppToast(t.settings.exportSuccess, "success", 1800);
+    } catch (error) {
+      console.error("[AI Prompt Broadcaster] Failed to export JSON.", error);
+      setStatus(error?.message ?? t.settings.exportFailed, "error");
+      showAppToast(error?.message ?? t.settings.exportFailed, "error", 3e3);
+    }
+  });
+  settingsImportJson.addEventListener("click", () => {
+    settingsImportJsonInput.click();
+  });
+  settingsImportJsonInput.addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+    try {
+      const text = await file.text();
+      const result = await importPromptData(text);
+      await loadData2();
+      setStatus(buildImportSummaryText(result.importSummary), "success");
+      showAppToast(buildImportSummaryText(result.importSummary, { short: true }), "success", 2600);
+      openImportReportModal(result.importSummary);
+    } catch (error) {
+      console.error("[AI Prompt Broadcaster] Failed to import JSON.", error);
+      setStatus(error?.message ?? t.settings.importFailed, "error");
+      showAppToast(error?.message ?? t.settings.importFailed, "error", 3e3);
+    } finally {
+      settingsImportJsonInput.value = "";
+    }
+  });
+}
+
+// src/options/features/settings/shortcuts.ts
+var { shortcutList, openShortcutsBtn } = optionsDom.settings;
 function getShortcutDisplayName(commandName) {
   switch (commandName) {
     case "_execute_action":
@@ -4296,6 +4390,57 @@ async function renderShortcutList() {
     shortcutList.textContent = t.shortcuts.loadFailed;
   }
 }
+function bindShortcutEvents() {
+  openShortcutsBtn.addEventListener("click", () => {
+    void chrome.tabs.create({ url: "chrome://extensions/shortcuts" }).catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to open shortcuts page.", error);
+      setStatus(error?.message ?? t.settings.shortcutsOpenFailed, "error");
+      showAppToast(error?.message ?? t.settings.shortcutsOpenFailed, "error", 3e3);
+    });
+  });
+}
+
+// src/options/features/settings.ts
+var {
+  historyLimitSlider,
+  historyLimitValue,
+  historyLimitNote,
+  autoCloseToggle,
+  desktopNotificationToggle,
+  reuseTabsToggle,
+  reuseTabsSettingTitle,
+  reuseTabsSettingDesc,
+  waitMultiplierSettingTitle,
+  waitMultiplierSlider,
+  waitMultiplierSettingValue
+} = optionsDom.settings;
+var {
+  historySelectAllLabel,
+  historyDeleteSelected: historyDeleteSelected3,
+  historyDeleteFiltered: historyDeleteFiltered3,
+  historyDelete7d: historyDelete7d2,
+  historyDelete30d: historyDelete30d2,
+  historyDelete90d: historyDelete90d2
+} = optionsDom.history;
+function applySettingsToControls() {
+  historyLimitSlider.value = String(state.settings.historyLimit);
+  historyLimitValue.textContent = t.settings.historyLimitValue(state.settings.historyLimit);
+  historyLimitNote.textContent = chrome.i18n.getMessage("options_settings_history_limit_note") || historyLimitNote.textContent;
+  autoCloseToggle.checked = state.settings.autoClosePopup;
+  desktopNotificationToggle.checked = state.settings.desktopNotifications;
+  reuseTabsToggle.checked = state.settings.reuseExistingTabs;
+  reuseTabsSettingTitle.textContent = t.settings.reuseTabsTitle;
+  reuseTabsSettingDesc.textContent = t.settings.reuseTabsDesc;
+  waitMultiplierSettingTitle.textContent = t.settings.waitMultiplierTitle;
+  waitMultiplierSlider.value = String(state.settings.waitMsMultiplier);
+  waitMultiplierSettingValue.textContent = t.settings.waitMultiplierValue(state.settings.waitMsMultiplier);
+  historySelectAllLabel.textContent = t.history.selectAllLabel;
+  historyDeleteSelected3.textContent = t.history.deleteSelected;
+  historyDeleteFiltered3.textContent = t.history.deleteFiltered;
+  historyDelete7d2.textContent = t.history.deleteOlderThan(7);
+  historyDelete30d2.textContent = t.history.deleteOlderThan(30);
+  historyDelete90d2.textContent = t.history.deleteOlderThan(90);
+}
 async function saveSettings(partialSettings) {
   const nextSettings = await updateAppSettings(partialSettings);
   state.settings = nextSettings;
@@ -4305,25 +4450,6 @@ async function saveSettings(partialSettings) {
   applySettingsToControls();
   setStatus(t.statusSaved, "success");
   showAppToast(t.statusSaved, "success", 1800);
-}
-async function resetAllData(loadData2) {
-  const response = await sendRuntimeMessageWithTimeout({ action: "resetAllData" }, 1e4);
-  if (!response?.ok) {
-    throw new Error(response?.error ?? t.settings.resetFailed);
-  }
-  await loadData2();
-  state.historyPage = 1;
-  setStatus(t.settings.resetSuccess, "success");
-  showAppToast(t.settings.resetSuccess, "success", 1800);
-}
-function downloadBlob2(filename, content, type) {
-  const blob = new Blob([content], { type });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  URL.revokeObjectURL(url);
 }
 function bindSettingsEvents({ loadData: loadData2 }) {
   historyLimitSlider.addEventListener("input", (event) => {
@@ -4365,63 +4491,9 @@ function bindSettingsEvents({ loadData: loadData2 }) {
       showAppToast(error?.message ?? t.saveFailed, "error", 3e3);
     });
   });
-  settingsResetData.addEventListener("click", () => {
-    showConfirmToast(t.settings.resetConfirm, async () => {
-      try {
-        await resetAllData(loadData2);
-      } catch (error) {
-        console.error("[AI Prompt Broadcaster] Failed to reset data.", error);
-        setStatus(error?.message ?? t.settings.resetFailed, "error");
-        showAppToast(error?.message ?? t.settings.resetFailed, "error", 3e3);
-      }
-    });
-  });
-  openShortcutsBtn.addEventListener("click", () => {
-    void chrome.tabs.create({ url: "chrome://extensions/shortcuts" }).catch((error) => {
-      console.error("[AI Prompt Broadcaster] Failed to open shortcuts page.", error);
-      setStatus(error?.message ?? t.settings.shortcutsOpenFailed, "error");
-      showAppToast(error?.message ?? t.settings.shortcutsOpenFailed, "error", 3e3);
-    });
-  });
-  settingsExportJson.addEventListener("click", async () => {
-    try {
-      const payload = await exportPromptData();
-      downloadBlob2(
-        `ai-prompt-broadcaster-${(/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-")}.json`,
-        JSON.stringify(payload, null, 2),
-        "application/json"
-      );
-      setStatus(t.settings.exportSuccess, "success");
-      showAppToast(t.settings.exportSuccess, "success", 1800);
-    } catch (error) {
-      console.error("[AI Prompt Broadcaster] Failed to export JSON.", error);
-      setStatus(error?.message ?? t.settings.exportFailed, "error");
-      showAppToast(error?.message ?? t.settings.exportFailed, "error", 3e3);
-    }
-  });
-  settingsImportJson.addEventListener("click", () => {
-    settingsImportJsonInput.click();
-  });
-  settingsImportJsonInput.addEventListener("change", async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) {
-      return;
-    }
-    try {
-      const text = await file.text();
-      const result = await importPromptData(text);
-      await loadData2();
-      setStatus(buildImportSummaryText(result.importSummary), "success");
-      showAppToast(buildImportSummaryText(result.importSummary, { short: true }), "success", 2600);
-      openImportReportModal(result.importSummary);
-    } catch (error) {
-      console.error("[AI Prompt Broadcaster] Failed to import JSON.", error);
-      setStatus(error?.message ?? t.settings.importFailed, "error");
-      showAppToast(error?.message ?? t.settings.importFailed, "error", 3e3);
-    } finally {
-      settingsImportJsonInput.value = "";
-    }
-  });
+  bindShortcutEvents();
+  bindDangerZoneEvents({ loadData: loadData2 });
+  bindExportImportEvents({ loadData: loadData2 });
 }
 
 // src/options/core/data.ts

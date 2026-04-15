@@ -6,7 +6,7 @@ Chrome Manifest V3 extension that injects one prompt into multiple AI chat servi
 No backend and no API keys are required. Prompts are injected directly into each service's DOM via `chrome.scripting.executeScript`.
 
 Source of truth: `src/` (TypeScript). Chrome loads the built output in `dist/`, and the root runtime JS files are generated mirrors refreshed by `npm run build`.
-`src/*/main.ts` files stay thin and delegate to feature-oriented runtime modules. The largest entrypoints are composition roots; background logic is further split into `commands/`, `context-menu/`, `messages/`, `popup/`, and `selection/`, while options and popup also use `core/`, `features/`, and CSS partial directories.
+`src/*/main.ts` files stay thin and delegate to feature-oriented runtime modules. The largest entrypoints are composition roots; background logic is further split into `commands/`, `context-menu/`, `messages/`, `popup/`, `runtime/`, `selection/`, `session/`, and `tabs/`, while popup and options use feature-oriented subfolders such as `compose/`, `favorites/`, `history/`, `overlays/`, `services/`, and nested `features/*/`.
 
 ## Essential Commands
 
@@ -63,14 +63,18 @@ To package a release zip:
 - `src/popup/app/bootstrap.ts`: popup orchestration and feature wiring
 - `src/popup/app/dom.ts`, `helpers.ts`, `sorting.ts`, `list-markup.ts`: popup DOM registry and pure UI helpers
 - `src/popup/app/i18n.ts`, `src/popup/app/state.ts`: popup state and copy
-- `src/popup/features/favorite-editor.ts`: integrated favorite editor for single/chain/schedule flows
+- `src/popup/favorites/favorite-editor.ts`: integrated favorite editor for single/chain/schedule flows
+- `src/popup/compose/`: popup target selection, open-tab routing, template preview, and send-flow helpers
+- `src/popup/services/`: popup service editor, permission preview, selector test, and managed-site rendering
 - `src/options/app/bootstrap.ts`: options orchestration and section wiring
 - `src/options/core/`: shared status, navigation, data refresh, and filter helpers
 - `src/options/features/`: dashboard, history, schedules, services, and settings sections
+- `src/options/features/history/`, `settings/`, `schedules/`: nested section modules for rendering, actions, export/import, and modal flows
 - `src/options/features/dashboard-metrics.ts`: pure dashboard aggregation for cards, heatmap, trends, failures, and strategy summary
 - `src/options/features/schedule-summary.ts`: pure scheduled-run summary helper used by options schedules UI
 - `src/options/ui/charts.ts`: chart rendering
 - `src/background/app/bootstrap.ts`: service worker composition root
+- `src/background/runtime/`, `src/background/session/`, `src/background/tabs/`: runtime handler map, session-state mutation store, and normal-window/tab routing helpers
 - `src/background/commands/quick-palette.ts`: command handling and content-script injection for the page overlay
 - `src/background/context-menu/index.ts`: context-menu lifecycle
 - `src/background/messages/router.ts`: runtime message routing
@@ -78,7 +82,7 @@ To package a release zip:
 - `src/background/popup/favorites-workflow.ts`: favorite run, chain, and schedule workflow
 - `src/background/selection/runtime.ts`: active-tab selection helpers
 - `src/background/app/injection-helpers.ts`: timeout scaling, selector normalization, result mapping, adaptive strategy ordering
-- `src/content/palette/main.ts`: shadow-root quick palette overlay
+- `src/content/palette/`: shadow-root quick palette overlay split into `main.ts`, `state.ts`, `render.ts`, `events.ts`, and `runtime.ts`
 - `src/content/selector-checker/` and `src/content/selection/`: modular content helpers split by runtime, DOM, and reporting concerns
 - `scripts/qa-smoke.mjs` + `scripts/qa-smoke/`: local smoke runner and reusable fixtures/helpers
 

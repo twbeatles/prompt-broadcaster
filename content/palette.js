@@ -1,5 +1,19 @@
 "use strict";
 var AIPromptBroadcasterQuickPaletteBundle = (() => {
+  // src/content/palette/state.ts
+  function createQuickPaletteState() {
+    return {
+      open: false,
+      host: null,
+      shadow: null,
+      query: "",
+      activeIndex: 0,
+      favorites: [],
+      filteredFavorites: [],
+      status: ""
+    };
+  }
+
   // src/shared/chrome/messaging.ts
   var DEFAULT_RUNTIME_MESSAGE_TIMEOUT_MS = 5e3;
   function normalizeTimeoutMs(timeoutMs) {
@@ -92,48 +106,33 @@ var AIPromptBroadcasterQuickPaletteBundle = (() => {
     return values.some((value) => normalizeSearchValue(value).includes(normalizedQuery));
   }
 
-  // src/content/palette/main.ts
-  (() => {
-    if (globalThis.__aiPromptBroadcasterQuickPaletteLoaded) {
+  // src/content/palette/render.ts
+  function ensurePaletteHost(state) {
+    if (state.host && state.shadow) {
       return;
     }
-    globalThis.__aiPromptBroadcasterQuickPaletteLoaded = true;
-    const state = {
-      open: false,
-      host: null,
-      shadow: null,
-      query: "",
-      activeIndex: 0,
-      favorites: [],
-      filteredFavorites: [],
-      status: ""
-    };
-    function ensureHost() {
-      if (state.host && state.shadow) {
-        return;
-      }
-      const host = document.createElement("div");
-      host.id = "apb-quick-palette-root";
-      const shadow = host.attachShadow({ mode: "open" });
-      document.documentElement.appendChild(host);
-      state.host = host;
-      state.shadow = shadow;
+    const host = document.createElement("div");
+    host.id = "apb-quick-palette-root";
+    const shadow = host.attachShadow({ mode: "open" });
+    document.documentElement.appendChild(host);
+    state.host = host;
+    state.shadow = shadow;
+  }
+  function escapeHtml(value) {
+    return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+  function filterFavorites(state) {
+    state.filteredFavorites = state.query.trim() ? state.favorites.filter((favorite) => matchesFavoriteSearch(favorite, state.query)) : [...state.favorites];
+    state.activeIndex = Math.min(
+      state.filteredFavorites.length - 1,
+      Math.max(0, state.activeIndex)
+    );
+    if (state.filteredFavorites.length === 0) {
+      state.activeIndex = 0;
     }
-    function escapeHtml(value) {
-      return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-    }
-    function filterFavorites() {
-      state.filteredFavorites = state.query.trim() ? state.favorites.filter((favorite) => matchesFavoriteSearch(favorite, state.query)) : [...state.favorites];
-      state.activeIndex = Math.min(
-        state.filteredFavorites.length - 1,
-        Math.max(0, state.activeIndex)
-      );
-      if (state.filteredFavorites.length === 0) {
-        state.activeIndex = 0;
-      }
-    }
-    function buildMarkup() {
-      const listMarkup = state.filteredFavorites.length > 0 ? state.filteredFavorites.map((favorite, index) => `
+  }
+  function buildPaletteMarkup(state) {
+    const listMarkup = state.filteredFavorites.length > 0 ? state.filteredFavorites.map((favorite, index) => `
           <button
             class="result-item${index === state.activeIndex ? " active" : ""}"
             type="button"
@@ -150,11 +149,9 @@ var AIPromptBroadcasterQuickPaletteBundle = (() => {
             </div>
           </button>
         `).join("") : `<div class="empty-state">No matching favorites.</div>`;
-      return `
+    return `
       <style>
-        :host {
-          all: initial;
-        }
+        :host { all: initial; }
         .overlay {
           position: fixed;
           inset: 0;
@@ -287,9 +284,7 @@ var AIPromptBroadcasterQuickPaletteBundle = (() => {
           color: #7d6653;
           font-size: 12px;
         }
-        .status {
-          color: #bc4444;
-        }
+        .status { color: #bc4444; }
         .empty-state {
           padding: 28px 12px;
           text-align: center;
@@ -314,138 +309,163 @@ var AIPromptBroadcasterQuickPaletteBundle = (() => {
         </div>
       </div>
     `;
+  }
+
+  // src/content/palette/events.ts
+  function bindPaletteUiEvents(state, deps) {
+    if (!state.shadow) {
+      return;
     }
-    function bindUiEvents() {
-      const overlay = state.shadow.querySelector("[data-role='overlay']");
-      const input = state.shadow.querySelector(".search");
-      const buttons = [...state.shadow.querySelectorAll("[data-favorite-id]")];
-      overlay?.addEventListener("click", (event) => {
-        if (event.target === overlay) {
-          closePalette();
-        }
-      });
-      input?.addEventListener("input", (event) => {
-        state.query = event.target.value;
-        filterFavorites();
-        render();
-      });
-      input?.addEventListener("keydown", (event) => {
-        if (event.key === "ArrowDown") {
-          event.preventDefault();
-          if (state.filteredFavorites.length > 0) {
-            state.activeIndex = (state.activeIndex + 1) % state.filteredFavorites.length;
-            render();
-          }
-          return;
-        }
-        if (event.key === "ArrowUp") {
-          event.preventDefault();
-          if (state.filteredFavorites.length > 0) {
-            state.activeIndex = (state.activeIndex - 1 + state.filteredFavorites.length) % state.filteredFavorites.length;
-            render();
-          }
-          return;
-        }
-        if (event.key === "Enter") {
-          event.preventDefault();
-          void executeActiveFavorite();
-          return;
-        }
-        if (event.key === "Escape") {
-          event.preventDefault();
-          closePalette();
-        }
-      });
-      buttons.forEach((button, index) => {
-        button.addEventListener("mouseenter", () => {
-          state.activeIndex = index;
-          buttons.forEach((entry, entryIndex) => {
-            entry.classList.toggle("active", entryIndex === state.activeIndex);
-          });
-        });
-        button.addEventListener("click", () => {
-          state.activeIndex = index;
-          void executeActiveFavorite();
-        });
-      });
-    }
-    function render() {
-      ensureHost();
-      state.shadow.innerHTML = buildMarkup();
-      bindUiEvents();
-      const input = state.shadow.querySelector(".search");
-      if (input) {
-        input.focus();
-        input.setSelectionRange?.(input.value.length, input.value.length);
+    const overlay = state.shadow.querySelector("[data-role='overlay']");
+    const input = state.shadow.querySelector(".search");
+    const buttons = Array.from(
+      state.shadow.querySelectorAll("[data-favorite-id]")
+    );
+    overlay?.addEventListener("click", (event) => {
+      if (event.target === overlay) {
+        deps.closePalette();
       }
-    }
-    async function loadFavorites() {
-      const response = await sendRuntimeMessageWithTimeout({ action: "quickPalette:getState" }, 5e3);
-      if (!response?.ok) {
-        throw new Error(response?.error ?? "Failed to load favorites.");
-      }
-      state.favorites = Array.isArray(response.favorites) ? response.favorites : [];
-      filterFavorites();
-    }
-    async function openPalette() {
-      state.status = "";
-      state.query = "";
-      state.activeIndex = 0;
-      await loadFavorites();
-      state.open = true;
-      render();
-    }
-    function closePalette() {
-      state.open = false;
-      state.status = "";
-      if (state.host) {
-        state.host.remove();
-      }
-      state.host = null;
-      state.shadow = null;
-    }
-    async function executeActiveFavorite() {
-      const favorite = state.filteredFavorites[state.activeIndex];
-      if (!favorite?.id) {
+    });
+    input?.addEventListener("input", (event) => {
+      state.query = event.currentTarget instanceof HTMLInputElement ? event.currentTarget.value : "";
+      filterFavorites(state);
+      deps.renderPalette();
+    });
+    input?.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        if (state.filteredFavorites.length > 0) {
+          state.activeIndex = (state.activeIndex + 1) % state.filteredFavorites.length;
+          deps.renderPalette();
+        }
         return;
       }
-      const response = await sendRuntimeMessageWithTimeout({
-        action: "quickPalette:execute",
-        favoriteId: favorite.id
-      }, 5e3);
-      if (response?.ok) {
-        closePalette();
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        if (state.filteredFavorites.length > 0) {
+          state.activeIndex = (state.activeIndex - 1 + state.filteredFavorites.length) % state.filteredFavorites.length;
+          deps.renderPalette();
+        }
         return;
       }
-      state.status = response?.error ?? "Unable to run this favorite.";
-      render();
+      if (event.key === "Enter") {
+        event.preventDefault();
+        void deps.executeActiveFavorite();
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        deps.closePalette();
+      }
+    });
+    buttons.forEach((button, index) => {
+      button.addEventListener("mouseenter", () => {
+        state.activeIndex = index;
+        buttons.forEach((entry, entryIndex) => {
+          entry.classList.toggle("active", entryIndex === state.activeIndex);
+        });
+      });
+      button.addEventListener("click", () => {
+        state.activeIndex = index;
+        void deps.executeActiveFavorite();
+      });
+    });
+  }
+
+  // src/content/palette/runtime.ts
+  function renderPalette(state, deps) {
+    ensurePaletteHost(state);
+    if (!state.shadow) {
+      return;
     }
+    state.shadow.innerHTML = buildPaletteMarkup(state);
+    bindPaletteUiEvents(state, deps);
+    const input = state.shadow.querySelector(".search");
+    if (input) {
+      input.focus();
+      input.setSelectionRange?.(input.value.length, input.value.length);
+    }
+  }
+  async function loadFavorites(state) {
+    const response = await sendRuntimeMessageWithTimeout({
+      action: "quickPalette:getState"
+    });
+    const typedResponse = response;
+    if (!typedResponse?.ok) {
+      throw new Error("Failed to load favorites.");
+    }
+    state.favorites = Array.isArray(typedResponse.favorites) ? typedResponse.favorites : [];
+    filterFavorites(state);
+  }
+  async function openPalette(state, deps) {
+    state.status = "";
+    state.query = "";
+    state.activeIndex = 0;
+    await loadFavorites(state);
+    state.open = true;
+    renderPalette(state, deps);
+  }
+  function closePalette(state) {
+    state.open = false;
+    state.status = "";
+    state.host?.remove();
+    state.host = null;
+    state.shadow = null;
+  }
+  async function executeActiveFavorite(state, deps) {
+    const favorite = state.filteredFavorites[state.activeIndex];
+    if (!favorite?.id) {
+      return;
+    }
+    const response = await sendRuntimeMessageWithTimeout({
+      action: "quickPalette:execute",
+      favoriteId: favorite.id
+    });
+    const typedResponse = response;
+    if (typedResponse?.ok) {
+      deps.closePalette();
+      return;
+    }
+    state.status = typedResponse?.error ?? "Unable to run this favorite.";
+    deps.renderPalette();
+  }
+  function isQuickPaletteMessage(message) {
+    if (!message || typeof message !== "object") {
+      return false;
+    }
+    const action = message.action;
+    return action === "quickPalette:ping" || action === "quickPalette:close" || action === "quickPalette:toggle";
+  }
+  function registerQuickPaletteRuntime(state, deps) {
     chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       try {
-        if (message?.action === "quickPalette:ping") {
+        if (!isQuickPaletteMessage(message)) {
+          return false;
+        }
+        if (message.action === "quickPalette:ping") {
           sendResponse({ ok: true });
           return false;
         }
-        if (message?.action === "quickPalette:close") {
-          closePalette();
+        if (message.action === "quickPalette:close") {
+          closePalette(state);
           sendResponse({ ok: true });
           return false;
         }
-        if (message?.action === "quickPalette:toggle") {
+        if (message.action === "quickPalette:toggle") {
           void (async () => {
             if (state.open) {
-              closePalette();
+              closePalette(state);
               sendResponse({ ok: true, open: false });
               return;
             }
             try {
-              await openPalette();
+              await openPalette(state, deps);
               sendResponse({ ok: true, open: true });
             } catch (error) {
-              closePalette();
+              closePalette(state);
               sendResponse({
                 ok: false,
-                error: error?.message ?? String(error)
+                error: error instanceof Error ? error.message : String(error)
               });
             }
           })();
@@ -453,9 +473,30 @@ var AIPromptBroadcasterQuickPaletteBundle = (() => {
         }
         return false;
       } catch (error) {
-        sendResponse({ ok: false, error: error?.message ?? String(error) });
+        sendResponse({
+          ok: false,
+          error: error instanceof Error ? error.message : String(error)
+        });
         return false;
       }
     });
+  }
+
+  // src/content/palette/main.ts
+  (() => {
+    if (globalThis.__aiPromptBroadcasterQuickPaletteLoaded) {
+      return;
+    }
+    globalThis.__aiPromptBroadcasterQuickPaletteLoaded = true;
+    const state = createQuickPaletteState();
+    const deps = {
+      closePalette: () => closePalette(state),
+      executeActiveFavorite: () => executeActiveFavorite(state, {
+        closePalette: () => closePalette(state),
+        renderPalette: () => renderPalette(state, deps)
+      }),
+      renderPalette: () => renderPalette(state, deps)
+    };
+    registerQuickPaletteRuntime(state, deps);
   })();
 })();

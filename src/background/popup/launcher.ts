@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { setPopupPromptIntent } from "../../shared/prompt-state";
 import {
   ONBOARDING_URL,
@@ -7,7 +6,7 @@ import {
   STANDALONE_POPUP_WIDTH,
 } from "../app/constants";
 
-async function storePromptForPopup(prompt) {
+async function storePromptForPopup(prompt: string): Promise<void> {
   try {
     const normalizedPrompt = typeof prompt === "string" ? prompt : "";
     await setPopupPromptIntent(normalizedPrompt.trim() ? normalizedPrompt : null);
@@ -16,7 +15,7 @@ async function storePromptForPopup(prompt) {
   }
 }
 
-async function tryOpenActionPopup() {
+async function tryOpenActionPopup(): Promise<boolean> {
   if (typeof chrome.action?.openPopup !== "function") {
     return false;
   }
@@ -30,7 +29,7 @@ async function tryOpenActionPopup() {
   }
 }
 
-async function focusExistingBrowserWindow() {
+async function focusExistingBrowserWindow(): Promise<boolean> {
   try {
     const windows = await chrome.windows.getAll({
       windowTypes: ["normal"],
@@ -49,7 +48,7 @@ async function focusExistingBrowserWindow() {
   }
 }
 
-async function openStandalonePopupPage() {
+async function openStandalonePopupPage(): Promise<boolean> {
   try {
     await chrome.windows.create({
       url: chrome.runtime.getURL(POPUP_PAGE_URL),
@@ -67,7 +66,7 @@ async function openStandalonePopupPage() {
 
 export function createPopupLauncher() {
   return {
-    async openPopupWithPrompt(prompt = "") {
+    async openPopupWithPrompt(prompt = ""): Promise<void> {
       try {
         if (typeof prompt === "string") {
           await storePromptForPopup(prompt);
@@ -91,7 +90,7 @@ export function createPopupLauncher() {
       }
     },
 
-    async openOnboardingPage() {
+    async openOnboardingPage(): Promise<void> {
       try {
         await chrome.tabs.create({ url: chrome.runtime.getURL(ONBOARDING_URL) });
       } catch (error) {

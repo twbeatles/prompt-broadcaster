@@ -600,40 +600,44 @@ async function setBroadcastCounter(value) {
 
 // src/shared/prompts/favorites-store.ts
 function buildFavoriteEntry(entry) {
-  const text = safeText(entry?.text);
-  const sentTo = normalizeSentTo(entry?.sentTo);
-  const createdAt = normalizeIsoDate(entry?.createdAt);
-  const favoritedAt = normalizeIsoDate(entry?.favoritedAt, createdAt);
-  const usageCount = Math.max(0, Math.round(Number(entry?.usageCount) || 0));
-  const mode = normalizeFavoriteMode(entry?.mode);
-  const steps = mode === "chain" ? normalizeChainSteps(entry?.steps, {
+  const source = entry ?? {};
+  const text = safeText(source?.text);
+  const sentTo = normalizeSentTo(source?.sentTo);
+  const createdAt = normalizeIsoDate(source?.createdAt);
+  const favoritedAt = normalizeIsoDate(source?.favoritedAt, createdAt);
+  const usageCount = Math.max(0, Math.round(Number(source?.usageCount) || 0));
+  const mode = normalizeFavoriteMode(source?.mode);
+  const steps = mode === "chain" ? normalizeChainSteps(source?.steps, {
     text,
     delayMs: 0,
     targetSiteIds: sentTo
   }) : [];
   return {
-    id: typeof entry?.id === "string" && entry.id.trim() ? entry.id.trim() : `fav-${Date.now()}`,
-    sourceHistoryId: entry?.sourceHistoryId === null || entry?.sourceHistoryId === void 0 ? null : Number(entry.sourceHistoryId),
-    title: safeText(entry?.title),
+    id: typeof source?.id === "string" && source.id.trim() ? source.id.trim() : `fav-${Date.now()}`,
+    sourceHistoryId: source?.sourceHistoryId === null || source?.sourceHistoryId === void 0 ? null : Number(source.sourceHistoryId),
+    title: safeText(source?.title),
     text,
     sentTo,
     createdAt,
     favoritedAt,
-    templateDefaults: normalizeTemplateDefaults(entry?.templateDefaults),
-    tags: normalizeTags(entry?.tags),
-    folder: safeText(entry?.folder).slice(0, 50),
-    pinned: normalizeBoolean(entry?.pinned, false),
+    templateDefaults: normalizeTemplateDefaults(source?.templateDefaults),
+    tags: normalizeTags(source?.tags),
+    folder: safeText(source?.folder).slice(0, 50),
+    pinned: normalizeBoolean(source?.pinned, false),
     usageCount,
-    lastUsedAt: normalizeNullableIsoDate(entry?.lastUsedAt),
+    lastUsedAt: normalizeNullableIsoDate(source?.lastUsedAt),
     mode,
     steps,
-    scheduleEnabled: normalizeBoolean(entry?.scheduleEnabled, false),
-    scheduledAt: normalizeNullableIsoDate(entry?.scheduledAt),
-    scheduleRepeat: normalizeScheduleRepeat(entry?.scheduleRepeat)
+    scheduleEnabled: normalizeBoolean(source?.scheduleEnabled, false),
+    scheduledAt: normalizeNullableIsoDate(source?.scheduledAt),
+    scheduleRepeat: normalizeScheduleRepeat(source?.scheduleRepeat)
   };
 }
 async function getPromptFavorites() {
-  const rawFavorites = await readLocal(LOCAL_STORAGE_KEYS.favorites, []);
+  const rawFavorites = await readLocal(
+    LOCAL_STORAGE_KEYS.favorites,
+    []
+  );
   return sortByDateDesc(
     safeArray(rawFavorites).map((item) => buildFavoriteEntry(item)),
     "favoritedAt"
@@ -1172,6 +1176,7 @@ function shouldRequireVisibleSubmitSurface(submitRequirement) {
 }
 
 // src/shared/sites/normalizers.ts
+var BUILT_IN_SITE_STYLE_LOOKUP = BUILT_IN_SITE_STYLE_MAP;
 function safeText2(value) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -1235,7 +1240,7 @@ function normalizeHostnameAliases(value, primaryHostname = "") {
 }
 function deriveHostname(url) {
   try {
-    return new URL(url).hostname;
+    return new URL(String(url ?? "")).hostname;
   } catch (_error) {
     return "";
   }
@@ -1260,7 +1265,7 @@ function normalizeOriginHost(value) {
 }
 function buildOriginPatterns(url, hostnameAliases = []) {
   try {
-    const parsed = new URL(url);
+    const parsed = new URL(String(url ?? ""));
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       return [];
     }
@@ -1268,7 +1273,9 @@ function buildOriginPatterns(url, hostnameAliases = []) {
     const primaryHostname = normalizeHostname(parsed.hostname);
     const normalizedAliases = Array.from(
       new Set(
-        normalizeStringList(hostnameAliases).map((entry) => normalizeOriginHost(entry)).filter((entry) => entry && entry !== primaryHost && entry !== primaryHostname)
+        normalizeStringList(hostnameAliases).map((entry) => normalizeOriginHost(entry)).filter(
+          (entry) => entry && entry !== primaryHost && entry !== primaryHostname
+        )
       )
     );
     return Array.from(
@@ -1302,7 +1309,7 @@ var PERPLEXITY_SELECTOR_FALLBACKS = [
   "div[contenteditable='true'][role='textbox']"
 ];
 function normalizeSelectorArray(value) {
-  return Array.isArray(value) ? value.filter((entry) => typeof entry === "string" && entry.trim()).map((entry) => entry.trim()) : [];
+  return Array.isArray(value) ? value.filter((entry) => typeof entry === "string" && Boolean(entry.trim())).map((entry) => entry.trim()) : [];
 }
 function normalizePerplexitySelectors(site = {}) {
   if (safeText2(site?.id) !== "perplexity") {
@@ -1328,13 +1335,14 @@ function normalizePerplexitySelectors(site = {}) {
   };
 }
 function buildBaseSiteRecord(site, builtInMeta = {}) {
-  const style = BUILT_IN_SITE_STYLE_MAP[site.id] ?? {};
+  const style = BUILT_IN_SITE_STYLE_LOOKUP[safeText2(site.id)] ?? {};
   const url = safeText2(site.url);
   const hostname = normalizeHostname(site.hostname || deriveHostname(url));
   const hostnameAliases = normalizeHostnameAliases(site.hostnameAliases, hostname);
   const normalizedSelectors = normalizePerplexitySelectors(site);
   const verification = buildVerificationMetadata(site);
   const supportedRoutes = getConfiguredSupportedRoutes(site);
+  const verifiedAuthState = verification.verifiedAuthState || void 0;
   return {
     id: safeText2(site.id),
     name: safeText2(site.name) || "AI Service",
@@ -1346,15 +1354,20 @@ function buildBaseSiteRecord(site, builtInMeta = {}) {
     inputType: normalizeInputType(site.inputType, "textarea"),
     submitSelector: safeText2(site.submitSelector),
     submitMethod: normalizeSubmitMethod(site.submitMethod, "click"),
-    selectorCheckMode: normalizeSelectorCheckMode(site.selectorCheckMode, "input-and-submit"),
+    selectorCheckMode: normalizeSelectorCheckMode(
+      site.selectorCheckMode,
+      "input-and-submit"
+    ),
     waitMs: normalizeWaitMs(site.waitMs, 2e3),
     fallbackSelectors: normalizedSelectors.fallbackSelectors,
     fallback: normalizeBoolean2(site.fallback, true),
-    authSelectors: Array.isArray(site.authSelectors) ? site.authSelectors.filter((entry) => typeof entry === "string" && entry.trim()) : [],
+    authSelectors: Array.isArray(site.authSelectors) ? site.authSelectors.filter(
+      (entry) => typeof entry === "string" && Boolean(entry.trim())
+    ) : [],
     lastVerified: verification.lastVerified,
     verifiedAt: verification.verifiedAt,
     verifiedRoute: verification.verifiedRoute,
-    verifiedAuthState: verification.verifiedAuthState,
+    verifiedAuthState,
     verifiedLocale: verification.verifiedLocale,
     verifiedVersion: verification.verifiedVersion,
     enabled: normalizeBoolean2(site.enabled, true),
@@ -1368,86 +1381,108 @@ function buildBaseSiteRecord(site, builtInMeta = {}) {
   };
 }
 function sanitizeBuiltInOverride(override = {}, originalSite = {}) {
-  const submitMethod = normalizeSubmitMethod(override.submitMethod, originalSite.submitMethod);
+  const submitMethod = normalizeSubmitMethod(
+    override.submitMethod,
+    normalizeSubmitMethod(originalSite.submitMethod, "click")
+  );
   const submitSelector = submitMethod === "click" ? safeText2(override.submitSelector) || safeText2(originalSite.submitSelector) : safeText2(override.submitSelector);
   const verification = buildVerificationMetadata(override, originalSite);
-  const supportedRoutes = Object.prototype.hasOwnProperty.call(override ?? {}, "supportedRoutes") ? normalizeSupportedRoutes(override.supportedRoutes) : getConfiguredSupportedRoutes(originalSite);
+  const supportedRoutes = Object.prototype.hasOwnProperty.call(
+    override ?? {},
+    "supportedRoutes"
+  ) ? normalizeSupportedRoutes(override.supportedRoutes) : getConfiguredSupportedRoutes(originalSite);
+  const verifiedAuthState = verification.verifiedAuthState || void 0;
   return {
-    name: safeText2(override.name) || originalSite.name,
+    name: safeText2(override.name) || safeText2(originalSite.name),
     supportedRoutes,
-    inputSelector: safeText2(override.inputSelector) || originalSite.inputSelector,
-    inputType: normalizeInputType(override.inputType, originalSite.inputType),
+    inputSelector: safeText2(override.inputSelector) || safeText2(originalSite.inputSelector),
+    inputType: normalizeInputType(
+      override.inputType,
+      normalizeInputType(originalSite.inputType, "textarea")
+    ),
     submitSelector,
     submitMethod,
     selectorCheckMode: normalizeSelectorCheckMode(
       override.selectorCheckMode,
-      originalSite.selectorCheckMode || "input-and-submit"
+      normalizeSelectorCheckMode(
+        originalSite.selectorCheckMode,
+        "input-and-submit"
+      )
     ),
-    waitMs: normalizeWaitMs(override.waitMs, originalSite.waitMs),
-    fallbackSelectors: Array.isArray(override.fallbackSelectors) ? override.fallbackSelectors.filter((entry) => typeof entry === "string" && entry.trim()) : Array.isArray(originalSite.fallbackSelectors) ? [...originalSite.fallbackSelectors] : [],
-    authSelectors: Array.isArray(override.authSelectors) ? override.authSelectors.filter((entry) => typeof entry === "string" && entry.trim()) : Array.isArray(originalSite.authSelectors) ? [...originalSite.authSelectors] : [],
+    waitMs: normalizeWaitMs(override.waitMs, normalizeWaitMs(originalSite.waitMs, 2e3)),
+    fallbackSelectors: Array.isArray(override.fallbackSelectors) ? override.fallbackSelectors.filter(
+      (entry) => typeof entry === "string" && Boolean(entry.trim())
+    ) : Array.isArray(originalSite.fallbackSelectors) ? originalSite.fallbackSelectors.filter(
+      (entry) => typeof entry === "string" && Boolean(entry.trim())
+    ) : [],
+    authSelectors: Array.isArray(override.authSelectors) ? override.authSelectors.filter(
+      (entry) => typeof entry === "string" && Boolean(entry.trim())
+    ) : Array.isArray(originalSite.authSelectors) ? originalSite.authSelectors.filter(
+      (entry) => typeof entry === "string" && Boolean(entry.trim())
+    ) : [],
     lastVerified: verification.lastVerified,
     verifiedAt: verification.verifiedAt,
     verifiedRoute: verification.verifiedRoute,
-    verifiedAuthState: verification.verifiedAuthState,
+    verifiedAuthState,
     verifiedLocale: verification.verifiedLocale,
     verifiedVersion: verification.verifiedVersion,
     color: normalizeColor(
       override.color,
-      BUILT_IN_SITE_STYLE_MAP[originalSite.id]?.color ?? "#c24f2e"
+      BUILT_IN_SITE_STYLE_LOOKUP[safeText2(originalSite.id)]?.color ?? "#c24f2e"
     ),
     icon: normalizeIcon(
       override.icon,
-      BUILT_IN_SITE_STYLE_MAP[originalSite.id]?.icon ?? originalSite.name
+      BUILT_IN_SITE_STYLE_LOOKUP[safeText2(originalSite.id)]?.icon ?? safeText2(originalSite.name)
     )
   };
 }
 function normalizeCustomSite(site) {
-  const url = safeText2(site?.url);
-  const hostname = normalizeHostname(site?.hostname || deriveHostname(url));
+  const source = isPlainObject(site) ? site : {};
+  const url = safeText2(source?.url);
+  const hostname = normalizeHostname(source?.hostname || deriveHostname(url));
   const verificationFields = {};
-  if (Object.prototype.hasOwnProperty.call(site ?? {}, "lastVerified")) {
-    verificationFields.lastVerified = safeText2(site?.lastVerified);
+  if (Object.prototype.hasOwnProperty.call(source, "lastVerified")) {
+    verificationFields.lastVerified = safeText2(source?.lastVerified);
   }
-  if (Object.prototype.hasOwnProperty.call(site ?? {}, "verifiedAt")) {
-    verificationFields.verifiedAt = safeText2(site?.verifiedAt);
+  if (Object.prototype.hasOwnProperty.call(source, "verifiedAt")) {
+    verificationFields.verifiedAt = safeText2(source?.verifiedAt);
   }
-  if (Object.prototype.hasOwnProperty.call(site ?? {}, "verifiedRoute")) {
-    verificationFields.verifiedRoute = safeText2(site?.verifiedRoute);
+  if (Object.prototype.hasOwnProperty.call(source, "verifiedRoute")) {
+    verificationFields.verifiedRoute = safeText2(source?.verifiedRoute);
   }
-  if (Object.prototype.hasOwnProperty.call(site ?? {}, "verifiedAuthState")) {
-    verificationFields.verifiedAuthState = safeText2(site?.verifiedAuthState);
+  if (Object.prototype.hasOwnProperty.call(source, "verifiedAuthState")) {
+    verificationFields.verifiedAuthState = safeText2(source?.verifiedAuthState);
   }
-  if (Object.prototype.hasOwnProperty.call(site ?? {}, "verifiedLocale")) {
-    verificationFields.verifiedLocale = safeText2(site?.verifiedLocale);
+  if (Object.prototype.hasOwnProperty.call(source, "verifiedLocale")) {
+    verificationFields.verifiedLocale = safeText2(source?.verifiedLocale);
   }
-  if (Object.prototype.hasOwnProperty.call(site ?? {}, "verifiedVersion")) {
-    verificationFields.verifiedVersion = safeText2(site?.verifiedVersion);
+  if (Object.prototype.hasOwnProperty.call(source, "verifiedVersion")) {
+    verificationFields.verifiedVersion = safeText2(source?.verifiedVersion);
   }
   return buildBaseSiteRecord(
     {
-      id: safeText2(site?.id) || createCustomSiteId(site?.name),
-      name: safeText2(site?.name) || "Custom AI",
+      id: safeText2(source?.id) || createCustomSiteId(source?.name),
+      name: safeText2(source?.name) || "Custom AI",
       url,
       hostname,
-      hostnameAliases: normalizeHostnameAliases(site?.hostnameAliases, hostname),
-      supportedRoutes: Object.prototype.hasOwnProperty.call(site ?? {}, "supportedRoutes") ? site?.supportedRoutes : void 0,
-      inputSelector: safeText2(site?.inputSelector),
-      inputType: normalizeInputType(site?.inputType, "textarea"),
-      submitSelector: safeText2(site?.submitSelector),
-      submitMethod: normalizeSubmitMethod(site?.submitMethod, "click"),
+      hostnameAliases: normalizeHostnameAliases(source?.hostnameAliases, hostname),
+      supportedRoutes: Object.prototype.hasOwnProperty.call(source, "supportedRoutes") ? source?.supportedRoutes : void 0,
+      inputSelector: safeText2(source?.inputSelector),
+      inputType: normalizeInputType(source?.inputType, "textarea"),
+      submitSelector: safeText2(source?.submitSelector),
+      submitMethod: normalizeSubmitMethod(source?.submitMethod, "click"),
       selectorCheckMode: normalizeSelectorCheckMode(
-        site?.selectorCheckMode,
+        source?.selectorCheckMode,
         "input-and-submit"
       ),
-      waitMs: normalizeWaitMs(site?.waitMs, 2e3),
-      fallbackSelectors: normalizeStringList(site?.fallbackSelectors),
-      fallback: normalizeBoolean2(site?.fallback, true),
-      authSelectors: normalizeStringList(site?.authSelectors),
+      waitMs: normalizeWaitMs(source?.waitMs, 2e3),
+      fallbackSelectors: normalizeStringList(source?.fallbackSelectors),
+      fallback: normalizeBoolean2(source?.fallback, true),
+      authSelectors: normalizeStringList(source?.authSelectors),
       ...verificationFields,
-      enabled: normalizeBoolean2(site?.enabled, true),
-      color: normalizeColor(site?.color, "#c24f2e"),
-      icon: normalizeIcon(site?.icon, "AI")
+      enabled: normalizeBoolean2(source?.enabled, true),
+      color: normalizeColor(source?.color, "#c24f2e"),
+      icon: normalizeIcon(source?.icon, "AI")
     },
     { isCustom: true }
   );
@@ -1518,11 +1553,11 @@ function validateHostnameAliases(value) {
 }
 
 // src/shared/security.ts
-function isValidURL(string) {
+function isValidURL(value) {
   try {
-    const url = new URL(string);
+    const url = new URL(value);
     return url.protocol === "http:" || url.protocol === "https:";
-  } catch (_) {
+  } catch (_error) {
     return false;
   }
 }
@@ -2253,7 +2288,7 @@ function findFavoriteRunDedupedJob(jobs, favoriteId) {
 }
 
 // src/shared/runtime-state/onboarding.ts
-async function setOnboardingCompleted2(completed) {
+async function setOnboardingCompleted(completed) {
   const normalized = normalizeBoolean3(completed, false);
   await writeStorage("local", LOCAL_RUNTIME_KEYS.onboardingCompleted, normalized);
   return normalized;
@@ -2407,7 +2442,7 @@ async function resetPersistedExtensionState(options = {}) {
     setPendingUiToasts([]),
     setLastBroadcast(null),
     setFavoriteRunJobs([]),
-    setOnboardingCompleted2(false),
+    setOnboardingCompleted(false),
     setStrategyStats({}),
     setAppSettings(DEFAULT_SETTINGS),
     resetSiteSettings(),
@@ -2528,6 +2563,7 @@ function buildPreferredStrategyOrder(siteId, strategyStats) {
   });
 }
 function buildInjectionConfig(site, runtimeOverrides = {}) {
+  const verifiedAuthState = site?.verifiedAuthState || void 0;
   return {
     id: site?.id ?? "",
     name: site?.name ?? "",
@@ -2541,16 +2577,22 @@ function buildInjectionConfig(site, runtimeOverrides = {}) {
     submitSelector: site?.submitSelector ?? "",
     submitMethod: site?.submitMethod ?? "enter",
     selectorCheckMode: site?.selectorCheckMode ?? "input-and-submit",
-    waitMs: Number.isFinite(site?.waitMs) ? site.waitMs : 0,
+    waitMs: Number.isFinite(Number(site?.waitMs)) ? Number(site?.waitMs) : 0,
     fallback: site?.fallback !== false,
     authSelectors: Array.isArray(site?.authSelectors) ? site.authSelectors : [],
     lastVerified: site?.lastVerified ?? "",
     verifiedAt: site?.verifiedAt ?? "",
     verifiedRoute: site?.verifiedRoute ?? "",
-    verifiedAuthState: site?.verifiedAuthState ?? "",
+    verifiedAuthState,
     verifiedLocale: site?.verifiedLocale ?? "",
     verifiedVersion: site?.verifiedVersion ?? "",
+    enabled: site?.enabled ?? true,
+    color: site?.color ?? "",
+    icon: site?.icon ?? "",
+    isBuiltIn: Boolean(site?.isBuiltIn),
     isCustom: Boolean(site?.isCustom),
+    deletable: Boolean(site?.deletable),
+    editable: Boolean(site?.editable),
     permissionPatterns: Array.isArray(site?.permissionPatterns) ? site.permissionPatterns : [],
     submitTimeoutMs: Number.isFinite(Number(runtimeOverrides?.submitTimeoutMs)) ? Number(runtimeOverrides.submitTimeoutMs) : void 0,
     submitRetryCount: Number.isFinite(Number(runtimeOverrides?.submitRetryCount)) ? Number(runtimeOverrides.submitRetryCount) : void 0,
@@ -2567,97 +2609,6 @@ function buildSelectorAlertSignature(report) {
   const siteId = normalizeText2(report?.siteId) || "unknown";
   const missingEntries = (Array.isArray(report?.missing) ? report.missing : []).map((entry) => `${normalizeText2(entry?.field)}:${normalizeText2(entry?.selector)}`).filter((entry) => entry !== ":").sort();
   return [siteId, ...missingEntries].join("|");
-}
-
-// src/background/app/selector-pending.ts
-function normalizeText3(value) {
-  return typeof value === "string" ? value.trim() : "";
-}
-function normalizeMissingEntries(value) {
-  return (Array.isArray(value) ? value : []).map((entry) => ({
-    field: normalizeText3(entry?.field),
-    selector: normalizeText3(entry?.selector)
-  })).filter((entry) => entry.field || entry.selector);
-}
-function clonePendingRecords(records) {
-  if (!records || typeof records !== "object") {
-    return {};
-  }
-  return Object.entries(records).reduce(
-    (accumulator, [key, value]) => {
-      const signature = normalizeText3(key) || normalizeText3(value?.signature);
-      const serviceId = normalizeText3(value?.serviceId);
-      if (!signature || !serviceId) {
-        return accumulator;
-      }
-      const count = Number(value?.count);
-      const firstSeenAt = Number(value?.firstSeenAt);
-      const lastSeenAt = Number(value?.lastSeenAt);
-      const fallbackNow = Date.now();
-      accumulator[signature] = {
-        serviceId,
-        signature,
-        missing: Array.isArray(value?.missing) ? value.missing.map((entry) => normalizeText3(entry)).filter(Boolean) : [],
-        count: Number.isFinite(count) ? Math.max(1, Math.round(count)) : 1,
-        firstSeenAt: Number.isFinite(firstSeenAt) ? firstSeenAt : fallbackNow,
-        lastSeenAt: Number.isFinite(lastSeenAt) ? lastSeenAt : fallbackNow
-      };
-      return accumulator;
-    },
-    {}
-  );
-}
-function clearPendingSelectorChecksForService(records, serviceId) {
-  const normalizedServiceId = normalizeText3(serviceId);
-  if (!normalizedServiceId) {
-    return clonePendingRecords(records);
-  }
-  return Object.fromEntries(
-    Object.entries(clonePendingRecords(records)).filter(
-      ([, record]) => normalizeText3(record?.serviceId) !== normalizedServiceId
-    )
-  );
-}
-function registerPendingSelectorCheck(records, report, nowMs = Date.now()) {
-  const siteId = normalizeText3(report?.siteId) || "unknown";
-  const missingEntries = normalizeMissingEntries(report?.missing);
-  const signature = buildSelectorAlertSignature({
-    siteId,
-    missing: missingEntries
-  });
-  const next = clonePendingRecords(records);
-  const existing = next[signature];
-  if (existing && normalizeText3(existing.serviceId) === siteId) {
-    const promotedRecord = {
-      ...existing,
-      count: Math.max(2, Math.round(Number(existing.count) || 1) + 1),
-      lastSeenAt: nowMs
-    };
-    delete next[signature];
-    return {
-      next,
-      signature,
-      promoted: true,
-      record: promotedRecord
-    };
-  }
-  const record = {
-    serviceId: siteId,
-    signature,
-    missing: missingEntries.map(
-      (entry) => entry.field ? `${entry.field}:${entry.selector}` : entry.selector
-    ),
-    count: 1,
-    firstSeenAt: nowMs,
-    lastSeenAt: nowMs
-  };
-  next[signature] = record;
-  return {
-    next,
-    signature,
-    promoted: false,
-    record
-  };
 }
 
 // src/background/popup/launcher.ts
@@ -2893,7 +2844,7 @@ function createSelectionRuntime(deps) {
         console.error("[AI Prompt Broadcaster] Failed to store selection update.", error);
         return {
           ok: false,
-          error: error?.message ?? String(error)
+          error: error instanceof Error ? error.message : String(error)
         };
       }
     }
@@ -2935,32 +2886,9 @@ function createContextMenuController(deps) {
     getContextMenuRefreshChain,
     setContextMenuRefreshChain
   } = deps;
-  async function getContextMenuTargetSiteIds2(menuItemId) {
-    if (menuItemId === CONTEXT_MENU_ALL_ID) {
-      const enabledSites = await getEnabledRuntimeSites2();
-      const allowedSites = (await Promise.all(
-        enabledSites.map(async (site) => {
-          if (!site.isCustom || getSitePermissionPatterns2(site).length === 0) {
-            return site;
-          }
-          const granted = await chrome.permissions.contains({
-            origins: getSitePermissionPatterns2(site)
-          });
-          return granted ? site : null;
-        })
-      )).filter(Boolean);
-      return allowedSites.map((site) => site.id);
-    }
-    if (typeof menuItemId === "string" && menuItemId.startsWith(CONTEXT_MENU_SITE_PREFIX)) {
-      return [menuItemId.slice(CONTEXT_MENU_SITE_PREFIX.length)];
-    }
-    return [];
-  }
-  async function rebuildContextMenus() {
-    await removeAllContextMenus();
-    const enabledSites = await getEnabledRuntimeSites2();
-    const menuSites = (await Promise.all(
-      enabledSites.map(async (site) => {
+  async function getPermittedSites(sites) {
+    const allowedSites = await Promise.all(
+      sites.map(async (site) => {
         if (!site.isCustom || getSitePermissionPatterns2(site).length === 0) {
           return site;
         }
@@ -2977,7 +2905,24 @@ function createContextMenuController(deps) {
           return null;
         }
       })
-    )).filter(Boolean);
+    );
+    return allowedSites.filter((site) => Boolean(site));
+  }
+  async function getContextMenuTargetSiteIds2(menuItemId) {
+    if (menuItemId === CONTEXT_MENU_ALL_ID) {
+      const enabledSites = await getEnabledRuntimeSites2();
+      const allowedSites = await getPermittedSites(enabledSites);
+      return allowedSites.map((site) => site.id);
+    }
+    if (typeof menuItemId === "string" && menuItemId.startsWith(CONTEXT_MENU_SITE_PREFIX)) {
+      return [menuItemId.slice(CONTEXT_MENU_SITE_PREFIX.length)];
+    }
+    return [];
+  }
+  async function rebuildContextMenus() {
+    await removeAllContextMenus();
+    const enabledSites = await getEnabledRuntimeSites2();
+    const menuSites = await getPermittedSites(enabledSites);
     await createContextMenuItem({
       id: CONTEXT_MENU_ROOT_ID,
       title: getI18nMessage2("context_menu_root"),
@@ -3984,7 +3929,7 @@ function safeSendResponse(sendResponse, payload) {
 function buildFallback(work, error) {
   const fallback = {
     ok: false,
-    error: error?.message ?? String(error)
+    error: error instanceof Error ? error.message : String(error)
   };
   return typeof work.onError === "function" ? work.onError(error, fallback) : fallback;
 }
@@ -3994,41 +3939,643 @@ function isTrustedSender(sender) {
   }
   return sender?.id === chrome.runtime.id;
 }
-function respondWith(sendResponse, work, errorLabel) {
-  void Promise.resolve().then(work).then((result) => {
+function respondWith(sendResponse, work, task) {
+  void Promise.resolve().then(task).then((result) => {
     safeSendResponse(sendResponse, result);
   }).catch((error) => {
-    if (errorLabel) {
-      console.error(errorLabel, error);
+    if (work.errorLabel) {
+      console.error(work.errorLabel, error);
     }
     safeSendResponse(sendResponse, buildFallback(work, error));
   });
 }
 function registerRuntimeMessageRouter(handlers) {
-  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (!isTrustedSender(sender)) {
-      return false;
-    }
-    const handler = handlers[message?.action];
-    if (!handler) {
-      return false;
-    }
-    if (handler.sync) {
-      try {
-        safeSendResponse(sendResponse, handler.run(message, sender));
-      } catch (error) {
-        if (handler.errorLabel) {
-          console.error(handler.errorLabel, error);
-        }
-        safeSendResponse(sendResponse, buildFallback(handler, error));
+  chrome.runtime.onMessage.addListener(
+    (message, sender, sendResponse) => {
+      if (!isTrustedSender(sender)) {
+        return false;
       }
+      const action = message?.action;
+      if (!action) {
+        return false;
+      }
+      const handler = handlers[action];
+      if (!handler) {
+        return false;
+      }
+      if (handler.sync) {
+        try {
+          safeSendResponse(
+            sendResponse,
+            handler.run(
+              message,
+              sender
+            )
+          );
+        } catch (error) {
+          if (handler.errorLabel) {
+            console.error(handler.errorLabel, error);
+          }
+          safeSendResponse(sendResponse, buildFallback(handler, error));
+        }
+        return false;
+      }
+      respondWith(
+        sendResponse,
+        handler,
+        () => handler.run(message, sender)
+      );
+      return true;
+    }
+  );
+}
+
+// src/background/app/selector-pending.ts
+function normalizeText3(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+function normalizeMissingEntries(value) {
+  return (Array.isArray(value) ? value : []).map((entry) => ({
+    field: normalizeText3(entry?.field),
+    selector: normalizeText3(entry?.selector)
+  })).filter((entry) => entry.field || entry.selector);
+}
+function clonePendingRecords(records) {
+  if (!records || typeof records !== "object") {
+    return {};
+  }
+  return Object.entries(records).reduce(
+    (accumulator, [key, value]) => {
+      const signature = normalizeText3(key) || normalizeText3(value?.signature);
+      const serviceId = normalizeText3(value?.serviceId);
+      if (!signature || !serviceId) {
+        return accumulator;
+      }
+      const count = Number(value?.count);
+      const firstSeenAt = Number(value?.firstSeenAt);
+      const lastSeenAt = Number(value?.lastSeenAt);
+      const fallbackNow = Date.now();
+      accumulator[signature] = {
+        serviceId,
+        signature,
+        missing: Array.isArray(value?.missing) ? value.missing.map((entry) => normalizeText3(entry)).filter(Boolean) : [],
+        count: Number.isFinite(count) ? Math.max(1, Math.round(count)) : 1,
+        firstSeenAt: Number.isFinite(firstSeenAt) ? firstSeenAt : fallbackNow,
+        lastSeenAt: Number.isFinite(lastSeenAt) ? lastSeenAt : fallbackNow
+      };
+      return accumulator;
+    },
+    {}
+  );
+}
+function clearPendingSelectorChecksForService(records, serviceId) {
+  const normalizedServiceId = normalizeText3(serviceId);
+  if (!normalizedServiceId) {
+    return clonePendingRecords(records);
+  }
+  return Object.fromEntries(
+    Object.entries(clonePendingRecords(records)).filter(
+      ([, record]) => normalizeText3(record?.serviceId) !== normalizedServiceId
+    )
+  );
+}
+function registerPendingSelectorCheck(records, report, nowMs = Date.now()) {
+  const siteId = normalizeText3(report?.siteId) || "unknown";
+  const missingEntries = normalizeMissingEntries(report?.missing);
+  const signature = buildSelectorAlertSignature({
+    siteId,
+    missing: missingEntries
+  });
+  const next = clonePendingRecords(records);
+  const existing = next[signature];
+  if (existing && normalizeText3(existing.serviceId) === siteId) {
+    const promotedRecord = {
+      ...existing,
+      count: Math.max(2, Math.round(Number(existing.count) || 1) + 1),
+      lastSeenAt: nowMs
+    };
+    delete next[signature];
+    return {
+      next,
+      signature,
+      promoted: true,
+      record: promotedRecord
+    };
+  }
+  const record = {
+    serviceId: siteId,
+    signature,
+    missing: missingEntries.map(
+      (entry) => entry.field ? `${entry.field}:${entry.selector}` : entry.selector
+    ),
+    count: 1,
+    firstSeenAt: nowMs,
+    lastSeenAt: nowMs
+  };
+  next[signature] = record;
+  return {
+    next,
+    signature,
+    promoted: false,
+    record
+  };
+}
+
+// src/background/session/store.ts
+function clonePlainValue(value) {
+  return value ? JSON.parse(JSON.stringify(value)) : value;
+}
+function createBackgroundSessionStore() {
+  const sessionState = {
+    loaded: false,
+    pendingInjections: {},
+    pendingBroadcasts: {},
+    pendingSelectorChecks: {},
+    selectorAlerts: {}
+  };
+  let mutationChain = Promise.resolve();
+  async function ensureLoaded() {
+    if (sessionState.loaded) {
+      return;
+    }
+    try {
+      const result = await chrome.storage.session.get([
+        PENDING_INJECTIONS_KEY,
+        PENDING_BROADCASTS_KEY,
+        PENDING_SELECTOR_CHECKS_KEY,
+        SELECTOR_ALERTS_KEY
+      ]);
+      sessionState.pendingInjections = clonePlainValue(
+        result[PENDING_INJECTIONS_KEY] ?? {}
+      ) ?? {};
+      sessionState.pendingBroadcasts = clonePlainValue(
+        result[PENDING_BROADCASTS_KEY] ?? {}
+      ) ?? {};
+      sessionState.pendingSelectorChecks = clonePlainValue(
+        result[PENDING_SELECTOR_CHECKS_KEY] ?? {}
+      ) ?? {};
+      sessionState.selectorAlerts = clonePlainValue(
+        result[SELECTOR_ALERTS_KEY] ?? {}
+      ) ?? {};
+    } catch (error) {
+      console.error("[AI Prompt Broadcaster] Failed to initialize session-state cache.", error);
+      sessionState.pendingInjections = {};
+      sessionState.pendingBroadcasts = {};
+      sessionState.pendingSelectorChecks = {};
+      sessionState.selectorAlerts = {};
+    }
+    sessionState.loaded = true;
+  }
+  async function persist() {
+    await chrome.storage.session.set({
+      [PENDING_INJECTIONS_KEY]: sessionState.pendingInjections,
+      [PENDING_BROADCASTS_KEY]: sessionState.pendingBroadcasts,
+      [PENDING_SELECTOR_CHECKS_KEY]: sessionState.pendingSelectorChecks,
+      [SELECTOR_ALERTS_KEY]: sessionState.selectorAlerts
+    });
+  }
+  function mutate(mutator) {
+    const runMutation = async () => {
+      await ensureLoaded();
+      const result = await mutator(sessionState);
+      await persist();
+      return result;
+    };
+    const resultPromise = mutationChain.then(runMutation, runMutation);
+    mutationChain = resultPromise.then(() => void 0, () => void 0);
+    return resultPromise;
+  }
+  async function waitForIdle() {
+    await mutationChain;
+  }
+  async function getPendingInjections2() {
+    await ensureLoaded();
+    return clonePlainValue(sessionState.pendingInjections) ?? {};
+  }
+  function setPendingInjections2(value) {
+    return mutate((state) => {
+      state.pendingInjections = clonePlainValue(value) ?? {};
+      return clonePlainValue(state.pendingInjections) ?? {};
+    });
+  }
+  async function getPendingBroadcasts2() {
+    await ensureLoaded();
+    return clonePlainValue(sessionState.pendingBroadcasts) ?? {};
+  }
+  function setPendingBroadcasts2(value) {
+    return mutate((state) => {
+      state.pendingBroadcasts = clonePlainValue(value) ?? {};
+      return clonePlainValue(state.pendingBroadcasts) ?? {};
+    });
+  }
+  async function getSelectorAlerts2() {
+    await ensureLoaded();
+    return clonePlainValue(sessionState.selectorAlerts) ?? {};
+  }
+  function setSelectorAlerts2(value) {
+    return mutate((state) => {
+      state.selectorAlerts = clonePlainValue(value) ?? {};
+      return clonePlainValue(state.selectorAlerts) ?? {};
+    });
+  }
+  function clearPendingSelectorChecksForSiteId2(serviceId) {
+    if (!(typeof serviceId === "string" && serviceId.trim())) {
+      return Promise.resolve({});
+    }
+    return mutate((state) => {
+      state.pendingSelectorChecks = clearPendingSelectorChecksForService(
+        state.pendingSelectorChecks,
+        serviceId
+      );
+      return clonePlainValue(state.pendingSelectorChecks) ?? {};
+    });
+  }
+  function registerPendingSelectorCheckReport2(report) {
+    return mutate((state) => {
+      const result = registerPendingSelectorCheck(
+        state.pendingSelectorChecks,
+        report
+      );
+      state.pendingSelectorChecks = result.next;
+      return clonePlainValue(result) ?? result;
+    });
+  }
+  function updatePendingInjection2(tabId, updater) {
+    return mutate((state) => {
+      const pending = state.pendingInjections ?? {};
+      const current = pending[String(tabId)];
+      const nextValue = typeof updater === "function" ? updater(clonePlainValue(current) ?? null) : updater;
+      if (nextValue) {
+        pending[String(tabId)] = nextValue;
+      } else {
+        delete pending[String(tabId)];
+      }
+      state.pendingInjections = pending;
+      return clonePlainValue(nextValue) ?? null;
+    });
+  }
+  function addPendingInjection2(tabId, payload) {
+    return updatePendingInjection2(tabId, {
+      ...payload,
+      tabId,
+      createdAt: Number(payload.createdAt) || Date.now(),
+      injected: Boolean(payload.injected),
+      status: payload.status || "pending",
+      closeOnCancel: payload.closeOnCancel !== false
+    });
+  }
+  async function removePendingInjection2(tabId) {
+    await updatePendingInjection2(tabId, null);
+  }
+  return {
+    mutate,
+    waitForIdle,
+    getPendingInjections: getPendingInjections2,
+    setPendingInjections: setPendingInjections2,
+    getPendingBroadcasts: getPendingBroadcasts2,
+    setPendingBroadcasts: setPendingBroadcasts2,
+    getSelectorAlerts: getSelectorAlerts2,
+    setSelectorAlerts: setSelectorAlerts2,
+    clearPendingSelectorChecksForSiteId: clearPendingSelectorChecksForSiteId2,
+    registerPendingSelectorCheckReport: registerPendingSelectorCheckReport2,
+    updatePendingInjection: updatePendingInjection2,
+    addPendingInjection: addPendingInjection2,
+    removePendingInjection: removePendingInjection2
+  };
+}
+
+// src/background/tabs/runtime.ts
+function createBackgroundTabsRuntime(deps) {
+  const {
+    getRuntimeSites: getRuntimeSites2,
+    isInjectableTabUrl: isInjectableTabUrl2,
+    isSameSiteOrigin: isSameSiteOrigin2,
+    isReusableTabForSite: isReusableTabForSite2
+  } = deps;
+  let lastNormalWindowId = null;
+  let lastNormalTabId = null;
+  function sleep2(ms) {
+    return new Promise((resolve) => {
+      setTimeout(resolve, Number.isFinite(ms) ? ms : 0);
+    });
+  }
+  async function rememberNormalTab2(tab) {
+    if (!tab?.id || !Number.isFinite(tab.windowId)) {
+      return null;
+    }
+    try {
+      const windowInfo = await chrome.windows.get(tab.windowId).catch(() => null);
+      if (windowInfo?.type !== "normal") {
+        return null;
+      }
+      lastNormalWindowId = typeof windowInfo.id === "number" ? windowInfo.id : null;
+      lastNormalTabId = tab.id ?? null;
+      return tab;
+    } catch (_error) {
+      return null;
+    }
+  }
+  async function getPreferredNormalWindowId2(preferredWindowId = null) {
+    const normalizedPreferredWindowId = Number(preferredWindowId);
+    if (Number.isFinite(normalizedPreferredWindowId)) {
+      try {
+        const preferredWindow = await chrome.windows.get(
+          normalizedPreferredWindowId
+        );
+        if (preferredWindow?.type === "normal") {
+          return typeof preferredWindow.id === "number" ? preferredWindow.id : null;
+        }
+      } catch (_error) {
+      }
+    }
+    try {
+      const lastFocusedTabs = await chrome.tabs.query({
+        active: true,
+        lastFocusedWindow: true
+      });
+      const lastFocusedTab = lastFocusedTabs[0];
+      if (Number.isFinite(lastFocusedTab?.windowId)) {
+        const windowInfo = await chrome.windows.get(
+          lastFocusedTab.windowId
+        ).catch(() => null);
+        if (windowInfo?.type === "normal") {
+          return typeof windowInfo.id === "number" ? windowInfo.id : null;
+        }
+      }
+    } catch (_error) {
+    }
+    if (Number.isFinite(lastNormalWindowId)) {
+      try {
+        const rememberedWindow = await chrome.windows.get(
+          lastNormalWindowId
+        );
+        if (rememberedWindow?.type === "normal") {
+          return typeof rememberedWindow.id === "number" ? rememberedWindow.id : null;
+        }
+      } catch (_error) {
+        lastNormalWindowId = null;
+      }
+    }
+    try {
+      const windows = await chrome.windows.getAll({
+        windowTypes: ["normal"]
+      });
+      const focusedWindow = windows.find((windowInfo) => windowInfo?.focused && Number.isFinite(windowInfo?.id));
+      return focusedWindow?.id ?? windows.find((windowInfo) => Number.isFinite(windowInfo?.id))?.id ?? null;
+    } catch (error) {
+      console.error("[AI Prompt Broadcaster] Failed to resolve preferred normal window.", error);
+      return null;
+    }
+  }
+  async function getPreferredNormalActiveTab2(preferredWindowId = null) {
+    try {
+      const lastFocusedTabs = await chrome.tabs.query({
+        active: true,
+        lastFocusedWindow: true
+      });
+      const lastFocusedTab = lastFocusedTabs[0];
+      const rememberedLastFocused = await rememberNormalTab2(lastFocusedTab);
+      if (rememberedLastFocused) {
+        return rememberedLastFocused;
+      }
+    } catch (_error) {
+    }
+    const targetWindowId = await getPreferredNormalWindowId2(preferredWindowId);
+    if (Number.isFinite(targetWindowId)) {
+      try {
+        const activeTabs = await chrome.tabs.query({
+          active: true,
+          windowId: targetWindowId
+        });
+        const activeTab = activeTabs[0];
+        const rememberedTargetTab = await rememberNormalTab2(activeTab);
+        if (rememberedTargetTab) {
+          return rememberedTargetTab;
+        }
+      } catch (_error) {
+      }
+    }
+    if (Number.isFinite(lastNormalTabId)) {
+      try {
+        const hintTab = await chrome.tabs.get(lastNormalTabId);
+        const rememberedHintTab = await rememberNormalTab2(hintTab);
+        if (rememberedHintTab) {
+          return rememberedHintTab;
+        }
+      } catch (_error) {
+        lastNormalTabId = null;
+      }
+    }
+    if (Number.isFinite(lastNormalWindowId)) {
+      try {
+        const hintWindowTabs = await chrome.tabs.query({
+          active: true,
+          windowId: lastNormalWindowId
+        });
+        const hintWindowTab = hintWindowTabs[0];
+        const rememberedHintWindowTab = await rememberNormalTab2(hintWindowTab);
+        if (rememberedHintWindowTab) {
+          return rememberedHintWindowTab;
+        }
+      } catch (_error) {
+        lastNormalWindowId = null;
+      }
+    }
+    return null;
+  }
+  async function getFocusedTabContext2() {
+    try {
+      const activeTab = await getPreferredNormalActiveTab2();
+      if (!activeTab?.id || !Number.isFinite(activeTab.windowId)) {
+        return null;
+      }
+      return {
+        tabId: activeTab.id,
+        windowId: activeTab.windowId
+      };
+    } catch (error) {
+      console.error("[AI Prompt Broadcaster] Failed to read focused tab context.", error);
+      return null;
+    }
+  }
+  async function isTabLoadReady(tabId) {
+    try {
+      const [executionResult] = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: () => ({ readyState: document.readyState })
+      });
+      const result = executionResult?.result;
+      return result?.readyState === "interactive" || result?.readyState === "complete";
+    } catch (_error) {
       return false;
     }
-    const task = () => handler.run(message, sender);
-    task.onError = handler.onError;
-    respondWith(sendResponse, task, handler.errorLabel);
-    return true;
-  });
+  }
+  async function waitForTabInteractionReady2(tabId, timeoutMs = TAB_LOAD_READY_TIMEOUT_MS) {
+    const deadline = Date.now() + Math.max(timeoutMs, 0);
+    while (Date.now() <= deadline) {
+      if (await isTabLoadReady(tabId)) {
+        return true;
+      }
+      await sleep2(150);
+    }
+    return false;
+  }
+  async function restoreFocusedTabContext2(context) {
+    if (!context?.tabId || !Number.isFinite(context.windowId)) {
+      return;
+    }
+    try {
+      await chrome.windows.update(context.windowId, { focused: true });
+      await chrome.tabs.update(context.tabId, { active: true });
+    } catch (_error) {
+    }
+  }
+  async function getOpenAiTabsForWindow2(windowId) {
+    const normalizedWindowId = Number(windowId);
+    if (!Number.isFinite(normalizedWindowId)) {
+      return [];
+    }
+    try {
+      const [runtimeSites, tabs] = await Promise.all([
+        getRuntimeSites2(),
+        chrome.tabs.query({ windowId: normalizedWindowId })
+      ]);
+      const openTabs = await Promise.all(
+        tabs.map(async (tab) => {
+          if (!Number.isFinite(tab?.id) || !isInjectableTabUrl2(tab?.url ?? "")) {
+            return null;
+          }
+          const site = runtimeSites.find((entry) => isSameSiteOrigin2(tab.url ?? "", entry));
+          if (!site) {
+            return null;
+          }
+          if (!await isReusableTabForSite2(tab, site)) {
+            return null;
+          }
+          return {
+            siteId: site.id,
+            siteName: site.name,
+            tabId: tab.id ?? 0,
+            title: typeof tab.title === "string" ? tab.title : "",
+            url: typeof tab.url === "string" ? tab.url : "",
+            active: Boolean(tab.active),
+            status: typeof tab.status === "string" ? tab.status : "",
+            windowId: normalizedWindowId
+          };
+        })
+      );
+      return openTabs.filter((tab) => Boolean(tab));
+    } catch (error) {
+      console.error("[AI Prompt Broadcaster] Failed to collect open AI tabs.", {
+        windowId: normalizedWindowId,
+        error
+      });
+      return [];
+    }
+  }
+  function clearRememberedTab2(tabId) {
+    if (lastNormalTabId === tabId) {
+      lastNormalTabId = null;
+    }
+  }
+  function resetRememberedState2() {
+    lastNormalWindowId = null;
+    lastNormalTabId = null;
+  }
+  return {
+    rememberNormalTab: rememberNormalTab2,
+    getPreferredNormalWindowId: getPreferredNormalWindowId2,
+    getPreferredNormalActiveTab: getPreferredNormalActiveTab2,
+    getFocusedTabContext: getFocusedTabContext2,
+    waitForTabInteractionReady: waitForTabInteractionReady2,
+    restoreFocusedTabContext: restoreFocusedTabContext2,
+    getOpenAiTabsForWindow: getOpenAiTabsForWindow2,
+    clearRememberedTab: clearRememberedTab2,
+    resetRememberedState: resetRememberedState2
+  };
+}
+
+// src/background/runtime/handlers.ts
+function buildRuntimeHandlers(deps) {
+  return {
+    broadcast: {
+      run: (message) => deps.handleBroadcastMessage(message),
+      errorLabel: "[AI Prompt Broadcaster] Broadcast handling failed."
+    },
+    "selector-check:init": {
+      run: (message) => deps.handleSelectorCheckInit(message),
+      errorLabel: "[AI Prompt Broadcaster] Selector check init failed."
+    },
+    "selector-check:report": {
+      run: (message) => deps.handleSelectorCheckReport(message),
+      errorLabel: "[AI Prompt Broadcaster] Selector check report failed."
+    },
+    "service-test:run": {
+      run: (message) => deps.handleServiceTestRun(message),
+      errorLabel: "[AI Prompt Broadcaster] Service test run failed."
+    },
+    selectorFailed: {
+      run: (message) => deps.handleSelectorFailedMessage(message)
+    },
+    injectSuccess: {
+      run: (message) => deps.handleInjectSuccessMessage(message)
+    },
+    injectFallback: {
+      run: (message) => deps.handleInjectFallbackMessage(message)
+    },
+    uiToast: {
+      run: (message) => deps.handleUiToastMessage(message)
+    },
+    popupOpened: {
+      run: () => deps.handlePopupOpened()
+    },
+    getOpenAiTabs: {
+      run: (message) => deps.handleGetOpenAiTabsMessage(message)
+    },
+    cancelBroadcast: {
+      run: (message) => deps.handleCancelBroadcastMessage(message)
+    },
+    "favorite:run": {
+      run: (message, sender) => deps.handleFavoriteRunMessage(message, sender)
+    },
+    "favorite:openEditor": {
+      run: (message) => deps.handleFavoriteOpenEditorMessage(message)
+    },
+    resetAllData: {
+      run: () => deps.resetAllExtensionData(),
+      errorLabel: "[AI Prompt Broadcaster] Reset-all-data failed."
+    },
+    getActiveTabContext: {
+      run: () => deps.handleGetActiveTabContext(),
+      onError: (error, fallback) => ({
+        ...fallback,
+        url: "",
+        title: "",
+        selection: ""
+      })
+    },
+    getBroadcastCounter: {
+      run: () => deps.handleGetBroadcastCounter(),
+      onError: (error, fallback) => ({
+        ...fallback,
+        counter: 0
+      })
+    },
+    "selection:update": {
+      sync: true,
+      run: (message, sender) => deps.handleSelectionUpdateMessage(message, sender)
+    },
+    "quickPalette:getState": {
+      run: () => deps.handleQuickPaletteGetState()
+    },
+    "quickPalette:execute": {
+      run: (message, sender) => deps.handleQuickPaletteExecuteMessage(message, sender)
+    },
+    "quickPalette:close": {
+      sync: true,
+      run: () => ({ ok: true })
+    }
+  };
 }
 
 // src/background/app/bootstrap.ts
@@ -4039,18 +4586,8 @@ var queuedInjectionTabIds = /* @__PURE__ */ new Set();
 var broadcastCompletionWaiters = /* @__PURE__ */ new Map();
 var selectionCache = /* @__PURE__ */ new Map();
 var suppressedCompletedBroadcastIds = /* @__PURE__ */ new Set();
-var backgroundSessionState = {
-  loaded: false,
-  pendingInjections: {},
-  pendingBroadcasts: {},
-  pendingSelectorChecks: {},
-  selectorAlerts: {}
-};
-var lastNormalWindowId = null;
-var lastNormalTabId = null;
 var contextMenuRefreshChain = Promise.resolve();
 var injectionProcessChain = Promise.resolve();
-var backgroundStateMutationChain = Promise.resolve();
 var runtimeSiteLookupCache = null;
 var SCHEDULED_VARIABLE_BLOCKLIST2 = /* @__PURE__ */ new Set([
   SYSTEM_TEMPLATE_VARIABLES.url,
@@ -4069,14 +4606,14 @@ function sleep(ms) {
     setTimeout(resolve, Number.isFinite(ms) ? ms : 0);
   });
 }
-function clonePlainValue(value) {
+function clonePlainValue2(value) {
   return value ? JSON.parse(JSON.stringify(value)) : value;
 }
 function cacheRuntimeSites(sites) {
   runtimeSiteLookupCache = new Map(
     (Array.isArray(sites) ? sites : []).filter((site) => typeof site?.id === "string" && site.id.trim()).map((site) => [site.id.trim(), site])
   );
-  return runtimeSiteLookupCache;
+  return runtimeSiteLookupCache ?? /* @__PURE__ */ new Map();
 }
 async function getRuntimeSiteLookup(forceRefresh = false) {
   if (!runtimeSiteLookupCache || forceRefresh) {
@@ -4086,13 +4623,16 @@ async function getRuntimeSiteLookup(forceRefresh = false) {
       runtimeSiteLookupCache = /* @__PURE__ */ new Map();
     }
   }
-  return runtimeSiteLookupCache;
+  return runtimeSiteLookupCache ?? /* @__PURE__ */ new Map();
 }
 function normalizePrompt2(value) {
   return typeof value === "string" ? value : "";
 }
 function buildChainRunId() {
   return typeof crypto?.randomUUID === "function" ? crypto.randomUUID() : `chain-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+function getErrorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
 }
 function registerBroadcastCompletionWaiter(broadcastId) {
   const normalizedBroadcastId = typeof broadcastId === "string" ? broadcastId.trim() : "";
@@ -4107,10 +4647,12 @@ function registerBroadcastCompletionWaiter(broadcastId) {
   const promise = new Promise((resolve) => {
     resolvePromise = resolve;
   });
-  broadcastCompletionWaiters.set(normalizedBroadcastId, {
-    promise,
-    resolve: resolvePromise
-  });
+  if (resolvePromise) {
+    broadcastCompletionWaiters.set(normalizedBroadcastId, {
+      promise,
+      resolve: resolvePromise
+    });
+  }
   return promise;
 }
 function resolveBroadcastCompletionWaiter(broadcastId, summary = null) {
@@ -4127,124 +4669,41 @@ function resolveBroadcastCompletionWaiter(broadcastId, summary = null) {
 }
 function getBroadcastTriggerLabel(trigger) {
   const normalized = typeof trigger === "string" ? trigger.trim() : "";
-  return normalized || "popup";
+  return normalized === "scheduled" || normalized === "palette" || normalized === "options" ? normalized : "popup";
 }
-async function rememberNormalTab(tab) {
-  if (!tab?.id || !Number.isFinite(tab.windowId)) {
-    return null;
-  }
-  try {
-    const windowInfo = await chrome.windows.get(tab.windowId).catch(() => null);
-    if (windowInfo?.type !== "normal") {
-      return null;
-    }
-    lastNormalWindowId = windowInfo.id;
-    lastNormalTabId = tab.id;
-    return tab;
-  } catch (_error) {
-    return null;
-  }
-}
-async function getPreferredNormalActiveTab(preferredWindowId = null) {
-  try {
-    const [lastFocusedTab] = await chrome.tabs.query({
-      active: true,
-      lastFocusedWindow: true
-    });
-    const rememberedLastFocused = await rememberNormalTab(lastFocusedTab);
-    if (rememberedLastFocused) {
-      return rememberedLastFocused;
-    }
-  } catch (_error) {
-  }
-  const targetWindowId = await getPreferredNormalWindowId(preferredWindowId);
-  if (Number.isFinite(targetWindowId)) {
-    try {
-      const [activeTab] = await chrome.tabs.query({
-        active: true,
-        windowId: targetWindowId
-      });
-      const rememberedTargetTab = await rememberNormalTab(activeTab);
-      if (rememberedTargetTab) {
-        return rememberedTargetTab;
-      }
-    } catch (_error) {
-    }
-  }
-  if (Number.isFinite(lastNormalTabId)) {
-    try {
-      const hintTab = await chrome.tabs.get(lastNormalTabId);
-      const rememberedHintTab = await rememberNormalTab(hintTab);
-      if (rememberedHintTab) {
-        return rememberedHintTab;
-      }
-    } catch (_error) {
-      lastNormalTabId = null;
-    }
-  }
-  if (Number.isFinite(lastNormalWindowId)) {
-    try {
-      const [hintWindowTab] = await chrome.tabs.query({
-        active: true,
-        windowId: lastNormalWindowId
-      });
-      const rememberedHintWindowTab = await rememberNormalTab(hintWindowTab);
-      if (rememberedHintWindowTab) {
-        return rememberedHintWindowTab;
-      }
-    } catch (_error) {
-      lastNormalWindowId = null;
-    }
-  }
-  return null;
-}
-async function getFocusedTabContext() {
-  try {
-    const activeTab = await getPreferredNormalActiveTab();
-    if (!activeTab?.id || !Number.isFinite(activeTab.windowId)) {
-      return null;
-    }
-    return {
-      tabId: activeTab.id,
-      windowId: activeTab.windowId
-    };
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to read focused tab context.", error);
-    return null;
-  }
-}
-async function isTabLoadReady(tabId) {
-  try {
-    const [executionResult] = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: () => ({ readyState: document.readyState })
-    });
-    const result = executionResult?.result ?? {};
-    return result.readyState === "interactive" || result.readyState === "complete";
-  } catch (_error) {
-    return false;
-  }
-}
-async function waitForTabInteractionReady(tabId, timeoutMs = TAB_LOAD_READY_TIMEOUT_MS) {
-  const deadline = Date.now() + Math.max(timeoutMs, 0);
-  while (Date.now() <= deadline) {
-    if (await isTabLoadReady(tabId)) {
-      return true;
-    }
-    await sleep(150);
-  }
-  return false;
-}
-async function restoreFocusedTabContext(context) {
-  if (!context?.tabId || !Number.isFinite(context.windowId)) {
-    return;
-  }
-  try {
-    await chrome.windows.update(context.windowId, { focused: true });
-    await chrome.tabs.update(context.tabId, { active: true });
-  } catch (_error) {
-  }
-}
+var backgroundSessionStore = createBackgroundSessionStore();
+var {
+  mutate: queueBackgroundStateMutation,
+  waitForIdle: waitForBackgroundStateSettled,
+  getPendingInjections,
+  setPendingInjections,
+  getPendingBroadcasts,
+  setPendingBroadcasts,
+  getSelectorAlerts,
+  setSelectorAlerts,
+  clearPendingSelectorChecksForSiteId,
+  registerPendingSelectorCheckReport,
+  updatePendingInjection,
+  addPendingInjection,
+  removePendingInjection
+} = backgroundSessionStore;
+var backgroundTabsRuntime = createBackgroundTabsRuntime({
+  getRuntimeSites,
+  isInjectableTabUrl,
+  isSameSiteOrigin,
+  isReusableTabForSite
+});
+var {
+  rememberNormalTab,
+  getPreferredNormalWindowId,
+  getPreferredNormalActiveTab,
+  getFocusedTabContext,
+  waitForTabInteractionReady,
+  restoreFocusedTabContext,
+  getOpenAiTabsForWindow,
+  clearRememberedTab,
+  resetRememberedState
+} = backgroundTabsRuntime;
 function queuePendingInjection(tabId, tab) {
   if (!Number.isFinite(Number(tabId))) {
     return injectionProcessChain;
@@ -4294,106 +4753,6 @@ async function restoreBroadcastFocus(record) {
     windowId: Number.isFinite(Number(record.originWindowId)) ? Number(record.originWindowId) : null
   });
 }
-async function ensureBackgroundSessionStateLoaded() {
-  if (backgroundSessionState.loaded) {
-    return;
-  }
-  try {
-    const result = await chrome.storage.session.get([
-      PENDING_INJECTIONS_KEY,
-      PENDING_BROADCASTS_KEY,
-      PENDING_SELECTOR_CHECKS_KEY,
-      SELECTOR_ALERTS_KEY
-    ]);
-    backgroundSessionState.pendingInjections = clonePlainValue(result[PENDING_INJECTIONS_KEY] ?? {}) ?? {};
-    backgroundSessionState.pendingBroadcasts = clonePlainValue(result[PENDING_BROADCASTS_KEY] ?? {}) ?? {};
-    backgroundSessionState.pendingSelectorChecks = clonePlainValue(result[PENDING_SELECTOR_CHECKS_KEY] ?? {}) ?? {};
-    backgroundSessionState.selectorAlerts = clonePlainValue(result[SELECTOR_ALERTS_KEY] ?? {}) ?? {};
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to initialize session-state cache.", error);
-    backgroundSessionState.pendingInjections = {};
-    backgroundSessionState.pendingBroadcasts = {};
-    backgroundSessionState.pendingSelectorChecks = {};
-    backgroundSessionState.selectorAlerts = {};
-  }
-  backgroundSessionState.loaded = true;
-}
-async function persistBackgroundSessionState() {
-  await chrome.storage.session.set({
-    [PENDING_INJECTIONS_KEY]: backgroundSessionState.pendingInjections,
-    [PENDING_BROADCASTS_KEY]: backgroundSessionState.pendingBroadcasts,
-    [PENDING_SELECTOR_CHECKS_KEY]: backgroundSessionState.pendingSelectorChecks,
-    [SELECTOR_ALERTS_KEY]: backgroundSessionState.selectorAlerts
-  });
-}
-function queueBackgroundStateMutation(mutator) {
-  const runMutation = async () => {
-    await ensureBackgroundSessionStateLoaded();
-    const result = await mutator(backgroundSessionState);
-    await persistBackgroundSessionState();
-    return result;
-  };
-  const resultPromise = backgroundStateMutationChain.then(runMutation, runMutation);
-  backgroundStateMutationChain = resultPromise.then(() => void 0, () => void 0);
-  return resultPromise;
-}
-async function getPendingInjections() {
-  await ensureBackgroundSessionStateLoaded();
-  return clonePlainValue(backgroundSessionState.pendingInjections) ?? {};
-}
-async function getPendingBroadcasts() {
-  await ensureBackgroundSessionStateLoaded();
-  return clonePlainValue(backgroundSessionState.pendingBroadcasts) ?? {};
-}
-async function clearPendingSelectorChecksForSiteId(serviceId) {
-  if (!(typeof serviceId === "string" && serviceId.trim())) {
-    return {};
-  }
-  return queueBackgroundStateMutation((state) => {
-    state.pendingSelectorChecks = clearPendingSelectorChecksForService(
-      state.pendingSelectorChecks,
-      serviceId
-    );
-    return clonePlainValue(state.pendingSelectorChecks) ?? {};
-  });
-}
-async function registerPendingSelectorCheckReport(report) {
-  return queueBackgroundStateMutation((state) => {
-    const result = registerPendingSelectorCheck(
-      state.pendingSelectorChecks,
-      report
-    );
-    state.pendingSelectorChecks = result.next;
-    return clonePlainValue(result) ?? result;
-  });
-}
-async function updatePendingInjection(tabId, updater) {
-  return queueBackgroundStateMutation((state) => {
-    const pending = state.pendingInjections ?? {};
-    const current = pending[String(tabId)];
-    const nextValue = typeof updater === "function" ? updater(clonePlainValue(current) ?? current) : updater;
-    if (nextValue) {
-      pending[String(tabId)] = nextValue;
-    } else {
-      delete pending[String(tabId)];
-    }
-    state.pendingInjections = pending;
-    return clonePlainValue(nextValue) ?? null;
-  });
-}
-async function addPendingInjection(tabId, payload) {
-  return updatePendingInjection(tabId, {
-    ...payload,
-    tabId,
-    createdAt: Number(payload?.createdAt) || Date.now(),
-    injected: Boolean(payload?.injected),
-    status: payload?.status || "pending",
-    closeOnCancel: payload?.closeOnCancel !== false
-  });
-}
-async function removePendingInjection(tabId) {
-  await updatePendingInjection(tabId, null);
-}
 async function getSiteById(siteId) {
   const siteLookup = await getRuntimeSiteLookup();
   return siteLookup.get(siteId) ?? null;
@@ -4425,8 +4784,8 @@ async function resolveSelectedTargets(siteRefs) {
     let resolvedSite = null;
     let targetTabId = null;
     let forceNewTab = false;
-    let promptOverride = null;
-    let resolvedPrompt = null;
+    let promptOverride;
+    let resolvedPrompt;
     if (typeof siteRef === "string") {
       resolvedSite = runtimeSites.find((site) => site.id === siteRef) ?? null;
     } else if (siteRef && typeof siteRef === "object") {
@@ -4437,8 +4796,8 @@ async function resolveSelectedTargets(siteRefs) {
       }
       targetTabId = normalizeTargetTabId2(siteRef.tabId);
       forceNewTab = siteRef.reuseExistingTab === false || siteRef.openInNewTab === true || siteRef.target === "new";
-      promptOverride = typeof siteRef.promptOverride === "string" && siteRef.promptOverride.trim() ? siteRef.promptOverride.trim() : null;
-      resolvedPrompt = typeof siteRef.resolvedPrompt === "string" ? siteRef.resolvedPrompt : null;
+      promptOverride = typeof siteRef.promptOverride === "string" && siteRef.promptOverride.trim() ? siteRef.promptOverride.trim() : void 0;
+      resolvedPrompt = typeof siteRef.resolvedPrompt === "string" ? siteRef.resolvedPrompt : void 0;
     }
     if (!resolvedSite || !resolvedSite.id || seenIds.has(resolvedSite.id)) {
       continue;
@@ -4463,12 +4822,13 @@ function isInjectableTabUrl(urlString) {
   }
 }
 function getAllowedSiteHostnames(site) {
+  const siteUrl = typeof site?.url === "string" ? site.url : "";
   return new Set(
     [
       site?.hostname,
       ...Array.isArray(site?.hostnameAliases) ? site.hostnameAliases : [],
-      isInjectableTabUrl(site?.url ?? "") ? new URL(site.url).hostname : ""
-    ].filter((entry) => typeof entry === "string" && entry.trim()).map((entry) => entry.trim().toLowerCase())
+      isInjectableTabUrl(siteUrl) ? new URL(siteUrl).hostname : ""
+    ].filter((entry) => typeof entry === "string" && entry.trim().length > 0).map((entry) => entry.trim().toLowerCase())
   );
 }
 function getSitePermissionPatterns(site) {
@@ -4491,7 +4851,7 @@ async function runReusableTabPreflight(tabId, site) {
             return true;
           }
           const style = window.getComputedStyle(element);
-          if (element.hidden || element.getAttribute("hidden") !== null || element.getAttribute("aria-hidden") === "true" || style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse") {
+          if (element instanceof HTMLElement && element.hidden || element.getAttribute("hidden") !== null || element.getAttribute("aria-hidden") === "true" || style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse") {
             return false;
           }
           return element.getClientRects().length > 0;
@@ -4514,7 +4874,7 @@ async function runReusableTabPreflight(tabId, site) {
           const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
           let current = walker.currentNode;
           while (current) {
-            if (current.shadowRoot) {
+            if (current instanceof Element && current.shadowRoot) {
               collectElementsDeep(selector, current.shadowRoot, matches, seen);
             }
             current = walker.nextNode();
@@ -4563,13 +4923,15 @@ async function runReusableTabPreflight(tabId, site) {
   }
 }
 async function isReusableTabForSite(tab, site) {
-  if (!Number.isFinite(tab?.id) || !isInjectableTabUrl(tab?.url ?? "")) {
+  const tabId = tab.id;
+  const tabUrl = typeof tab.url === "string" ? tab.url : "";
+  if (typeof tabId !== "number" || !isInjectableTabUrl(tabUrl)) {
     return false;
   }
-  if (!isSameSiteOrigin(tab.url, site)) {
+  if (!isSameSiteOrigin(tabUrl, site)) {
     return false;
   }
-  return runReusableTabPreflight(tab.id, site);
+  return runReusableTabPreflight(tabId, site);
 }
 async function isCustomSitePermissionGranted(site) {
   const permissionPatterns = getSitePermissionPatterns(site);
@@ -4615,20 +4977,24 @@ async function findReusableTabsForSites(sites, options = {}) {
     const usedTabIds = /* @__PURE__ */ new Set();
     for (const site of Array.isArray(sites) ? sites : []) {
       const candidates = tabs.filter((tab) => {
-        if (!Number.isFinite(tab?.id) || usedTabIds.has(tab.id) || excludedTabIds.has(tab.id)) {
+        const candidateId = tab.id;
+        const candidateUrl = typeof tab.url === "string" ? tab.url : "";
+        if (typeof candidateId !== "number" || usedTabIds.has(candidateId) || excludedTabIds.has(candidateId)) {
           return false;
         }
-        if (!isInjectableTabUrl(tab?.url ?? "")) {
+        if (!isInjectableTabUrl(candidateUrl)) {
           return false;
         }
-        return isSameSiteOrigin(tab.url, site);
+        return isSameSiteOrigin(candidateUrl, site);
       }).sort((left, right) => scoreReusableTabForSite(left, site) - scoreReusableTabForSite(right, site));
       for (const candidate of candidates) {
         if (!await isReusableTabForSite(candidate, site)) {
           continue;
         }
         reusableTabsBySiteId.set(site.id, candidate);
-        usedTabIds.add(candidate.id);
+        if (typeof candidate.id === "number") {
+          usedTabIds.add(candidate.id);
+        }
         break;
       }
     }
@@ -4639,92 +5005,6 @@ async function findReusableTabsForSites(sites, options = {}) {
       error
     });
     return /* @__PURE__ */ new Map();
-  }
-}
-async function getPreferredNormalWindowId(preferredWindowId = null) {
-  const normalizedPreferredWindowId = Number(preferredWindowId);
-  if (Number.isFinite(normalizedPreferredWindowId)) {
-    try {
-      const preferredWindow = await chrome.windows.get(normalizedPreferredWindowId);
-      if (preferredWindow?.type === "normal") {
-        return preferredWindow.id;
-      }
-    } catch (_error) {
-    }
-  }
-  try {
-    const [lastFocusedTab] = await chrome.tabs.query({
-      active: true,
-      lastFocusedWindow: true
-    });
-    if (Number.isFinite(lastFocusedTab?.windowId)) {
-      const windowInfo = await chrome.windows.get(lastFocusedTab.windowId).catch(() => null);
-      if (windowInfo?.type === "normal") {
-        return windowInfo.id;
-      }
-    }
-  } catch (_error) {
-  }
-  if (Number.isFinite(lastNormalWindowId)) {
-    try {
-      const rememberedWindow = await chrome.windows.get(lastNormalWindowId);
-      if (rememberedWindow?.type === "normal") {
-        return rememberedWindow.id;
-      }
-    } catch (_error) {
-      lastNormalWindowId = null;
-    }
-  }
-  try {
-    const windows = await chrome.windows.getAll({
-      windowTypes: ["normal"]
-    });
-    const focusedWindow = windows.find((windowInfo) => windowInfo?.focused && Number.isFinite(windowInfo?.id));
-    return focusedWindow?.id ?? windows.find((windowInfo) => Number.isFinite(windowInfo?.id))?.id ?? null;
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to resolve preferred normal window.", error);
-    return null;
-  }
-}
-async function getOpenAiTabsForWindow(windowId) {
-  const normalizedWindowId = Number(windowId);
-  if (!Number.isFinite(normalizedWindowId)) {
-    return [];
-  }
-  try {
-    const [runtimeSites, tabs] = await Promise.all([
-      getRuntimeSites(),
-      chrome.tabs.query({ windowId: normalizedWindowId })
-    ]);
-    const openTabs = await Promise.all(tabs.map(async (tab) => {
-      if (!Number.isFinite(tab?.id) || !isInjectableTabUrl(tab?.url ?? "")) {
-        return null;
-      }
-      const site = runtimeSites.find((entry) => isSameSiteOrigin(tab.url, entry));
-      if (!site) {
-        return null;
-      }
-      if (!await isReusableTabForSite(tab, site)) {
-        return null;
-      }
-      return {
-        siteId: site.id,
-        siteName: site.name,
-        tabId: tab.id,
-        title: typeof tab.title === "string" ? tab.title : "",
-        url: typeof tab.url === "string" ? tab.url : "",
-        active: Boolean(tab.active),
-        status: typeof tab.status === "string" ? tab.status : "",
-        windowId: normalizedWindowId
-      };
-    }));
-    return openTabs.filter(Boolean);
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to collect open AI tabs.", {
-      windowId: normalizedWindowId,
-      error
-    });
-    return [];
   }
 }
 async function getExplicitReusableTabForTarget(target) {
@@ -4803,7 +5083,10 @@ var {
 async function getPreferredInjectableNormalTab() {
   const tab = await getPreferredNormalActiveTab();
   if (!tab?.id) {
-    return null;
+    return {
+      ok: false,
+      reason: "no_tab"
+    };
   }
   const tabUrl = typeof tab.url === "string" ? tab.url : "";
   if (!isInjectableTabUrl(tabUrl)) {
@@ -4829,7 +5112,7 @@ async function runServiceTestOnTab(tabId, draft) {
           return true;
         }
         const style = window.getComputedStyle(element);
-        if (element.hidden || element.getAttribute("hidden") !== null || element.getAttribute("aria-hidden") === "true" || style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse") {
+        if (element instanceof HTMLElement && element.hidden || element.getAttribute("hidden") !== null || element.getAttribute("aria-hidden") === "true" || style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse") {
           return false;
         }
         return element.getClientRects().length > 0;
@@ -4849,7 +5132,7 @@ async function runServiceTestOnTab(tabId, draft) {
         const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
         let current = walker.currentNode;
         while (current) {
-          if (current.shadowRoot) {
+          if (current instanceof Element && current.shadowRoot) {
             findElementsDeep(selector, current.shadowRoot, seen, matches);
           }
           current = walker.nextNode();
@@ -4915,7 +5198,7 @@ async function runServiceTestOnTab(tabId, draft) {
           element.value = snapshot.value ?? "";
         } else if (snapshot.type === "html" && element instanceof HTMLElement) {
           element.innerHTML = snapshot.html ?? "";
-        } else if (element instanceof HTMLElement) {
+        } else if (snapshot.type === "text" && element instanceof HTMLElement) {
           element.textContent = snapshot.text ?? "";
         }
         element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "" }));
@@ -4974,7 +5257,7 @@ async function runServiceTestOnTab(tabId, draft) {
             found: true,
             selector: inputMatch.selector,
             actualType: actualInputType,
-            expectedType: siteDraft.inputType ?? "",
+            expectedType: String(siteDraft.inputType ?? ""),
             typeMatches: inputTypeMatches
           },
           submit: {
@@ -5006,7 +5289,7 @@ async function runServiceTestOnTab(tabId, draft) {
       } catch (error) {
         return {
           ok: false,
-          error: error?.message ?? String(error)
+          error: error instanceof Error ? error.message : String(error)
         };
       }
     },
@@ -5084,7 +5367,7 @@ async function createPendingBroadcast(prompt, targets, metadata = {}) {
   };
   await queueBackgroundStateMutation((state) => {
     state.pendingBroadcasts[broadcastId] = record;
-    return clonePlainValue(record);
+    return clonePlainValue2(record);
   });
   await syncLastBroadcast(buildPendingBroadcastSummary(record, { finishedAt: "" }, nowIso()));
   return record;
@@ -5182,7 +5465,7 @@ async function recordBroadcastSiteResult(broadcastId, siteId, resultInput) {
       }
       return {
         summary: mutation.summary,
-        completedRecord: mutation.completedRecord ? clonePlainValue(mutation.completedRecord) : null
+        completedRecord: mutation.completedRecord ? clonePlainValue2(mutation.completedRecord) : null
       };
     });
     if (!mutationResult?.summary) {
@@ -5363,7 +5646,7 @@ async function injectIntoTab(tabId, prompt, site, runtimeOverrides = {}) {
             return true;
           }
           const style = window.getComputedStyle(element2);
-          if (element2.hidden || element2.getAttribute("hidden") !== null || element2.getAttribute("aria-hidden") === "true" || style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse") {
+          if (element2 instanceof HTMLElement && element2.hidden || element2.getAttribute("hidden") !== null || element2.getAttribute("aria-hidden") === "true" || style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse") {
             return false;
           }
           return element2.getClientRects().length > 0;
@@ -5688,7 +5971,7 @@ async function processPendingInjectionNow(tabId, tab) {
       error
     });
     await recordBroadcastSiteResult(job.broadcastId, job.siteId, buildSiteResult("unexpected_error", {
-      message: error?.message ?? String(error)
+      message: getErrorMessage(error)
     }));
     await enqueueUiToast({
       message: getI18nMessage("toast_injection_failed", [job.site.name]) || `${job.site.name} automatic injection failed.`,
@@ -5706,7 +5989,7 @@ async function reconcilePendingInjections() {
   for (const [tabIdKey, job] of entries) {
     const tabId = Number(tabIdKey);
     if (!Number.isFinite(tabId) || !job) {
-      await removePendingInjection(tabIdKey);
+      await removePendingInjection(tabId);
       continue;
     }
     const age = Date.now() - Number(job.createdAt || 0);
@@ -5814,7 +6097,7 @@ async function queueResolvedBroadcastRequest(prompt, selectedTargets, metadata =
             /* @__PURE__ */ new Set([...Array.isArray(record.openedTabIds) ? record.openedTabIds : [], targetTab.id])
           );
           state.pendingBroadcasts[broadcast.id] = record;
-          return clonePlainValue(record.openedTabIds);
+          return clonePlainValue2(record.openedTabIds);
         });
       }
       queuedSiteCount += 1;
@@ -5914,8 +6197,9 @@ async function handleSelectorCheckReport(message) {
   return { ok: true };
 }
 async function handleSelectorFailedMessage(message) {
-  const serviceId = message?.serviceId ?? "";
-  const selector = message?.selector ?? "";
+  const payload = message ?? {};
+  const serviceId = payload.serviceId ?? "";
+  const selector = payload.selector ?? "";
   const site = await getSiteById(serviceId);
   await clearPendingSelectorChecksForSiteId(serviceId);
   await maybeCreateSelectorNotification({
@@ -5938,16 +6222,18 @@ async function handleSelectorFailedMessage(message) {
   return { ok: true };
 }
 async function handleInjectSuccessMessage(message) {
-  if (message?.serviceId) {
-    await clearPendingSelectorChecksForSiteId(message.serviceId);
-    await clearFailedSelector(message.serviceId);
+  const payload = message ?? {};
+  if (payload.serviceId) {
+    await clearPendingSelectorChecksForSiteId(payload.serviceId);
+    await clearFailedSelector(payload.serviceId);
   }
   return { ok: true };
 }
 async function handleInjectFallbackMessage(message) {
-  const serviceId = message?.serviceId ?? "";
+  const payload = message ?? {};
+  const serviceId = payload.serviceId ?? "";
   const site = await getSiteById(serviceId);
-  const copied = Boolean(message?.copied);
+  const copied = Boolean(payload.copied);
   await enqueueUiToast({
     message: copied ? getI18nMessage("toast_inject_fallback_copied", [site?.name ?? serviceId]) || `${site?.name ?? serviceId} prompt copied to clipboard. Paste it manually and send.` : getI18nMessage("toast_inject_fallback_manual", [site?.name ?? serviceId]) || `${site?.name ?? serviceId} automatic injection failed. Paste the prompt manually and send.`,
     type: "warning",
@@ -5956,7 +6242,8 @@ async function handleInjectFallbackMessage(message) {
   return { ok: true };
 }
 async function handleUiToastMessage(message) {
-  await enqueueUiToast(message?.toast ?? {});
+  const payload = message ?? {};
+  await enqueueUiToast(payload.toast ?? {});
   return { ok: true };
 }
 async function handlePopupOpened() {
@@ -6005,8 +6292,7 @@ async function resetAllExtensionData() {
   activeInjections.clear();
   queuedInjectionTabIds.clear();
   selectionCache.clear();
-  lastNormalWindowId = null;
-  lastNormalTabId = null;
+  resetRememberedState();
   const alarms = await chrome.alarms.getAll().catch(() => []);
   await Promise.all(
     alarms.filter((alarm) => alarm.name.startsWith("apb-favorite-job:")).map((alarm) => chrome.alarms.clear(alarm.name).catch(() => false))
@@ -6078,101 +6364,64 @@ async function handleServiceTestRun(message) {
     };
   }
   try {
-    const result = await runServiceTestOnTab(preferredTab.tab.id, draft);
+    const tabId = preferredTab.tab.id;
+    if (typeof tabId !== "number") {
+      return {
+        ok: false,
+        reason: "no_tab"
+      };
+    }
+    const result = await runServiceTestOnTab(tabId, draft);
+    if (!result.ok) {
+      return result;
+    }
     return {
-      ok: Boolean(result?.ok),
-      tabId: preferredTab.tab.id,
-      tabUrl: preferredTab.tab.url ?? "",
-      ...result
+      ...result,
+      tabId,
+      tabUrl: preferredTab.tab.url ?? ""
     };
   } catch (error) {
     console.error("[AI Prompt Broadcaster] Service test failed.", error);
     return {
       ok: false,
       reason: "error",
-      error: error?.message ?? String(error)
+      error: getErrorMessage(error)
     };
   }
 }
-registerRuntimeMessageRouter({
-  broadcast: {
-    run: (message) => handleBroadcastMessage(message),
-    errorLabel: "[AI Prompt Broadcaster] Broadcast handling failed."
+registerRuntimeMessageRouter(buildRuntimeHandlers({
+  handleBroadcastMessage,
+  handleSelectorCheckInit,
+  handleSelectorCheckReport,
+  handleServiceTestRun,
+  handleSelectorFailedMessage,
+  handleInjectSuccessMessage,
+  handleInjectFallbackMessage,
+  handleUiToastMessage,
+  handlePopupOpened,
+  handleGetOpenAiTabsMessage,
+  handleCancelBroadcastMessage,
+  handleFavoriteRunMessage,
+  handleFavoriteOpenEditorMessage,
+  resetAllExtensionData,
+  handleGetActiveTabContext,
+  handleGetBroadcastCounter: async () => ({
+    ok: true,
+    counter: await getBroadcastCounter()
+  }),
+  handleSelectionUpdateMessage,
+  handleQuickPaletteGetState: async () => {
+    const state = await handleQuickPaletteGetState();
+    return {
+      ok: state.ok,
+      favorites: state.favorites.map((favorite) => ({
+        ...favorite,
+        mode: favorite.mode === "chain" ? "chain" : "single"
+      }))
+    };
   },
-  "selector-check:init": {
-    run: (message) => handleSelectorCheckInit(message),
-    errorLabel: "[AI Prompt Broadcaster] Selector check init failed."
-  },
-  "selector-check:report": {
-    run: (message) => handleSelectorCheckReport(message),
-    errorLabel: "[AI Prompt Broadcaster] Selector check report failed."
-  },
-  "service-test:run": {
-    run: (message) => handleServiceTestRun(message),
-    errorLabel: "[AI Prompt Broadcaster] Service test run failed."
-  },
-  selectorFailed: {
-    run: (message) => handleSelectorFailedMessage(message)
-  },
-  injectSuccess: {
-    run: (message) => handleInjectSuccessMessage(message)
-  },
-  injectFallback: {
-    run: (message) => handleInjectFallbackMessage(message)
-  },
-  uiToast: {
-    run: (message) => handleUiToastMessage(message)
-  },
-  popupOpened: {
-    run: () => handlePopupOpened()
-  },
-  getOpenAiTabs: {
-    run: (message) => handleGetOpenAiTabsMessage(message)
-  },
-  cancelBroadcast: {
-    run: (message) => handleCancelBroadcastMessage(message)
-  },
-  "favorite:run": {
-    run: (message, sender) => handleFavoriteRunMessage(message, sender)
-  },
-  "favorite:openEditor": {
-    run: (message) => handleFavoriteOpenEditorMessage(message)
-  },
-  resetAllData: {
-    run: () => resetAllExtensionData(),
-    errorLabel: "[AI Prompt Broadcaster] Reset-all-data failed."
-  },
-  getActiveTabContext: {
-    run: () => handleGetActiveTabContext(),
-    onError: (error, fallback) => ({
-      ...fallback,
-      url: "",
-      title: "",
-      selection: ""
-    })
-  },
-  getBroadcastCounter: {
-    run: async () => ({ ok: true, counter: await getBroadcastCounter() }),
-    onError: (error, fallback) => ({
-      ...fallback,
-      counter: 0
-    })
-  },
-  "selection:update": {
-    sync: true,
-    run: (message, sender) => handleSelectionUpdateMessage(message, sender)
-  },
-  "quickPalette:getState": {
-    run: () => handleQuickPaletteGetState()
-  },
-  "quickPalette:execute": {
-    run: (message, sender) => handleQuickPaletteExecuteMessage(message, sender)
-  },
-  "quickPalette:close": {
-    sync: true,
-    run: () => ({ ok: true })
-  }
-});
+  handleQuickPaletteExecuteMessage
+}));
 chrome.runtime.onInstalled.addListener(({ reason }) => {
   void (async () => {
     await createContextMenus();
@@ -6245,7 +6494,6 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
       if (windowInfo?.type !== "normal") {
         return;
       }
-      lastNormalWindowId = windowId;
       const [activeTab] = await chrome.tabs.query({
         active: true,
         windowId
@@ -6259,6 +6507,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   void (async () => {
     try {
       selectionCache.delete(tabId);
+      clearRememberedTab(tabId);
       const pending = await getPendingInjections();
       const job = pending[String(tabId)];
       if (job?.broadcastId && job?.siteId) {

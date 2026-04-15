@@ -334,7 +334,10 @@ var AIPromptBroadcasterInjectorBundle = (() => {
   // src/content/injector/fallback.ts
   async function sendRuntimeMessage2(message) {
     try {
-      return await sendRuntimeMessageWithTimeout(message, 4e3);
+      return await sendRuntimeMessageWithTimeout(
+        message ?? {},
+        4e3
+      );
     } catch (error) {
       const action = typeof message === "object" && message && "action" in message ? String(message.action) : "unknown";
       logError(`Runtime message failed: ${action}`, error);

@@ -1,12 +1,34 @@
-// @ts-nocheck
+import type { PopupToastActionInput, PopupToastInput } from "../../shared/types/popup";
+
 const STYLE_ID = "apb-toast-styles";
 const MAX_TOASTS = 3;
 
-let toastRoot = null;
-let toastIdCounter = 0;
-const toastMap = new Map();
+interface NormalizedToastAction {
+  id: string;
+  label: string;
+  variant: string;
+  onClick: (() => void) | null;
+}
 
-function ensureStyles() {
+interface NormalizedToast {
+  id: string;
+  message: string;
+  type: string;
+  duration: number;
+  actions: NormalizedToastAction[];
+}
+
+interface ToastEntry {
+  id: string;
+  element: HTMLDivElement;
+  timer: number | null;
+}
+
+let toastRoot: HTMLElement | null = null;
+let toastIdCounter = 0;
+const toastMap = new Map<string, ToastEntry>();
+
+function ensureStyles(): void {
   if (document.getElementById(STYLE_ID)) {
     return;
   }
@@ -110,7 +132,7 @@ function ensureStyles() {
   document.head.appendChild(style);
 }
 
-function getIcon(type) {
+function getIcon(type: string): string {
   switch (type) {
     case "success":
       return "✅";
@@ -123,7 +145,7 @@ function getIcon(type) {
   }
 }
 
-function normalizeAction(action = {}) {
+function normalizeAction(action: Partial<PopupToastActionInput> = {}): NormalizedToastAction {
   return {
     id: action.id || `toast-action-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     label: action.label || "OK",
@@ -132,14 +154,20 @@ function normalizeAction(action = {}) {
   };
 }
 
-function normalizeToastInput(input, type, duration) {
+function normalizeToastInput(
+  input: PopupToastInput | string,
+  type: string,
+  duration: number,
+): NormalizedToast {
   if (input && typeof input === "object" && !Array.isArray(input)) {
     return {
       id: input.id || `toast-${Date.now()}-${toastIdCounter += 1}`,
       message: String(input.message ?? ""),
       type: input.type || "info",
       duration: Number.isFinite(Number(input.duration)) ? Number(input.duration) : 3000,
-      actions: Array.isArray(input.actions) ? input.actions.map((action) => normalizeAction(action)) : [],
+      actions: Array.isArray(input.actions)
+        ? input.actions.map((action) => normalizeAction(action))
+        : [],
     };
   }
 
@@ -152,7 +180,7 @@ function normalizeToastInput(input, type, duration) {
   };
 }
 
-function ensureToastRoot() {
+function ensureToastRoot(): HTMLElement {
   if (toastRoot) {
     return toastRoot;
   }
@@ -168,7 +196,7 @@ function ensureToastRoot() {
   return toastRoot;
 }
 
-function removeToastElement(id) {
+function removeToastElement(id: string): void {
   const entry = toastMap.get(id);
   if (!entry) {
     return;
@@ -185,7 +213,7 @@ function removeToastElement(id) {
   toastMap.delete(id);
 }
 
-function trimToMax() {
+function trimToMax(): void {
   const entries = [...toastMap.values()];
   while (entries.length > MAX_TOASTS) {
     const first = entries.shift();
@@ -196,13 +224,17 @@ function trimToMax() {
   }
 }
 
-export function initToastRoot(container) {
+export function initToastRoot(container?: HTMLElement | null): HTMLElement {
   ensureStyles();
   toastRoot = container || document.getElementById("toast-host") || null;
   return ensureToastRoot();
 }
 
-export function showToast(input, type = "info", duration = 3000) {
+export function showToast(
+  input: PopupToastInput | string,
+  type = "info",
+  duration = 3000,
+): string {
   ensureStyles();
   const root = ensureToastRoot();
   const toast = normalizeToastInput(input, type, duration);
@@ -260,7 +292,7 @@ export function showToast(input, type = "info", duration = 3000) {
 
   root.appendChild(element);
 
-  const entry = {
+  const entry: ToastEntry = {
     id: toast.id,
     element,
     timer: null,
@@ -277,11 +309,11 @@ export function showToast(input, type = "info", duration = 3000) {
   return toast.id;
 }
 
-export function hideToast(id) {
+export function hideToast(id: string): void {
   removeToastElement(id);
 }
 
-export function clearAllToasts() {
+export function clearAllToasts(): void {
   [...toastMap.keys()].forEach((id) => {
     removeToastElement(id);
   });

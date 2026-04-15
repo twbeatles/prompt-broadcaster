@@ -1,10 +1,22 @@
-// @ts-nocheck
-import { buildSiteInjectionResult, normalizeResultCode } from "../../shared/prompts";
+import {
+  buildSiteInjectionResult,
+  normalizeResultCode,
+} from "../../shared/prompts";
 import { normalizeSelectorEntries } from "../../shared/sites";
+import type {
+  RuntimeInjectionSiteConfig,
+  SiteInjectionResult,
+  StrategyStats,
+} from "../../shared/types/models";
 
 export { normalizeSelectorEntries };
 
-export function scaleTimeout(value, multiplier = 1) {
+type StrategyCounter = {
+  success?: number;
+  fail?: number;
+} | undefined;
+
+export function scaleTimeout(value: unknown, multiplier = 1): number {
   const numericValue = Number(value);
   const numericMultiplier = Number(multiplier);
   if (!Number.isFinite(numericValue)) {
@@ -18,15 +30,26 @@ export function scaleTimeout(value, multiplier = 1) {
   return Math.max(0, Math.round(numericValue * numericMultiplier));
 }
 
-export function buildSiteResult(code, overrides = {}) {
+export function buildSiteResult(
+  code: unknown,
+  overrides: Partial<SiteInjectionResult> = {},
+): SiteInjectionResult {
   return buildSiteInjectionResult(code, overrides);
 }
 
-export function getSiteResultCode(result) {
-  return normalizeResultCode(result?.code ?? result);
+export function getSiteResultCode(result: unknown) {
+  const source = result as Partial<SiteInjectionResult> | string | null | undefined;
+  return normalizeResultCode(
+    typeof source === "string" ? source : source?.code ?? source,
+  );
 }
 
-function getStrategySortScore(counter) {
+function getStrategySortScore(counter: StrategyCounter): {
+  total: number;
+  hitRate: number;
+  success: number;
+  fail: number;
+} {
   const success = Number(counter?.success) || 0;
   const fail = Number(counter?.fail) || 0;
   const total = success + fail;
@@ -39,7 +62,10 @@ function getStrategySortScore(counter) {
   };
 }
 
-export function buildPreferredStrategyOrder(siteId, strategyStats) {
+export function buildPreferredStrategyOrder(
+  siteId: string,
+  strategyStats: StrategyStats,
+): string[] {
   const siteStats = strategyStats?.[siteId] ?? {};
   const knownStrategies = [
     "lexicalEditorState",
@@ -69,7 +95,12 @@ export function buildPreferredStrategyOrder(siteId, strategyStats) {
   });
 }
 
-export function buildInjectionConfig(site, runtimeOverrides = {}) {
+export function buildInjectionConfig(
+  site: Partial<RuntimeInjectionSiteConfig> | null | undefined,
+  runtimeOverrides: Partial<RuntimeInjectionSiteConfig> = {},
+): RuntimeInjectionSiteConfig {
+  const verifiedAuthState = site?.verifiedAuthState || undefined;
+
   return {
     id: site?.id ?? "",
     name: site?.name ?? "",
@@ -83,17 +114,25 @@ export function buildInjectionConfig(site, runtimeOverrides = {}) {
     submitSelector: site?.submitSelector ?? "",
     submitMethod: site?.submitMethod ?? "enter",
     selectorCheckMode: site?.selectorCheckMode ?? "input-and-submit",
-    waitMs: Number.isFinite(site?.waitMs) ? site.waitMs : 0,
+    waitMs: Number.isFinite(Number(site?.waitMs)) ? Number(site?.waitMs) : 0,
     fallback: site?.fallback !== false,
     authSelectors: Array.isArray(site?.authSelectors) ? site.authSelectors : [],
     lastVerified: site?.lastVerified ?? "",
     verifiedAt: site?.verifiedAt ?? "",
     verifiedRoute: site?.verifiedRoute ?? "",
-    verifiedAuthState: site?.verifiedAuthState ?? "",
+    verifiedAuthState,
     verifiedLocale: site?.verifiedLocale ?? "",
     verifiedVersion: site?.verifiedVersion ?? "",
+    enabled: site?.enabled ?? true,
+    color: site?.color ?? "",
+    icon: site?.icon ?? "",
+    isBuiltIn: Boolean(site?.isBuiltIn),
     isCustom: Boolean(site?.isCustom),
-    permissionPatterns: Array.isArray(site?.permissionPatterns) ? site.permissionPatterns : [],
+    deletable: Boolean(site?.deletable),
+    editable: Boolean(site?.editable),
+    permissionPatterns: Array.isArray(site?.permissionPatterns)
+      ? site.permissionPatterns
+      : [],
     submitTimeoutMs: Number.isFinite(Number(runtimeOverrides?.submitTimeoutMs))
       ? Number(runtimeOverrides.submitTimeoutMs)
       : undefined,

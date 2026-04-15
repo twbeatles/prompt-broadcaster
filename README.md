@@ -22,7 +22,7 @@
 
 백엔드나 API 키 없이, 사용자가 이미 로그인한 각 AI 웹앱의 DOM 입력창에 직접 프롬프트를 주입하는 방식으로 동작합니다.
 
-현재 소스 코드는 `src/` 아래 TypeScript 모듈로 관리됩니다. Chrome에는 `dist/` 산출물을 기본으로 로드하고, 루트 런타임 JS는 `npm run build`가 함께 동기화하는 generated mirror입니다. `src/*/main.ts`는 얇은 composition root로 유지되고, 실제 런타임은 `src/background/{commands,context-menu,messages,popup,selection}`, `src/options/{core,features}`, `src/popup/features`, `src/shared/*`, `scripts/qa-smoke/*`, `popup/styles/partials`, `options/styles/partials`처럼 기능 기준으로 분리되어 있습니다.
+현재 소스 코드는 `src/` 아래 TypeScript 모듈로 관리됩니다. Chrome에는 `dist/` 산출물을 기본으로 로드하고, 루트 런타임 JS는 `npm run build`가 함께 동기화하는 generated mirror입니다. `src/*/main.ts`는 얇은 composition root로 유지되고, 실제 런타임은 `src/background/{commands,context-menu,messages,popup,runtime,selection,session,tabs}`, `src/options/{core,features}`, `src/popup/{app,compose,favorites,history,overlays,services,ui}`, `src/content/palette/*`, `src/shared/*`, `scripts/qa-smoke/*`, `popup/styles/partials`, `options/styles/partials`처럼 기능 기준으로 분리되어 있습니다.
 
 빌드 및 패키징 절차는 [docs/build-guide.md](docs/build-guide.md), 현재 구조 설명은 [docs/extension-architecture.md](docs/extension-architecture.md)를 참고하세요.
 
@@ -267,7 +267,7 @@ MIT
 
 It works without a backend or API keys by injecting prompts directly into each AI web app's input surface after the target tab loads.
 
-The source of truth lives in `src/` as TypeScript modules. Chrome should load the built `dist/` output, and the root runtime JS files are generated mirrors refreshed by `npm run build`. The runtime entrypoints in `src/*/main.ts` stay intentionally thin while the implementation is split by feature into modules such as `src/background/{commands,context-menu,messages,popup,selection}`, `src/options/{core,features}`, `src/popup/features`, `src/shared/*`, `scripts/qa-smoke/*`, and CSS partials under `popup/styles/partials` and `options/styles/partials`.
+The source of truth lives in `src/` as TypeScript modules. Chrome should load the built `dist/` output, and the root runtime JS files are generated mirrors refreshed by `npm run build`. The runtime entrypoints in `src/*/main.ts` stay intentionally thin while the implementation is split by feature into modules such as `src/background/{commands,context-menu,messages,popup,runtime,selection,session,tabs}`, `src/options/{core,features}`, `src/popup/{app,compose,favorites,history,overlays,services,ui}`, `src/content/palette/*`, `src/shared/*`, `scripts/qa-smoke/*`, and CSS partials under `popup/styles/partials` and `options/styles/partials`.
 
 For build and packaging steps, see [docs/build-guide.md](docs/build-guide.md). For the current architecture, see [docs/extension-architecture.md](docs/extension-architecture.md).
 

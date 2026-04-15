@@ -1,7 +1,7 @@
 # AI Prompt Broadcaster - 프로젝트 구조 분석
 
-> 기준일: 2026-04-13
-> 최종 업데이트: 2026-04-13 (selector noise hardening, route-aware site model, export v8 반영)
+> 기준일: 2026-04-15
+> 최종 업데이트: 2026-04-15 (popup/content/options 구조 추가 분할, docs 정합성 반영)
 > 분석 범위: 전체 소스코드, 빌드 시스템, 데이터 흐름, UI 구조
 
 ---
@@ -44,8 +44,11 @@ prompt-broadcaster/
 │   │   ├── popup/
 │   │   │   ├── favorites-workflow.ts
 │   │   │   └── launcher.ts
+│   │   ├── runtime/
+│   │   ├── session/
 │   │   ├── selection/
 │   │   │   └── runtime.ts
+│   │   ├── tabs/
 │   │   └── main.ts
 │   ├── config/
 │   │   ├── sites/
@@ -66,7 +69,11 @@ prompt-broadcaster/
 │   │   └── main.ts
 │   ├── popup/
 │   │   ├── app/
-│   │   ├── features/
+│   │   ├── compose/
+│   │   ├── favorites/
+│   │   ├── history/
+│   │   ├── overlays/
+│   │   ├── services/
 │   │   ├── ui/
 │   │   └── main.ts
 │   └── shared/
@@ -104,14 +111,13 @@ prompt-broadcaster/
 ├── manifest.json
 ├── dist/
 ├── README.md
-├── FEATURE_ROADMAP.md
 └── CLAUDE.md
 ```
 
 핵심 포인트:
 
 - `src/*/main.ts`는 얇은 엔트리포인트다.
-- 실제 런타임 책임은 `background/commands`, `background/popup`, `options/features`, `popup/features`처럼 기능 기준으로 나뉜다.
+- 실제 런타임 책임은 `background/{commands,popup,runtime,session,tabs}`, `options/features/*`, `popup/{compose,favorites,history,overlays,services}`처럼 기능 기준으로 나뉜다.
 - 스타일도 `popup/styles/partials`, `options/styles/partials`로 쪼개져 있다.
 - `src/config/sites.ts`는 하위 호환 re-export 역할만 한다.
 
@@ -187,7 +193,7 @@ prompt-broadcaster/
   - DOM registry
 - `src/popup/app/helpers.ts`, `sorting.ts`, `list-markup.ts`
   - pure formatting / markup
-- `src/popup/features/favorite-editor.ts`
+- `src/popup/favorites/favorite-editor.ts`
   - 즐겨찾기 통합 편집기
   - single/chain mode 전환
   - chain step 추가/삭제/순서 이동
@@ -214,15 +220,15 @@ prompt-broadcaster/
   - 메트릭 카드/차트 데이터
 - `src/options/features/dashboard-metrics.ts`
   - heatmap / service trend / failure reason / strategy summary 집계
-- `src/options/features/history.ts`
+- `src/options/features/history.ts` + `src/options/features/history/*`
   - 히스토리 필터, 페이지네이션, bulk delete, 상세 모달
-- `src/options/features/schedules.ts`
+- `src/options/features/schedules.ts` + `src/options/features/schedules/*`
   - 예약 즐겨찾기 목록, toggle, run-now, popup editor handoff
 - `src/options/features/schedule-summary.ts`
   - 최근 scheduled 실행 결과 요약 계산
 - `src/options/features/services.ts`
   - 서비스 카드, `waitMs`, `siteOrder` 편집
-- `src/options/features/settings.ts`
+- `src/options/features/settings.ts` + `src/options/features/settings/*`
   - import/export/reset/shortcut 표시
 - `src/options/ui/charts.ts`
   - 차트 렌더링
@@ -235,7 +241,7 @@ prompt-broadcaster/
   - 셀렉터/인증 페이지 상태 보고
 - `src/content/selection/`
   - 현재 페이지 선택 텍스트 추적
-- `src/content/palette/main.ts`
+- `src/content/palette/main.ts` + `src/content/palette/{state,render,events,runtime}.ts`
   - shadow root 기반 quick palette overlay
 
 ---
@@ -623,7 +629,7 @@ npm run qa:smoke
 
 ## 12. 남은 로드맵 요약
 
-현재 `FEATURE_ROADMAP.md` 기준 남은 큰 범주는 다음이다.
+현재 문서화된 잔여 과제 범주는 다음과 같다.
 
 | 우선순위 | 기능 | 메모 |
 |---|---|---|
@@ -639,8 +645,8 @@ npm run qa:smoke
 |---|---|
 | built-in 사이트 추가 | `src/config/sites/builtins.ts`, `manifest.json` |
 | background 메시지/라우팅 수정 | `src/background/messages/router.ts`, `src/background/app/bootstrap.ts` |
-| favorite 실행/예약/체인 수정 | `src/background/popup/favorites-workflow.ts`, `src/popup/features/favorite-editor.ts` |
-| quick palette 수정 | `src/background/commands/quick-palette.ts`, `src/content/palette/main.ts` |
+| favorite 실행/예약/체인 수정 | `src/background/popup/favorites-workflow.ts`, `src/popup/favorites/favorite-editor.ts` |
+| quick palette 수정 | `src/background/commands/quick-palette.ts`, `src/content/palette/*` |
 | popup UI 수정 | `src/popup/app/bootstrap.ts`, `src/popup/app/*`, `popup/popup.html`, `popup/styles/partials/*` |
 | options UI 수정 | `src/options/app/bootstrap.ts`, `src/options/features/*`, `options/options.html`, `options/styles/partials/*` |
 | 템플릿 변수 수정 | `src/shared/template/` |

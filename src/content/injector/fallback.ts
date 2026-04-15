@@ -3,7 +3,10 @@ import { logError } from "./dom";
 
 export async function sendRuntimeMessage(message: unknown): Promise<unknown> {
   try {
-    return await sendSharedRuntimeMessageWithTimeout(message, 4000);
+    return await sendSharedRuntimeMessageWithTimeout(
+      (message ?? {}) as Record<string, unknown>,
+      4000,
+    );
   } catch (error) {
     const action = typeof message === "object" && message && "action" in (message as Record<string, unknown>)
       ? String((message as Record<string, unknown>).action)

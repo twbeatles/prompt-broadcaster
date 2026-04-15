@@ -133,6 +133,7 @@ Key outputs:
 - `dist/options/options.html`
 - `dist/options/options.js`
 - `dist/content/injector.js`
+- `dist/content/palette.js`
 - `dist/content/selector_checker.js`
 - `dist/content/selection.js`
 - `dist/onboarding/onboarding.html`

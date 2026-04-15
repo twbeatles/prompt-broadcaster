@@ -1,28 +1,36 @@
-// @ts-nocheck
+import type { ServiceTestRunResponse } from "../../shared/types/messages";
+import type { ImportSummary } from "../../shared/types/models";
+
 export const uiLanguage = chrome.i18n.getUILanguage().toLowerCase();
 export const isKorean = uiLanguage === "ko" || uiLanguage.startsWith("ko-");
 
-export function msg(key, substitutions) {
+export function msg(
+  key: string,
+  substitutions: string | string[] | undefined = undefined,
+): string {
   return chrome.i18n.getMessage(key, substitutions) || "";
 }
 
-export function applyI18n(root = document) {
-  root.querySelectorAll("[data-i18n]").forEach((element) => {
-    const value = msg(element.dataset.i18n);
+export function applyI18n(root: ParentNode = document): void {
+  root.querySelectorAll<HTMLElement>("[data-i18n]").forEach((element) => {
+    const key = element.dataset.i18n;
+    const value = key ? msg(key) : "";
     if (value) {
       element.textContent = value;
     }
   });
 
-  root.querySelectorAll("[data-i18n-placeholder]").forEach((element) => {
-    const value = msg(element.dataset.i18nPlaceholder);
+  root.querySelectorAll<HTMLElement>("[data-i18n-placeholder]").forEach((element) => {
+    const key = element.dataset.i18nPlaceholder;
+    const value = key ? msg(key) : "";
     if (value) {
       element.setAttribute("placeholder", value);
     }
   });
 
-  root.querySelectorAll("[data-i18n-aria-label]").forEach((element) => {
-    const value = msg(element.dataset.i18nAriaLabel);
+  root.querySelectorAll<HTMLElement>("[data-i18n-aria-label]").forEach((element) => {
+    const key = element.dataset.i18nAriaLabel;
+    const value = key ? msg(key) : "";
     if (value) {
       element.setAttribute("aria-label", value);
     }
@@ -44,13 +52,13 @@ export const t = {
   deselectAll: msg("popup_deselect_all"),
   send: msg("popup_send"),
   saveFavorite: msg("popup_save_favorite"),
-  sending: (count) => msg("status_sending", [String(count)]),
-  sent: (count) => msg("status_success", [String(count)]),
+  sending: (count: number) => msg("status_sending", [String(count)]),
+  sent: (count: number) => msg("status_success", [String(count)]),
   warnEmpty: msg("popup_warn_empty"),
   warnNoSite: msg("popup_warn_no_site"),
   stopSending: msg("popup_stop_sending") || "Stop",
   broadcastCancelled: msg("popup_broadcast_cancelled") || "Broadcast cancelled.",
-  error: (message) => msg("status_failed", [String(message ?? "")]),
+  error: (message: string) => msg("status_failed", [String(message ?? "")]),
   historySearch: msg("popup_history_search"),
   favoritesSearch: msg("popup_favorites_search"),
   historyEmpty: msg("history_empty"),
@@ -83,7 +91,7 @@ export const t = {
   importedLoad: msg("popup_imported_load"),
   menuMore: msg("popup_menu_more"),
   favoriteStar: msg("popup_favorite_star"),
-  templateSummary: (count) => msg("popup_template_summary", [String(count)]),
+  templateSummary: (count: number) => msg("popup_template_summary", [String(count)]),
   templateUserKind: msg("popup_template_user_kind"),
   templateSystemKind: msg("popup_template_system_kind"),
   templateModalTitle: msg("popup_template_modal_title"),
@@ -95,8 +103,8 @@ export const t = {
   templateClipboardNotice: msg("popup_template_clipboard_notice"),
   templateClipboardError: msg("popup_template_clipboard_error"),
   templateMissingValues: msg("popup_template_missing_values"),
-  templateFieldLabel: (name) => String(name),
-  templateFieldPlaceholder: (name) => msg("popup_template_field_placeholder", [String(name)]),
+  templateFieldLabel: (name: string) => String(name),
+  templateFieldPlaceholder: (name: string) => msg("popup_template_field_placeholder", [String(name)]),
   favoriteModalTitle: msg("popup_favorite_modal_title"),
   favoriteModalDesc: msg("popup_favorite_modal_desc"),
   favoriteModalCancel: msg("popup_favorite_modal_cancel"),
@@ -125,7 +133,7 @@ export const t = {
   favoriteChainTitle: msg("popup_favorite_chain_title") || "Chain steps",
   favoriteChainDesc: msg("popup_favorite_chain_desc") || "Each step runs in order and stops the chain if any step fails.",
   favoriteChainAddStep: msg("popup_favorite_chain_add_step") || "Add step",
-  favoriteStepLabel: (index) => msg("popup_favorite_step_label", [String(index)]) || `Step ${index}`,
+  favoriteStepLabel: (index: number) => msg("popup_favorite_step_label", [String(index)]) || `Step ${index}`,
   favoriteStepMoveUp: msg("popup_favorite_step_move_up") || "Move up",
   favoriteStepMoveDown: msg("popup_favorite_step_move_down") || "Move down",
   favoriteStepPromptLabel: msg("popup_favorite_step_prompt_label") || "Prompt",
@@ -140,10 +148,10 @@ export const t = {
   favoriteKindSingle: msg("popup_favorite_kind_single") || "Single",
   favoriteKindChain: msg("popup_favorite_kind_chain") || "Chain",
   favoriteScheduledBadge: msg("popup_favorite_scheduled_badge") || "Scheduled",
-  favoriteStepCount: (count) => msg("popup_favorite_step_count", [String(count)]) || `${count} steps`,
+  favoriteStepCount: (count: number) => msg("popup_favorite_step_count", [String(count)]) || `${count} steps`,
   favoriteEdit: msg("popup_favorite_edit") || "Edit",
   clearPrompt: msg("popup_clear_prompt") || "Clear",
-  promptCounter: (current) => isKorean ? `${current}자` : `${current} chars`,
+  promptCounter: (current: number) => isKorean ? `${current}자` : `${current} chars`,
   serviceManagementTitle: msg("popup_service_management_title") || "Service Management",
   serviceManagementDesc: msg("popup_service_management_desc") || "Add, edit, enable, or disable AI targets without editing code.",
   addService: msg("popup_service_add") || "Add Service",
@@ -196,9 +204,9 @@ export const t = {
   serviceTestNoTab: msg("popup_service_test_no_tab") || "No active tab is available for selector testing.",
   serviceTestNoSelector: msg("popup_service_test_no_selector") || "Enter a selector first.",
   serviceTestInvalidTab: msg("popup_service_test_invalid_tab") || "Selector testing only works on http/https tabs.",
-  serviceTestSuccess: (inputType) => msg("popup_service_test_success", [String(inputType)]) || `Element found (${inputType})`,
+  serviceTestSuccess: (inputType: string) => msg("popup_service_test_success", [String(inputType)]) || `Element found (${inputType})`,
   serviceTestFail: msg("popup_service_test_fail") || "Element not found.",
-  serviceTestError: (message) => msg("popup_service_test_error", [String(message)]) || `Selector test failed: ${message}`,
+  serviceTestError: (message: string) => msg("popup_service_test_error", [String(message)]) || `Selector test failed: ${message}`,
   serviceEmptyList: msg("popup_service_empty_list") || "No services available.",
   selectorWarningTooltip:
     msg("popup_selector_warning_tooltip") || "Selector may have changed. Review the service config.",
@@ -209,10 +217,10 @@ export const t = {
   toastConfirm: msg("common_confirm") || "Confirm",
   toastHistoryDeleted: msg("toast_history_deleted") || "History item deleted.",
   toastSettingsSaved: msg("toast_settings_saved") || "Settings saved.",
-  toastSendSuccess: (count) => msg("toast_send_success", [String(count)]) || `${count} services queued.`,
+  toastSendSuccess: (count: number) => msg("toast_send_success", [String(count)]) || `${count} services queued.`,
   toastPromptEmpty: msg("toast_prompt_empty") || msg("popup_warn_empty") || "Please enter a prompt.",
   toastNoService: msg("toast_no_service") || "Please select at least one service.",
-  toastSelectorFailed: (name) => msg("toast_selector_failed", [String(name)]) || `${name} selector was not found.`,
+  toastSelectorFailed: (name: string) => msg("toast_selector_failed", [String(name)]) || `${name} selector was not found.`,
   historySortLatest: msg("popup_history_sort_latest") || "Latest",
   historySortOldest: msg("popup_history_sort_oldest") || "Oldest",
   historySortMostSuccess: msg("popup_history_sort_most_success") || "Most success",
@@ -222,7 +230,7 @@ export const t = {
   favoriteSortTitle: msg("popup_favorite_sort_title") || "Title",
   favoriteSortCreatedAt: msg("popup_favorite_sort_created_at") || "Created date",
   waitMultiplierLabel: msg("popup_wait_multiplier_label") || "Wait multiplier",
-  waitMultiplierValue: (value) => msg("popup_wait_multiplier_value", [String(Number(value).toFixed(1))]) || `${Number(value).toFixed(1)}x`,
+  waitMultiplierValue: (value: number) => msg("popup_wait_multiplier_value", [String(Number(value).toFixed(1))]) || `${Number(value).toFixed(1)}x`,
   resendModalTitle: msg("popup_resend_modal_title") || "Resend History Item",
   resendModalDesc: msg("popup_resend_modal_desc") || "Choose which services to resend this prompt to.",
   resendModalCancel: msg("popup_resend_modal_cancel") || "Cancel",
@@ -237,7 +245,7 @@ export const t = {
   importReportBuiltins: msg("popup_import_report_builtins") || "Built-in adjustments",
   importReportRejected: msg("popup_import_report_rejected") || "Rejected services",
   importReportRejectedEmpty: msg("popup_import_report_rejected_empty") || "No rejected services.",
-  importRejectReason: (reason) => msg(`popup_import_reject_${reason}`) || reason,
+  importRejectReason: (reason: string) => msg(`popup_import_reject_${reason}`) || reason,
   ariaSelected: msg("popup_aria_selected") || "selected",
   ariaNotSelected: msg("popup_aria_not_selected") || "not selected",
   reuseTabsLabel:
@@ -246,11 +254,11 @@ export const t = {
     msg("popup_reuse_tabs_desc_enabled") || "When no tab is chosen explicitly, the broadcaster reuses a matching open AI tab before opening a new one.",
   reuseTabsDescDisabled:
     msg("popup_reuse_tabs_desc_disabled") || "When no tab is chosen explicitly, the broadcaster always opens a fresh tab.",
-  openTabsTitle: (count) =>
+  openTabsTitle: (count: number) =>
     msg("popup_open_tabs_title", [String(count)]) || `${count} open tab${count === 1 ? "" : "s"}`,
   openTabsUseDefault:
     msg("popup_open_tabs_use_default") || "Use default behavior",
-  openTabsUseDefaultDetail: (modeLabel) =>
+  openTabsUseDefaultDetail: (modeLabel: string) =>
     msg("popup_open_tabs_use_default_detail", [String(modeLabel)]) || `Current setting: ${modeLabel}`,
   openTabsDefaultReuse:
     msg("popup_open_tabs_default_reuse") || "reuse a matching tab",
@@ -281,16 +289,19 @@ export const t = {
   },
 };
 
-export function getUnknownErrorText() {
+export function getUnknownErrorText(): string {
   return msg("popup_unknown_error");
 }
 
-export function buildImportSummaryText(summary, { short = false } = {}) {
+export function buildImportSummaryText(
+  summary: ImportSummary | null | undefined,
+  { short = false }: { short?: boolean } = {},
+): string {
   const acceptedCount = summary?.customSites?.acceptedIds?.length ?? 0;
   const rejectedCount = summary?.customSites?.rejected?.length ?? 0;
   const rewrittenCount = summary?.customSites?.rewrittenIds?.length ?? 0;
   const deniedCount = (summary?.customSites?.rejected ?? []).filter(
-    (entry) => entry?.reason === "permission_denied"
+    (entry) => entry?.reason === "permission_denied",
   ).length;
   const overrideAdjustedCount = summary?.builtInSiteOverrides?.adjustedIds?.length ?? 0;
   const overrideDroppedCount = summary?.builtInSiteOverrides?.droppedIds?.length ?? 0;
@@ -329,7 +340,9 @@ export function buildImportSummaryText(summary, { short = false } = {}) {
   return parts.join(", ");
 }
 
-export function buildServiceTestResultMessage(response) {
+export function buildServiceTestResultMessage(
+  response: ServiceTestRunResponse | null | undefined,
+): { message: string; isError: boolean } {
   if (!response?.ok) {
     if (response?.reason === "validation_failed") {
       return {
@@ -365,7 +378,7 @@ export function buildServiceTestResultMessage(response) {
     };
   }
 
-  const lines = [];
+  const lines: string[] = [];
   let isError = false;
 
   if (response.input.typeMatches === false) {
@@ -376,7 +389,7 @@ export function buildServiceTestResultMessage(response) {
         : `⚠ Input found but type mismatched. Actual: ${response.input.actualType}, expected: ${response.input.expectedType}`
     );
   } else {
-    lines.push(`✅ ${t.serviceTestSuccess(response.input.actualType)}`);
+    lines.push(`✅ ${t.serviceTestSuccess(response.input.actualType ?? "")}`);
   }
 
   if (response?.submit?.status === "ok") {

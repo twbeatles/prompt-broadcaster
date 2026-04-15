@@ -1,7 +1,6 @@
-// @ts-nocheck
 import { PALETTE_SCRIPT_PATH } from "../app/constants";
 
-async function ensurePaletteScript(tabId) {
+async function ensurePaletteScript(tabId: number): Promise<boolean> {
   try {
     await chrome.tabs.sendMessage(tabId, { action: "quickPalette:ping" });
     return true;
@@ -22,7 +21,15 @@ async function ensurePaletteScript(tabId) {
   }
 }
 
-export function createQuickPaletteCommand(deps) {
+interface QuickPaletteCommandDeps {
+  getPreferredNormalActiveTab: () => Promise<chrome.tabs.Tab | null>;
+  isInjectableTabUrl: (url: string) => boolean;
+  openPopupWithPrompt: (prompt?: string) => Promise<void>;
+}
+
+export function createQuickPaletteCommand(
+  deps: QuickPaletteCommandDeps,
+) {
   const {
     getPreferredNormalActiveTab,
     isInjectableTabUrl,
@@ -30,7 +37,7 @@ export function createQuickPaletteCommand(deps) {
   } = deps;
 
   return {
-    async handleQuickPaletteCommand() {
+    async handleQuickPaletteCommand(): Promise<void> {
       try {
         const activeTab = await getPreferredNormalActiveTab();
         if (!activeTab?.id || !isInjectableTabUrl(activeTab.url ?? "")) {

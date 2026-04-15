@@ -1,4 +1,3 @@
-// @ts-nocheck
 export const INJECTOR_SCRIPT_PATH = "content/injector.js";
 export const PALETTE_SCRIPT_PATH = "content/palette.js";
 export const SELECTOR_CHECKER_SCRIPT_PATH = "content/selector_checker.js";

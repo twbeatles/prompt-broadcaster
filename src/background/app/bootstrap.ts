@@ -1,4 +1,3 @@
-// @ts-nocheck
 import {
   pickBroadcastTargetPrompt,
 } from "../../shared/broadcast/resolution";
@@ -34,6 +33,7 @@ import {
   recordStrategyAttempts,
   resetPersistedExtensionState,
   setLastBroadcast,
+  setOnboardingCompleted,
   getStrategyStats,
   setPopupFavoriteIntent,
 } from "../../shared/runtime-state";
@@ -91,28 +91,118 @@ import { createSelectionRuntime } from "../selection/runtime";
 import { createContextMenuController } from "../context-menu";
 import { createFavoriteWorkflow } from "../popup/favorites-workflow";
 import { registerRuntimeMessageRouter } from "../messages/router";
+import { createBackgroundSessionStore } from "../session/store";
+import { createBackgroundTabsRuntime } from "../tabs/runtime";
+import { buildRuntimeHandlers } from "../runtime/handlers";
+import type {
+  ActiveTabContextResponse,
+  BroadcastCounterResponse,
+  BroadcastMessage,
+  BroadcastResponse,
+  BroadcastSiteTargetMessage,
+  CancelBroadcastMessage,
+  CancelBroadcastResponse,
+  GenericOkResponse,
+  GetOpenAiTabsMessage,
+  GetOpenAiTabsResponse,
+  SelectorCheckInitMessage,
+  SelectorCheckInitResponse,
+  SelectorCheckReportMessage,
+  SelectorCheckReportResponse,
+  ServiceTestRunMessage,
+  ServiceTestRunResponse,
+} from "../../shared/types/messages";
+import type {
+  FavoriteExecutionTrigger,
+  LastBroadcastSummary,
+  PendingBroadcastRecord,
+  PendingInjectionRecord,
+  ReusableTabSurfaceSnapshot,
+  RuntimeInjectionSiteConfig,
+  RuntimeSite,
+  SiteInjectionResult,
+} from "../../shared/types/models";
+import type { BackgroundBroadcastWaiter } from "../../shared/types/background";
 
 const DEFAULT_SUBMIT_BUTTON_WAIT_TIMEOUT_MS = 5000;
 const DEFAULT_SUBMIT_RETRY_COUNT = 1;
 
-const activeInjections = new Set();
-const queuedInjectionTabIds = new Set();
-const broadcastCompletionWaiters = new Map();
-const selectionCache = new Map();
-const suppressedCompletedBroadcastIds = new Set();
-const backgroundSessionState = {
-  loaded: false,
-  pendingInjections: {},
-  pendingBroadcasts: {},
-  pendingSelectorChecks: {},
-  selectorAlerts: {},
-};
-let lastNormalWindowId = null;
-let lastNormalTabId = null;
-let contextMenuRefreshChain = Promise.resolve();
-let injectionProcessChain = Promise.resolve();
-let backgroundStateMutationChain = Promise.resolve();
-let runtimeSiteLookupCache = null;
+interface ResolvedBroadcastTarget {
+  site: RuntimeInjectionSiteConfig;
+  targetTabId: number | null;
+  forceNewTab: boolean;
+  promptOverride?: string;
+  resolvedPrompt?: string;
+}
+
+interface ExecuteScriptAttempt {
+  name: string;
+  success: boolean;
+}
+
+interface ExecuteScriptInjectionResult {
+  status: string;
+  error?: string;
+  selector?: string;
+  strategy?: string;
+  inputType?: string;
+  elapsedMs?: number;
+  attempts?: ExecuteScriptAttempt[];
+}
+
+interface ServiceTestProbeSuccess {
+  ok: true;
+  input: {
+    found: boolean;
+    selector?: string;
+    actualType?: string;
+    expectedType?: string;
+    typeMatches?: boolean;
+  };
+  submit: {
+    status: string;
+    method?: string;
+    selector?: string;
+  };
+}
+
+interface ServiceTestProbeFailure {
+  ok: false;
+  error: string;
+}
+
+type ServiceTestProbeResult = ServiceTestProbeSuccess | ServiceTestProbeFailure;
+
+type PreferredInjectableNormalTabResult =
+  | { ok: true; tab: chrome.tabs.Tab; reason?: undefined }
+  | { ok: false; reason: string; tab?: chrome.tabs.Tab | null };
+
+type InjectPromptFn =
+  (prompt: string, config: any) => Promise<ExecuteScriptInjectionResult> | ExecuteScriptInjectionResult;
+type SubmitPromptFn =
+  (config: any) => Promise<ExecuteScriptInjectionResult> | ExecuteScriptInjectionResult;
+
+declare global {
+  var __aiPromptBroadcasterInjectPrompt: InjectPromptFn | undefined;
+  var __aiPromptBroadcasterSubmitPrompt: SubmitPromptFn | undefined;
+
+  interface HTMLElement {
+    __lexicalEditor?: {
+      parseEditorState: (state: string) => unknown;
+      setEditorState: (state: unknown) => void;
+      focus?: () => void;
+    };
+  }
+}
+
+const activeInjections = new Set<number>();
+const queuedInjectionTabIds = new Set<number>();
+const broadcastCompletionWaiters = new Map<string, BackgroundBroadcastWaiter<LastBroadcastSummary>>();
+const selectionCache = new Map<number, string>();
+const suppressedCompletedBroadcastIds = new Set<string>();
+let contextMenuRefreshChain: Promise<void> = Promise.resolve();
+let injectionProcessChain: Promise<void> = Promise.resolve();
+let runtimeSiteLookupCache: Map<string, RuntimeSite> | null = null;
 
 const SCHEDULED_VARIABLE_BLOCKLIST = new Set([
   SYSTEM_TEMPLATE_VARIABLES.url,
@@ -121,34 +211,34 @@ const SCHEDULED_VARIABLE_BLOCKLIST = new Set([
   SYSTEM_TEMPLATE_VARIABLES.clipboard,
 ]);
 
-function getI18nMessage(key, substitutions) {
+function getI18nMessage(key: string, substitutions?: string[]): string {
   return chrome.i18n.getMessage(key, substitutions) || "";
 }
 
-function nowIso() {
+function nowIso(): string {
   return new Date().toISOString();
 }
 
-function sleep(ms) {
+function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, Number.isFinite(ms) ? ms : 0);
   });
 }
 
-function clonePlainValue(value) {
+function clonePlainValue<T>(value: T): T {
   return value ? JSON.parse(JSON.stringify(value)) : value;
 }
 
-function cacheRuntimeSites(sites) {
+function cacheRuntimeSites(sites: RuntimeSite[]): Map<string, RuntimeSite> {
   runtimeSiteLookupCache = new Map(
     (Array.isArray(sites) ? sites : [])
       .filter((site) => typeof site?.id === "string" && site.id.trim())
       .map((site) => [site.id.trim(), site])
   );
-  return runtimeSiteLookupCache;
+  return runtimeSiteLookupCache ?? new Map<string, RuntimeSite>();
 }
 
-async function getRuntimeSiteLookup(forceRefresh = false) {
+async function getRuntimeSiteLookup(forceRefresh = false): Promise<Map<string, RuntimeSite>> {
   if (!runtimeSiteLookupCache || forceRefresh) {
     try {
       cacheRuntimeSites(await getRuntimeSites());
@@ -157,20 +247,24 @@ async function getRuntimeSiteLookup(forceRefresh = false) {
     }
   }
 
-  return runtimeSiteLookupCache;
+  return runtimeSiteLookupCache ?? new Map<string, RuntimeSite>();
 }
 
-function normalizePrompt(value) {
+function normalizePrompt(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
-function buildChainRunId() {
+function buildChainRunId(): string {
   return typeof crypto?.randomUUID === "function"
     ? crypto.randomUUID()
     : `chain-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function registerBroadcastCompletionWaiter(broadcastId) {
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function registerBroadcastCompletionWaiter(broadcastId: string): Promise<LastBroadcastSummary | null> {
   const normalizedBroadcastId =
     typeof broadcastId === "string" ? broadcastId.trim() : "";
   if (!normalizedBroadcastId) {
@@ -182,20 +276,25 @@ function registerBroadcastCompletionWaiter(broadcastId) {
     return existing.promise;
   }
 
-  let resolvePromise = null;
-  const promise = new Promise((resolve) => {
+  let resolvePromise: ((summary: LastBroadcastSummary | null) => void) | null = null;
+  const promise = new Promise<LastBroadcastSummary | null>((resolve) => {
     resolvePromise = resolve;
   });
 
-  broadcastCompletionWaiters.set(normalizedBroadcastId, {
-    promise,
-    resolve: resolvePromise,
-  });
+  if (resolvePromise) {
+    broadcastCompletionWaiters.set(normalizedBroadcastId, {
+      promise,
+      resolve: resolvePromise,
+    });
+  }
 
   return promise;
 }
 
-function resolveBroadcastCompletionWaiter(broadcastId, summary = null) {
+function resolveBroadcastCompletionWaiter(
+  broadcastId: string,
+  summary: LastBroadcastSummary | null = null,
+): void {
   const normalizedBroadcastId =
     typeof broadcastId === "string" ? broadcastId.trim() : "";
   if (!normalizedBroadcastId) {
@@ -211,150 +310,51 @@ function resolveBroadcastCompletionWaiter(broadcastId, summary = null) {
   broadcastCompletionWaiters.delete(normalizedBroadcastId);
 }
 
-function getBroadcastTriggerLabel(trigger) {
+function getBroadcastTriggerLabel(trigger: unknown): FavoriteExecutionTrigger {
   const normalized = typeof trigger === "string" ? trigger.trim() : "";
-  return normalized || "popup";
+  return normalized === "scheduled"
+    || normalized === "palette"
+    || normalized === "options"
+    ? normalized
+    : "popup";
 }
 
-async function rememberNormalTab(tab) {
-  if (!tab?.id || !Number.isFinite(tab.windowId)) {
-    return null;
-  }
+const backgroundSessionStore = createBackgroundSessionStore();
+const {
+  mutate: queueBackgroundStateMutation,
+  waitForIdle: waitForBackgroundStateSettled,
+  getPendingInjections,
+  setPendingInjections,
+  getPendingBroadcasts,
+  setPendingBroadcasts,
+  getSelectorAlerts,
+  setSelectorAlerts,
+  clearPendingSelectorChecksForSiteId,
+  registerPendingSelectorCheckReport,
+  updatePendingInjection,
+  addPendingInjection,
+  removePendingInjection,
+} = backgroundSessionStore;
 
-  try {
-    const windowInfo = await chrome.windows.get(tab.windowId).catch(() => null);
-    if (windowInfo?.type !== "normal") {
-      return null;
-    }
+const backgroundTabsRuntime = createBackgroundTabsRuntime({
+  getRuntimeSites,
+  isInjectableTabUrl,
+  isSameSiteOrigin,
+  isReusableTabForSite,
+});
+const {
+  rememberNormalTab,
+  getPreferredNormalWindowId,
+  getPreferredNormalActiveTab,
+  getFocusedTabContext,
+  waitForTabInteractionReady,
+  restoreFocusedTabContext,
+  getOpenAiTabsForWindow,
+  clearRememberedTab,
+  resetRememberedState,
+} = backgroundTabsRuntime;
 
-    lastNormalWindowId = windowInfo.id;
-    lastNormalTabId = tab.id;
-    return tab;
-  } catch (_error) {
-    return null;
-  }
-}
-
-async function getPreferredNormalActiveTab(preferredWindowId = null) {
-  try {
-    const [lastFocusedTab] = await chrome.tabs.query({
-      active: true,
-      lastFocusedWindow: true,
-    });
-    const rememberedLastFocused = await rememberNormalTab(lastFocusedTab);
-    if (rememberedLastFocused) {
-      return rememberedLastFocused;
-    }
-  } catch (_error) {
-    // Fall through to additional normal-window strategies.
-  }
-
-  const targetWindowId = await getPreferredNormalWindowId(preferredWindowId);
-  if (Number.isFinite(targetWindowId)) {
-    try {
-      const [activeTab] = await chrome.tabs.query({
-        active: true,
-        windowId: targetWindowId,
-      });
-      const rememberedTargetTab = await rememberNormalTab(activeTab);
-      if (rememberedTargetTab) {
-        return rememberedTargetTab;
-      }
-    } catch (_error) {
-      // Fall through to tab-id/window-id hints below.
-    }
-  }
-
-  if (Number.isFinite(lastNormalTabId)) {
-    try {
-      const hintTab = await chrome.tabs.get(lastNormalTabId);
-      const rememberedHintTab = await rememberNormalTab(hintTab);
-      if (rememberedHintTab) {
-        return rememberedHintTab;
-      }
-    } catch (_error) {
-      lastNormalTabId = null;
-    }
-  }
-
-  if (Number.isFinite(lastNormalWindowId)) {
-    try {
-      const [hintWindowTab] = await chrome.tabs.query({
-        active: true,
-        windowId: lastNormalWindowId,
-      });
-      const rememberedHintWindowTab = await rememberNormalTab(hintWindowTab);
-      if (rememberedHintWindowTab) {
-        return rememberedHintWindowTab;
-      }
-    } catch (_error) {
-      lastNormalWindowId = null;
-    }
-  }
-
-  return null;
-}
-
-async function getFocusedTabContext() {
-  try {
-    const activeTab = await getPreferredNormalActiveTab();
-
-    if (!activeTab?.id || !Number.isFinite(activeTab.windowId)) {
-      return null;
-    }
-
-    return {
-      tabId: activeTab.id,
-      windowId: activeTab.windowId,
-    };
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to read focused tab context.", error);
-    return null;
-  }
-}
-
-async function isTabLoadReady(tabId) {
-  try {
-    const [executionResult] = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: () => ({ readyState: document.readyState }),
-    });
-
-    const result = executionResult?.result ?? {};
-    return result.readyState === "interactive" || result.readyState === "complete";
-  } catch (_error) {
-    return false;
-  }
-}
-
-async function waitForTabInteractionReady(tabId, timeoutMs = TAB_LOAD_READY_TIMEOUT_MS) {
-  const deadline = Date.now() + Math.max(timeoutMs, 0);
-
-  while (Date.now() <= deadline) {
-    if (await isTabLoadReady(tabId)) {
-      return true;
-    }
-
-    await sleep(150);
-  }
-
-  return false;
-}
-
-async function restoreFocusedTabContext(context) {
-  if (!context?.tabId || !Number.isFinite(context.windowId)) {
-    return;
-  }
-
-  try {
-    await chrome.windows.update(context.windowId, { focused: true });
-    await chrome.tabs.update(context.tabId, { active: true });
-  } catch (_error) {
-    // Ignore restore failures when the original tab or window no longer exists.
-  }
-}
-
-function queuePendingInjection(tabId, tab) {
+function queuePendingInjection(tabId: number, tab: chrome.tabs.Tab): Promise<void> {
   if (!Number.isFinite(Number(tabId))) {
     return injectionProcessChain;
   }
@@ -384,13 +384,17 @@ function queuePendingInjection(tabId, tab) {
   return injectionProcessChain;
 }
 
-function getBroadcastAgeMs(record) {
+function getBroadcastAgeMs(record: PendingBroadcastRecord | null | undefined): number {
   const startedAtMs = Date.parse(record?.startedAt ?? "");
   return Number.isFinite(startedAtMs) ? Date.now() - startedAtMs : 0;
 }
 
-async function finalizeBroadcastSites(broadcastId, siteIds, status) {
-  let lastSummary = null;
+async function finalizeBroadcastSites(
+  broadcastId: string,
+  siteIds: string[],
+  status: string | SiteInjectionResult,
+): Promise<LastBroadcastSummary | null> {
+  let lastSummary: LastBroadcastSummary | null = null;
 
   for (const siteId of Array.isArray(siteIds) ? siteIds : []) {
     lastSummary = (await recordBroadcastSiteResult(broadcastId, siteId, status)) ?? lastSummary;
@@ -399,7 +403,7 @@ async function finalizeBroadcastSites(broadcastId, siteIds, status) {
   return lastSummary;
 }
 
-async function closeTabQuietly(tabId) {
+async function closeTabQuietly(tabId: number): Promise<void> {
   try {
     await chrome.tabs.remove(tabId);
   } catch (_error) {
@@ -407,7 +411,7 @@ async function closeTabQuietly(tabId) {
   }
 }
 
-async function restoreBroadcastFocus(record) {
+async function restoreBroadcastFocus(record: PendingBroadcastRecord | null | undefined): Promise<void> {
   if (!record) {
     return;
   }
@@ -418,158 +422,12 @@ async function restoreBroadcastFocus(record) {
   });
 }
 
-async function ensureBackgroundSessionStateLoaded() {
-  if (backgroundSessionState.loaded) {
-    return;
-  }
-
-  try {
-    const result = await chrome.storage.session.get([
-      PENDING_INJECTIONS_KEY,
-      PENDING_BROADCASTS_KEY,
-      PENDING_SELECTOR_CHECKS_KEY,
-      SELECTOR_ALERTS_KEY,
-    ]);
-    backgroundSessionState.pendingInjections = clonePlainValue(result[PENDING_INJECTIONS_KEY] ?? {}) ?? {};
-    backgroundSessionState.pendingBroadcasts = clonePlainValue(result[PENDING_BROADCASTS_KEY] ?? {}) ?? {};
-    backgroundSessionState.pendingSelectorChecks = clonePlainValue(result[PENDING_SELECTOR_CHECKS_KEY] ?? {}) ?? {};
-    backgroundSessionState.selectorAlerts = clonePlainValue(result[SELECTOR_ALERTS_KEY] ?? {}) ?? {};
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to initialize session-state cache.", error);
-    backgroundSessionState.pendingInjections = {};
-    backgroundSessionState.pendingBroadcasts = {};
-    backgroundSessionState.pendingSelectorChecks = {};
-    backgroundSessionState.selectorAlerts = {};
-  }
-
-  backgroundSessionState.loaded = true;
-}
-
-async function persistBackgroundSessionState() {
-  await chrome.storage.session.set({
-    [PENDING_INJECTIONS_KEY]: backgroundSessionState.pendingInjections,
-    [PENDING_BROADCASTS_KEY]: backgroundSessionState.pendingBroadcasts,
-    [PENDING_SELECTOR_CHECKS_KEY]: backgroundSessionState.pendingSelectorChecks,
-    [SELECTOR_ALERTS_KEY]: backgroundSessionState.selectorAlerts,
-  });
-}
-
-function queueBackgroundStateMutation(mutator) {
-  const runMutation = async () => {
-    await ensureBackgroundSessionStateLoaded();
-    const result = await mutator(backgroundSessionState);
-    await persistBackgroundSessionState();
-    return result;
-  };
-
-  const resultPromise = backgroundStateMutationChain.then(runMutation, runMutation);
-  backgroundStateMutationChain = resultPromise.then(() => undefined, () => undefined);
-  return resultPromise;
-}
-
-async function waitForBackgroundStateSettled() {
-  await backgroundStateMutationChain;
-}
-
-async function getPendingInjections() {
-  await ensureBackgroundSessionStateLoaded();
-  return clonePlainValue(backgroundSessionState.pendingInjections) ?? {};
-}
-
-async function setPendingInjections(value) {
-  return queueBackgroundStateMutation((state) => {
-    state.pendingInjections = clonePlainValue(value) ?? {};
-    return clonePlainValue(state.pendingInjections) ?? {};
-  });
-}
-
-async function getPendingBroadcasts() {
-  await ensureBackgroundSessionStateLoaded();
-  return clonePlainValue(backgroundSessionState.pendingBroadcasts) ?? {};
-}
-
-async function setPendingBroadcasts(value) {
-  return queueBackgroundStateMutation((state) => {
-    state.pendingBroadcasts = clonePlainValue(value) ?? {};
-    return clonePlainValue(state.pendingBroadcasts) ?? {};
-  });
-}
-
-async function getSelectorAlerts() {
-  await ensureBackgroundSessionStateLoaded();
-  return clonePlainValue(backgroundSessionState.selectorAlerts) ?? {};
-}
-
-async function setSelectorAlerts(value) {
-  return queueBackgroundStateMutation((state) => {
-    state.selectorAlerts = clonePlainValue(value) ?? {};
-    return clonePlainValue(state.selectorAlerts) ?? {};
-  });
-}
-
-async function clearPendingSelectorChecksForSiteId(serviceId) {
-  if (!(typeof serviceId === "string" && serviceId.trim())) {
-    return {};
-  }
-
-  return queueBackgroundStateMutation((state) => {
-    state.pendingSelectorChecks = clearPendingSelectorChecksForService(
-      state.pendingSelectorChecks,
-      serviceId
-    );
-    return clonePlainValue(state.pendingSelectorChecks) ?? {};
-  });
-}
-
-async function registerPendingSelectorCheckReport(report) {
-  return queueBackgroundStateMutation((state) => {
-    const result = registerPendingSelectorCheck(
-      state.pendingSelectorChecks,
-      report
-    );
-    state.pendingSelectorChecks = result.next;
-    return clonePlainValue(result) ?? result;
-  });
-}
-
-async function updatePendingInjection(tabId, updater) {
-  return queueBackgroundStateMutation((state) => {
-    const pending = state.pendingInjections ?? {};
-    const current = pending[String(tabId)];
-    const nextValue = typeof updater === "function" ? updater(clonePlainValue(current) ?? current) : updater;
-
-    if (nextValue) {
-      pending[String(tabId)] = nextValue;
-    } else {
-      delete pending[String(tabId)];
-    }
-
-    state.pendingInjections = pending;
-    return clonePlainValue(nextValue) ?? null;
-  });
-}
-
-async function addPendingInjection(tabId, payload) {
-  return updatePendingInjection(tabId, {
-    ...payload,
-    tabId,
-    createdAt: Number(payload?.createdAt) || Date.now(),
-    injected: Boolean(payload?.injected),
-    status: payload?.status || "pending",
-    closeOnCancel: payload?.closeOnCancel !== false,
-  });
-}
-
-async function removePendingInjection(tabId) {
-  await updatePendingInjection(tabId, null);
-}
-
-async function getSiteById(siteId) {
+async function getSiteById(siteId: string): Promise<RuntimeSite | null> {
   const siteLookup = await getRuntimeSiteLookup();
   return siteLookup.get(siteId) ?? null;
 }
 
-async function getSiteForUrl(urlString) {
+async function getSiteForUrl(urlString: string): Promise<RuntimeSite | null> {
   try {
     const url = new URL(urlString);
     const sites = [...(await getRuntimeSiteLookup()).values()];
@@ -587,23 +445,25 @@ async function getSiteForUrl(urlString) {
   }
 }
 
-function normalizeTargetTabId(value) {
+function normalizeTargetTabId(value: unknown): number | null {
   const numericValue = Number(value);
   return Number.isFinite(numericValue) ? numericValue : null;
 }
 
-async function resolveSelectedTargets(siteRefs) {
+async function resolveSelectedTargets(
+  siteRefs: Array<string | BroadcastSiteTargetMessage>,
+): Promise<ResolvedBroadcastTarget[]> {
   const runtimeSites = await getRuntimeSites();
   cacheRuntimeSites(runtimeSites);
-  const resolvedTargets = [];
-  const seenIds = new Set();
+  const resolvedTargets: ResolvedBroadcastTarget[] = [];
+  const seenIds = new Set<string>();
 
   for (const siteRef of Array.isArray(siteRefs) ? siteRefs : []) {
     let resolvedSite = null;
     let targetTabId = null;
     let forceNewTab = false;
-    let promptOverride = null;
-    let resolvedPrompt = null;
+    let promptOverride: string | undefined;
+    let resolvedPrompt: string | undefined;
 
     if (typeof siteRef === "string") {
       resolvedSite = runtimeSites.find((site) => site.id === siteRef) ?? null;
@@ -622,11 +482,11 @@ async function resolveSelectedTargets(siteRefs) {
       promptOverride =
         typeof siteRef.promptOverride === "string" && siteRef.promptOverride.trim()
           ? siteRef.promptOverride.trim()
-          : null;
+          : undefined;
       resolvedPrompt =
         typeof siteRef.resolvedPrompt === "string"
           ? siteRef.resolvedPrompt
-          : null;
+          : undefined;
     }
 
     if (!resolvedSite || !resolvedSite.id || seenIds.has(resolvedSite.id)) {
@@ -646,7 +506,7 @@ async function resolveSelectedTargets(siteRefs) {
   return resolvedTargets;
 }
 
-function isInjectableTabUrl(urlString) {
+function isInjectableTabUrl(urlString: string): boolean {
   try {
     const url = new URL(urlString);
     return url.protocol === "http:" || url.protocol === "https:";
@@ -655,25 +515,26 @@ function isInjectableTabUrl(urlString) {
   }
 }
 
-function getAllowedSiteHostnames(site) {
+function getAllowedSiteHostnames(site: Partial<RuntimeSite> | null | undefined): Set<string> {
+  const siteUrl = typeof site?.url === "string" ? site.url : "";
   return new Set(
     [
       site?.hostname,
       ...(Array.isArray(site?.hostnameAliases) ? site.hostnameAliases : []),
-      isInjectableTabUrl(site?.url ?? "") ? new URL(site.url).hostname : "",
+      isInjectableTabUrl(siteUrl) ? new URL(siteUrl).hostname : "",
     ]
-      .filter((entry) => typeof entry === "string" && entry.trim())
+      .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
       .map((entry) => entry.trim().toLowerCase())
   );
 }
 
-function getSitePermissionPatterns(site) {
+function getSitePermissionPatterns(site: Partial<RuntimeSite> | null | undefined): string[] {
   return Array.isArray(site?.permissionPatterns)
     ? site.permissionPatterns.filter((pattern) => typeof pattern === "string" && pattern.trim())
     : [];
 }
 
-async function runReusableTabPreflight(tabId, site) {
+async function runReusableTabPreflight(tabId: number, site: RuntimeSite): Promise<boolean> {
   try {
     const inputSelectors = normalizeSelectorEntries([
       site?.inputSelector,
@@ -688,14 +549,14 @@ async function runReusableTabPreflight(tabId, site) {
     const [result] = await chrome.scripting.executeScript({
       target: { tabId },
       func: ({ nextInputSelectors, nextAuthSelectors, nextSubmitSelectors }) => {
-        function isElementVisible(element) {
+        function isElementVisible(element: Element): boolean {
           if (!(element instanceof HTMLElement) && !(element instanceof SVGElement)) {
             return true;
           }
 
           const style = window.getComputedStyle(element);
           if (
-            element.hidden ||
+            (element instanceof HTMLElement && element.hidden) ||
             element.getAttribute("hidden") !== null ||
             element.getAttribute("aria-hidden") === "true" ||
             style.display === "none" ||
@@ -708,7 +569,7 @@ async function runReusableTabPreflight(tabId, site) {
           return element.getClientRects().length > 0;
         }
 
-        function isEditableElement(element) {
+        function isEditableElement(element: Element): boolean {
           if (element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement) {
             return !element.readOnly;
           }
@@ -716,7 +577,12 @@ async function runReusableTabPreflight(tabId, site) {
           return element instanceof HTMLElement ? element.isContentEditable : false;
         }
 
-        function collectElementsDeep(selector, root, matches, seen) {
+        function collectElementsDeep(
+          selector: string,
+          root: Document | ShadowRoot,
+          matches: Element[],
+          seen: Set<Element>,
+        ): void {
           if (typeof root.querySelectorAll === "function") {
             for (const element of Array.from(root.querySelectorAll(selector))) {
               if (!seen.has(element)) {
@@ -727,19 +593,19 @@ async function runReusableTabPreflight(tabId, site) {
           }
 
           const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
-          let current = walker.currentNode;
+          let current: Node | null = walker.currentNode;
           while (current) {
-            if (current.shadowRoot) {
+            if (current instanceof Element && current.shadowRoot) {
               collectElementsDeep(selector, current.shadowRoot, matches, seen);
             }
             current = walker.nextNode();
           }
         }
 
-        function findDeep(selectors, { editableOnly = false } = {}) {
+        function findDeep(selectors: string[], { editableOnly = false }: { editableOnly?: boolean } = {}): boolean {
           for (const selector of selectors) {
             try {
-              const matches = [];
+              const matches: Element[] = [];
               collectElementsDeep(selector, document, matches, new Set());
               const match = matches.find((element) =>
                 isElementVisible(element) && (!editableOnly || isEditableElement(element))
@@ -770,7 +636,7 @@ async function runReusableTabPreflight(tabId, site) {
       }],
     });
 
-    const snapshot = result?.result ?? {};
+    const snapshot = (result?.result ?? {}) as ReusableTabSurfaceSnapshot;
     return evaluateReusableTabSnapshot({
       pathname: snapshot.pathname,
       supportedRoutes: Array.isArray(site?.supportedRoutes) ? site.supportedRoutes : [],
@@ -784,19 +650,21 @@ async function runReusableTabPreflight(tabId, site) {
   }
 }
 
-async function isReusableTabForSite(tab, site) {
-  if (!Number.isFinite(tab?.id) || !isInjectableTabUrl(tab?.url ?? "")) {
+async function isReusableTabForSite(tab: chrome.tabs.Tab, site: RuntimeSite): Promise<boolean> {
+  const tabId = tab.id;
+  const tabUrl = typeof tab.url === "string" ? tab.url : "";
+  if (typeof tabId !== "number" || !isInjectableTabUrl(tabUrl)) {
     return false;
   }
 
-  if (!isSameSiteOrigin(tab.url, site)) {
+  if (!isSameSiteOrigin(tabUrl, site)) {
     return false;
   }
 
-  return runReusableTabPreflight(tab.id, site);
+  return runReusableTabPreflight(tabId, site);
 }
 
-async function isCustomSitePermissionGranted(site) {
+async function isCustomSitePermissionGranted(site: RuntimeSite): Promise<boolean> {
   const permissionPatterns = getSitePermissionPatterns(site);
   if (!site?.isCustom || permissionPatterns.length === 0) {
     return true;
@@ -815,7 +683,7 @@ async function isCustomSitePermissionGranted(site) {
   }
 }
 
-function scoreReusableTabForSite(tab, site) {
+function scoreReusableTabForSite(tab: chrome.tabs.Tab, site: RuntimeSite): number {
   const tabUrl = typeof tab?.url === "string" ? tab.url : "";
   const siteUrl = typeof site?.url === "string" ? site.url : "";
   const exactUrlMatch = Boolean(siteUrl && tabUrl.startsWith(siteUrl));
@@ -824,7 +692,10 @@ function scoreReusableTabForSite(tab, site) {
   return (exactUrlMatch ? 0 : 5) + activePenalty;
 }
 
-async function findReusableTabsForSites(sites, options = {}) {
+async function findReusableTabsForSites(
+  sites: RuntimeSite[],
+  options: { windowId?: number | null; excludeTabId?: number | null } = {},
+): Promise<Map<string, chrome.tabs.Tab>> {
   const windowId = Number(options?.windowId);
   if (!Number.isFinite(windowId)) {
     return new Map();
@@ -846,21 +717,23 @@ async function findReusableTabsForSites(sites, options = {}) {
       excludedTabIds.add(Number(options.excludeTabId));
     }
 
-    const reusableTabsBySiteId = new Map();
-    const usedTabIds = new Set();
+    const reusableTabsBySiteId = new Map<string, chrome.tabs.Tab>();
+    const usedTabIds = new Set<number>();
 
     for (const site of Array.isArray(sites) ? sites : []) {
       const candidates = tabs
         .filter((tab) => {
-          if (!Number.isFinite(tab?.id) || usedTabIds.has(tab.id) || excludedTabIds.has(tab.id)) {
+          const candidateId = tab.id;
+          const candidateUrl = typeof tab.url === "string" ? tab.url : "";
+          if (typeof candidateId !== "number" || usedTabIds.has(candidateId) || excludedTabIds.has(candidateId)) {
             return false;
           }
 
-          if (!isInjectableTabUrl(tab?.url ?? "")) {
+          if (!isInjectableTabUrl(candidateUrl)) {
             return false;
           }
 
-          return isSameSiteOrigin(tab.url, site);
+          return isSameSiteOrigin(candidateUrl, site);
         })
         .sort((left, right) => scoreReusableTabForSite(left, site) - scoreReusableTabForSite(right, site));
 
@@ -870,7 +743,9 @@ async function findReusableTabsForSites(sites, options = {}) {
         }
 
         reusableTabsBySiteId.set(site.id, candidate);
-        usedTabIds.add(candidate.id);
+        if (typeof candidate.id === "number") {
+          usedTabIds.add(candidate.id);
+        }
         break;
       }
     }
@@ -885,107 +760,9 @@ async function findReusableTabsForSites(sites, options = {}) {
   }
 }
 
-async function getPreferredNormalWindowId(preferredWindowId = null) {
-  const normalizedPreferredWindowId = Number(preferredWindowId);
-  if (Number.isFinite(normalizedPreferredWindowId)) {
-    try {
-      const preferredWindow = await chrome.windows.get(normalizedPreferredWindowId);
-      if (preferredWindow?.type === "normal") {
-        return preferredWindow.id;
-      }
-    } catch (_error) {
-      // Fall through to auto-discovery when the preferred window no longer exists.
-    }
-  }
-
-  try {
-    const [lastFocusedTab] = await chrome.tabs.query({
-      active: true,
-      lastFocusedWindow: true,
-    });
-
-    if (Number.isFinite(lastFocusedTab?.windowId)) {
-      const windowInfo = await chrome.windows.get(lastFocusedTab.windowId).catch(() => null);
-      if (windowInfo?.type === "normal") {
-        return windowInfo.id;
-      }
-    }
-  } catch (_error) {
-    // Fall back to the currently available normal windows below.
-  }
-
-  if (Number.isFinite(lastNormalWindowId)) {
-    try {
-      const rememberedWindow = await chrome.windows.get(lastNormalWindowId);
-      if (rememberedWindow?.type === "normal") {
-        return rememberedWindow.id;
-      }
-    } catch (_error) {
-      lastNormalWindowId = null;
-    }
-  }
-
-  try {
-    const windows = await chrome.windows.getAll({
-      windowTypes: ["normal"],
-    });
-    const focusedWindow = windows.find((windowInfo) => windowInfo?.focused && Number.isFinite(windowInfo?.id));
-    return focusedWindow?.id ?? windows.find((windowInfo) => Number.isFinite(windowInfo?.id))?.id ?? null;
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to resolve preferred normal window.", error);
-    return null;
-  }
-}
-
-async function getOpenAiTabsForWindow(windowId) {
-  const normalizedWindowId = Number(windowId);
-  if (!Number.isFinite(normalizedWindowId)) {
-    return [];
-  }
-
-  try {
-    const [runtimeSites, tabs] = await Promise.all([
-      getRuntimeSites(),
-      chrome.tabs.query({ windowId: normalizedWindowId }),
-    ]);
-
-    const openTabs = await Promise.all(tabs.map(async (tab) => {
-        if (!Number.isFinite(tab?.id) || !isInjectableTabUrl(tab?.url ?? "")) {
-          return null;
-        }
-
-        const site = runtimeSites.find((entry) => isSameSiteOrigin(tab.url, entry));
-        if (!site) {
-          return null;
-        }
-
-        if (!(await isReusableTabForSite(tab, site))) {
-          return null;
-        }
-
-        return {
-          siteId: site.id,
-          siteName: site.name,
-          tabId: tab.id,
-          title: typeof tab.title === "string" ? tab.title : "",
-          url: typeof tab.url === "string" ? tab.url : "",
-          active: Boolean(tab.active),
-          status: typeof tab.status === "string" ? tab.status : "",
-          windowId: normalizedWindowId,
-        };
-      }));
-
-    return openTabs.filter(Boolean);
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to collect open AI tabs.", {
-      windowId: normalizedWindowId,
-      error,
-    });
-    return [];
-  }
-}
-
-async function getExplicitReusableTabForTarget(target) {
+async function getExplicitReusableTabForTarget(
+  target: ResolvedBroadcastTarget,
+): Promise<chrome.tabs.Tab | null> {
   const targetTabId = Number(target?.targetTabId);
   if (!Number.isFinite(targetTabId)) {
     return null;
@@ -1063,10 +840,13 @@ const {
 });
 
 
-async function getPreferredInjectableNormalTab() {
+async function getPreferredInjectableNormalTab(): Promise<PreferredInjectableNormalTabResult> {
   const tab = await getPreferredNormalActiveTab();
   if (!tab?.id) {
-    return null;
+    return {
+      ok: false,
+      reason: "no_tab",
+    };
   }
 
   const tabUrl = typeof tab.url === "string" ? tab.url : "";
@@ -1084,20 +864,27 @@ async function getPreferredInjectableNormalTab() {
   };
 }
 
-async function runServiceTestOnTab(tabId, draft) {
+async function runServiceTestOnTab(
+  tabId: number,
+  draft: ServiceTestRunMessage["draft"],
+): Promise<ServiceTestProbeResult> {
   const probeText = "__apb_probe__";
   const submitRequirement = buildSubmitRequirement(draft);
   const [result] = await chrome.scripting.executeScript({
     target: { tabId },
-    func: async (siteDraft, nextProbeText, nextSubmitRequirement) => {
-      function isElementVisible(element) {
+    func: async (
+      siteDraft: Record<string, unknown>,
+      nextProbeText: string,
+      nextSubmitRequirement: string,
+    ) => {
+      function isElementVisible(element: Element): boolean {
         if (!(element instanceof HTMLElement) && !(element instanceof SVGElement)) {
           return true;
         }
 
         const style = window.getComputedStyle(element);
         if (
-          element.hidden ||
+          (element instanceof HTMLElement && element.hidden) ||
           element.getAttribute("hidden") !== null ||
           element.getAttribute("aria-hidden") === "true" ||
           style.display === "none" ||
@@ -1110,7 +897,12 @@ async function runServiceTestOnTab(tabId, draft) {
         return element.getClientRects().length > 0;
       }
 
-      function findElementsDeep(selector, root = document, seen = new Set(), matches = []) {
+      function findElementsDeep(
+        selector: string,
+        root: Document | ShadowRoot = document,
+        seen: Set<Element> = new Set<Element>(),
+        matches: Element[] = [],
+      ): Element[] {
         if (!selector || typeof selector !== "string") {
           return matches;
         }
@@ -1125,9 +917,9 @@ async function runServiceTestOnTab(tabId, draft) {
         }
 
         const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
-        let current = walker.currentNode;
+        let current: Node | null = walker.currentNode;
         while (current) {
-          if (current.shadowRoot) {
+          if (current instanceof Element && current.shadowRoot) {
             findElementsDeep(selector, current.shadowRoot, seen, matches);
           }
           current = walker.nextNode();
@@ -1136,7 +928,10 @@ async function runServiceTestOnTab(tabId, draft) {
         return matches;
       }
 
-      function findBestMatch(selectors, options = {}) {
+      function findBestMatch(
+        selectors: string[],
+        options: { visibleOnly?: boolean } = {},
+      ): { element: Element | null; selector: string } {
         for (const selector of selectors) {
           const matches = findElementsDeep(selector);
           const visible = options.visibleOnly ? matches.filter((element) => isElementVisible(element)) : matches;
@@ -1149,7 +944,7 @@ async function runServiceTestOnTab(tabId, draft) {
         return { element: null, selector: selectors[0] ?? "" };
       }
 
-      function detectInputType(element) {
+      function detectInputType(element: Element): string {
         if (element instanceof HTMLTextAreaElement) {
           return "textarea";
         }
@@ -1163,7 +958,7 @@ async function runServiceTestOnTab(tabId, draft) {
           : "";
       }
 
-      function highlightElement(element, color) {
+      function highlightElement(element: Element, color: string): void {
         if (!(element instanceof HTMLElement) && !(element instanceof SVGElement)) {
           return;
         }
@@ -1178,7 +973,9 @@ async function runServiceTestOnTab(tabId, draft) {
         }, 1800);
       }
 
-      function snapshotElementValue(element) {
+      function snapshotElementValue(
+        element: Element,
+      ): { type: "value"; value: string } | { type: "html"; html: string } | { type: "text"; text: string } {
         if (element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement) {
           return {
             type: "value",
@@ -1199,7 +996,10 @@ async function runServiceTestOnTab(tabId, draft) {
         };
       }
 
-      function restoreElementValue(element, snapshot) {
+      function restoreElementValue(
+        element: Element,
+        snapshot: ReturnType<typeof snapshotElementValue> | null,
+      ): void {
         if (!snapshot) {
           return;
         }
@@ -1208,7 +1008,7 @@ async function runServiceTestOnTab(tabId, draft) {
           element.value = snapshot.value ?? "";
         } else if (snapshot.type === "html" && element instanceof HTMLElement) {
           element.innerHTML = snapshot.html ?? "";
-        } else if (element instanceof HTMLElement) {
+        } else if (snapshot.type === "text" && element instanceof HTMLElement) {
           element.textContent = snapshot.text ?? "";
         }
 
@@ -1216,7 +1016,7 @@ async function runServiceTestOnTab(tabId, draft) {
         element.dispatchEvent(new Event("change", { bubbles: true }));
       }
 
-      function applyProbeText(element, probeText) {
+      function applyProbeText(element: Element, probeText: string): void {
         if (element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement) {
           element.focus();
           element.value = probeText;
@@ -1231,14 +1031,17 @@ async function runServiceTestOnTab(tabId, draft) {
         element.dispatchEvent(new Event("change", { bubbles: true }));
       }
 
-      async function waitForVisibleSelector(selector, timeoutMs = 1800) {
+      async function waitForVisibleSelector(
+        selector: string,
+        timeoutMs = 1800,
+      ): Promise<{ element: Element | null; selector: string }> {
         const startedAt = Date.now();
         while (Date.now() - startedAt <= timeoutMs) {
           const match = findBestMatch([selector], { visibleOnly: true });
           if (match.element) {
             return match;
           }
-          await new Promise((resolve) => window.setTimeout(resolve, 120));
+          await new Promise<void>((resolve) => window.setTimeout(resolve, 120));
         }
 
         return findBestMatch([selector], { visibleOnly: true });
@@ -1269,13 +1072,13 @@ async function runServiceTestOnTab(tabId, draft) {
         highlightElement(inputMatch.element, "#facc15");
         const actualInputType = detectInputType(inputMatch.element);
         const inputTypeMatches = actualInputType === String(siteDraft.inputType ?? "");
-        const response = {
+        const response: ServiceTestProbeSuccess = {
           ok: true,
           input: {
             found: true,
             selector: inputMatch.selector,
             actualType: actualInputType,
-            expectedType: siteDraft.inputType ?? "",
+            expectedType: String(siteDraft.inputType ?? ""),
             typeMatches: inputTypeMatches,
           },
           submit: {
@@ -1314,14 +1117,14 @@ async function runServiceTestOnTab(tabId, draft) {
       } catch (error) {
         return {
           ok: false,
-          error: error?.message ?? String(error),
+          error: error instanceof Error ? error.message : String(error),
         };
       }
     },
     args: [draft, probeText, submitRequirement],
   });
 
-  return result?.result ?? {
+  return (result?.result as ServiceTestProbeResult | undefined) ?? {
     ok: false,
     error: "Selector test returned no result.",
   };
@@ -1335,7 +1138,7 @@ async function clearBadge() {
   }
 }
 
-async function applyBadgeForBroadcast(summary) {
+async function applyBadgeForBroadcast(summary: LastBroadcastSummary | null): Promise<void> {
   try {
     if (!summary || summary.status === "idle") {
       await clearBadge();
@@ -1364,12 +1167,16 @@ async function applyBadgeForBroadcast(summary) {
   }
 }
 
-async function syncLastBroadcast(summary) {
+async function syncLastBroadcast(summary: LastBroadcastSummary | null): Promise<void> {
   await setLastBroadcast(summary);
   await applyBadgeForBroadcast(summary);
 }
 
-async function createPendingBroadcast(prompt, targets, metadata = {}) {
+async function createPendingBroadcast(
+  prompt: string,
+  targets: ResolvedBroadcastTarget[],
+  metadata: Record<string, unknown> = {},
+): Promise<PendingBroadcastRecord> {
   const pendingInjections = await getPendingInjections();
   if (Object.keys(pendingInjections).length > 0) {
     console.warn("[AI Prompt Broadcaster] Starting a new broadcast while pending tabs still exist.", pendingInjections);
@@ -1382,7 +1189,7 @@ async function createPendingBroadcast(prompt, targets, metadata = {}) {
       ? crypto.randomUUID()
       : `broadcast-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-  const record = {
+  const record: PendingBroadcastRecord = {
     id: broadcastId,
     prompt,
     siteIds: sites.map((site) => site.id),
@@ -1422,7 +1229,14 @@ async function createPendingBroadcast(prompt, targets, metadata = {}) {
   return record;
 }
 
-async function maybeCreateSelectorNotification(report) {
+async function maybeCreateSelectorNotification(
+  report: {
+    siteId: string;
+    siteName: string;
+    pageUrl: string;
+    missing: Array<{ field: string; selector: string }>;
+  },
+): Promise<void> {
   try {
     const settings = await getAppSettings();
     if (!settings.desktopNotifications) {
@@ -1464,7 +1278,7 @@ async function maybeCreateSelectorNotification(report) {
   }
 }
 
-async function maybeCreateBroadcastNotification(summary) {
+async function maybeCreateBroadcastNotification(summary: LastBroadcastSummary): Promise<void> {
   try {
     const settings = await getAppSettings();
     if (!settings.desktopNotifications) {
@@ -1513,7 +1327,11 @@ async function maybeCreateBroadcastNotification(summary) {
   }
 }
 
-async function recordBroadcastSiteResult(broadcastId, siteId, resultInput) {
+async function recordBroadcastSiteResult(
+  broadcastId: string,
+  siteId: string,
+  resultInput: string | SiteInjectionResult,
+): Promise<LastBroadcastSummary | null> {
   const result = typeof resultInput === "string"
     ? buildSiteResult(resultInput)
     : buildSiteResult(resultInput?.code ?? resultInput, resultInput ?? {});
@@ -1623,7 +1441,10 @@ async function recordBroadcastSiteResult(broadcastId, siteId, resultInput) {
   }
 }
 
-async function cancelBroadcast(broadcastId, reason = "cancelled") {
+async function cancelBroadcast(
+  broadcastId: string,
+  reason = "cancelled",
+): Promise<LastBroadcastSummary | null> {
   const normalizedBroadcastId = typeof broadcastId === "string" ? broadcastId.trim() : "";
   if (!normalizedBroadcastId) {
     return null;
@@ -1637,7 +1458,7 @@ async function cancelBroadcast(broadcastId, reason = "cancelled") {
     job?.broadcastId === normalizedBroadcastId
   );
 
-  const pendingSiteIds = new Set();
+  const pendingSiteIds = new Set<string>();
   const tabsToClose = new Set(
     Array.isArray(recordBeforeCancel?.openedTabIds)
       ? recordBeforeCancel.openedTabIds
@@ -1659,7 +1480,7 @@ async function cancelBroadcast(broadcastId, reason = "cancelled") {
     }
   }
 
-  let lastSummary = null;
+  let lastSummary: LastBroadcastSummary | null = null;
   lastSummary = (await finalizeBroadcastSites(
     normalizedBroadcastId,
     [...pendingSiteIds],
@@ -1700,11 +1521,11 @@ async function cancelBroadcast(broadcastId, reason = "cancelled") {
   return summary;
 }
 
-async function reconcilePendingBroadcasts() {
+async function reconcilePendingBroadcasts(): Promise<void> {
   const pendingBroadcasts = await getPendingBroadcasts();
   const pendingInjections = await getPendingInjections();
 
-  const jobsByBroadcastId = new Map();
+  const jobsByBroadcastId = new Map<string, Array<[string, PendingInjectionRecord]>>();
   for (const [tabIdKey, job] of Object.entries(pendingInjections)) {
     if (!job?.broadcastId) {
       continue;
@@ -1742,7 +1563,12 @@ async function reconcilePendingBroadcasts() {
   }
 }
 
-async function injectIntoTab(tabId, prompt, site, runtimeOverrides = {}) {
+async function injectIntoTab(
+  tabId: number,
+  prompt: string,
+  site: RuntimeSite,
+  runtimeOverrides: Record<string, unknown> = {},
+): Promise<ExecuteScriptInjectionResult | null> {
   const config = buildInjectionConfig(site, runtimeOverrides);
 
   if (site?.id === "perplexity") {
@@ -1753,24 +1579,28 @@ async function injectIntoTab(tabId, prompt, site, runtimeOverrides = {}) {
     const [executionResult] = await chrome.scripting.executeScript({
       target: { tabId },
       world: "MAIN",
-      func: async (injectedPrompt, injectedConfig, injectedSelectors) => {
-        const sleep = (ms) => new Promise((resolve) => window.setTimeout(resolve, Math.max(Number(ms) || 0, 0)));
+      func: async (
+        injectedPrompt: string,
+        injectedConfig: RuntimeInjectionSiteConfig,
+        injectedSelectors: string[],
+      ) => {
+        const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, Math.max(Number(ms) || 0, 0)));
 
-        const normalizeText = (value) =>
+        const normalizeText = (value: unknown) =>
           String(value ?? "")
             .replace(/\u00A0/g, " ")
             .replace(/[\u200B-\u200D\uFEFF]/g, "")
             .replace(/\r\n?/g, "\n")
             .trim();
 
-        const isVisible = (element) => {
+        const isVisible = (element: Element) => {
           if (!(element instanceof HTMLElement) && !(element instanceof SVGElement)) {
             return true;
           }
 
           const style = window.getComputedStyle(element);
           if (
-            element.hidden ||
+            (element instanceof HTMLElement && element.hidden) ||
             element.getAttribute("hidden") !== null ||
             element.getAttribute("aria-hidden") === "true" ||
             style.display === "none" ||
@@ -1783,7 +1613,7 @@ async function injectIntoTab(tabId, prompt, site, runtimeOverrides = {}) {
           return element.getClientRects().length > 0;
         };
 
-        const isEditable = (element) => {
+        const isEditable = (element: Element) => {
           if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
             return !element.readOnly;
           }
@@ -1803,7 +1633,7 @@ async function injectIntoTab(tabId, prompt, site, runtimeOverrides = {}) {
           return null;
         };
 
-        const waitForPromptMatch = async (timeoutMs) => {
+        const waitForPromptMatch = async (timeoutMs: number) => {
           const deadline = performance.now() + Math.max(Number(timeoutMs) || 0, 0);
 
           while (performance.now() <= deadline) {
@@ -1818,7 +1648,7 @@ async function injectIntoTab(tabId, prompt, site, runtimeOverrides = {}) {
           return null;
         };
 
-        const placeCaretAtEnd = (element) => {
+        const placeCaretAtEnd = (element: Element) => {
           if (!(element instanceof HTMLElement)) {
             return;
           }
@@ -1835,7 +1665,7 @@ async function injectIntoTab(tabId, prompt, site, runtimeOverrides = {}) {
           selection.addRange(range);
         };
 
-        const selectAllEditableContents = (element) => {
+        const selectAllEditableContents = (element: Element) => {
           if (!(element instanceof HTMLElement)) {
             return;
           }
@@ -1853,7 +1683,7 @@ async function injectIntoTab(tabId, prompt, site, runtimeOverrides = {}) {
           selection.addRange(range);
         };
 
-        const buildParagraphNode = (text) => ({
+        const buildParagraphNode = (text: string) => ({
           children: text
             ? [
                 {
@@ -1876,7 +1706,7 @@ async function injectIntoTab(tabId, prompt, site, runtimeOverrides = {}) {
           textStyle: "",
         });
 
-        const setLexicalText = (element, nextPrompt) => {
+        const setLexicalText = (element: Element, nextPrompt: string) => {
           if (!(element instanceof HTMLElement)) {
             return false;
           }
@@ -1926,7 +1756,7 @@ async function injectIntoTab(tabId, prompt, site, runtimeOverrides = {}) {
         const { element, selector } = match;
         let strategy = "mainWorldExecCommand";
         let injected = false;
-        const attempts = [];
+        const attempts: ExecuteScriptAttempt[] = [];
 
         if (element instanceof HTMLElement && element.dataset.lexicalEditor === "true") {
           injected = setLexicalText(element, injectedPrompt);
@@ -1960,7 +1790,7 @@ async function injectIntoTab(tabId, prompt, site, runtimeOverrides = {}) {
       args: [prompt, config, promptSelectors],
     });
 
-    const injectionResult = executionResult?.result ?? null;
+    const injectionResult = (executionResult?.result as ExecuteScriptInjectionResult | null | undefined) ?? null;
     if (!injectionResult || injectionResult.status !== "injected") {
       return injectionResult;
     }
@@ -1972,7 +1802,7 @@ async function injectIntoTab(tabId, prompt, site, runtimeOverrides = {}) {
 
     const [submitExecutionResult] = await chrome.scripting.executeScript({
       target: { tabId },
-      func: async (injectedConfig) => {
+      func: async (injectedConfig: RuntimeInjectionSiteConfig) => {
         const submitter = globalThis.__aiPromptBroadcasterSubmitPrompt;
         if (typeof submitter !== "function") {
           throw new Error("submitPrompt entry point is not available in the tab context.");
@@ -1983,7 +1813,7 @@ async function injectIntoTab(tabId, prompt, site, runtimeOverrides = {}) {
       args: [config],
     });
 
-    const submitResult = submitExecutionResult?.result ?? null;
+    const submitResult = (submitExecutionResult?.result as ExecuteScriptInjectionResult | null | undefined) ?? null;
     if (submitResult?.status === "submitted") {
       return {
         ...submitResult,
@@ -2012,8 +1842,8 @@ async function injectIntoTab(tabId, prompt, site, runtimeOverrides = {}) {
 
   const [executionResult] = await chrome.scripting.executeScript({
     target: { tabId },
-    func: async (injectedPrompt, injectedConfig) => {
-      const injector = globalThis.__aiPromptBroadcasterInjectPrompt;
+      func: async (injectedPrompt: string, injectedConfig: RuntimeInjectionSiteConfig) => {
+        const injector = globalThis.__aiPromptBroadcasterInjectPrompt;
       if (typeof injector !== "function") {
         throw new Error("injectPrompt entry point is not available in the tab context.");
       }
@@ -2023,10 +1853,10 @@ async function injectIntoTab(tabId, prompt, site, runtimeOverrides = {}) {
     args: [prompt, config],
   });
 
-  return executionResult?.result ?? null;
+  return (executionResult?.result as ExecuteScriptInjectionResult | null | undefined) ?? null;
 }
 
-function isSameSiteOrigin(tabUrl, site) {
+function isSameSiteOrigin(tabUrl: string, site: RuntimeSite): boolean {
   try {
     const hostname = new URL(tabUrl).hostname.toLowerCase();
     return getAllowedSiteHostnames(site).has(hostname);
@@ -2040,7 +1870,11 @@ function isSameSiteOrigin(tabUrl, site) {
   }
 }
 
-async function handlePendingInjectionTimeout(tabId, job, reason = "timeout") {
+async function handlePendingInjectionTimeout(
+  tabId: number,
+  job: PendingInjectionRecord,
+  reason = "timeout",
+): Promise<void> {
   const siteName = job?.site?.name ?? job?.siteId ?? "AI service";
   await recordBroadcastSiteResult(job.broadcastId, job.siteId, buildSiteResult("injection_timeout"));
   await removePendingInjection(tabId);
@@ -2056,7 +1890,7 @@ async function handlePendingInjectionTimeout(tabId, job, reason = "timeout") {
   });
 }
 
-async function processPendingInjectionNow(tabId, tab) {
+async function processPendingInjectionNow(tabId: number, tab: chrome.tabs.Tab): Promise<void> {
   if (activeInjections.has(tabId)) {
     return;
   }
@@ -2172,7 +2006,7 @@ async function processPendingInjectionNow(tabId, tab) {
       error,
     });
     await recordBroadcastSiteResult(job.broadcastId, job.siteId, buildSiteResult("unexpected_error", {
-      message: error?.message ?? String(error),
+      message: getErrorMessage(error),
     }));
     await enqueueUiToast({
       message:
@@ -2187,14 +2021,14 @@ async function processPendingInjectionNow(tabId, tab) {
   }
 }
 
-async function reconcilePendingInjections() {
+async function reconcilePendingInjections(): Promise<void> {
   const pending = await getPendingInjections();
   const entries = Object.entries(pending);
 
   for (const [tabIdKey, job] of entries) {
     const tabId = Number(tabIdKey);
     if (!Number.isFinite(tabId) || !job) {
-      await removePendingInjection(tabIdKey);
+      await removePendingInjection(tabId);
       continue;
     }
 
@@ -2221,7 +2055,7 @@ async function reconcilePendingInjections() {
   }
 }
 
-async function ensureReconcileAlarm() {
+async function ensureReconcileAlarm(): Promise<void> {
   try {
     chrome.alarms.create(RECONCILE_ALARM, {
       periodInMinutes: KEEPALIVE_PERIOD_MINUTES,
@@ -2231,7 +2065,7 @@ async function ensureReconcileAlarm() {
   }
 }
 
-async function initializeServiceWorker() {
+async function initializeServiceWorker(): Promise<void> {
   await ensureReconcileAlarm();
   await reconcilePendingInjections();
   await reconcilePendingBroadcasts();
@@ -2239,16 +2073,20 @@ async function initializeServiceWorker() {
   await reconcileFavoriteSchedules();
 }
 
-async function queueResolvedBroadcastRequest(prompt, selectedTargets, metadata = {}) {
+async function queueResolvedBroadcastRequest(
+  prompt: string,
+  selectedTargets: ResolvedBroadcastTarget[],
+  metadata: Record<string, unknown> = {},
+): Promise<BroadcastResponse> {
   const selectedSites = selectedTargets.map((target) => target.site);
   let queuedSiteCount = 0;
 
   const broadcast = await createPendingBroadcast(prompt, selectedTargets, metadata);
   registerBroadcastCompletionWaiter(broadcast.id);
   const settings = await getAppSettings();
-  const createdTabSiteIds = [];
-  const reusedTabSiteIds = [];
-  const failedTabSiteIds = [];
+  const createdTabSiteIds: string[] = [];
+  const reusedTabSiteIds: string[] = [];
+  const failedTabSiteIds: string[] = [];
   const reusableTabsBySiteId = settings.reuseExistingTabs
     ? await findReusableTabsForSites(selectedSites, {
         windowId: broadcast.originWindowId,
@@ -2374,7 +2212,11 @@ async function queueResolvedBroadcastRequest(prompt, selectedTargets, metadata =
   };
 }
 
-async function queueBroadcastRequest(prompt, siteRefs, metadata = {}) {
+async function queueBroadcastRequest(
+  prompt: string,
+  siteRefs: Array<string | BroadcastSiteTargetMessage>,
+  metadata: Record<string, unknown> = {},
+): Promise<BroadcastResponse> {
   await reconcilePendingBroadcasts();
 
   const normalizedPrompt = normalizePrompt(prompt).trim();
@@ -2392,13 +2234,15 @@ async function queueBroadcastRequest(prompt, siteRefs, metadata = {}) {
   return queueResolvedBroadcastRequest(normalizedPrompt, selectedTargets, metadata);
 }
 
-async function handleBroadcastMessage(message) {
+async function handleBroadcastMessage(message: BroadcastMessage): Promise<BroadcastResponse> {
   return queueBroadcastRequest(message?.prompt, message?.sites, {
     trigger: "popup",
   });
 }
 
-async function handleSelectorCheckInit(message) {
+async function handleSelectorCheckInit(
+  message: SelectorCheckInitMessage,
+): Promise<SelectorCheckInitResponse> {
   const site = await getSiteForUrl(message?.url ?? "");
   if (!site) {
     return { ok: true, site: null };
@@ -2410,7 +2254,9 @@ async function handleSelectorCheckInit(message) {
   };
 }
 
-async function handleSelectorCheckReport(message) {
+async function handleSelectorCheckReport(
+  message: SelectorCheckReportMessage,
+): Promise<SelectorCheckReportResponse> {
   if (
     (message?.status === "ok" ||
       message?.status === "auth_page" ||
@@ -2454,9 +2300,12 @@ async function handleSelectorCheckReport(message) {
   return { ok: true };
 }
 
-async function handleSelectorFailedMessage(message) {
-  const serviceId = message?.serviceId ?? "";
-  const selector = message?.selector ?? "";
+async function handleSelectorFailedMessage(
+  message: unknown,
+): Promise<GenericOkResponse> {
+  const payload = (message ?? {}) as { serviceId?: string; selector?: string };
+  const serviceId = payload.serviceId ?? "";
+  const selector = payload.selector ?? "";
   const site = await getSiteById(serviceId);
 
   await clearPendingSelectorChecksForSiteId(serviceId);
@@ -2483,19 +2332,25 @@ async function handleSelectorFailedMessage(message) {
   return { ok: true };
 }
 
-async function handleInjectSuccessMessage(message) {
-  if (message?.serviceId) {
-    await clearPendingSelectorChecksForSiteId(message.serviceId);
-    await clearFailedSelector(message.serviceId);
+async function handleInjectSuccessMessage(
+  message: unknown,
+): Promise<GenericOkResponse> {
+  const payload = (message ?? {}) as { serviceId?: string };
+  if (payload.serviceId) {
+    await clearPendingSelectorChecksForSiteId(payload.serviceId);
+    await clearFailedSelector(payload.serviceId);
   }
 
   return { ok: true };
 }
 
-async function handleInjectFallbackMessage(message) {
-  const serviceId = message?.serviceId ?? "";
+async function handleInjectFallbackMessage(
+  message: unknown,
+): Promise<GenericOkResponse> {
+  const payload = (message ?? {}) as { serviceId?: string; copied?: boolean };
+  const serviceId = payload.serviceId ?? "";
   const site = await getSiteById(serviceId);
-  const copied = Boolean(message?.copied);
+  const copied = Boolean(payload.copied);
 
   await enqueueUiToast({
     message: copied
@@ -2514,12 +2369,15 @@ async function handleInjectFallbackMessage(message) {
   return { ok: true };
 }
 
-async function handleUiToastMessage(message) {
-  await enqueueUiToast(message?.toast ?? {});
+async function handleUiToastMessage(
+  message: unknown,
+): Promise<GenericOkResponse> {
+  const payload = (message ?? {}) as { toast?: Record<string, unknown> };
+  await enqueueUiToast(payload.toast ?? {});
   return { ok: true };
 }
 
-async function handlePopupOpened() {
+async function handlePopupOpened(): Promise<{ ok: true; lastBroadcast: LastBroadcastSummary | null }> {
   await reconcilePendingBroadcasts();
   const lastBroadcast = await getLastBroadcast();
   if (!lastBroadcast || lastBroadcast.status !== "sending") {
@@ -2532,7 +2390,9 @@ async function handlePopupOpened() {
   };
 }
 
-async function handleGetOpenAiTabsMessage(message) {
+async function handleGetOpenAiTabsMessage(
+  message: GetOpenAiTabsMessage,
+): Promise<GetOpenAiTabsResponse> {
   const windowId = await getPreferredNormalWindowId(message?.windowId ?? null);
   const tabs = await getOpenAiTabsForWindow(windowId);
 
@@ -2543,7 +2403,9 @@ async function handleGetOpenAiTabsMessage(message) {
   };
 }
 
-async function handleCancelBroadcastMessage(message) {
+async function handleCancelBroadcastMessage(
+  message: CancelBroadcastMessage,
+): Promise<CancelBroadcastResponse> {
   const summary = await cancelBroadcast(message?.broadcastId ?? "", "cancelled");
   return {
     ok: Boolean(summary),
@@ -2551,7 +2413,7 @@ async function handleCancelBroadcastMessage(message) {
   };
 }
 
-async function resetAllExtensionData() {
+async function resetAllExtensionData(): Promise<GenericOkResponse> {
   await reconcilePendingBroadcasts();
 
   const pendingBroadcasts = await getPendingBroadcasts();
@@ -2574,8 +2436,7 @@ async function resetAllExtensionData() {
   activeInjections.clear();
   queuedInjectionTabIds.clear();
   selectionCache.clear();
-  lastNormalWindowId = null;
-  lastNormalTabId = null;
+  resetRememberedState();
 
   const alarms = await chrome.alarms.getAll().catch(() => []);
   await Promise.all(
@@ -2606,7 +2467,7 @@ async function resetAllExtensionData() {
   return { ok: true };
 }
 
-async function handleGetActiveTabContext() {
+async function handleGetActiveTabContext(): Promise<ActiveTabContextResponse> {
   try {
     const activeTab = await getPreferredNormalActiveTab();
 
@@ -2628,7 +2489,7 @@ async function handleGetActiveTabContext() {
   }
 }
 
-async function handleServiceTestRun(message) {
+async function handleServiceTestRun(message: ServiceTestRunMessage): Promise<ServiceTestRunResponse> {
   const draft = message?.draft ?? {};
   const selectorErrors = [];
   if (!String(draft?.inputSelector ?? "").trim()) {
@@ -2667,102 +2528,67 @@ async function handleServiceTestRun(message) {
   }
 
   try {
-    const result = await runServiceTestOnTab(preferredTab.tab.id, draft);
+    const tabId = preferredTab.tab.id;
+    if (typeof tabId !== "number") {
+      return {
+        ok: false,
+        reason: "no_tab",
+      };
+    }
+
+    const result = await runServiceTestOnTab(tabId, draft);
+    if (!result.ok) {
+      return result;
+    }
+
     return {
-      ok: Boolean(result?.ok),
-      tabId: preferredTab.tab.id,
-      tabUrl: preferredTab.tab.url ?? "",
       ...result,
+      tabId,
+      tabUrl: preferredTab.tab.url ?? "",
     };
   } catch (error) {
     console.error("[AI Prompt Broadcaster] Service test failed.", error);
     return {
       ok: false,
       reason: "error",
-      error: error?.message ?? String(error),
+      error: getErrorMessage(error),
     };
   }
 }
 
-registerRuntimeMessageRouter({
-  broadcast: {
-    run: (message) => handleBroadcastMessage(message),
-    errorLabel: "[AI Prompt Broadcaster] Broadcast handling failed.",
+registerRuntimeMessageRouter(buildRuntimeHandlers({
+  handleBroadcastMessage,
+  handleSelectorCheckInit,
+  handleSelectorCheckReport,
+  handleServiceTestRun,
+  handleSelectorFailedMessage,
+  handleInjectSuccessMessage,
+  handleInjectFallbackMessage,
+  handleUiToastMessage,
+  handlePopupOpened,
+  handleGetOpenAiTabsMessage,
+  handleCancelBroadcastMessage,
+  handleFavoriteRunMessage,
+  handleFavoriteOpenEditorMessage,
+  resetAllExtensionData,
+  handleGetActiveTabContext,
+  handleGetBroadcastCounter: async (): Promise<BroadcastCounterResponse> => ({
+    ok: true,
+    counter: await getBroadcastCounter(),
+  }),
+  handleSelectionUpdateMessage,
+  handleQuickPaletteGetState: async () => {
+    const state = await handleQuickPaletteGetState();
+    return {
+      ok: state.ok,
+      favorites: state.favorites.map((favorite) => ({
+        ...favorite,
+        mode: favorite.mode === "chain" ? "chain" : "single",
+      })),
+    };
   },
-  "selector-check:init": {
-    run: (message) => handleSelectorCheckInit(message),
-    errorLabel: "[AI Prompt Broadcaster] Selector check init failed.",
-  },
-  "selector-check:report": {
-    run: (message) => handleSelectorCheckReport(message),
-    errorLabel: "[AI Prompt Broadcaster] Selector check report failed.",
-  },
-  "service-test:run": {
-    run: (message) => handleServiceTestRun(message),
-    errorLabel: "[AI Prompt Broadcaster] Service test run failed.",
-  },
-  selectorFailed: {
-    run: (message) => handleSelectorFailedMessage(message),
-  },
-  injectSuccess: {
-    run: (message) => handleInjectSuccessMessage(message),
-  },
-  injectFallback: {
-    run: (message) => handleInjectFallbackMessage(message),
-  },
-  uiToast: {
-    run: (message) => handleUiToastMessage(message),
-  },
-  popupOpened: {
-    run: () => handlePopupOpened(),
-  },
-  getOpenAiTabs: {
-    run: (message) => handleGetOpenAiTabsMessage(message),
-  },
-  cancelBroadcast: {
-    run: (message) => handleCancelBroadcastMessage(message),
-  },
-  "favorite:run": {
-    run: (message, sender) => handleFavoriteRunMessage(message, sender),
-  },
-  "favorite:openEditor": {
-    run: (message) => handleFavoriteOpenEditorMessage(message),
-  },
-  resetAllData: {
-    run: () => resetAllExtensionData(),
-    errorLabel: "[AI Prompt Broadcaster] Reset-all-data failed.",
-  },
-  getActiveTabContext: {
-    run: () => handleGetActiveTabContext(),
-    onError: (error, fallback) => ({
-      ...fallback,
-      url: "",
-      title: "",
-      selection: "",
-    }),
-  },
-  getBroadcastCounter: {
-    run: async () => ({ ok: true, counter: await getBroadcastCounter() }),
-    onError: (error, fallback) => ({
-      ...fallback,
-      counter: 0,
-    }),
-  },
-  "selection:update": {
-    sync: true,
-    run: (message, sender) => handleSelectionUpdateMessage(message, sender),
-  },
-  "quickPalette:getState": {
-    run: () => handleQuickPaletteGetState(),
-  },
-  "quickPalette:execute": {
-    run: (message, sender) => handleQuickPaletteExecuteMessage(message, sender),
-  },
-  "quickPalette:close": {
-    sync: true,
-    run: () => ({ ok: true }),
-  },
-});
+  handleQuickPaletteExecuteMessage,
+}));
 
 chrome.runtime.onInstalled.addListener(({ reason }) => {
   void (async () => {
@@ -2854,7 +2680,6 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
         return;
       }
 
-      lastNormalWindowId = windowId;
       const [activeTab] = await chrome.tabs.query({
         active: true,
         windowId,
@@ -2870,6 +2695,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   void (async () => {
     try {
       selectionCache.delete(tabId);
+      clearRememberedTab(tabId);
       const pending = await getPendingInjections();
       const job = pending[String(tabId)];
 

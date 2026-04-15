@@ -1,8 +1,16 @@
-// @ts-nocheck
+import type {
+  FavoritePrompt,
+  FavoriteSort,
+  HistorySort,
+  PromptHistoryItem,
+} from "../../shared/types/models";
 import { isKorean, t } from "./i18n";
 import { compareDateValues } from "./helpers";
 
-export function getHistorySortOptions() {
+export function getHistorySortOptions(): Array<{
+  value: HistorySort;
+  label: string;
+}> {
   return [
     { value: "latest", label: t.historySortLatest },
     { value: "oldest", label: t.historySortOldest },
@@ -11,7 +19,10 @@ export function getHistorySortOptions() {
   ];
 }
 
-export function getFavoriteSortOptions() {
+export function getFavoriteSortOptions(): Array<{
+  value: FavoriteSort;
+  label: string;
+}> {
   return [
     { value: "recentUsed", label: t.favoriteSortRecentUsed },
     { value: "usageCount", label: t.favoriteSortUsageCount },
@@ -20,27 +31,32 @@ export function getFavoriteSortOptions() {
   ];
 }
 
-function compareFavoriteTitle(left, right) {
-  return String(left?.title ?? "").localeCompare(String(right?.title ?? ""), isKorean ? "ko" : "en", {
-    sensitivity: "base",
-  });
+function compareFavoriteTitle(left: FavoritePrompt, right: FavoritePrompt): number {
+  return String(left.title ?? "").localeCompare(
+    String(right.title ?? ""),
+    isKorean ? "ko" : "en",
+    { sensitivity: "base" },
+  );
 }
 
-export function sortHistoryItemsForDisplay(items, historySort = "latest") {
+export function sortHistoryItemsForDisplay(
+  items: PromptHistoryItem[],
+  historySort: HistorySort = "latest",
+): PromptHistoryItem[] {
   const nextItems = [...items];
   switch (historySort) {
     case "oldest":
       return nextItems.sort((left, right) => compareDateValues(right.createdAt, left.createdAt));
     case "mostSuccess":
       return nextItems.sort((left, right) => {
-        const leftCount = Array.isArray(left?.submittedSiteIds) ? left.submittedSiteIds.length : 0;
-        const rightCount = Array.isArray(right?.submittedSiteIds) ? right.submittedSiteIds.length : 0;
+        const leftCount = Array.isArray(left.submittedSiteIds) ? left.submittedSiteIds.length : 0;
+        const rightCount = Array.isArray(right.submittedSiteIds) ? right.submittedSiteIds.length : 0;
         return rightCount - leftCount || compareDateValues(left.createdAt, right.createdAt);
       });
     case "mostFailure":
       return nextItems.sort((left, right) => {
-        const leftCount = Array.isArray(left?.failedSiteIds) ? left.failedSiteIds.length : 0;
-        const rightCount = Array.isArray(right?.failedSiteIds) ? right.failedSiteIds.length : 0;
+        const leftCount = Array.isArray(left.failedSiteIds) ? left.failedSiteIds.length : 0;
+        const rightCount = Array.isArray(right.failedSiteIds) ? right.failedSiteIds.length : 0;
         return rightCount - leftCount || compareDateValues(left.createdAt, right.createdAt);
       });
     case "latest":
@@ -49,7 +65,10 @@ export function sortHistoryItemsForDisplay(items, historySort = "latest") {
   }
 }
 
-export function sortFavoriteItemsForDisplay(items, favoriteSort = "recentUsed") {
+export function sortFavoriteItemsForDisplay(
+  items: FavoritePrompt[],
+  favoriteSort: FavoriteSort = "recentUsed",
+): FavoritePrompt[] {
   const nextItems = [...items];
   nextItems.sort((left, right) => {
     if (left.pinned && !right.pinned) {
@@ -61,7 +80,7 @@ export function sortFavoriteItemsForDisplay(items, favoriteSort = "recentUsed") 
 
     switch (favoriteSort) {
       case "usageCount":
-        return (Number(right?.usageCount) || 0) - (Number(left?.usageCount) || 0)
+        return (Number(right.usageCount) || 0) - (Number(left.usageCount) || 0)
           || compareDateValues(left.lastUsedAt ?? left.favoritedAt, right.lastUsedAt ?? right.favoritedAt);
       case "title":
         return compareFavoriteTitle(left, right) || compareDateValues(left.favoritedAt, right.favoritedAt);

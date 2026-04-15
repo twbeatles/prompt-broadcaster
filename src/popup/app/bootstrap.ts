@@ -1,4 +1,3 @@
-// @ts-nocheck
 import {
   detectTemplateVariablesForTargets as detectBroadcastTemplateVariables,
   findMissingTemplateValuesForTargets as findMissingBroadcastTemplateValues,
@@ -78,6 +77,7 @@ import {
 } from "./i18n";
 import { state } from "./state";
 import { popupDom } from "./dom";
+import { createPopupShell } from "./shell";
 import {
   compareDateValues,
   escapeAttribute,
@@ -104,7 +104,86 @@ import {
   sortFavoriteItemsForDisplay,
   sortHistoryItemsForDisplay,
 } from "./sorting";
-import { createFavoriteEditorFeature } from "../features/favorite-editor";
+import { createFavoriteEditorFeature } from "../favorites/favorite-editor";
+import { createPopupTargetsController } from "../compose/targets";
+import { createHistoryController } from "../history/controller";
+import { createFavoritesController } from "../favorites/controller";
+import { createOverlayController } from "../overlays/controller";
+import {
+  createPopupServicesController,
+  type ServiceDraft,
+} from "../services/controller";
+import type { SiteDraftValidationResult } from "../../shared/sites/validation";
+import type {
+  ActiveTabContextResponse,
+  BroadcastSiteTargetMessage,
+  BroadcastCounterResponse,
+  BroadcastResponse,
+  CancelBroadcastResponse,
+  FavoriteRunResponse,
+  GetOpenAiTabsResponse,
+  RuntimeAction,
+  RuntimeMessageOf,
+  RuntimeResponseOf,
+  ServiceTestRunResponse,
+} from "../../shared/types/messages";
+import type {
+  FavoriteExecutionTrigger,
+  FavoritePrompt,
+  LastBroadcastSummary,
+  OpenSiteTab,
+  PromptHistoryItem,
+  RuntimeSite,
+  TemplateVariableDescriptor,
+} from "../../shared/types/models";
+import type {
+  PopupState,
+  PopupTemplateSendState,
+  PopupToastInput,
+} from "../../shared/types/popup";
+
+type ComposerTarget = NonNullable<PopupTemplateSendState["targets"]>[number];
+type PopupTabId = PopupState["activeTab"];
+
+async function sendPopupMessage<TAction extends RuntimeAction>(
+  message: RuntimeMessageOf<TAction>,
+  timeoutMs?: number,
+  fallbackValue?: RuntimeResponseOf<TAction> | null,
+): Promise<RuntimeResponseOf<TAction> | null> {
+  return sendRuntimeMessageWithTimeout(message, timeoutMs, fallbackValue);
+}
+
+function hasTargetId(
+  target: ComposerTarget | BroadcastSiteTargetMessage,
+): target is ComposerTarget {
+  return typeof target.id === "string" && target.id.trim().length > 0;
+}
+
+function getEventElement(target: EventTarget | null): Element | null {
+  return target instanceof Element ? target : null;
+}
+
+function getEventInput(target: EventTarget | null): HTMLInputElement | null {
+  return target instanceof HTMLInputElement ? target : null;
+}
+
+function getEventSelect(target: EventTarget | null): HTMLSelectElement | null {
+  return target instanceof HTMLSelectElement ? target : null;
+}
+
+function isLastBroadcastSummary(value: unknown): value is LastBroadcastSummary {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const candidate = value as Partial<LastBroadcastSummary>;
+  return (
+    typeof candidate.broadcastId === "string"
+    && typeof candidate.status === "string"
+    && typeof candidate.prompt === "string"
+    && Array.isArray(candidate.siteIds)
+  );
+}
 
 const { extTitle, extDesc } = popupDom.header;
 const { tabButtons, panels } = popupDom.tabs;
@@ -262,115 +341,33 @@ const {
 } = popupDom.modals;
 const { toastHost } = popupDom;
 
-function setStatus(text, type = "") {
-  statusMsg.textContent = text;
-  statusMsg.className = type;
-}
-
-function clearStatus() {
-  setStatus("");
-}
-
-function showAppToast(input, type = "info", duration = 3000) {
-  return showToast(input, type, duration);
-}
-
-function showConfirmToast(message, onConfirm) {
-  showAppToast({
-    message,
-    type: "warning",
-    duration: -1,
-    actions: [
-      {
-        label: t.toastConfirm,
-        onClick: () => {
-          void onConfirm();
-        },
-      },
-    ],
-  });
-}
-
-function setSendingState(isSending) {
-  state.isSending = Boolean(isSending);
-  sendBtn.disabled = state.isSending;
-  sendBtn.classList.toggle("loading", state.isSending);
-  cancelSendBtn.hidden = !state.isSending;
-  cancelSendBtn.disabled = !state.isSending;
-  cancelSendBtn.textContent = t.stopSending;
-}
-
-function clearSendSafetyTimer() {
-  if (state.sendSafetyTimer) {
-    window.clearTimeout(state.sendSafetyTimer);
-    state.sendSafetyTimer = null;
-  }
-}
-
-function armSendSafetyTimer() {
-  clearSendSafetyTimer();
-  state.sendSafetyTimer = window.setTimeout(() => {
-    state.sendSafetyTimer = null;
-    if (state.lastBroadcast?.status !== "sending") {
-      setSendingState(false);
-    }
-  }, 2000);
-}
-
-function buildBroadcastToastSignature(summary) {
-  return [
-    summary?.broadcastId ?? "",
-    summary?.status ?? "",
-    summary?.finishedAt ?? "",
-    (summary?.failedSiteIds ?? []).join(","),
-  ].join("|");
-}
-
-function getEnabledSites() {
-  return state.runtimeSites.filter((site) => site.enabled);
-}
-
-function getRuntimeSiteLabel(siteId) {
-  return state.runtimeSites.find((site) => site.id === siteId)?.name ?? siteId;
-}
-
-function getSiteSelectorIssueUrl(site) {
-  const siteLabel = site?.name ?? site?.id ?? "";
-  return `https://github.com/search?q=repo:twbeatles/prompt-broadcaster+${encodeURIComponent(siteLabel)}+selector&type=issues`;
-}
-
-function getSiteLastVerifiedStatus(site) {
-  const verifiedAt = site?.verifiedAt ? String(site.verifiedAt).trim() : "";
-  const lastVerified = site?.lastVerified ? String(site.lastVerified).trim() : "";
-  const parsedDate = verifiedAt
-    ? Date.parse(`${verifiedAt}T00:00:00Z`)
-    : lastVerified
-      ? Date.parse(`${lastVerified}-01T00:00:00Z`)
-      : Number.NaN;
-
-  if (!Number.isFinite(parsedDate)) {
-    return "";
-  }
-
-  const daysSince = Math.floor((Date.now() - parsedDate) / 86400000);
-  if (daysSince <= 0) {
-    return "";
-  }
-
-  return (msg("popup_selector_days_since") || `~${daysSince}d since last verified`).replace("$DAYS$", String(daysSince));
-}
-
-function getOpenSiteTabs(siteId) {
-  return state.openSiteTabs.filter((tab) => tab.siteId === siteId);
-}
-
-function getDefaultTargetModeLabel() {
-  return state.settings.reuseExistingTabs ? t.openTabsDefaultReuse : t.openTabsDefaultNew;
-}
-
-function getDefaultSiteTargetSelection() {
-  return "default";
-}
+const popupShell = createPopupShell({
+  isKorean,
+  renderLists: () => renderLists(),
+});
+const {
+  setStatus,
+  clearStatus,
+  showAppToast,
+  showConfirmToast,
+  setSendingState,
+  clearSendSafetyTimer,
+  armSendSafetyTimer,
+  buildBroadcastToastSignature,
+  getEnabledSites,
+  getRuntimeSiteLabel,
+  getSiteSelectorIssueUrl,
+  getSiteLastVerifiedStatus,
+  updatePromptCounter,
+  autoResizePromptInput,
+  scheduleComposeDraftSave,
+  applyDynamicPromptPlaceholder,
+  allCheckboxes,
+  checkedSiteIds,
+  syncToggleAllLabel,
+  applySiteSelection,
+  switchTab,
+} = popupShell;
 
 function renderSortControls() {
   historySortSelect.innerHTML = getHistorySortOptions()
@@ -383,336 +380,67 @@ function renderSortControls() {
   historySortSelect.value = state.settings.historySort;
   favoritesSortSelect.value = state.settings.favoriteSort;
 }
+const popupTargetsController = createPopupTargetsController({
+  getEnabledSites,
+  getRuntimeSiteLabel,
+  sendPopupMessage: (message, timeoutMs) =>
+    sendPopupMessage<"getOpenAiTabs">(message, timeoutMs),
+  renderSiteCheckboxesPanel: () => renderSiteCheckboxesPanel(),
+});
+const {
+  getOpenSiteTabs,
+  getDefaultTargetModeLabel,
+  syncSiteTargetSelections,
+  refreshOpenSiteTabs,
+  scheduleOpenSiteTabsRefresh,
+  buildComposerBroadcastTargets,
+  buildRuntimeBroadcastTargets,
+  detectTemplateVariablesForTargets,
+  findMissingTemplateValuesForTargets,
+  buildResolvedBroadcastTargets,
+  buildTemplatePreviewText,
+} = popupTargetsController;
 
-function getFocusableElements(root) {
-  return [...root.querySelectorAll(
-    "button:not([disabled]), [href], input:not([disabled]):not([type='hidden']), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])"
-  )].filter((element) => !element.hidden && element.getAttribute("aria-hidden") !== "true");
+function getDefaultSiteTargetSelection(): "default" {
+  return "default";
 }
 
-function openOverlay(overlay, initialFocus = null) {
-  if (!overlay) {
-    return;
-  }
-
-  state.lastFocusedElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-  overlay.hidden = false;
-  state.openModalId = overlay.id;
-
-  window.requestAnimationFrame(() => {
-    const fallbackTarget = getFocusableElements(overlay)[0] ?? overlay.querySelector(".modal-card");
-    (initialFocus ?? fallbackTarget)?.focus?.();
-  });
-}
-
-function closeOverlay(overlay) {
-  if (!overlay) {
-    return;
-  }
-
-  overlay.hidden = true;
-  if (state.openModalId === overlay.id) {
-    state.openModalId = null;
-  }
-  if (state.lastFocusedElement?.focus) {
-    state.lastFocusedElement.focus();
-  }
-  state.lastFocusedElement = null;
-}
-
-function getOpenOverlay() {
-  return [importReportModal, resendModal, favoriteModal, templateModal].find((overlay) => overlay && !overlay.hidden) ?? null;
-}
-
-function closeActiveOverlayOrMenu() {
-  const overlay = getOpenOverlay();
-  if (overlay === importReportModal) {
-    closeOverlay(importReportModal);
-    return true;
-  }
-  if (overlay === resendModal) {
-    closeOverlay(resendModal);
-    state.pendingResendHistory = null;
-    return true;
-  }
-  if (overlay === favoriteModal) {
-    hideFavoriteModal();
-    return true;
-  }
-  if (overlay === templateModal) {
-    hideTemplateModal();
-    return true;
-  }
-  if (state.openMenuKey) {
-    state.openMenuKey = null;
-    renderLists();
-    return true;
-  }
-  return false;
-}
-
-function trapModalFocus(event) {
-  if (event.key !== "Tab") {
-    return;
-  }
-
-  const overlay = getOpenOverlay();
-  if (!overlay) {
-    return;
-  }
-
-  const focusable = getFocusableElements(overlay);
-  if (focusable.length === 0) {
-    event.preventDefault();
-    return;
-  }
-
-  const currentIndex = focusable.indexOf(document.activeElement);
-  const nextIndex = event.shiftKey
-    ? (currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1)
-    : (currentIndex === -1 || currentIndex >= focusable.length - 1 ? 0 : currentIndex + 1);
-
-  event.preventDefault();
-  focusable[nextIndex]?.focus?.();
-}
-
-function syncSiteTargetSelections() {
-  const enabledSiteIds = new Set(getEnabledSites().map((site) => site.id));
-  const nextSelections = {};
-
-  enabledSiteIds.forEach((siteId) => {
-    const currentSelection = state.siteTargetSelections?.[siteId];
-    const availableTabIds = new Set(getOpenSiteTabs(siteId).map((tab) => Number(tab.tabId)));
-
-    if (typeof currentSelection === "number" && availableTabIds.has(currentSelection)) {
-      nextSelections[siteId] = currentSelection;
-      return;
-    }
-
-    if (currentSelection === "new" || currentSelection === "default") {
-      nextSelections[siteId] = currentSelection;
-      return;
-    }
-
-    nextSelections[siteId] = getDefaultSiteTargetSelection();
-  });
-
-  state.siteTargetSelections = nextSelections;
-}
-
-function updatePromptCounter() {
-  promptCounter.textContent = t.promptCounter(promptInput.value.length);
-}
-
-function autoResizePromptInput() {
-  promptInput.style.height = "auto";
-  const nextHeight = Math.max(100, Math.min(promptInput.scrollHeight, 300));
-  promptInput.style.height = `${nextHeight}px`;
-}
-
-function scheduleComposeDraftSave(value = promptInput.value) {
-  if (state.promptDraftSaveTimer) {
-    window.clearTimeout(state.promptDraftSaveTimer);
-  }
-
-  state.promptDraftSaveTimer = window.setTimeout(() => {
-    state.promptDraftSaveTimer = null;
-    void setComposeDraftPrompt(String(value ?? "")).catch((error) => {
-      console.error("[AI Prompt Broadcaster] Failed to persist compose draft.", error);
-    });
-  }, 180);
-}
-
-function applyDynamicPromptPlaceholder() {
-  const placeholderVariants = isKorean
-    ? [
-        t.placeholder,
-        "{{언어}}로 {{주제}}를 설명해줘",
-        "선택한 텍스트를 여러 AI에 동시에 비교해줘",
-      ]
-    : [
-        t.placeholder,
-        "Write a blog post about {{topic}} in {{language}}.",
-        "Summarize the selected text for all services.",
-      ];
-  const nextPlaceholder =
-    placeholderVariants[Math.floor(Math.random() * placeholderVariants.length)] || t.placeholder;
-  promptInput.setAttribute("placeholder", nextPlaceholder);
-}
-
-function getTemplateDisplayName(name) {
+function getTemplateDisplayName(name: string): string {
   return getTemplateVariableDisplayName(name, uiLanguage);
 }
 
-function allCheckboxes() {
-  return [...sitesContainer.querySelectorAll("input[type='checkbox']")];
-}
-
-function checkedSiteIds() {
-  return allCheckboxes()
-    .filter((checkbox) => checkbox.checked)
-    .map((checkbox) => checkbox.value);
-}
-
-function syncToggleAllLabel() {
-  const checkboxes = allCheckboxes();
-  const allChecked = checkboxes.length > 0 && checkboxes.every((checkbox) => checkbox.checked);
-  toggleAllBtn.textContent = allChecked ? t.deselectAll : t.selectAll;
-}
-
-function applySiteSelection(sentTo) {
-  const selected = new Set(normalizeSiteIdList(sentTo));
-
-  allCheckboxes().forEach((checkbox) => {
-    const shouldCheck = selected.size === 0 ? checkbox.checked : selected.has(checkbox.value);
-    checkbox.checked = shouldCheck;
-    const card = checkbox.closest(".site-card");
-    card?.classList.toggle("checked", shouldCheck);
-    card?.setAttribute("aria-selected", String(shouldCheck));
-  });
-
-  syncToggleAllLabel();
-}
-
-function switchTab(tabId) {
-  state.activeTab = tabId;
-
-  tabButtons.forEach((button) => {
-    const active = button.dataset.tab === tabId;
-    button.classList.toggle("active", active);
-    button.setAttribute("aria-selected", String(active));
-    button.tabIndex = active ? 0 : -1;
-  });
-
-  panels.forEach((panel) => {
-    const active = panel.dataset.panel === tabId;
-    panel.classList.toggle("active", active);
-    panel.hidden = !active;
-  });
-
-  state.openMenuKey = null;
-  renderLists();
-}
-
-function filterItems(items, query) {
-  const normalizedQuery = query.trim().toLowerCase();
-  if (!normalizedQuery) {
-    return items;
-  }
-
-  return items.filter((item) =>
-    String(item.text).toLowerCase().includes(normalizedQuery)
-  );
-}
-
-
-function renderHistoryList() {
-  const items = sortHistoryItemsForDisplay(
-    filterItems(state.history, state.historySearch),
-    state.settings.historySort
-  );
-
-  if (items.length === 0) {
-    historyList.innerHTML = buildEmptyState(
-      state.historySearch ? t.noSearchResults : t.historyEmpty
-    );
-    return;
-  }
-
-  historyList.innerHTML = items
-    .map((item) => buildHistoryItemMarkup(item, {
-      openMenuKey: state.openMenuKey,
-      runtimeSites: state.runtimeSites,
-    }))
-    .join("");
-}
-
-function getUniqueFavoriteTags() {
-  const tagSet = new Set();
-  state.favorites.forEach((item) => {
-    (item.tags ?? []).forEach((tag) => tagSet.add(tag));
-  });
-  return [...tagSet].sort();
-}
-
-function getUniqueFavoriteFolders() {
-  const folderSet = new Set();
-  state.favorites.forEach((item) => {
-    if (item.folder && item.folder.trim()) folderSet.add(item.folder.trim());
-  });
-  return [...folderSet].sort();
-}
-
-function renderFavoritesFilterBar() {
-  const tags = getUniqueFavoriteTags();
-  const folders = getUniqueFavoriteFolders();
-
-  if (tags.length === 0 && folders.length === 0) {
-    const existing = document.getElementById("favorites-filter-bar");
-    if (existing) existing.remove();
-    return;
-  }
-
-  let bar = document.getElementById("favorites-filter-bar");
-  if (!bar) {
-    bar = document.createElement("div");
-    bar.id = "favorites-filter-bar";
-    bar.className = "favorites-filter-bar";
-    favoritesList.parentElement?.insertBefore(bar, favoritesList);
-  }
-
-  const allLabel = msg("popup_favorite_filter_all") || "All";
-  const activeTag = state.favoritesTagFilter;
-  const activeFolder = state.favoritesFolderFilter;
-
-  bar.innerHTML = `
-    <div class="filter-chips">
-      <button class="filter-chip${!activeTag && !activeFolder ? " active" : ""}" data-filter-all="favorites">${escapeHtml(allLabel)}</button>
-      ${folders.map((f) => `<button class="filter-chip folder-chip${activeFolder === f ? " active" : ""}" data-filter-folder="${escapeAttribute(f)}">📁 ${escapeHtml(f)}</button>`).join("")}
-      ${tags.map((tag) => `<button class="filter-chip tag-chip${activeTag === tag ? " active" : ""}" data-filter-tag="${escapeAttribute(tag)}">#${escapeHtml(tag)}</button>`).join("")}
-    </div>
-  `;
-}
-
-function filterFavoriteItems(items) {
-  let filtered = items.filter((item) => matchesFavoriteSearch(item, state.favoritesSearch));
-  if (state.favoritesTagFilter) {
-    filtered = filtered.filter((item) => (item.tags ?? []).includes(state.favoritesTagFilter));
-  }
-  if (state.favoritesFolderFilter) {
-    filtered = filtered.filter((item) => (item.folder ?? "").trim() === state.favoritesFolderFilter);
-  }
-  return sortFavoriteItemsForDisplay(filtered, state.settings.favoriteSort);
-}
-
-function renderFavoritesList() {
-  renderFavoritesFilterBar();
-  const items = filterFavoriteItems(state.favorites);
-
-  if (items.length === 0) {
-    favoritesList.innerHTML = buildEmptyState(
-      state.favoritesSearch || state.favoritesTagFilter || state.favoritesFolderFilter
-        ? t.noSearchResults
-        : t.favoritesEmpty
-    );
-    return;
-  }
-
-  favoritesList.innerHTML = items
-    .map((item) => buildFavoriteItemMarkup(item, {
-      openMenuKey: state.openMenuKey,
-      runtimeSites: state.runtimeSites,
-      latestJob: getLatestFavoriteRunJobByFavoriteId(state.favoriteJobs, item.id),
-    }))
-    .join("");
-}
+let renderHistoryList = (): void => undefined;
+let renderFavoritesList = (): void => undefined;
+let scheduleFavoriteTitleSave: (
+  favoriteId: string,
+  title: string,
+  immediate?: boolean,
+) => void = () => undefined;
 
 function renderLists() {
   renderHistoryList();
   renderFavoritesList();
 }
 
-function currentPromptVariables() {
+let hideFavoriteModal = (): void => undefined;
+
+const overlayController = createOverlayController({
+  overlays: [importReportModal, resendModal, favoriteModal, templateModal],
+  closeFavoriteModal: () => hideFavoriteModal(),
+  hideTemplateModal,
+  hideResendModal,
+  hideImportReportModal,
+  renderLists,
+});
+const {
+  openOverlay,
+  closeOverlay,
+  getOpenOverlay,
+  closeActiveOverlayOrMenu,
+  trapModalFocus,
+} = overlayController;
+
+function currentPromptVariables(): TemplateVariableDescriptor[] {
   const checkedTargets = buildComposerBroadcastTargets(checkedSiteIds(), promptInput.value);
   if (checkedTargets.length === 0) {
     return detectTemplateVariables(promptInput.value);
@@ -721,7 +449,7 @@ function currentPromptVariables() {
   return detectTemplateVariablesForTargets(checkedTargets);
 }
 
-function renderTemplateSummary() {
+function renderTemplateSummary(): void {
   const variables = currentPromptVariables();
 
   templateSummary.hidden = variables.length === 0;
@@ -749,7 +477,7 @@ function renderTemplateSummary() {
     .join("");
 }
 
-function compactVariableValues(values) {
+function compactVariableValues(values: Record<string, string>): Record<string, string> {
   return Object.fromEntries(
     Object.entries(values ?? {})
       .map(([name, value]) => [String(name), String(value ?? "")])
@@ -757,60 +485,10 @@ function compactVariableValues(values) {
   );
 }
 
-function mergeTemplateSources(...sources) {
+function mergeTemplateSources(
+  ...sources: Array<Record<string, string> | undefined | null>
+): Record<string, string> {
   return Object.assign({}, ...sources.filter(Boolean));
-}
-
-function normalizeOpenSiteTab(entry) {
-  const tabId = Number(entry?.tabId);
-  if (!Number.isFinite(tabId) || typeof entry?.siteId !== "string" || !entry.siteId.trim()) {
-    return null;
-  }
-
-  return {
-    siteId: entry.siteId.trim(),
-    tabId,
-    title: typeof entry?.title === "string" ? entry.title : "",
-    url: typeof entry?.url === "string" ? entry.url : "",
-    active: Boolean(entry?.active),
-    status: typeof entry?.status === "string" ? entry.status : "",
-    windowId: Number.isFinite(Number(entry?.windowId)) ? Number(entry.windowId) : null,
-  };
-}
-
-async function refreshOpenSiteTabs() {
-  try {
-    const response = await sendRuntimeMessageWithTimeout({ action: "getOpenAiTabs" }, 5000);
-    const tabs = Array.isArray(response?.tabs)
-      ? response.tabs.map((entry) => normalizeOpenSiteTab(entry)).filter(Boolean)
-      : [];
-
-    state.openTabsWindowId = Number.isFinite(Number(response?.windowId))
-      ? Number(response.windowId)
-      : null;
-    state.openSiteTabs = tabs;
-    syncSiteTargetSelections();
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to refresh open AI tabs.", error);
-    state.openTabsWindowId = null;
-    state.openSiteTabs = [];
-    syncSiteTargetSelections();
-  }
-}
-
-function scheduleOpenSiteTabsRefresh(delayMs = 180) {
-  if (state.openTabsRefreshTimer) {
-    window.clearTimeout(state.openTabsRefreshTimer);
-  }
-
-  state.openTabsRefreshTimer = window.setTimeout(() => {
-    state.openTabsRefreshTimer = null;
-    void refreshOpenSiteTabs()
-      .then(() => renderSiteCheckboxesPanel())
-      .catch((error) => {
-        console.error("[AI Prompt Broadcaster] Scheduled AI tab refresh failed.", error);
-      });
-  }, delayMs);
 }
 
 function applySettingsToControls() {
@@ -823,87 +501,6 @@ function applySettingsToControls() {
   waitMultiplierRange.value = String(state.settings.waitMsMultiplier);
   waitMultiplierValue.textContent = t.waitMultiplierValue(state.settings.waitMsMultiplier);
   renderSortControls();
-}
-
-function buildComposerBroadcastTargets(siteIds = [], basePrompt = promptInput.value) {
-  return normalizeSiteIdList(siteIds).map((siteId) => {
-    const targetSelection = state.siteTargetSelections?.[siteId];
-    const promptOverride =
-      typeof state.sitePromptOverrides?.[siteId] === "string" &&
-      state.sitePromptOverrides[siteId].trim()
-        ? state.sitePromptOverrides[siteId]
-        : "";
-    const target = {
-      id: siteId,
-      promptTemplate: promptOverride.trim() ? promptOverride : String(basePrompt ?? ""),
-    };
-
-    if (typeof targetSelection === "number") {
-      return { ...target, tabId: targetSelection };
-    }
-
-    if (targetSelection === "new") {
-      return { ...target, reuseExistingTab: false, target: "new" };
-    }
-
-    return target;
-  });
-}
-
-function buildRuntimeBroadcastTargets(targets = []) {
-  return (Array.isArray(targets) ? targets : [])
-    .filter((target) => target && typeof target.id === "string" && target.id.trim())
-    .map((target) => {
-      const payload = { id: target.id };
-
-      if (typeof target.tabId === "number") {
-        payload.tabId = target.tabId;
-      } else if (target.target === "new" || target.reuseExistingTab === false) {
-        payload.reuseExistingTab = false;
-        payload.target = "new";
-      }
-
-      if (typeof target.promptOverride === "string" && target.promptOverride.trim()) {
-        payload.promptOverride = target.promptOverride;
-      }
-
-      if (typeof target.resolvedPrompt === "string") {
-        payload.resolvedPrompt = target.resolvedPrompt;
-      }
-
-      return payload;
-    });
-}
-
-function detectTemplateVariablesForTargets(targets = []) {
-  return detectBroadcastTemplateVariables(targets);
-}
-
-function findMissingTemplateValuesForTargets(targets = [], userValues = {}) {
-  return findMissingBroadcastTemplateValues(targets, userValues);
-}
-
-function buildResolvedBroadcastTargets(targets = [], values = {}) {
-  return resolveBroadcastTargets(targets, values);
-}
-
-function buildTemplatePreviewText(targets = [], values = {}) {
-  const resolvedTargets = buildResolvedBroadcastTargets(targets, values);
-  const uniquePrompts = Array.from(
-    new Set(
-      resolvedTargets
-        .map((target) => target.resolvedPrompt)
-        .filter((prompt) => typeof prompt === "string")
-    )
-  );
-
-  if (uniquePrompts.length <= 1) {
-    return uniquePrompts[0] ?? "";
-  }
-
-  return resolvedTargets
-    .map((target) => `[${getRuntimeSiteLabel(target.id)}]\n${target.resolvedPrompt}`)
-    .join("\n\n---\n\n");
 }
 
 async function loadStoredData() {
@@ -989,17 +586,7 @@ async function refreshStoredData() {
   }
 }
 
-const {
-  getFavoriteById,
-  setFavoriteModalError,
-  hideFavoriteModal,
-  dismissFavoriteModal,
-  openFavoriteModal,
-  openFavoriteEditor,
-  runFavoriteItem,
-  runFavoriteFromEditor,
-  bindFavoriteEditorEvents,
-} = createFavoriteEditorFeature({
+const favoriteEditorFeature = createFavoriteEditorFeature({
   checkedSiteIds,
   getEnabledSites,
   getRuntimeSiteLabel,
@@ -1011,6 +598,17 @@ const {
   openOverlay,
   closeOverlay,
 });
+const {
+  getFavoriteById,
+  setFavoriteModalError,
+  dismissFavoriteModal,
+  openFavoriteModal,
+  openFavoriteEditor,
+  runFavoriteItem,
+  runFavoriteFromEditor,
+  bindFavoriteEditorEvents,
+} = favoriteEditorFeature;
+hideFavoriteModal = favoriteEditorFeature.hideFavoriteModal;
 
 async function maybeHandlePopupFavoriteIntent() {
   const intent = await consumePopupFavoriteIntent().catch(() => null);
@@ -1053,19 +651,31 @@ async function maybeHandlePopupFavoriteIntent() {
   });
 }
 
-function setLoadedTemplateContext(item) {
-  state.loadedTemplateDefaults =
-    item && item.templateDefaults && typeof item.templateDefaults === "object"
-      ? { ...item.templateDefaults }
+function setLoadedTemplateContext(
+  item: Partial<FavoritePrompt> | PromptHistoryItem | null | undefined,
+): void {
+  const templateDefaults =
+    item && "templateDefaults" in item && item.templateDefaults && typeof item.templateDefaults === "object"
+      ? item.templateDefaults
       : {};
-  state.loadedFavoriteTitle = typeof item?.title === "string" ? item.title : "";
-  state.loadedFavoriteId = typeof item?.id === "string" ? item.id : "";
+  const favoriteTitle =
+    item && "title" in item && typeof item.title === "string" ? item.title : "";
+  const favoriteId =
+    item && "id" in item && typeof item.id === "string" ? item.id : "";
+  state.loadedTemplateDefaults =
+    templateDefaults && typeof templateDefaults === "object"
+      ? { ...templateDefaults }
+      : {};
+  state.loadedFavoriteTitle = favoriteTitle;
+  state.loadedFavoriteId = favoriteId;
 }
 
-function loadPromptIntoComposer(item) {
+function loadPromptIntoComposer(item: FavoritePrompt | PromptHistoryItem): void {
   promptInput.value = item.text;
   scheduleComposeDraftSave(promptInput.value);
-  applySiteSelection(getHistorySelectedSiteIds(item));
+  applySiteSelection(
+    "requestedSiteIds" in item ? getHistorySelectedSiteIds(item) : item.sentTo,
+  );
   setLoadedTemplateContext(item);
   renderTemplateSummary();
   switchTab("compose");
@@ -1074,8 +684,8 @@ function loadPromptIntoComposer(item) {
   showAppToast(t.importedLoad, "info", 2200);
 }
 
-function setCardStatesFromBroadcast(summary) {
-  document.querySelectorAll(".site-card.sent, .site-card.failed, .site-card.sending").forEach((card) => {
+function setCardStatesFromBroadcast(summary: PopupState["lastBroadcast"]): void {
+  document.querySelectorAll<HTMLElement>(".site-card.sent, .site-card.failed, .site-card.sending").forEach((card) => {
     card.classList.remove("sending", "sent", "failed");
     card.querySelector(".retry-btn")?.remove();
   });
@@ -1103,7 +713,10 @@ function setCardStatesFromBroadcast(summary) {
   });
 }
 
-function applyLastBroadcastState(summary, { silentToast = false } = {}) {
+function applyLastBroadcastState(
+  summary: PopupState["lastBroadcast"],
+  { silentToast = false }: { silentToast?: boolean } = {},
+): void {
   state.lastBroadcast = summary;
 
   if (!summary) {
@@ -1172,13 +785,16 @@ async function cancelCurrentBroadcast() {
   cancelSendBtn.disabled = true;
 
   try {
-    const response = await sendRuntimeMessageWithTimeout({
-      action: "cancelBroadcast",
-      broadcastId,
-    }, 10000);
+    const response = await sendPopupMessage(
+      {
+        action: "cancelBroadcast",
+        broadcastId,
+      },
+      10000,
+    ) as CancelBroadcastResponse | null;
 
     if (!response?.ok) {
-      throw new Error(response?.error ?? getUnknownErrorText());
+      throw new Error(getUnknownErrorText());
     }
 
     applyLastBroadcastState(response.summary ?? await getLastBroadcast(), { silentToast: true });
@@ -1186,26 +802,30 @@ async function cancelCurrentBroadcast() {
     showAppToast(t.broadcastCancelled, "warning", 2600);
   } catch (error) {
     console.error("[AI Prompt Broadcaster] Failed to cancel broadcast.", error);
-    setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
-    showAppToast(t.error(error?.message ?? getUnknownErrorText()), "error", 4000);
+    setStatus(t.error(getErrorMessage(error)), "error");
+    showAppToast(t.error(getErrorMessage(error)), "error", 4000);
     if (state.lastBroadcast?.status === "sending") {
       cancelSendBtn.disabled = false;
     }
   }
 }
 
-async function flushPendingSessionToasts() {
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : getUnknownErrorText();
+}
+
+async function flushPendingSessionToasts(): Promise<void> {
   const pendingToasts = await drainPendingUiToasts();
   pendingToasts.forEach((toast) => {
     showAppToast(toast);
   });
 }
 
-function getSiteCardElement(siteId) {
-  return sitesContainer.querySelector(`[data-site-id="${CSS.escape(siteId)}"]`);
+function getSiteCardElement(siteId: string): HTMLElement | null {
+  return sitesContainer.querySelector<HTMLElement>(`[data-site-id="${CSS.escape(siteId)}"]`);
 }
 
-function setSiteCardState(siteId, cardState) {
+function setSiteCardState(siteId: string, cardState: string): void {
   const card = getSiteCardElement(siteId);
   if (!card) {
     return;
@@ -1220,7 +840,7 @@ function setSiteCardState(siteId, cardState) {
   }
 }
 
-function addRetryButton(target, mainPrompt) {
+function addRetryButton(target: ComposerTarget, mainPrompt: string): void {
   const siteId = target?.id;
   const card = getSiteCardElement(siteId);
   if (!card) {
@@ -1230,7 +850,7 @@ function addRetryButton(target, mainPrompt) {
   retryBtn.type = "button";
   retryBtn.className = "retry-btn";
   retryBtn.textContent = "Retry";
-  retryBtn.addEventListener("click", async (event) => {
+  retryBtn.addEventListener("click", async (event: MouseEvent) => {
     event.preventDefault();
     event.stopPropagation();
     const site = state.runtimeSites.find((s) => s.id === siteId);
@@ -1241,11 +861,14 @@ function addRetryButton(target, mainPrompt) {
     setSiteCardState(siteId, "sending");
     try {
       await refreshOpenSiteTabs();
-      const response = await sendRuntimeMessageWithTimeout({
-        action: "broadcast",
-        prompt: mainPrompt,
-        sites: buildRuntimeBroadcastTargets([target]),
-      }, 10000);
+      const response = await sendPopupMessage(
+        {
+          action: "broadcast",
+          prompt: mainPrompt,
+          sites: buildRuntimeBroadcastTargets([target]),
+        },
+        10000,
+      ) as BroadcastResponse | null;
       const failedIds = Array.isArray(response?.failedTabSiteIds) ? response.failedTabSiteIds : [];
       if (response?.ok && !failedIds.includes(siteId)) {
         setSiteCardState(siteId, "sent");
@@ -1261,7 +884,7 @@ function addRetryButton(target, mainPrompt) {
   card.appendChild(retryBtn);
 }
 
-function triggerRipple(button, event) {
+function triggerRipple(button: HTMLButtonElement, event: MouseEvent): void {
   const rect = button.getBoundingClientRect();
   const size = Math.max(rect.width, rect.height);
   const x = event.clientX - rect.left - size / 2;
@@ -1273,7 +896,10 @@ function triggerRipple(button, event) {
   ripple.addEventListener("animationend", () => ripple.remove(), { once: true });
 }
 
-async function sendResolvedPrompt(mainPrompt, targets) {
+async function sendResolvedPrompt(
+  mainPrompt: string,
+  targets: Array<ComposerTarget | BroadcastSiteTargetMessage>,
+): Promise<void> {
   if (state.isSending) {
     return;
   }
@@ -1294,17 +920,22 @@ async function sendResolvedPrompt(mainPrompt, targets) {
     await setLastSentPrompt(mainPrompt);
     clearAllToasts();
 
-    const response = await sendRuntimeMessageWithTimeout({
-      action: "broadcast",
-      prompt: mainPrompt,
-      sites: buildRuntimeBroadcastTargets(targets),
-    }, 10000);
+    const response = await sendPopupMessage(
+      {
+        action: "broadcast",
+        prompt: mainPrompt,
+        sites: buildRuntimeBroadcastTargets(targets),
+      },
+      10000,
+    ) as BroadcastResponse | null;
 
     if (response?.ok) {
       if (Array.isArray(response.failedTabSiteIds)) {
         response.failedTabSiteIds.forEach((siteId) => {
           setSiteCardState(siteId, "failed");
-          const failedTarget = targets.find((target) => target.id === siteId);
+          const failedTarget = targets.find(
+            (target): target is ComposerTarget => hasTargetId(target) && target.id === siteId,
+          );
           if (failedTarget) {
             addRetryButton(failedTarget, mainPrompt);
           }
@@ -1320,7 +951,9 @@ async function sendResolvedPrompt(mainPrompt, targets) {
     } else {
       siteIds.forEach((siteId) => {
         setSiteCardState(siteId, "failed");
-        const failedTarget = targets.find((target) => target.id === siteId);
+        const failedTarget = targets.find(
+          (target): target is ComposerTarget => hasTargetId(target) && target.id === siteId,
+        );
         if (failedTarget) {
           addRetryButton(failedTarget, mainPrompt);
         }
@@ -1331,13 +964,15 @@ async function sendResolvedPrompt(mainPrompt, targets) {
     console.error("[AI Prompt Broadcaster] Broadcast send failed.", error);
     siteIds.forEach((siteId) => {
       setSiteCardState(siteId, "failed");
-      const failedTarget = targets.find((target) => target.id === siteId);
+      const failedTarget = targets.find(
+        (target): target is ComposerTarget => hasTargetId(target) && target.id === siteId,
+      );
       if (failedTarget) {
         addRetryButton(failedTarget, mainPrompt);
       }
     });
-    setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
-    showAppToast(t.error(error?.message ?? getUnknownErrorText()), "error", 4000);
+    setStatus(t.error(getErrorMessage(error)), "error");
+    showAppToast(t.error(getErrorMessage(error)), "error", 4000);
     setSendingState(false);
     clearSendSafetyTimer();
   } finally {
@@ -1359,7 +994,7 @@ function hideResendModal() {
   closeOverlay(resendModal);
 }
 
-function openResendModal(historyItem) {
+function openResendModal(historyItem: PromptHistoryItem): void {
   state.pendingResendHistory = historyItem;
   resendModalTitle.textContent = t.resendModalTitle;
   resendModalDesc.textContent = t.resendModalDesc;
@@ -1380,7 +1015,10 @@ function openResendModal(historyItem) {
     `;
   }).join("");
 
-  openOverlay(resendModal, resendModalSites.querySelector("input:not([disabled])"));
+  openOverlay(
+    resendModal,
+    resendModalSites.querySelector<HTMLInputElement>("input:not([disabled])"),
+  );
 }
 
 async function confirmResendModal() {
@@ -1389,7 +1027,9 @@ async function confirmResendModal() {
     return;
   }
 
-  const selectedSiteIds = [...resendModalSites.querySelectorAll("[data-resend-site]:checked")]
+  const selectedSiteIds = Array.from(
+    resendModalSites.querySelectorAll<HTMLInputElement>("[data-resend-site]:checked"),
+  )
     .map((checkbox) => checkbox.value)
     .filter(Boolean);
 
@@ -1410,7 +1050,7 @@ async function confirmResendModal() {
   await sendResolvedPrompt(historyItem.text, selectedTargets);
 }
 
-function openImportReportModal(summary) {
+function openImportReportModal(summary: PopupState["pendingImportSummary"]): void {
   state.pendingImportSummary = summary;
   importReportModalTitle.textContent = t.importReportTitle;
   importReportModalDesc.textContent = t.importReportDesc;
@@ -1424,19 +1064,43 @@ function hideImportReportModal() {
   closeOverlay(importReportModal);
 }
 
-function getPromptButtonsForActiveTab() {
+const favoritesController = createFavoritesController({
+  switchTab,
+  loadPromptIntoComposer,
+  openFavoriteEditor,
+  runFavoriteItem,
+  setStatus,
+  showAppToast,
+  getUnknownErrorText,
+});
+renderFavoritesList = favoritesController.renderFavoritesList;
+scheduleFavoriteTitleSave = favoritesController.scheduleFavoriteTitleSave;
+
+const historyController = createHistoryController({
+  switchTab,
+  loadPromptIntoComposer,
+  openResendModal,
+  renderFavoritesList,
+  setStatus,
+  showAppToast,
+});
+renderHistoryList = historyController.renderHistoryList;
+
+function getPromptButtonsForActiveTab(): HTMLElement[] {
   if (state.activeTab === "history") {
-    return [...historyList.querySelectorAll("[data-load-history]")];
+    return Array.from(historyList.querySelectorAll<HTMLElement>("[data-load-history]"));
   }
 
   if (state.activeTab === "favorites") {
-    return [...favoritesList.querySelectorAll("[data-load-favorite], [data-edit-favorite]")];
+    return Array.from(
+      favoritesList.querySelectorAll<HTMLElement>("[data-load-favorite], [data-edit-favorite]"),
+    );
   }
 
   return [];
 }
 
-function focusAdjacentPromptButton(direction) {
+function focusAdjacentPromptButton(direction: number): void {
   const buttons = getPromptButtonsForActiveTab();
   if (buttons.length === 0) {
     return;
@@ -1449,7 +1113,7 @@ function focusAdjacentPromptButton(direction) {
   buttons[nextIndex]?.focus?.();
 }
 
-async function handleGlobalShortcut(event) {
+async function handleGlobalShortcut(event: KeyboardEvent): Promise<void> {
   if (event.defaultPrevented) {
     return;
   }
@@ -1482,7 +1146,7 @@ async function handleGlobalShortcut(event) {
 
   if (hasPrimaryModifier && !event.shiftKey && ["1", "2", "3", "4"].includes(shortcutKey)) {
     event.preventDefault();
-    switchTab(["compose", "history", "favorites", "settings"][Number(shortcutKey) - 1]);
+    switchTab(["compose", "history", "favorites", "settings"][Number(shortcutKey) - 1] as PopupTabId);
     return;
   }
 
@@ -1512,13 +1176,15 @@ function setTemplateModalError(message = "") {
   templateModalError.textContent = message;
 }
 
-async function ensureClipboardReadPermission() {
+async function ensureClipboardReadPermission(): Promise<boolean> {
   try {
     if (!chrome.permissions?.contains || !chrome.permissions?.request) {
       return false;
     }
 
-    const permission = { permissions: ["clipboardRead"] };
+    const permission: chrome.permissions.Permissions = {
+      permissions: ["clipboardRead"],
+    };
     const alreadyGranted = await chrome.permissions.contains(permission);
 
     if (alreadyGranted) {
@@ -1532,7 +1198,9 @@ async function ensureClipboardReadPermission() {
   }
 }
 
-async function resolveAsyncTemplateVariables(variables) {
+async function resolveAsyncTemplateVariables(
+  variables: TemplateVariableDescriptor[],
+): Promise<Record<string, string>> {
   const needsTabContext = variables.some(
     (v) =>
       v.name === SYSTEM_TEMPLATE_VARIABLES.url ||
@@ -1541,11 +1209,14 @@ async function resolveAsyncTemplateVariables(variables) {
   );
   const needsCounter = variables.some((v) => v.name === SYSTEM_TEMPLATE_VARIABLES.counter);
 
-  const extra = {};
+  const extra: Record<string, string> = {};
 
   if (needsTabContext) {
     try {
-      const response = await sendRuntimeMessageWithTimeout({ action: "getActiveTabContext" }, 4000);
+      const response = await sendPopupMessage(
+        { action: "getActiveTabContext" },
+        4000,
+      ) as ActiveTabContextResponse | null;
       if (response?.ok) {
         extra.url = response.url ?? "";
         extra.title = response.title ?? "";
@@ -1558,7 +1229,10 @@ async function resolveAsyncTemplateVariables(variables) {
 
   if (needsCounter) {
     try {
-      const response = await sendRuntimeMessageWithTimeout({ action: "getBroadcastCounter" }, 4000);
+      const response = await sendPopupMessage(
+        { action: "getBroadcastCounter" },
+        4000,
+      ) as BroadcastCounterResponse | null;
       extra.counter = response?.counter != null ? String(Number(response.counter) + 1) : "1";
     } catch (_error) {
       extra.counter = "1";
@@ -1594,12 +1268,12 @@ async function readClipboardTemplateValue() {
     return {
       ok: false,
       text: "",
-      error: error?.message ?? String(error),
+      error: getErrorMessage(error),
     };
   }
 }
 
-function getFavoriteTemplateSources(favorite) {
+function getFavoriteTemplateSources(favorite: FavoritePrompt): string[] {
   if (favorite?.mode === "chain" && Array.isArray(favorite.steps) && favorite.steps.length > 0) {
     return favorite.steps
       .map((step) => String(step?.text ?? ""))
@@ -1609,7 +1283,9 @@ function getFavoriteTemplateSources(favorite) {
   return [String(favorite?.text ?? "")];
 }
 
-function detectFavoriteTemplateVariables(favorite) {
+function detectFavoriteTemplateVariables(
+  favorite: FavoritePrompt,
+): TemplateVariableDescriptor[] {
   const seen = new Set();
 
   return getFavoriteTemplateSources(favorite)
@@ -1624,13 +1300,18 @@ function detectFavoriteTemplateVariables(favorite) {
     });
 }
 
-async function buildPreparedFavoriteExecutionContext(favorite) {
+async function buildPreparedFavoriteExecutionContext(
+  favorite: FavoritePrompt,
+): Promise<
+  | { ok: true; preparedExecutionContext: Record<string, string> }
+  | { ok: false; reason: string; error: string }
+> {
   const variables = detectFavoriteTemplateVariables(favorite);
   const needsClipboard = variables.some(
     (variable) => variable.kind === "system" && variable.name === SYSTEM_TEMPLATE_VARIABLES.clipboard
   );
   const asyncExtra = await resolveAsyncTemplateVariables(variables);
-  const preparedExecutionContext = {};
+  const preparedExecutionContext: Record<string, string> = {};
 
   if (typeof asyncExtra.url === "string") {
     preparedExecutionContext.url = asyncExtra.url;
@@ -1666,12 +1347,15 @@ async function buildPreparedFavoriteExecutionContext(favorite) {
 }
 
 async function requestFavoriteRun(
-  favorite,
+  favorite: FavoritePrompt,
   {
     trigger = "popup",
     allowPopupFallback = false,
-  } = {}
-) {
+  }: {
+    trigger?: FavoriteExecutionTrigger;
+    allowPopupFallback?: boolean;
+  } = {},
+): Promise<FavoriteRunResponse> {
   if (!favorite?.id) {
     return {
       ok: false,
@@ -1684,13 +1368,16 @@ async function requestFavoriteRun(
     return prepared;
   }
 
-  return sendRuntimeMessageWithTimeout({
-    action: "favorite:run",
-    favoriteId: favorite.id,
-    trigger,
-    allowPopupFallback,
-    preparedExecutionContext: prepared.preparedExecutionContext,
-  }, 10000);
+  return (await sendPopupMessage(
+    {
+      action: "favorite:run",
+      favoriteId: favorite.id,
+      trigger,
+      allowPopupFallback,
+      preparedExecutionContext: prepared.preparedExecutionContext,
+    },
+    10000,
+  )) as FavoriteRunResponse;
 }
 
 async function maybeMarkLoadedFavoriteAsUsed() {
@@ -1706,7 +1393,12 @@ async function maybeMarkLoadedFavoriteAsUsed() {
   }
 }
 
-function buildTemplateSendPreviewState() {
+function buildTemplateSendPreviewState(): {
+  values: Record<string, string>;
+  preview: string;
+  missingUserValues: string[];
+  clipboardMissing: boolean;
+} | null {
   const modalState = state.pendingTemplateSend;
   if (!modalState) {
     return null;
@@ -1726,7 +1418,7 @@ function buildTemplateSendPreviewState() {
   };
 }
 
-function renderTemplateModal() {
+function renderTemplateModal(): void {
   const modalState = state.pendingTemplateSend;
   if (!modalState) {
     return;
@@ -1785,7 +1477,10 @@ function renderTemplateModal() {
   templateModalConfirm.disabled = Boolean(errorMessage);
 }
 
-async function openTemplateModal(prompt, sites) {
+async function openTemplateModal(
+  prompt: string,
+  sites: ComposerTarget[],
+): Promise<void> {
   const variables = detectTemplateVariables(prompt);
 
   if (variables.length === 0) {
@@ -1824,7 +1519,7 @@ async function openTemplateModal(prompt, sites) {
   openOverlay(templateModal, templateFields.querySelector("input") ?? templateModalConfirm);
 }
 
-async function confirmTemplateModalSend() {
+async function confirmTemplateModalSend(): Promise<void> {
   const modalState = state.pendingTemplateSend;
   if (!modalState) {
     return;
@@ -1847,7 +1542,12 @@ async function confirmTemplateModalSend() {
   await sendResolvedPrompt(modalState.prompt, resolvedTargets);
 }
 
-function buildTemplateSendPreviewStateV2() {
+function buildTemplateSendPreviewStateV2(): {
+  values: Record<string, string>;
+  preview: string;
+  missingUserValues: string[];
+  clipboardMissing: boolean;
+} | null {
   const modalState = state.pendingTemplateSend;
   if (!modalState) {
     return null;
@@ -1873,7 +1573,7 @@ function buildTemplateSendPreviewStateV2() {
   };
 }
 
-function renderTemplateModalV2() {
+function renderTemplateModalV2(): void {
   const modalState = state.pendingTemplateSend;
   if (!modalState) {
     return;
@@ -1934,7 +1634,10 @@ function renderTemplateModalV2() {
   templateModalConfirm.disabled = Boolean(errorMessage);
 }
 
-async function openTemplateModalV2(prompt, targets) {
+async function openTemplateModalV2(
+  prompt: string,
+  targets: ComposerTarget[],
+): Promise<void> {
   const variables = detectTemplateVariablesForTargets(targets);
 
   if (variables.length === 0) {
@@ -2055,7 +1758,8 @@ function renderTabLabels() {
   importReportModalConfirm.textContent = t.importReportClose;
 
   tabButtons.forEach((button) => {
-    button.textContent = t.tabs[button.dataset.tab];
+    const tabId = button.dataset.tab as PopupTabId | undefined;
+    button.textContent = tabId ? t.tabs[tabId] : "";
   });
 
   applyDynamicPromptPlaceholder();
@@ -2206,7 +1910,12 @@ function renderSiteCheckboxesPanel() {
       tabsList.className = "site-tabs-list";
       const radioName = `site-target-${site.id}`;
 
-      const appendTargetOption = (choiceValue, title, detail, pillText = "") => {
+      const appendTargetOption = (
+        choiceValue: PopupState["siteTargetSelections"][string],
+        title: string,
+        detail: string,
+        pillText = "",
+      ): void => {
         const option = document.createElement("label");
         option.className = "site-tab-option";
 
@@ -2333,443 +2042,33 @@ function renderSiteCheckboxesPanel() {
   setCardStatesFromBroadcast(state.lastBroadcast);
 }
 
-function setServiceEditorError(message = "") {
-  serviceEditorError.hidden = !message;
-  serviceEditorError.textContent = message;
-}
-
-function setServiceTestResult(message = "", isError = false) {
-  serviceTestResult.hidden = !message;
-  serviceTestResult.textContent = message;
-  serviceTestResult.style.background = isError
-    ? "rgba(181, 59, 59, 0.12)"
-    : "rgba(255, 196, 0, 0.12)";
-  serviceTestResult.style.color = isError ? "var(--danger)" : "var(--text)";
-}
-
-function setServicePermissionPreview(message = "", isError = false) {
-  servicePermissionPreview.hidden = !message;
-  servicePermissionPreview.textContent = message;
-  servicePermissionPreview.style.color = isError ? "var(--danger)" : "var(--text-soft)";
-}
-
-function renderServicePermissionPreview(draft = readServiceEditorDraft(), validation = null) {
-  const aliasErrors = validation?.fieldErrors?.hostnameAliases ?? [];
-  const supportedRouteErrors = validation?.fieldErrors?.supportedRoutes ?? [];
-  const aliasValidation = aliasErrors.length > 0
-    ? { valid: false, errors: aliasErrors }
-    : validateHostnameAliases(draft.hostnameAliases);
-  const hasAliasError = aliasValidation.errors.length > 0;
-
-  serviceHostnameAliasesInput.setAttribute("aria-invalid", String(hasAliasError));
-  serviceSupportedRoutesInput.setAttribute("aria-invalid", String(supportedRouteErrors.length > 0));
-
-  if (hasAliasError) {
-    setServicePermissionPreview(aliasValidation.errors.join(" "), true);
-    return;
-  }
-
-  if (Boolean(state.serviceEditor?.isBuiltIn)) {
-    setServicePermissionPreview("");
-    return;
-  }
-
-  const patterns = buildSitePermissionPatterns(draft.url, draft.hostnameAliases);
-  if (!draft.url.trim() || patterns.length === 0) {
-    setServicePermissionPreview("");
-    return;
-  }
-
-  setServicePermissionPreview(
-    `${msg("popup_service_permission_preview") || "Requested origins"}: ${patterns.join(", ")}`,
-    false,
-  );
-}
-
-function resetServiceEditorForm() {
-  serviceNameInput.value = "";
-  serviceUrlInput.value = "";
-  serviceInputSelectorInput.value = "";
-  document.querySelector("input[name='service-input-type'][value='textarea']").checked = true;
-  serviceSubmitSelectorInput.value = "";
-  serviceSubmitMethodSelect.value = "click";
-  serviceFallbackSelectorsInput.value = "";
-  serviceAuthSelectorsInput.value = "";
-  serviceHostnameAliasesInput.value = "";
-  serviceSupportedRoutesInput.value = "";
-  serviceHostnameAliasesInput.disabled = false;
-  serviceVerifiedAtInput.value = "";
-  serviceVerifiedRouteInput.value = "";
-  serviceVerifiedAuthStateSelect.value = "";
-  serviceVerifiedLocaleInput.value = "";
-  serviceVerifiedVersionInput.value = "";
-  serviceWaitRange.value = "2000";
-  serviceWaitValue.textContent = "2000ms";
-  serviceColorInput.value = "#c24f2e";
-  serviceIconInput.value = "AI";
-  serviceEnabledInput.checked = true;
-  serviceUrlInput.disabled = false;
-  state.serviceEditor = null;
-  setServiceEditorError("");
-  setServiceTestResult("");
-  setServicePermissionPreview("");
-}
-
-function hideServiceEditor() {
-  serviceEditor.hidden = true;
-  resetServiceEditorForm();
-}
-
-function populateServiceEditor(site) {
-  state.serviceEditor = {
-    mode: site ? "edit" : "add",
-    siteId: site?.id ?? "",
-    isBuiltIn: Boolean(site?.isBuiltIn),
-    selectorCheckMode: site?.selectorCheckMode ?? "input-and-submit",
-  };
-
-  serviceEditorTitle.textContent =
-    state.serviceEditor.mode === "edit" ? t.serviceEditorEditTitle : t.serviceEditorAddTitle;
-  serviceNameInput.value = site?.name ?? "";
-  serviceUrlInput.value = site?.url ?? "";
-  serviceInputSelectorInput.value = site?.inputSelector ?? "";
-  const inputTypeOption = document.querySelector(
-    `input[name='service-input-type'][value='${site?.inputType ?? "textarea"}']`
-  );
-  if (inputTypeOption) {
-    inputTypeOption.checked = true;
-  }
-  serviceSubmitSelectorInput.value = site?.submitSelector ?? "";
-  serviceSubmitMethodSelect.value = site?.submitMethod ?? "click";
-  serviceFallbackSelectorsInput.value = joinMultilineValues(site?.fallbackSelectors);
-  serviceAuthSelectorsInput.value = joinMultilineValues(site?.authSelectors);
-  serviceHostnameAliasesInput.value = joinMultilineValues(site?.hostnameAliases);
-  serviceSupportedRoutesInput.value = joinMultilineValues(site?.supportedRoutes);
-  serviceHostnameAliasesInput.disabled = Boolean(site?.isBuiltIn);
-  serviceVerifiedAtInput.value = site?.verifiedAt ?? "";
-  serviceVerifiedRouteInput.value = site?.verifiedRoute ?? "";
-  serviceVerifiedAuthStateSelect.value = site?.verifiedAuthState ?? "";
-  serviceVerifiedLocaleInput.value = site?.verifiedLocale ?? "";
-  serviceVerifiedVersionInput.value = site?.verifiedVersion ?? "";
-  serviceWaitRange.value = String(site?.waitMs ?? 2000);
-  serviceWaitValue.textContent = `${site?.waitMs ?? 2000}ms`;
-  serviceColorInput.value = site?.color ?? "#c24f2e";
-  serviceIconInput.value = site?.icon ?? "AI";
-  serviceEnabledInput.checked = site?.enabled ?? true;
-  serviceUrlInput.disabled = Boolean(site?.isBuiltIn);
-  setServiceEditorError("");
-  setServiceTestResult("");
-  renderServicePermissionPreview(readServiceEditorDraft());
-  serviceEditor.hidden = false;
-}
-
-function buildManagedSiteMarkup(site) {
-  const chips = [
-    `<span class="managed-site-chip">${escapeHtml(site.isBuiltIn ? t.serviceBuiltInBadge : t.serviceCustomBadge)}</span>`,
-    `<span class="managed-site-chip">${escapeHtml(site.inputType)}</span>`,
-    `<span class="managed-site-chip">${escapeHtml(`${site.waitMs}ms`)}</span>`,
-  ];
-  const selectorWarning = state.failedSelectors.get(site.id);
-  const lastVerifiedStatus = getSiteLastVerifiedStatus(site);
-  const selectorWarningMarkup = selectorWarning
-    ? `
-      <div class="selector-report-row">
-        <span class="selector-days-since">${escapeHtml(lastVerifiedStatus || (msg("popup_selector_warning_desc") || "Selector may have changed."))}</span>
-        <a
-          class="ghost-button small-button selector-report-link"
-          href="${escapeAttribute(getSiteSelectorIssueUrl(site))}"
-          target="_blank"
-          rel="noopener noreferrer"
-          title="${escapeAttribute(msg("popup_selector_report_tooltip") || "Open GitHub Issues")}"
-        >${escapeHtml(msg("popup_selector_report_btn") || "Report")}</a>
-      </div>
-    `
-    : "";
-
-  if (!site.enabled) {
-    chips.push(`<span class="managed-site-chip">${escapeHtml(t.serviceDisabledLabel)}</span>`);
-  }
-
-  return `
-    <article class="managed-site-card" data-managed-site-id="${escapeAttribute(site.id)}">
-      <div class="managed-site-head">
-        <div class="managed-site-title">
-          <span class="site-icon" style="--site-color:${escapeAttribute(site.color)}">${escapeHtml(getSiteIcon(site))}</span>
-          <div class="managed-site-name-wrap">
-            <span class="managed-site-name">${escapeHtml(site.name)}</span>
-            <span class="managed-site-url">${escapeHtml(site.url)}</span>
-          </div>
-        </div>
-        <label class="toggle-switch">
-          <input type="checkbox" data-action="toggle-service" data-site-id="${escapeAttribute(site.id)}" ${site.enabled ? "checked" : ""} />
-          <span>${escapeHtml(t.serviceFieldEnabled)}</span>
-        </label>
-      </div>
-      <div class="managed-site-meta">${chips.join("")}</div>
-      ${selectorWarningMarkup}
-      <div class="managed-site-actions">
-        <button class="ghost-button" type="button" data-action="edit-service" data-site-id="${escapeAttribute(site.id)}">${escapeHtml(t.serviceEdit)}</button>
-        ${site.deletable ? `<button class="ghost-button danger-button" type="button" data-action="delete-service" data-site-id="${escapeAttribute(site.id)}">${escapeHtml(t.serviceDelete)}</button>` : ""}
-      </div>
-    </article>
-  `;
-}
-
-function renderManagedSites() {
-  if (state.runtimeSites.length === 0) {
-    managedSitesList.innerHTML = `<div class="managed-site-empty">${escapeHtml(t.serviceEmptyList)}</div>`;
-    return;
-  }
-
-  managedSitesList.innerHTML = state.runtimeSites
-    .map((site) => buildManagedSiteMarkup(site))
-    .join("");
-}
-
-function readServiceEditorDraft() {
-  const selectedInputType = document.querySelector("input[name='service-input-type']:checked");
-
-  return {
-    id: state.serviceEditor?.siteId ?? "",
-    name: serviceNameInput.value.trim(),
-    url: serviceUrlInput.value.trim(),
-    inputSelector: serviceInputSelectorInput.value.trim(),
-    inputType: selectedInputType?.value ?? "textarea",
-    submitSelector: serviceSubmitSelectorInput.value.trim(),
-    submitMethod: serviceSubmitMethodSelect.value,
-    selectorCheckMode: state.serviceEditor?.selectorCheckMode ?? "input-and-submit",
-    fallbackSelectors: splitMultilineValues(serviceFallbackSelectorsInput.value),
-    authSelectors: splitMultilineValues(serviceAuthSelectorsInput.value),
-    hostnameAliases: splitMultilineValues(serviceHostnameAliasesInput.value),
-    supportedRoutes: splitMultilineValues(serviceSupportedRoutesInput.value),
-    verifiedAt: serviceVerifiedAtInput.value.trim(),
-    verifiedRoute: serviceVerifiedRouteInput.value.trim(),
-    verifiedAuthState: serviceVerifiedAuthStateSelect.value,
-    verifiedLocale: serviceVerifiedLocaleInput.value.trim(),
-    verifiedVersion: serviceVerifiedVersionInput.value.trim(),
-    waitMs: Number(serviceWaitRange.value),
-    color: serviceColorInput.value,
-    icon: serviceIconInput.value.trim(),
-    enabled: serviceEnabledInput.checked,
-  };
-}
-
-async function ensureSiteOriginPermission(url, hostnameAliases = []) {
-  try {
-    const patterns = buildSitePermissionPatterns(url, hostnameAliases);
-    if (patterns.length === 0) {
-      return false;
-    }
-
-    const permission = { origins: patterns };
-    const alreadyGranted = await chrome.permissions.contains(permission);
-    if (alreadyGranted) {
-      return true;
-    }
-
-    return await chrome.permissions.request(permission);
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to request site host permission.", error);
-    return false;
-  }
-}
-
-async function testSelectorOnActiveTab() {
-  if (!serviceInputSelectorInput.value.trim()) {
-    setServiceTestResult(t.serviceTestNoSelector, true);
-    return;
-  }
-
-  try {
-    const response = await sendRuntimeMessageWithTimeout({
-      action: "service-test:run",
-      draft: readServiceEditorDraft(),
-      isBuiltIn: Boolean(state.serviceEditor?.isBuiltIn),
-    }, 10000);
-    const result = buildServiceTestResultMessage(response);
-    setServiceTestResult(result.message, result.isError);
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Selector test failed.", error);
-    setServiceTestResult(t.serviceTestError(error?.message ?? getUnknownErrorText()), true);
-  }
-}
-
-async function saveServiceEditorDraft() {
-  const draft = readServiceEditorDraft();
-  const isBuiltIn = Boolean(state.serviceEditor?.isBuiltIn);
-  const validation = validateSiteDraft(draft, { isBuiltIn });
-  renderServicePermissionPreview(draft, validation);
-
-  if (!validation.valid) {
-    setServiceEditorError(validation.errors.join(" "));
-    return;
-  }
-
-  if (!isBuiltIn) {
-    const granted = await ensureSiteOriginPermission(draft.url, draft.hostnameAliases);
-    if (!granted) {
-      setServiceEditorError(t.servicePermissionDenied);
-      return;
-    }
-  }
-
-  try {
-    if (isBuiltIn) {
-      await saveBuiltInSiteOverride(state.serviceEditor.siteId, draft);
-      await setRuntimeSiteEnabled(state.serviceEditor.siteId, draft.enabled);
-    } else {
-      await saveCustomSite(draft);
-    }
-
-    await refreshStoredData();
-    hideServiceEditor();
-    setStatus(t.serviceSaved, "success");
-    showAppToast(t.serviceSaved, "success", 2200);
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to save service settings.", error);
-    setServiceEditorError(error?.message ?? t.serviceValidationError);
-  }
-}
-
-async function deleteManagedSite(siteId) {
-  try {
-    await deleteCustomSite(siteId);
-    await refreshStoredData();
-    setStatus(t.serviceDeleted, "success");
-    showAppToast(t.serviceDeleted, "info", 2200);
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to delete custom site.", error);
-    setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
-  }
-}
-
-function setFavoriteTitleInState(favoriteId, title) {
-  state.favorites = state.favorites.map((item) =>
-    String(item.id) === String(favoriteId)
-      ? { ...item, title }
-      : item
-  );
-}
-
-function scheduleFavoriteTitleSave(favoriteId, title, immediate = false) {
-  const timer = state.favoriteSaveTimers.get(favoriteId);
-  if (timer) {
-    window.clearTimeout(timer);
-  }
-
-  setFavoriteTitleInState(favoriteId, title);
-
-  const runSave = async () => {
-    try {
-      await updateFavoriteTitle(favoriteId, title);
-      setStatus(t.titleSaved, "success");
-      showAppToast(t.titleSaved, "success", 1500);
-    } catch (error) {
-      console.error("[AI Prompt Broadcaster] Failed to save favorite title.", error);
-      setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
-    }
-  };
-
-  if (immediate) {
-    state.favoriteSaveTimers.delete(favoriteId);
-    void runSave();
-    return;
-  }
-
-  const nextTimer = window.setTimeout(() => {
-    state.favoriteSaveTimers.delete(favoriteId);
-    void runSave();
-  }, 300);
-
-  state.favoriteSaveTimers.set(favoriteId, nextTimer);
-}
-
-async function handleHistoryAction(action, historyId) {
-  const item = state.history.find((entry) => Number(entry.id) === Number(historyId));
-  if (!item) {
-    return;
-  }
-
-  if (action === "favorite") {
-    await addFavoriteFromHistory(item);
-    state.favorites = await getPromptFavorites();
-    state.openMenuKey = null;
-    renderFavoritesList();
-    renderHistoryList();
-    setStatus(t.favoriteAdded, "success");
-    showAppToast(t.favoriteAdded, "success", 2200);
-    return;
-  }
-
-  if (action === "resend-history") {
-    state.openMenuKey = null;
-    renderHistoryList();
-    openResendModal(item);
-    return;
-  }
-
-  if (action === "delete-history") {
-    await deletePromptHistoryItem(historyId);
-    state.history = await getPromptHistory();
-    state.openMenuKey = null;
-    renderHistoryList();
-    setStatus(t.historyDeleted, "success");
-    showAppToast(t.toastHistoryDeleted, "info", 2200);
-  }
-}
-
-async function handleFavoriteAction(action, favoriteId) {
-  const item = getFavoriteById(favoriteId);
-
-  if (action === "delete-favorite") {
-    await deleteFavoriteItem(favoriteId);
-    state.favorites = await getPromptFavorites();
-    state.openMenuKey = null;
-    renderFavoritesList();
-    setStatus(t.favoriteDeleted, "success");
-    showAppToast(t.favoriteDeleted, "info", 2200);
-    return;
-  }
-
-  if (action === "toggle-pin-favorite") {
-    if (item) {
-      await updateFavoriteMeta(favoriteId, { pinned: !item.pinned });
-      state.favorites = await getPromptFavorites();
-      state.openMenuKey = null;
-      renderFavoritesList();
-    }
-    return;
-  }
-
-  if (action === "edit-favorite") {
-    if (!item) {
-      return;
-    }
-    state.openMenuKey = null;
-    renderFavoritesList();
-    openFavoriteEditor(item);
-    return;
-  }
-
-  if (action === "duplicate-favorite") {
-    await duplicateFavoriteItem(favoriteId, t.favoriteDuplicatePrefix);
-    state.favorites = await getPromptFavorites();
-    state.openMenuKey = null;
-    renderFavoritesList();
-    setStatus(t.favoriteDuplicated, "success");
-    showAppToast(t.favoriteDuplicated, "success", 2200);
-    return;
-  }
-
-  if (action === "run-favorite") {
-    if (!item) {
-      return;
-    }
-
-    await runFavoriteItem(item);
-    renderFavoritesList();
-  }
-}
+const popupServicesController = createPopupServicesController({
+  refreshStoredData,
+  setStatus,
+  showAppToast,
+  getErrorMessage,
+  buildServiceTestResultMessage,
+  sendPopupMessage: (message, timeoutMs) =>
+    sendPopupMessage<"service-test:run">(message, timeoutMs),
+  getSiteLastVerifiedStatus,
+  getSiteSelectorIssueUrl,
+});
+const {
+  setServiceEditorError,
+  setServiceTestResult,
+  setServicePermissionPreview,
+  renderServicePermissionPreview,
+  resetServiceEditorForm,
+  hideServiceEditor,
+  populateServiceEditor,
+  buildManagedSiteMarkup,
+  renderManagedSites,
+  readServiceEditorDraft,
+  ensureSiteOriginPermission,
+  testSelectorOnActiveTab,
+  saveServiceEditorDraft,
+  deleteManagedSite,
+} = popupServicesController;
 
 async function handleSend() {
   if (state.isSending) {
@@ -2814,7 +2113,12 @@ async function handleSend() {
 
 function bindGlobalEvents() {
   tabButtons.forEach((button) => {
-    button.addEventListener("click", () => switchTab(button.dataset.tab));
+    button.addEventListener("click", () => {
+      const nextTab = button.dataset.tab as PopupTabId | undefined;
+      if (nextTab) {
+        switchTab(nextTab);
+      }
+    });
   });
 
   clearPromptBtn.addEventListener("click", () => {
@@ -2846,7 +2150,7 @@ function bindGlobalEvents() {
   saveFavoriteBtn.addEventListener("click", () => {
     void openFavoriteModal().catch((error) => {
       console.error("[AI Prompt Broadcaster] Failed to open favorite modal.", error);
-      setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
+      setStatus(t.error(getErrorMessage(error)), "error");
     });
   });
 
@@ -2858,7 +2162,7 @@ function bindGlobalEvents() {
     triggerRipple(sendBtn, event);
     void handleSend().catch((error) => {
       console.error("[AI Prompt Broadcaster] Send flow failed.", error);
-      setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
+      setStatus(t.error(getErrorMessage(error)), "error");
     });
   });
 
@@ -2878,18 +2182,28 @@ function bindGlobalEvents() {
       event.preventDefault();
       void handleSend().catch((error) => {
         console.error("[AI Prompt Broadcaster] Keyboard send failed.", error);
-        setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
+        setStatus(t.error(getErrorMessage(error)), "error");
       });
     }
   });
 
   historySearchInput.addEventListener("input", (event) => {
-    state.historySearch = event.target.value;
+    const target = getEventInput(event.target);
+    if (!target) {
+      return;
+    }
+
+    state.historySearch = target.value;
     renderHistoryList();
   });
 
   historySortSelect.addEventListener("change", (event) => {
-    const nextValue = event.target.value;
+    const target = getEventSelect(event.target);
+    if (!target) {
+      return;
+    }
+
+    const nextValue = target.value as PopupState["settings"]["historySort"];
     state.settings = {
       ...state.settings,
       historySort: nextValue,
@@ -2897,17 +2211,27 @@ function bindGlobalEvents() {
     renderHistoryList();
     void updateAppSettings({ historySort: nextValue }).catch((error) => {
       console.error("[AI Prompt Broadcaster] Failed to save history sort.", error);
-      setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
+      setStatus(t.error(getErrorMessage(error)), "error");
     });
   });
 
   favoritesSearchInput.addEventListener("input", (event) => {
-    state.favoritesSearch = event.target.value;
+    const target = getEventInput(event.target);
+    if (!target) {
+      return;
+    }
+
+    state.favoritesSearch = target.value;
     renderFavoritesList();
   });
 
   favoritesSortSelect.addEventListener("change", (event) => {
-    const nextValue = event.target.value;
+    const target = getEventSelect(event.target);
+    if (!target) {
+      return;
+    }
+
+    const nextValue = target.value as PopupState["settings"]["favoriteSort"];
     state.settings = {
       ...state.settings,
       favoriteSort: nextValue,
@@ -2915,154 +2239,36 @@ function bindGlobalEvents() {
     renderFavoritesList();
     void updateAppSettings({ favoriteSort: nextValue }).catch((error) => {
       console.error("[AI Prompt Broadcaster] Failed to save favorite sort.", error);
-      setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
+      setStatus(t.error(getErrorMessage(error)), "error");
     });
   });
 
-  // Favorites filter bar — tag/folder chip clicks (event delegation via parent panel)
-  document.querySelector("[data-panel='favorites']")?.addEventListener("click", (event) => {
-    const chip = event.target.closest("[data-filter-tag],[data-filter-folder],[data-filter-all]");
-    if (!chip) return;
-    if (chip.dataset.filterAll === "favorites") {
-      state.favoritesTagFilter = "";
-      state.favoritesFolderFilter = "";
-    } else if (chip.dataset.filterTag !== undefined) {
-      state.favoritesTagFilter = state.favoritesTagFilter === chip.dataset.filterTag ? "" : chip.dataset.filterTag;
-      state.favoritesFolderFilter = "";
-    } else if (chip.dataset.filterFolder !== undefined) {
-      state.favoritesFolderFilter = state.favoritesFolderFilter === chip.dataset.filterFolder ? "" : chip.dataset.filterFolder;
-      state.favoritesTagFilter = "";
-    }
-    renderFavoritesList();
+  document.querySelector<HTMLElement>("[data-panel='favorites']")?.addEventListener("click", (event: MouseEvent) => {
+    favoritesController.handleFavoriteFilterBarClick(event);
   });
 
-  historyList.addEventListener("click", (event) => {
-    const switchButton = event.target.closest("[data-switch-tab='compose']");
-    if (switchButton) {
-      switchTab("compose");
-      return;
-    }
-
-    const loadButton = event.target.closest("[data-load-history]");
-    if (loadButton) {
-      const item = state.history.find(
-        (entry) => Number(entry.id) === Number(loadButton.dataset.loadHistory)
-      );
-      if (item) {
-        loadPromptIntoComposer({ ...item, templateDefaults: {}, title: "" });
-      }
-      return;
-    }
-
-    const menuToggle = event.target.closest("[data-toggle-menu]");
-    if (menuToggle) {
-      const menuKey = menuToggle.dataset.toggleMenu;
-      state.openMenuKey = state.openMenuKey === menuKey ? null : menuKey;
-      renderHistoryList();
-      return;
-    }
-
-    const actionButton = event.target.closest("[data-action][data-history-id]");
-    if (actionButton) {
-      void handleHistoryAction(
-        actionButton.dataset.action,
-        actionButton.dataset.historyId
-      ).catch((error) => {
-        console.error("[AI Prompt Broadcaster] History action failed.", error);
-        setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
-      });
-    }
+  historyList.addEventListener("click", (event: MouseEvent) => {
+    historyController.handleHistoryListClick(event);
   });
 
-  historyList.addEventListener("contextmenu", (event) => {
-    const item = event.target.closest("[data-history-id]");
-    if (!item) {
-      return;
-    }
-
-    event.preventDefault();
-    state.openMenuKey = `history:${item.dataset.historyId}`;
-    renderHistoryList();
+  historyList.addEventListener("contextmenu", (event: MouseEvent) => {
+    historyController.handleHistoryListContextMenu(event);
   });
 
-  favoritesList.addEventListener("click", (event) => {
-    const switchButton = event.target.closest("[data-switch-tab='compose']");
-    if (switchButton) {
-      switchTab("compose");
-      return;
-    }
-
-    const loadButton = event.target.closest("[data-load-favorite]");
-    if (loadButton) {
-      const item = state.favorites.find(
-        (entry) => String(entry.id) === String(loadButton.dataset.loadFavorite)
-      );
-      if (item) {
-        loadPromptIntoComposer(item);
-      }
-      return;
-    }
-
-    const editButton = event.target.closest("[data-edit-favorite]");
-    if (editButton) {
-      const item = state.favorites.find(
-        (entry) => String(entry.id) === String(editButton.dataset.editFavorite)
-      );
-      if (item) {
-        state.openMenuKey = null;
-        renderFavoritesList();
-        openFavoriteEditor(item);
-      }
-      return;
-    }
-
-    const menuToggle = event.target.closest("[data-toggle-menu]");
-    if (menuToggle) {
-      const menuKey = menuToggle.dataset.toggleMenu;
-      state.openMenuKey = state.openMenuKey === menuKey ? null : menuKey;
-      renderFavoritesList();
-      return;
-    }
-
-    const actionButton = event.target.closest("[data-action][data-favorite-id]");
-    if (actionButton) {
-      void handleFavoriteAction(
-        actionButton.dataset.action,
-        actionButton.dataset.favoriteId
-      ).catch((error) => {
-        console.error("[AI Prompt Broadcaster] Favorite action failed.", error);
-        setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
-      });
-    }
+  favoritesList.addEventListener("click", (event: MouseEvent) => {
+    favoritesController.handleFavoritesListClick(event);
   });
 
-  favoritesList.addEventListener("contextmenu", (event) => {
-    const item = event.target.closest("[data-favorite-id]");
-    if (!item) {
-      return;
-    }
-
-    event.preventDefault();
-    state.openMenuKey = `favorite:${item.dataset.favoriteId}`;
-    renderFavoritesList();
+  favoritesList.addEventListener("contextmenu", (event: MouseEvent) => {
+    favoritesController.handleFavoritesListContextMenu(event);
   });
 
   favoritesList.addEventListener("input", (event) => {
-    const input = event.target.closest("[data-favorite-title]");
-    if (!input) {
-      return;
-    }
-
-    scheduleFavoriteTitleSave(input.dataset.favoriteTitle, input.value, false);
+    favoritesController.handleFavoritesListInput(event);
   });
 
   favoritesList.addEventListener("blur", (event) => {
-    const input = event.target.closest("[data-favorite-title]");
-    if (!input) {
-      return;
-    }
-
-    scheduleFavoriteTitleSave(input.dataset.favoriteTitle, input.value, true);
+    favoritesController.handleFavoritesListBlur(event);
   }, true);
 
   document.addEventListener("click", (event) => {
@@ -3070,7 +2276,7 @@ function bindGlobalEvents() {
       return;
     }
 
-    const insideMenu = event.target.closest(".prompt-actions");
+    const insideMenu = getEventElement(event.target)?.closest(".prompt-actions");
     if (!insideMenu) {
       state.openMenuKey = null;
       renderLists();
@@ -3087,14 +2293,19 @@ function bindGlobalEvents() {
         showAppToast(t.historyCleared, "info", 2200);
       } catch (error) {
         console.error("[AI Prompt Broadcaster] Failed to clear history.", error);
-        setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
-        showAppToast(t.error(error?.message ?? getUnknownErrorText()), "error", 4000);
+        setStatus(t.error(getErrorMessage(error)), "error");
+        showAppToast(t.error(getErrorMessage(error)), "error", 4000);
       }
     });
   });
 
   reuseExistingTabsToggle.addEventListener("change", (event) => {
-    const nextValue = Boolean(event.target.checked);
+    const target = getEventInput(event.target);
+    if (!target) {
+      return;
+    }
+
+    const nextValue = target.checked;
     state.settings = {
       ...state.settings,
       reuseExistingTabs: nextValue,
@@ -3104,17 +2315,27 @@ function bindGlobalEvents() {
 
     void updateAppSettings({ reuseExistingTabs: nextValue }).catch((error) => {
       console.error("[AI Prompt Broadcaster] Failed to save tab reuse setting.", error);
-      setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
-      showAppToast(t.error(error?.message ?? getUnknownErrorText()), "error", 3200);
+      setStatus(t.error(getErrorMessage(error)), "error");
+      showAppToast(t.error(getErrorMessage(error)), "error", 3200);
     });
   });
 
   waitMultiplierRange.addEventListener("input", (event) => {
-    waitMultiplierValue.textContent = t.waitMultiplierValue(Number(event.target.value));
+    const target = getEventInput(event.target);
+    if (!target) {
+      return;
+    }
+
+    waitMultiplierValue.textContent = t.waitMultiplierValue(Number(target.value));
   });
 
   waitMultiplierRange.addEventListener("change", (event) => {
-    const nextValue = Number(event.target.value);
+    const target = getEventInput(event.target);
+    if (!target) {
+      return;
+    }
+
+    const nextValue = Number(target.value);
     state.settings = {
       ...state.settings,
       waitMsMultiplier: nextValue,
@@ -3122,15 +2343,15 @@ function bindGlobalEvents() {
     applySettingsToControls();
     void updateAppSettings({ waitMsMultiplier: nextValue }).catch((error) => {
       console.error("[AI Prompt Broadcaster] Failed to save wait multiplier.", error);
-      setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
-      showAppToast(t.error(error?.message ?? getUnknownErrorText()), "error", 3200);
+      setStatus(t.error(getErrorMessage(error)), "error");
+      showAppToast(t.error(getErrorMessage(error)), "error", 3200);
     });
   });
 
   openOptionsBtn.addEventListener("click", () => {
     void chrome.runtime.openOptionsPage().catch((error) => {
       console.error("[AI Prompt Broadcaster] Failed to open options page.", error);
-      setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
+      setStatus(t.error(getErrorMessage(error)), "error");
     });
   });
 
@@ -3151,7 +2372,7 @@ function bindGlobalEvents() {
       setStatus(t.exportSuccess, "success");
     } catch (error) {
       console.error("[AI Prompt Broadcaster] JSON export failed.", error);
-      setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
+      setStatus(t.error(getErrorMessage(error)), "error");
     }
   });
 
@@ -3160,7 +2381,8 @@ function bindGlobalEvents() {
   });
 
   importJsonInput.addEventListener("change", async (event) => {
-    const file = event.target.files?.[0];
+    const target = getEventInput(event.target);
+    const file = target?.files?.[0];
     if (!file) {
       return;
     }
@@ -3195,14 +2417,14 @@ function bindGlobalEvents() {
         showAppToast(t.serviceResetDone, "success", 2200);
       } catch (error) {
         console.error("[AI Prompt Broadcaster] Failed to reset service settings.", error);
-        setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
-        showAppToast(t.error(error?.message ?? getUnknownErrorText()), "error", 4000);
+        setStatus(t.error(getErrorMessage(error)), "error");
+        showAppToast(t.error(getErrorMessage(error)), "error", 4000);
       }
     });
   });
 
   managedSitesList.addEventListener("click", (event) => {
-    const actionButton = event.target.closest("[data-action][data-site-id]");
+    const actionButton = getEventElement(event.target)?.closest<HTMLElement>("[data-action][data-site-id]");
     if (!actionButton) {
       return;
     }
@@ -3226,16 +2448,17 @@ function bindGlobalEvents() {
   });
 
   managedSitesList.addEventListener("change", (event) => {
-    const toggle = event.target.closest("[data-action='toggle-service'][data-site-id]");
-    if (!toggle) {
+    const toggle = getEventElement(event.target)?.closest<HTMLInputElement>("[data-action='toggle-service'][data-site-id]");
+    const siteId = toggle?.dataset.siteId;
+    if (!toggle || !siteId) {
       return;
     }
 
-    void setRuntimeSiteEnabled(toggle.dataset.siteId, toggle.checked)
+    void setRuntimeSiteEnabled(siteId, toggle.checked)
       .then(() => refreshStoredData())
       .catch((error) => {
         console.error("[AI Prompt Broadcaster] Failed to toggle site state.", error);
-        setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
+        setStatus(t.error(getErrorMessage(error)), "error");
       });
   });
 
@@ -3272,18 +2495,19 @@ function bindGlobalEvents() {
     }
   });
   templateFields.addEventListener("input", (event) => {
-    const input = event.target.closest("[data-template-input]");
-    if (!input || !state.pendingTemplateSend) {
+    const input = getEventElement(event.target)?.closest<HTMLInputElement>("[data-template-input]");
+    const templateInput = input?.dataset.templateInput;
+    if (!input || !templateInput || !state.pendingTemplateSend) {
       return;
     }
 
-    state.pendingTemplateSend.userValues[input.dataset.templateInput] = input.value;
+    state.pendingTemplateSend.userValues[templateInput] = input.value;
     renderTemplateModalV2();
   });
   templateModalConfirm.addEventListener("click", () => {
     void confirmTemplateModalSend().catch((error) => {
       console.error("[AI Prompt Broadcaster] Template modal confirm failed.", error);
-      setTemplateModalError(t.error(error?.message ?? getUnknownErrorText()));
+      setTemplateModalError(t.error(getErrorMessage(error)));
     });
   });
   bindFavoriteEditorEvents();
@@ -3298,7 +2522,7 @@ function bindGlobalEvents() {
   resendModalConfirm.addEventListener("click", () => {
     void confirmResendModal().catch((error) => {
       console.error("[AI Prompt Broadcaster] Resend modal confirm failed.", error);
-      setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
+      setStatus(t.error(getErrorMessage(error)), "error");
     });
   });
 
@@ -3338,7 +2562,8 @@ function bindGlobalEvents() {
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === "session") {
       if (changes.lastBroadcast) {
-        applyLastBroadcastState(changes.lastBroadcast.newValue ?? null);
+        const nextLastBroadcast = changes.lastBroadcast.newValue;
+        applyLastBroadcastState(isLastBroadcastSummary(nextLastBroadcast) ? nextLastBroadcast : null);
       }
 
       if (changes.pendingUiToasts) {
@@ -3388,12 +2613,13 @@ async function init() {
     initToastRoot(toastHost);
     renderTabLabels();
     bindGlobalEvents();
-    const hashTab = ({
+    const hashTabMap: Partial<Record<string, PopupTabId>> = {
       "#compose": "compose",
       "#history": "history",
       "#favorites": "favorites",
       "#settings": "settings",
-    })[location.hash];
+    };
+    const hashTab = hashTabMap[location.hash];
     if (hashTab) {
       state.activeTab = hashTab;
     }
@@ -3409,8 +2635,8 @@ async function init() {
     }
   } catch (error) {
     console.error("[AI Prompt Broadcaster] Failed to initialize popup.", error);
-    setStatus(t.error(error?.message ?? getUnknownErrorText()), "error");
-    showAppToast(t.error(error?.message ?? getUnknownErrorText()), "error", 4000);
+    setStatus(t.error(getErrorMessage(error)), "error");
+    showAppToast(t.error(getErrorMessage(error)), "error", 4000);
   }
 }
 

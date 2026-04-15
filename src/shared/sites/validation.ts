@@ -42,8 +42,22 @@ function pushFieldError(
   fieldErrors[field] = current;
 }
 
+interface SiteDraftLike {
+  name?: unknown;
+  url?: unknown;
+  inputSelector?: unknown;
+  inputType?: unknown;
+  submitMethod?: unknown;
+  submitSelector?: unknown;
+  selectorCheckMode?: unknown;
+  hostnameAliases?: unknown;
+  supportedRoutes?: unknown;
+  verifiedAt?: unknown;
+  verifiedAuthState?: unknown;
+}
+
 export function validateSiteDraft(
-  draft: Record<string, unknown> | null | undefined,
+  draft: SiteDraftLike | null | undefined,
   { isBuiltIn = false } = {}
 ): SiteDraftValidationResult {
   const errors: string[] = [];

@@ -1,17 +1,43 @@
-// @ts-nocheck
-import { BUILT_IN_SITE_STYLE_MAP, VALID_INPUT_TYPES, VALID_SELECTOR_CHECK_MODES, VALID_SUBMIT_METHODS } from "./constants";
+import {
+  BUILT_IN_SITE_STYLE_MAP,
+  VALID_INPUT_TYPES,
+  VALID_SELECTOR_CHECK_MODES,
+  VALID_SUBMIT_METHODS,
+} from "./constants";
 import { buildVerificationMetadata } from "./verification";
-import { getConfiguredSupportedRoutes, normalizeSupportedRoutes } from "./selector-utils";
+import {
+  getConfiguredSupportedRoutes,
+  normalizeSupportedRoutes,
+} from "./selector-utils";
+import type {
+  InputType,
+  RuntimeSite,
+  SelectorCheckMode,
+  SubmitMethod,
+  VerifiedAuthState,
+} from "../types/models";
 
-export function safeText(value) {
+type PlainRecord = Record<string, unknown>;
+
+interface BuiltInMeta {
+  isBuiltIn?: boolean;
+  isCustom?: boolean;
+}
+
+const BUILT_IN_SITE_STYLE_LOOKUP = BUILT_IN_SITE_STYLE_MAP as Record<
+  string,
+  { color?: string; icon?: string }
+>;
+
+export function safeText(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-export function normalizeBoolean(value, fallback = true) {
+export function normalizeBoolean(value: unknown, fallback = true): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
 
-export function normalizeWaitMs(value, fallback = 2000) {
+export function normalizeWaitMs(value: unknown, fallback = 2000): number {
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) {
     return fallback;
@@ -20,32 +46,47 @@ export function normalizeWaitMs(value, fallback = 2000) {
   return Math.min(8000, Math.max(500, Math.round(numeric)));
 }
 
-export function normalizeColor(value, fallback = "#c24f2e") {
+export function normalizeColor(value: unknown, fallback = "#c24f2e"): string {
   const color = safeText(value);
   return /^#[0-9a-fA-F]{6}$/.test(color) ? color : fallback;
 }
 
-export function normalizeIcon(value, fallback = "AI") {
+export function normalizeIcon(value: unknown, fallback = "AI"): string {
   const icon = safeText(value);
   return icon ? Array.from(icon).slice(0, 2).join("") : fallback;
 }
 
-export function normalizeInputType(value, fallback = "textarea") {
+export function normalizeInputType(
+  value: unknown,
+  fallback: InputType = "textarea",
+): InputType {
   const inputType = safeText(value);
-  return VALID_INPUT_TYPES.has(inputType) ? inputType : fallback;
+  return VALID_INPUT_TYPES.has(inputType)
+    ? (inputType as InputType)
+    : fallback;
 }
 
-export function normalizeSubmitMethod(value, fallback = "click") {
+export function normalizeSubmitMethod(
+  value: unknown,
+  fallback: SubmitMethod = "click",
+): SubmitMethod {
   const submitMethod = safeText(value);
-  return VALID_SUBMIT_METHODS.has(submitMethod) ? submitMethod : fallback;
+  return VALID_SUBMIT_METHODS.has(submitMethod)
+    ? (submitMethod as SubmitMethod)
+    : fallback;
 }
 
-export function normalizeSelectorCheckMode(value, fallback = "input-and-submit") {
+export function normalizeSelectorCheckMode(
+  value: unknown,
+  fallback: SelectorCheckMode = "input-and-submit",
+): SelectorCheckMode {
   const selectorCheckMode = safeText(value);
-  return VALID_SELECTOR_CHECK_MODES.has(selectorCheckMode) ? selectorCheckMode : fallback;
+  return VALID_SELECTOR_CHECK_MODES.has(selectorCheckMode)
+    ? (selectorCheckMode as SelectorCheckMode)
+    : fallback;
 }
 
-export function normalizeHostname(value) {
+export function normalizeHostname(value: unknown): string {
   const input = safeText(value).replace(/\/+$/g, "");
   if (!input) {
     return "";
@@ -58,7 +99,7 @@ export function normalizeHostname(value) {
   }
 }
 
-export function normalizeStringList(value) {
+export function normalizeStringList(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value
       .map((entry) => safeText(entry))
@@ -75,36 +116,39 @@ export function normalizeStringList(value) {
   return [];
 }
 
-export function normalizeHostnameAliases(value, primaryHostname = "") {
+export function normalizeHostnameAliases(
+  value: unknown,
+  primaryHostname = "",
+): string[] {
   const normalizedPrimaryHostname = normalizeHostname(primaryHostname);
 
   return Array.from(
     new Set(
       normalizeStringList(value)
         .map((entry) => normalizeHostname(entry))
-        .filter((entry) => entry && entry !== normalizedPrimaryHostname)
-    )
+        .filter((entry) => entry && entry !== normalizedPrimaryHostname),
+    ),
   );
 }
 
-export function deriveHostname(url) {
+export function deriveHostname(url: unknown): string {
   try {
-    return new URL(url).hostname;
+    return new URL(String(url ?? "")).hostname;
   } catch (_error) {
     return "";
   }
 }
 
-export function buildOriginPattern(url) {
+export function buildOriginPattern(url: unknown): string {
   try {
-    const parsed = new URL(url);
+    const parsed = new URL(String(url ?? ""));
     return `${parsed.origin}/*`;
   } catch (_error) {
     return "";
   }
 }
 
-function normalizeOriginHost(value) {
+function normalizeOriginHost(value: unknown): string {
   const input = safeText(value).replace(/\/+$/g, "");
   if (!input) {
     return "";
@@ -126,9 +170,12 @@ function normalizeOriginHost(value) {
   }
 }
 
-export function buildOriginPatterns(url, hostnameAliases = []) {
+export function buildOriginPatterns(
+  url: unknown,
+  hostnameAliases: unknown = [],
+): string[] {
   try {
-    const parsed = new URL(url);
+    const parsed = new URL(String(url ?? ""));
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       return [];
     }
@@ -139,22 +186,25 @@ export function buildOriginPatterns(url, hostnameAliases = []) {
       new Set(
         normalizeStringList(hostnameAliases)
           .map((entry) => normalizeOriginHost(entry))
-          .filter((entry) => entry && entry !== primaryHost && entry !== primaryHostname)
-      )
+          .filter(
+            (entry) => entry && entry !== primaryHost && entry !== primaryHostname,
+          ),
+      ),
     );
+
     return Array.from(
       new Set(
         [primaryHost, ...normalizedAliases]
           .filter(Boolean)
-          .map((host) => `${parsed.protocol}//${host}/*`)
-      )
+          .map((host) => `${parsed.protocol}//${host}/*`),
+      ),
     );
   } catch (_error) {
     return [];
   }
 }
 
-export function createCustomSiteId(name) {
+export function createCustomSiteId(name: unknown): string {
   const slug = safeText(name)
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -164,7 +214,10 @@ export function createCustomSiteId(name) {
   return `custom-${slug || Date.now()}-${Date.now().toString(36).slice(-4)}`;
 }
 
-export function createImportedCustomSiteIdBase(site, index = 0) {
+export function createImportedCustomSiteIdBase(
+  site: PlainRecord | null | undefined,
+  index = 0,
+): string {
   const seed = [
     safeText(site?.id),
     safeText(site?.name),
@@ -181,12 +234,15 @@ export function createImportedCustomSiteIdBase(site, index = 0) {
   return `custom-${slug || `site-${index + 1}`}`;
 }
 
-export function ensureUniqueImportedSiteId(baseId, usedIds) {
+export function ensureUniqueImportedSiteId(
+  baseId: unknown,
+  usedIds: Set<string>,
+): string {
   let candidate = safeText(baseId) || "custom-site";
   let suffix = 2;
 
   while (usedIds.has(candidate)) {
-    candidate = `${baseId}-${suffix}`;
+    candidate = `${safeText(baseId)}-${suffix}`;
     suffix += 1;
   }
 
@@ -194,11 +250,11 @@ export function ensureUniqueImportedSiteId(baseId, usedIds) {
   return candidate;
 }
 
-export function isPlainObject(value) {
+export function isPlainObject(value: unknown): value is PlainRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-export function stringifyComparable(value) {
+export function stringifyComparable(value: unknown): string {
   try {
     return JSON.stringify(value ?? null);
   } catch (_error) {
@@ -206,7 +262,8 @@ export function stringifyComparable(value) {
   }
 }
 
-const PERPLEXITY_PRIMARY_INPUT_SELECTOR = "#ask-input[data-lexical-editor='true'][role='textbox']";
+const PERPLEXITY_PRIMARY_INPUT_SELECTOR =
+  "#ask-input[data-lexical-editor='true'][role='textbox']";
 const PERPLEXITY_SELECTOR_FALLBACKS = [
   "div#ask-input[data-lexical-editor='true'][role='textbox']",
   "div#ask-input[contenteditable='true'][role='textbox']",
@@ -214,13 +271,20 @@ const PERPLEXITY_SELECTOR_FALLBACKS = [
   "div[contenteditable='true'][role='textbox']",
 ];
 
-function normalizeSelectorArray(value) {
+function normalizeSelectorArray(value: unknown): string[] {
   return Array.isArray(value)
-    ? value.filter((entry) => typeof entry === "string" && entry.trim()).map((entry) => entry.trim())
+    ? value
+      .filter((entry): entry is string => typeof entry === "string" && Boolean(entry.trim()))
+      .map((entry) => entry.trim())
     : [];
 }
 
-function normalizePerplexitySelectors(site = {}) {
+function normalizePerplexitySelectors(
+  site: PlainRecord = {},
+): {
+  inputSelector: string;
+  fallbackSelectors: string[];
+} {
   if (safeText(site?.id) !== "perplexity") {
     return {
       inputSelector: safeText(site?.inputSelector),
@@ -238,8 +302,8 @@ function normalizePerplexitySelectors(site = {}) {
           : "",
         ...fallbackSelectors,
         ...PERPLEXITY_SELECTOR_FALLBACKS,
-      ].filter(Boolean)
-    )
+      ].filter(Boolean),
+    ),
   );
 
   return {
@@ -248,14 +312,18 @@ function normalizePerplexitySelectors(site = {}) {
   };
 }
 
-export function buildBaseSiteRecord(site, builtInMeta = {}) {
-  const style = BUILT_IN_SITE_STYLE_MAP[site.id] ?? {};
+export function buildBaseSiteRecord(
+  site: PlainRecord,
+  builtInMeta: BuiltInMeta = {},
+): RuntimeSite {
+  const style = BUILT_IN_SITE_STYLE_LOOKUP[safeText(site.id)] ?? {};
   const url = safeText(site.url);
   const hostname = normalizeHostname(site.hostname || deriveHostname(url));
   const hostnameAliases = normalizeHostnameAliases(site.hostnameAliases, hostname);
   const normalizedSelectors = normalizePerplexitySelectors(site);
   const verification = buildVerificationMetadata(site);
   const supportedRoutes = getConfiguredSupportedRoutes(site);
+  const verifiedAuthState = verification.verifiedAuthState || undefined;
 
   return {
     id: safeText(site.id),
@@ -268,17 +336,22 @@ export function buildBaseSiteRecord(site, builtInMeta = {}) {
     inputType: normalizeInputType(site.inputType, "textarea"),
     submitSelector: safeText(site.submitSelector),
     submitMethod: normalizeSubmitMethod(site.submitMethod, "click"),
-    selectorCheckMode: normalizeSelectorCheckMode(site.selectorCheckMode, "input-and-submit"),
+    selectorCheckMode: normalizeSelectorCheckMode(
+      site.selectorCheckMode,
+      "input-and-submit",
+    ),
     waitMs: normalizeWaitMs(site.waitMs, 2000),
     fallbackSelectors: normalizedSelectors.fallbackSelectors,
     fallback: normalizeBoolean(site.fallback, true),
     authSelectors: Array.isArray(site.authSelectors)
-      ? site.authSelectors.filter((entry) => typeof entry === "string" && entry.trim())
+      ? site.authSelectors.filter(
+        (entry): entry is string => typeof entry === "string" && Boolean(entry.trim()),
+      )
       : [],
     lastVerified: verification.lastVerified,
     verifiedAt: verification.verifiedAt,
     verifiedRoute: verification.verifiedRoute,
-    verifiedAuthState: verification.verifiedAuthState,
+    verifiedAuthState,
     verifiedLocale: verification.verifiedLocale,
     verifiedVersion: verification.verifiedVersion,
     enabled: normalizeBoolean(site.enabled, true),
@@ -292,112 +365,140 @@ export function buildBaseSiteRecord(site, builtInMeta = {}) {
   };
 }
 
-export function sanitizeBuiltInOverride(override = {}, originalSite = {}) {
-  const submitMethod = normalizeSubmitMethod(override.submitMethod, originalSite.submitMethod);
+export function sanitizeBuiltInOverride(
+  override: PlainRecord = {},
+  originalSite: PlainRecord = {},
+): Partial<RuntimeSite> {
+  const submitMethod = normalizeSubmitMethod(
+    override.submitMethod,
+    normalizeSubmitMethod(originalSite.submitMethod, "click"),
+  );
   const submitSelector =
     submitMethod === "click"
       ? safeText(override.submitSelector) || safeText(originalSite.submitSelector)
       : safeText(override.submitSelector);
   const verification = buildVerificationMetadata(override, originalSite);
-  const supportedRoutes = Object.prototype.hasOwnProperty.call(override ?? {}, "supportedRoutes")
+  const supportedRoutes = Object.prototype.hasOwnProperty.call(
+    override ?? {},
+    "supportedRoutes",
+  )
     ? normalizeSupportedRoutes(override.supportedRoutes)
     : getConfiguredSupportedRoutes(originalSite);
+  const verifiedAuthState = verification.verifiedAuthState || undefined;
 
   return {
-    name: safeText(override.name) || originalSite.name,
+    name: safeText(override.name) || safeText(originalSite.name),
     supportedRoutes,
-    inputSelector: safeText(override.inputSelector) || originalSite.inputSelector,
-    inputType: normalizeInputType(override.inputType, originalSite.inputType),
+    inputSelector: safeText(override.inputSelector) || safeText(originalSite.inputSelector),
+    inputType: normalizeInputType(
+      override.inputType,
+      normalizeInputType(originalSite.inputType, "textarea"),
+    ),
     submitSelector,
     submitMethod,
     selectorCheckMode: normalizeSelectorCheckMode(
       override.selectorCheckMode,
-      originalSite.selectorCheckMode || "input-and-submit"
+      normalizeSelectorCheckMode(
+        originalSite.selectorCheckMode,
+        "input-and-submit",
+      ),
     ),
-    waitMs: normalizeWaitMs(override.waitMs, originalSite.waitMs),
+    waitMs: normalizeWaitMs(override.waitMs, normalizeWaitMs(originalSite.waitMs, 2000)),
     fallbackSelectors: Array.isArray(override.fallbackSelectors)
-      ? override.fallbackSelectors.filter((entry) => typeof entry === "string" && entry.trim())
+      ? override.fallbackSelectors.filter(
+        (entry): entry is string => typeof entry === "string" && Boolean(entry.trim()),
+      )
       : Array.isArray(originalSite.fallbackSelectors)
-        ? [...originalSite.fallbackSelectors]
+        ? originalSite.fallbackSelectors.filter(
+          (entry): entry is string => typeof entry === "string" && Boolean(entry.trim()),
+        )
         : [],
     authSelectors: Array.isArray(override.authSelectors)
-      ? override.authSelectors.filter((entry) => typeof entry === "string" && entry.trim())
+      ? override.authSelectors.filter(
+        (entry): entry is string => typeof entry === "string" && Boolean(entry.trim()),
+      )
       : Array.isArray(originalSite.authSelectors)
-        ? [...originalSite.authSelectors]
+        ? originalSite.authSelectors.filter(
+          (entry): entry is string => typeof entry === "string" && Boolean(entry.trim()),
+        )
         : [],
     lastVerified: verification.lastVerified,
     verifiedAt: verification.verifiedAt,
     verifiedRoute: verification.verifiedRoute,
-    verifiedAuthState: verification.verifiedAuthState,
+    verifiedAuthState,
     verifiedLocale: verification.verifiedLocale,
     verifiedVersion: verification.verifiedVersion,
     color: normalizeColor(
       override.color,
-      BUILT_IN_SITE_STYLE_MAP[originalSite.id]?.color ?? "#c24f2e"
+      BUILT_IN_SITE_STYLE_LOOKUP[safeText(originalSite.id)]?.color ?? "#c24f2e",
     ),
     icon: normalizeIcon(
       override.icon,
-      BUILT_IN_SITE_STYLE_MAP[originalSite.id]?.icon ?? originalSite.name
+      BUILT_IN_SITE_STYLE_LOOKUP[safeText(originalSite.id)]?.icon
+        ?? safeText(originalSite.name),
     ),
   };
 }
 
-export function normalizeCustomSite(site) {
-  const url = safeText(site?.url);
-  const hostname = normalizeHostname(site?.hostname || deriveHostname(url));
-  const verificationFields = {};
+export function normalizeCustomSite(site: unknown): RuntimeSite {
+  const source = isPlainObject(site) ? site : {};
+  const url = safeText(source?.url);
+  const hostname = normalizeHostname(source?.hostname || deriveHostname(url));
+  const verificationFields: Partial<PlainRecord> = {};
 
-  if (Object.prototype.hasOwnProperty.call(site ?? {}, "lastVerified")) {
-    verificationFields.lastVerified = safeText(site?.lastVerified);
+  if (Object.prototype.hasOwnProperty.call(source, "lastVerified")) {
+    verificationFields.lastVerified = safeText(source?.lastVerified);
   }
 
-  if (Object.prototype.hasOwnProperty.call(site ?? {}, "verifiedAt")) {
-    verificationFields.verifiedAt = safeText(site?.verifiedAt);
+  if (Object.prototype.hasOwnProperty.call(source, "verifiedAt")) {
+    verificationFields.verifiedAt = safeText(source?.verifiedAt);
   }
 
-  if (Object.prototype.hasOwnProperty.call(site ?? {}, "verifiedRoute")) {
-    verificationFields.verifiedRoute = safeText(site?.verifiedRoute);
+  if (Object.prototype.hasOwnProperty.call(source, "verifiedRoute")) {
+    verificationFields.verifiedRoute = safeText(source?.verifiedRoute);
   }
 
-  if (Object.prototype.hasOwnProperty.call(site ?? {}, "verifiedAuthState")) {
-    verificationFields.verifiedAuthState = safeText(site?.verifiedAuthState);
+  if (Object.prototype.hasOwnProperty.call(source, "verifiedAuthState")) {
+    verificationFields.verifiedAuthState = safeText(source?.verifiedAuthState) as
+      | VerifiedAuthState
+      | "";
   }
 
-  if (Object.prototype.hasOwnProperty.call(site ?? {}, "verifiedLocale")) {
-    verificationFields.verifiedLocale = safeText(site?.verifiedLocale);
+  if (Object.prototype.hasOwnProperty.call(source, "verifiedLocale")) {
+    verificationFields.verifiedLocale = safeText(source?.verifiedLocale);
   }
 
-  if (Object.prototype.hasOwnProperty.call(site ?? {}, "verifiedVersion")) {
-    verificationFields.verifiedVersion = safeText(site?.verifiedVersion);
+  if (Object.prototype.hasOwnProperty.call(source, "verifiedVersion")) {
+    verificationFields.verifiedVersion = safeText(source?.verifiedVersion);
   }
 
   return buildBaseSiteRecord(
     {
-      id: safeText(site?.id) || createCustomSiteId(site?.name),
-      name: safeText(site?.name) || "Custom AI",
+      id: safeText(source?.id) || createCustomSiteId(source?.name),
+      name: safeText(source?.name) || "Custom AI",
       url,
       hostname,
-      hostnameAliases: normalizeHostnameAliases(site?.hostnameAliases, hostname),
-      supportedRoutes: Object.prototype.hasOwnProperty.call(site ?? {}, "supportedRoutes")
-        ? site?.supportedRoutes
+      hostnameAliases: normalizeHostnameAliases(source?.hostnameAliases, hostname),
+      supportedRoutes: Object.prototype.hasOwnProperty.call(source, "supportedRoutes")
+        ? source?.supportedRoutes
         : undefined,
-      inputSelector: safeText(site?.inputSelector),
-      inputType: normalizeInputType(site?.inputType, "textarea"),
-      submitSelector: safeText(site?.submitSelector),
-      submitMethod: normalizeSubmitMethod(site?.submitMethod, "click"),
+      inputSelector: safeText(source?.inputSelector),
+      inputType: normalizeInputType(source?.inputType, "textarea"),
+      submitSelector: safeText(source?.submitSelector),
+      submitMethod: normalizeSubmitMethod(source?.submitMethod, "click"),
       selectorCheckMode: normalizeSelectorCheckMode(
-        site?.selectorCheckMode,
-        "input-and-submit"
+        source?.selectorCheckMode,
+        "input-and-submit",
       ),
-      waitMs: normalizeWaitMs(site?.waitMs, 2000),
-      fallbackSelectors: normalizeStringList(site?.fallbackSelectors),
-      fallback: normalizeBoolean(site?.fallback, true),
-      authSelectors: normalizeStringList(site?.authSelectors),
+      waitMs: normalizeWaitMs(source?.waitMs, 2000),
+      fallbackSelectors: normalizeStringList(source?.fallbackSelectors),
+      fallback: normalizeBoolean(source?.fallback, true),
+      authSelectors: normalizeStringList(source?.authSelectors),
       ...verificationFields,
-      enabled: normalizeBoolean(site?.enabled, true),
-      color: normalizeColor(site?.color, "#c24f2e"),
-      icon: normalizeIcon(site?.icon, "AI"),
+      enabled: normalizeBoolean(source?.enabled, true),
+      color: normalizeColor(source?.color, "#c24f2e"),
+      icon: normalizeIcon(source?.icon, "AI"),
     },
-    { isCustom: true }
+    { isCustom: true },
   );
 }

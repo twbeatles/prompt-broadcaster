@@ -1,25 +1,25 @@
-// @ts-nocheck
 import { DEFAULT_SETTINGS } from "../../shared/prompts";
+import type { PopupState } from "../../shared/types/popup";
 
-export const SITE_EMOJI = {
+export const SITE_EMOJI: Record<string, string> = {
   chatgpt: "GPT",
   gemini: "Gem",
   claude: "Cl",
   grok: "Gk",
 };
 
-export const state = {
+export const state: PopupState = {
   activeTab: "compose",
   history: [],
   favorites: [],
   historySearch: "",
   favoritesSearch: "",
-  favoritesTagFilter: "",      // 태그 필터 (빈 문자열 = 전체)
-  favoritesFolderFilter: "",   // 폴더 필터 (빈 문자열 = 전체)
+  favoritesTagFilter: "",
+  favoritesFolderFilter: "",
   openMenuKey: null,
   openModalId: null,
   lastFocusedElement: null,
-  favoriteSaveTimers: new Map(),
+  favoriteSaveTimers: new Map<string, number>(),
   loadedTemplateDefaults: {},
   loadedFavoriteTitle: "",
   loadedFavoriteId: "",
@@ -41,7 +41,7 @@ export const state = {
   settings: { ...DEFAULT_SETTINGS },
   openSiteTabs: [],
   siteTargetSelections: {},
-  sitePromptOverrides: {},    // siteId -> override prompt string
+  sitePromptOverrides: {},
   openTabsWindowId: null,
   openTabsRefreshTimer: null,
   listKeyboardFocus: {

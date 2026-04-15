@@ -1,8 +1,8 @@
-// @ts-nocheck
+import type { RuntimeSite } from "../../shared/types/models";
 import { isKorean } from "./i18n";
 import { SITE_EMOJI } from "./state";
 
-export function escapeAttribute(value) {
+export function escapeAttribute(value: unknown): string {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
     .replace(/"/g, "&quot;")
@@ -10,7 +10,7 @@ export function escapeAttribute(value) {
     .replace(/>/g, "&gt;");
 }
 
-export function escapeHtml(value) {
+export function escapeHtml(value: unknown): string {
   return String(value ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -19,15 +19,15 @@ export function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
-export function getSiteIcon(site) {
+export function getSiteIcon(site: Partial<RuntimeSite> | null | undefined): string {
   if (site?.icon) {
     return site.icon;
   }
 
-  return SITE_EMOJI[site?.id] ?? site?.name?.slice(0, 2)?.toUpperCase() ?? "AI";
+  return SITE_EMOJI[site?.id ?? ""] ?? site?.name?.slice(0, 2)?.toUpperCase() ?? "AI";
 }
 
-export function isTextEditingTarget(target) {
+export function isTextEditingTarget(target: EventTarget | null): boolean {
   if (!target || !(target instanceof Element)) {
     return false;
   }
@@ -36,18 +36,18 @@ export function isTextEditingTarget(target) {
     target instanceof HTMLInputElement ||
     target instanceof HTMLTextAreaElement ||
     target instanceof HTMLSelectElement ||
-    target.isContentEditable
+    (target instanceof HTMLElement && target.isContentEditable)
   );
 }
 
-export function compareDateValues(leftValue, rightValue) {
+export function compareDateValues(leftValue: unknown, rightValue: unknown): number {
   const leftTime = Date.parse(String(leftValue ?? "")) || 0;
   const rightTime = Date.parse(String(rightValue ?? "")) || 0;
   return rightTime - leftTime;
 }
 
-export function previewText(text, maxLength = 50) {
-  const collapsed = String(text).replace(/\s+/g, " ").trim();
+export function previewText(text: unknown, maxLength = 50): string {
+  const collapsed = String(text ?? "").replace(/\s+/g, " ").trim();
   if (collapsed.length <= maxLength) {
     return collapsed || "-";
   }
@@ -55,7 +55,7 @@ export function previewText(text, maxLength = 50) {
   return `${collapsed.slice(0, maxLength)}...`;
 }
 
-export function formatDate(isoString) {
+export function formatDate(isoString: string): string {
   try {
     return new Intl.DateTimeFormat(isKorean ? "ko-KR" : "en-US", {
       month: "short",
@@ -68,7 +68,7 @@ export function formatDate(isoString) {
   }
 }
 
-export function normalizeSiteIdList(value) {
+export function normalizeSiteIdList(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -76,17 +76,17 @@ export function normalizeSiteIdList(value) {
   return Array.from(
     new Set(
       value
-        .filter((entry) => typeof entry === "string" && entry.trim())
-        .map((entry) => entry.trim())
-    )
+        .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+        .map((entry) => entry.trim()),
+    ),
   );
 }
 
-export function joinMultilineValues(values) {
+export function joinMultilineValues(values: unknown): string {
   return Array.isArray(values) ? values.join("\n") : "";
 }
 
-export function splitMultilineValues(value) {
+export function splitMultilineValues(value: unknown): string[] {
   return String(value ?? "")
     .split(/\r?\n/g)
     .map((entry) => entry.trim())
