@@ -2996,13 +2996,93 @@ function createContextMenuController(deps) {
   };
 }
 
-// src/background/popup/favorites-workflow.ts
-var SCHEDULED_VARIABLE_BLOCKLIST = /* @__PURE__ */ new Set([
-  SYSTEM_TEMPLATE_VARIABLES.url,
-  SYSTEM_TEMPLATE_VARIABLES.title,
-  SYSTEM_TEMPLATE_VARIABLES.selection,
-  SYSTEM_TEMPLATE_VARIABLES.clipboard
-]);
+// src/background/favorites/execution-context.ts
+function hasOwn(value, key) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value) && Object.prototype.hasOwnProperty.call(value, key);
+}
+function createFavoriteExecutionContextTools(deps) {
+  const {
+    rememberNormalTab: rememberNormalTab2,
+    getPreferredNormalActiveTab: getPreferredNormalActiveTab2,
+    isInjectableTabUrl: isInjectableTabUrl2,
+    getSelectedTextFromTab: getSelectedTextFromTab2
+  } = deps;
+  const createEmptyExecutionContext = () => ({
+    tabId: null,
+    windowId: null,
+    url: "",
+    title: "",
+    selection: "",
+    clipboard: ""
+  });
+  function normalizePreparedExecutionContext(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return {
+        context: {},
+        hasClipboardValue: false
+      };
+    }
+    const source = value;
+    const tabId = Number(source.tabId);
+    const windowId = Number(source.windowId);
+    return {
+      context: {
+        ...hasOwn(source, "tabId") ? { tabId: Number.isFinite(tabId) ? tabId : null } : {},
+        ...hasOwn(source, "windowId") ? { windowId: Number.isFinite(windowId) ? windowId : null } : {},
+        ...hasOwn(source, "url") ? { url: typeof source.url === "string" ? source.url : "" } : {},
+        ...hasOwn(source, "title") ? { title: typeof source.title === "string" ? source.title : "" } : {},
+        ...hasOwn(source, "selection") ? { selection: typeof source.selection === "string" ? source.selection : "" } : {},
+        ...hasOwn(source, "clipboard") ? { clipboard: typeof source.clipboard === "string" ? source.clipboard : "" } : {}
+      },
+      hasClipboardValue: hasOwn(source, "clipboard")
+    };
+  }
+  function mergeExecutionContext(base, prepared) {
+    return {
+      tabId: hasOwn(prepared, "tabId") ? prepared.tabId ?? null : base.tabId,
+      windowId: hasOwn(prepared, "windowId") ? prepared.windowId ?? null : base.windowId,
+      url: hasOwn(prepared, "url") ? prepared.url ?? "" : base.url,
+      title: hasOwn(prepared, "title") ? prepared.title ?? "" : base.title,
+      selection: hasOwn(prepared, "selection") ? prepared.selection ?? "" : base.selection,
+      clipboard: hasOwn(prepared, "clipboard") ? prepared.clipboard ?? "" : base.clipboard
+    };
+  }
+  async function getExecutionTabContextFromSender(sender) {
+    const senderTab = sender?.tab;
+    if (senderTab && Number.isFinite(senderTab.id) && isInjectableTabUrl2(senderTab.url ?? "")) {
+      const senderTabId = Number(senderTab.id);
+      await rememberNormalTab2(senderTab).catch(() => null);
+      return {
+        tabId: senderTabId,
+        windowId: Number.isFinite(senderTab.windowId) ? senderTab.windowId : null,
+        url: typeof senderTab.url === "string" ? senderTab.url : "",
+        title: typeof senderTab.title === "string" ? senderTab.title : "",
+        selection: await getSelectedTextFromTab2(senderTabId).catch(() => ""),
+        clipboard: ""
+      };
+    }
+    const activeTab = await getPreferredNormalActiveTab2();
+    if (!activeTab?.id || !isInjectableTabUrl2(activeTab?.url ?? "")) {
+      return createEmptyExecutionContext();
+    }
+    return {
+      tabId: activeTab.id,
+      windowId: Number.isFinite(activeTab.windowId) ? activeTab.windowId : null,
+      url: typeof activeTab.url === "string" ? activeTab.url : "",
+      title: typeof activeTab.title === "string" ? activeTab.title : "",
+      selection: await getSelectedTextFromTab2(activeTab.id).catch(() => ""),
+      clipboard: ""
+    };
+  }
+  return {
+    createEmptyExecutionContext,
+    normalizePreparedExecutionContext,
+    mergeExecutionContext,
+    getExecutionTabContextFromSender
+  };
+}
+
+// src/background/favorites/jobs.ts
 var FAVORITE_JOB_ALARM_PREFIX = "apb-favorite-job:";
 var FAVORITE_JOB_INITIAL_DELAY_MS = 50;
 var favoriteExecutionChain = Promise.resolve();
@@ -3036,112 +3116,47 @@ function queueFavoriteExecution(task) {
   favoriteExecutionChain = resultPromise.then(() => void 0, () => void 0);
   return resultPromise;
 }
-function createFavoriteWorkflow(deps) {
-  const {
-    getBroadcastTriggerLabel: getBroadcastTriggerLabel2,
-    getI18nMessage: getI18nMessage2,
-    rememberNormalTab: rememberNormalTab2,
-    getPreferredNormalActiveTab: getPreferredNormalActiveTab2,
-    isInjectableTabUrl: isInjectableTabUrl2,
-    getSelectedTextFromTab: getSelectedTextFromTab2,
-    openPopupWithPrompt: openPopupWithPrompt2,
-    nowIso: nowIso2,
-    buildChainRunId: buildChainRunId2,
-    queueBroadcastRequest: queueBroadcastRequest2
-  } = deps;
-  const getWorkflowMessage = (key, substitutions = [], fallback = "") => getI18nMessage2(key, substitutions) || fallback;
-  const createEmptyExecutionContext = () => ({
-    tabId: null,
-    windowId: null,
-    url: "",
-    title: "",
-    selection: "",
-    clipboard: ""
-  });
-  const hasOwn = (value, key) => Boolean(value) && typeof value === "object" && !Array.isArray(value) && Object.prototype.hasOwnProperty.call(value, key);
-  function normalizePreparedExecutionContext(value) {
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
-      return {
-        context: {},
-        hasClipboardValue: false
-      };
+
+// src/background/favorites/schedules.ts
+function buildScheduleAlarmName(favoriteId) {
+  const normalizedFavoriteId = typeof favoriteId === "string" ? favoriteId.trim() : "";
+  return normalizedFavoriteId ? `apb-schedule:${normalizedFavoriteId}` : "";
+}
+function parseScheduleAlarmFavoriteId(alarmName) {
+  const normalizedAlarmName = typeof alarmName === "string" ? alarmName.trim() : "";
+  return normalizedAlarmName.startsWith("apb-schedule:") ? alarmName.slice("apb-schedule:".length) : "";
+}
+function computeNextScheduledAt(repeat, scheduledAt, now = /* @__PURE__ */ new Date()) {
+  const normalizedRepeat = typeof repeat === "string" ? repeat : "none";
+  if (normalizedRepeat === "none") {
+    return null;
+  }
+  const baseDate = Number.isFinite(Date.parse(String(scheduledAt ?? ""))) ? new Date(String(scheduledAt)) : new Date(now);
+  const nextDate = new Date(baseDate);
+  do {
+    if (normalizedRepeat === "daily") {
+      nextDate.setDate(nextDate.getDate() + 1);
+    } else if (normalizedRepeat === "weekly") {
+      nextDate.setDate(nextDate.getDate() + 7);
+    } else {
+      nextDate.setDate(nextDate.getDate() + 1);
+      while (nextDate.getDay() === 0 || nextDate.getDay() === 6) {
+        nextDate.setDate(nextDate.getDate() + 1);
+      }
     }
-    const source = value;
-    const tabId = Number(source.tabId);
-    const windowId = Number(source.windowId);
-    return {
-      context: {
-        ...hasOwn(source, "tabId") ? { tabId: Number.isFinite(tabId) ? tabId : null } : {},
-        ...hasOwn(source, "windowId") ? { windowId: Number.isFinite(windowId) ? windowId : null } : {},
-        ...hasOwn(source, "url") ? { url: typeof source.url === "string" ? source.url : "" } : {},
-        ...hasOwn(source, "title") ? { title: typeof source.title === "string" ? source.title : "" } : {},
-        ...hasOwn(source, "selection") ? { selection: typeof source.selection === "string" ? source.selection : "" } : {},
-        ...hasOwn(source, "clipboard") ? { clipboard: typeof source.clipboard === "string" ? source.clipboard : "" } : {}
-      },
-      hasClipboardValue: hasOwn(source, "clipboard")
-    };
-  }
-  function mergeExecutionContext(base, prepared) {
-    return {
-      tabId: hasOwn(prepared, "tabId") ? prepared.tabId ?? null : base.tabId,
-      windowId: hasOwn(prepared, "windowId") ? prepared.windowId ?? null : base.windowId,
-      url: hasOwn(prepared, "url") ? prepared.url ?? "" : base.url,
-      title: hasOwn(prepared, "title") ? prepared.title ?? "" : base.title,
-      selection: hasOwn(prepared, "selection") ? prepared.selection ?? "" : base.selection,
-      clipboard: hasOwn(prepared, "clipboard") ? prepared.clipboard ?? "" : base.clipboard
-    };
-  }
-  function getQueuedMessage() {
-    return getWorkflowMessage("favorite_run_message_queued", [], "Queued");
-  }
-  function getCompletedMessage() {
-    return getWorkflowMessage("favorite_run_message_completed", [], "Completed");
-  }
-  function getDedupedMessage() {
-    return getWorkflowMessage(
-      "favorite_run_message_deduped",
-      [],
-      "Favorite run is already queued."
-    );
-  }
-  function getFailedMessage() {
-    return getWorkflowMessage("favorite_run_message_failed", [], "Favorite run failed");
-  }
-  function getStepProgressMessage(stepIndex, stepCount) {
-    return getWorkflowMessage(
-      "favorite_run_message_step_progress",
-      [String(stepIndex + 1), String(stepCount)],
-      `Step ${stepIndex + 1}/${stepCount}`
-    );
-  }
-  function getWaitingStepMessage(stepIndex, stepCount) {
-    return getWorkflowMessage(
-      "favorite_run_message_waiting_step",
-      [String(stepIndex + 1), String(stepCount)],
-      `Waiting for step ${stepIndex + 1}/${stepCount}`
-    );
-  }
-  function getQueuedStepMessage(stepIndex, stepCount) {
-    return getWorkflowMessage(
-      "favorite_run_message_queued_step",
-      [String(stepIndex + 1), String(stepCount)],
-      `Queued step ${stepIndex + 1}/${stepCount}`
-    );
-  }
-  function getFavoriteRunProgressMessage(job) {
-    if (job.stepCount > 1 && job.currentStepIndex !== null) {
-      return getStepProgressMessage(job.currentStepIndex, job.stepCount);
-    }
-    return job.message;
-  }
-  function buildScheduleAlarmName2(favoriteId) {
-    const normalizedFavoriteId = typeof favoriteId === "string" ? favoriteId.trim() : "";
-    return normalizedFavoriteId ? `apb-schedule:${normalizedFavoriteId}` : "";
-  }
-  function parseScheduleAlarmFavoriteId2(alarmName) {
-    const normalizedAlarmName = typeof alarmName === "string" ? alarmName.trim() : "";
-    return normalizedAlarmName.startsWith("apb-schedule:") ? alarmName.slice("apb-schedule:".length) : "";
-  }
+  } while (nextDate.getTime() <= now.getTime());
+  return nextDate.toISOString();
+}
+
+// src/background/favorites/template-resolution.ts
+var SCHEDULED_VARIABLE_BLOCKLIST = /* @__PURE__ */ new Set([
+  SYSTEM_TEMPLATE_VARIABLES.url,
+  SYSTEM_TEMPLATE_VARIABLES.title,
+  SYSTEM_TEMPLATE_VARIABLES.selection,
+  SYSTEM_TEMPLATE_VARIABLES.clipboard
+]);
+function createFavoriteTemplateResolutionTools(deps) {
+  const { getWorkflowMessage } = deps;
   function getFavoriteExecutionSteps(favorite) {
     const favoriteTargetSiteIds = normalizeSiteIdList(favorite?.sentTo);
     if (favorite?.mode === "chain" && Array.isArray(favorite.steps) && favorite.steps.length > 0) {
@@ -3170,33 +3185,6 @@ function createFavoriteWorkflow(deps) {
     const source = favorite?.mode === "chain" ? getFavoriteExecutionSteps(favorite)[0]?.text ?? favorite?.text ?? "" : favorite?.text ?? "";
     const collapsed = String(source ?? "").replace(/\s+/g, " ").trim();
     return collapsed.length > 80 ? `${collapsed.slice(0, 80)}...` : collapsed;
-  }
-  async function getExecutionTabContextFromSender(sender) {
-    const senderTab = sender?.tab;
-    if (senderTab && Number.isFinite(senderTab.id) && isInjectableTabUrl2(senderTab.url ?? "")) {
-      const senderTabId = Number(senderTab.id);
-      await rememberNormalTab2(senderTab).catch(() => null);
-      return {
-        tabId: senderTabId,
-        windowId: Number.isFinite(senderTab.windowId) ? senderTab.windowId : null,
-        url: typeof senderTab.url === "string" ? senderTab.url : "",
-        title: typeof senderTab.title === "string" ? senderTab.title : "",
-        selection: await getSelectedTextFromTab2(senderTabId).catch(() => ""),
-        clipboard: ""
-      };
-    }
-    const activeTab = await getPreferredNormalActiveTab2();
-    if (!activeTab?.id || !isInjectableTabUrl2(activeTab?.url ?? "")) {
-      return createEmptyExecutionContext();
-    }
-    return {
-      tabId: activeTab.id,
-      windowId: Number.isFinite(activeTab.windowId) ? activeTab.windowId : null,
-      url: typeof activeTab.url === "string" ? activeTab.url : "",
-      title: typeof activeTab.title === "string" ? activeTab.title : "",
-      selection: await getSelectedTextFromTab2(activeTab.id).catch(() => ""),
-      clipboard: ""
-    };
   }
   function buildFavoriteUserDefaults(templateVariableCache, favorite) {
     return {
@@ -3302,6 +3290,93 @@ function createFavoriteWorkflow(deps) {
       [SYSTEM_TEMPLATE_VARIABLES.clipboard]: executionContext.clipboard ?? ""
     };
     return renderTemplatePrompt(step.text, values);
+  }
+  return {
+    getFavoriteExecutionSteps,
+    getFavoriteTargetSiteIds,
+    previewFavoriteText,
+    detectFavoriteExecutionBlockers,
+    buildFavoriteStepPrompt
+  };
+}
+
+// src/background/popup/favorites-workflow.ts
+function createFavoriteWorkflow(deps) {
+  const {
+    getBroadcastTriggerLabel: getBroadcastTriggerLabel2,
+    getI18nMessage: getI18nMessage2,
+    rememberNormalTab: rememberNormalTab2,
+    getPreferredNormalActiveTab: getPreferredNormalActiveTab2,
+    isInjectableTabUrl: isInjectableTabUrl2,
+    getSelectedTextFromTab: getSelectedTextFromTab2,
+    openPopupWithPrompt: openPopupWithPrompt2,
+    nowIso: nowIso2,
+    buildChainRunId: buildChainRunId2,
+    queueBroadcastRequest: queueBroadcastRequest2
+  } = deps;
+  const getWorkflowMessage = (key, substitutions = [], fallback = "") => getI18nMessage2(key, substitutions) || fallback;
+  const {
+    createEmptyExecutionContext,
+    normalizePreparedExecutionContext,
+    mergeExecutionContext,
+    getExecutionTabContextFromSender
+  } = createFavoriteExecutionContextTools({
+    rememberNormalTab: rememberNormalTab2,
+    getPreferredNormalActiveTab: getPreferredNormalActiveTab2,
+    isInjectableTabUrl: isInjectableTabUrl2,
+    getSelectedTextFromTab: getSelectedTextFromTab2
+  });
+  const {
+    getFavoriteExecutionSteps,
+    getFavoriteTargetSiteIds,
+    previewFavoriteText,
+    detectFavoriteExecutionBlockers,
+    buildFavoriteStepPrompt
+  } = createFavoriteTemplateResolutionTools({
+    getWorkflowMessage
+  });
+  function getQueuedMessage() {
+    return getWorkflowMessage("favorite_run_message_queued", [], "Queued");
+  }
+  function getCompletedMessage() {
+    return getWorkflowMessage("favorite_run_message_completed", [], "Completed");
+  }
+  function getDedupedMessage() {
+    return getWorkflowMessage(
+      "favorite_run_message_deduped",
+      [],
+      "Favorite run is already queued."
+    );
+  }
+  function getFailedMessage() {
+    return getWorkflowMessage("favorite_run_message_failed", [], "Favorite run failed");
+  }
+  function getStepProgressMessage(stepIndex, stepCount) {
+    return getWorkflowMessage(
+      "favorite_run_message_step_progress",
+      [String(stepIndex + 1), String(stepCount)],
+      `Step ${stepIndex + 1}/${stepCount}`
+    );
+  }
+  function getWaitingStepMessage(stepIndex, stepCount) {
+    return getWorkflowMessage(
+      "favorite_run_message_waiting_step",
+      [String(stepIndex + 1), String(stepCount)],
+      `Waiting for step ${stepIndex + 1}/${stepCount}`
+    );
+  }
+  function getQueuedStepMessage(stepIndex, stepCount) {
+    return getWorkflowMessage(
+      "favorite_run_message_queued_step",
+      [String(stepIndex + 1), String(stepCount)],
+      `Queued step ${stepIndex + 1}/${stepCount}`
+    );
+  }
+  function getFavoriteRunProgressMessage(job) {
+    if (job.stepCount > 1 && job.currentStepIndex !== null) {
+      return getStepProgressMessage(job.currentStepIndex, job.stepCount);
+    }
+    return job.message;
   }
   async function createFavoriteFailureHistory(details = {}) {
     const requestedSiteIds = normalizeSiteIdList(
@@ -3627,27 +3702,6 @@ function createFavoriteWorkflow(deps) {
       }
     }
   }
-  function computeNextScheduledAt(repeat, scheduledAt, now = /* @__PURE__ */ new Date()) {
-    const normalizedRepeat = typeof repeat === "string" ? repeat : "none";
-    if (normalizedRepeat === "none") {
-      return null;
-    }
-    const baseDate = Number.isFinite(Date.parse(String(scheduledAt ?? ""))) ? new Date(String(scheduledAt)) : new Date(now);
-    const nextDate = new Date(baseDate);
-    do {
-      if (normalizedRepeat === "daily") {
-        nextDate.setDate(nextDate.getDate() + 1);
-      } else if (normalizedRepeat === "weekly") {
-        nextDate.setDate(nextDate.getDate() + 7);
-      } else {
-        nextDate.setDate(nextDate.getDate() + 1);
-        while (nextDate.getDay() === 0 || nextDate.getDay() === 6) {
-          nextDate.setDate(nextDate.getDate() + 1);
-        }
-      }
-    } while (nextDate.getTime() <= now.getTime());
-    return nextDate.toISOString();
-  }
   async function reconcileFavoriteSchedules2() {
     const favorites = await getPromptFavorites().catch(() => []);
     const desiredAlarms = /* @__PURE__ */ new Map();
@@ -3655,7 +3709,7 @@ function createFavoriteWorkflow(deps) {
       if (!favorite?.scheduleEnabled || !favorite?.scheduledAt) {
         return;
       }
-      const alarmName = buildScheduleAlarmName2(favorite.id);
+      const alarmName = buildScheduleAlarmName(favorite.id);
       if (!alarmName) {
         return;
       }
@@ -3668,7 +3722,7 @@ function createFavoriteWorkflow(deps) {
     try {
       const alarms = await chrome.alarms.getAll();
       await Promise.all(
-        alarms.filter((alarm) => parseScheduleAlarmFavoriteId2(alarm.name)).map(async (alarm) => {
+        alarms.filter((alarm) => parseScheduleAlarmFavoriteId(alarm.name)).map(async (alarm) => {
           if (!desiredAlarms.has(alarm.name)) {
             await chrome.alarms.clear(alarm.name);
           }
@@ -3710,7 +3764,7 @@ function createFavoriteWorkflow(deps) {
   async function handleFavoriteScheduleAlarm2(favoriteId) {
     const favorites = await getPromptFavorites();
     const favorite = favorites.find((entry) => String(entry.id) === String(favoriteId));
-    const alarmName = buildScheduleAlarmName2(favoriteId);
+    const alarmName = buildScheduleAlarmName(favoriteId);
     if (!favorite?.scheduleEnabled) {
       if (alarmName) {
         await chrome.alarms.clear(alarmName).catch(() => false);
@@ -3900,8 +3954,8 @@ function createFavoriteWorkflow(deps) {
     await scheduleFavoriteJobAlarm(job.jobId, nextDelayMs);
   }
   return {
-    buildScheduleAlarmName: buildScheduleAlarmName2,
-    parseScheduleAlarmFavoriteId: parseScheduleAlarmFavoriteId2,
+    buildScheduleAlarmName,
+    parseScheduleAlarmFavoriteId,
     getFavoriteExecutionSteps,
     getFavoriteTargetSiteIds,
     previewFavoriteText,
@@ -5057,8 +5111,8 @@ var {
   }
 });
 var {
-  buildScheduleAlarmName,
-  parseScheduleAlarmFavoriteId,
+  buildScheduleAlarmName: buildScheduleAlarmName2,
+  parseScheduleAlarmFavoriteId: parseScheduleAlarmFavoriteId2,
   reconcileFavoriteRunJobs,
   reconcileFavoriteSchedules,
   handleFavoriteScheduleAlarm,
@@ -6537,7 +6591,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     void handleFavoriteRunJobAlarm(alarm.name);
     return;
   }
-  const favoriteId = parseScheduleAlarmFavoriteId(alarm.name);
+  const favoriteId = parseScheduleAlarmFavoriteId2(alarm.name);
   if (favoriteId) {
     void handleFavoriteScheduleAlarm(favoriteId);
   }

@@ -327,278 +327,6 @@ function normalizeChainSteps(value, fallback = {}) {
   return [];
 }
 
-// src/shared/broadcast/target-snapshots.ts
-function normalizeTargetMode(value) {
-  if (value === "new" || value === "tab") {
-    return value;
-  }
-  return "default";
-}
-function normalizeTargetTabId(value) {
-  if (value === null || value === void 0 || value === "") {
-    return null;
-  }
-  const numericValue = Number(value);
-  return Number.isFinite(numericValue) ? numericValue : null;
-}
-function buildBroadcastTargetSnapshot(value) {
-  const siteId = safeText(value?.siteId).trim();
-  if (!siteId) {
-    return null;
-  }
-  return {
-    siteId,
-    resolvedPrompt: safeText(value?.resolvedPrompt),
-    targetMode: normalizeTargetMode(value?.targetMode),
-    targetTabId: normalizeTargetTabId(value?.targetTabId)
-  };
-}
-function normalizeBroadcastTargetSnapshots(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  const seenSiteIds = /* @__PURE__ */ new Set();
-  const snapshots = [];
-  value.forEach((entry) => {
-    const snapshot = buildBroadcastTargetSnapshot(
-      entry && typeof entry === "object" && !Array.isArray(entry) ? {
-        siteId: safeText(entry.siteId),
-        resolvedPrompt: safeText(entry.resolvedPrompt),
-        targetMode: entry.targetMode,
-        targetTabId: normalizeTargetTabId(entry.targetTabId)
-      } : null
-    );
-    if (!snapshot || seenSiteIds.has(snapshot.siteId)) {
-      return;
-    }
-    seenSiteIds.add(snapshot.siteId);
-    snapshots.push(snapshot);
-  });
-  return snapshots;
-}
-function buildFallbackTargetSnapshots(siteIds, prompt) {
-  return normalizeSiteIdList(siteIds).map((siteId) => ({
-    siteId,
-    resolvedPrompt: safeText(prompt),
-    targetMode: "default",
-    targetTabId: null
-  }));
-}
-function ensureBroadcastTargetSnapshots(snapshots, siteIds, prompt) {
-  const normalized = normalizeBroadcastTargetSnapshots(snapshots);
-  if (normalized.length > 0) {
-    return normalized;
-  }
-  return buildFallbackTargetSnapshots(siteIds, prompt);
-}
-function getTargetSnapshotSiteIds(entry) {
-  const snapshots = ensureBroadcastTargetSnapshots(
-    entry?.targetSnapshots,
-    entry?.requestedSiteIds ?? entry?.sentTo,
-    entry?.text
-  );
-  return snapshots.map((snapshot) => snapshot.siteId);
-}
-function buildBroadcastTargetMessageFromSnapshot(snapshot, openTabs = []) {
-  const siteId = safeText(snapshot.siteId).trim();
-  const payload = {
-    id: siteId,
-    resolvedPrompt: safeText(snapshot.resolvedPrompt)
-  };
-  if (snapshot.targetMode === "new") {
-    payload.reuseExistingTab = false;
-    payload.target = "new";
-    return payload;
-  }
-  if (snapshot.targetMode === "tab" && snapshot.targetTabId) {
-    const matchingTab = openTabs.find(
-      (tab) => tab.siteId === siteId && Number(tab.tabId) === Number(snapshot.targetTabId)
-    );
-    if (matchingTab?.tabId) {
-      payload.tabId = matchingTab.tabId;
-    }
-  }
-  return payload;
-}
-
-// src/shared/template/constants.ts
-var TEMPLATE_VARIABLE_PATTERN = /{{\s*([^{}]+?)\s*}}/g;
-var SYSTEM_TEMPLATE_VARIABLES = Object.freeze({
-  date: "date",
-  time: "time",
-  weekday: "weekday",
-  clipboard: "clipboard",
-  url: "url",
-  title: "title",
-  selection: "selection",
-  counter: "counter",
-  random: "random"
-});
-var SYSTEM_TEMPLATE_DEFINITIONS = Object.freeze({
-  [SYSTEM_TEMPLATE_VARIABLES.date]: {
-    aliases: ["date", "날짜"],
-    labels: { ko: "날짜", en: "date" }
-  },
-  [SYSTEM_TEMPLATE_VARIABLES.time]: {
-    aliases: ["time", "시간"],
-    labels: { ko: "시간", en: "time" }
-  },
-  [SYSTEM_TEMPLATE_VARIABLES.weekday]: {
-    aliases: ["weekday", "요일"],
-    labels: { ko: "요일", en: "weekday" }
-  },
-  [SYSTEM_TEMPLATE_VARIABLES.clipboard]: {
-    aliases: ["clipboard", "클립보드"],
-    labels: { ko: "클립보드", en: "clipboard" }
-  },
-  [SYSTEM_TEMPLATE_VARIABLES.url]: {
-    aliases: ["url", "주소"],
-    labels: { ko: "현재 탭 URL", en: "current tab URL" }
-  },
-  [SYSTEM_TEMPLATE_VARIABLES.title]: {
-    aliases: ["title", "제목"],
-    labels: { ko: "현재 탭 제목", en: "current tab title" }
-  },
-  [SYSTEM_TEMPLATE_VARIABLES.selection]: {
-    aliases: ["selection", "선택"],
-    labels: { ko: "선택한 텍스트", en: "selected text" }
-  },
-  [SYSTEM_TEMPLATE_VARIABLES.counter]: {
-    aliases: ["counter", "카운터"],
-    labels: { ko: "카운터", en: "counter" }
-  },
-  [SYSTEM_TEMPLATE_VARIABLES.random]: {
-    aliases: ["random", "랜덤"],
-    labels: { ko: "랜덤 숫자", en: "random number" }
-  }
-});
-var SYSTEM_TEMPLATE_ALIAS_MAP = new Map(
-  Object.entries(SYSTEM_TEMPLATE_DEFINITIONS).flatMap(
-    ([canonicalName, definition]) => definition.aliases.map((alias) => [alias.toLowerCase(), canonicalName])
-  )
-);
-var SYSTEM_TEMPLATE_KEYS = new Set(Object.keys(SYSTEM_TEMPLATE_DEFINITIONS));
-var WEEKDAY_LOCALES = Object.freeze({
-  ko: "ko-KR",
-  en: "en-US"
-});
-
-// src/shared/template/normalize.ts
-function pad2(value) {
-  return String(value).padStart(2, "0");
-}
-function normalizeLocale(locale) {
-  return typeof locale === "string" && locale.toLowerCase().startsWith("ko") ? "ko" : "en";
-}
-function normalizeTemplateVariableName(value) {
-  return typeof value === "string" ? value.trim() : "";
-}
-function canonicalizeTemplateVariableName(value) {
-  const normalizedValue = normalizeTemplateVariableName(value);
-  if (!normalizedValue) {
-    return "";
-  }
-  return SYSTEM_TEMPLATE_ALIAS_MAP.get(normalizedValue.toLowerCase()) ?? normalizedValue;
-}
-function getTemplateVariableDisplayName(name, locale = "en") {
-  const canonicalName = canonicalizeTemplateVariableName(name);
-  if (!SYSTEM_TEMPLATE_KEYS.has(canonicalName)) {
-    return normalizeTemplateVariableName(name);
-  }
-  const normalizedLocale = normalizeLocale(locale);
-  return SYSTEM_TEMPLATE_DEFINITIONS[canonicalName].labels[normalizedLocale];
-}
-function normalizeTemplateValueRecord(values = {}) {
-  if (!values || typeof values !== "object" || Array.isArray(values)) {
-    return {};
-  }
-  return Object.fromEntries(
-    Object.entries(values).map(([key, value]) => [
-      canonicalizeTemplateVariableName(key),
-      value
-    ])
-  );
-}
-
-// src/shared/template/detect.ts
-function detectTemplateVariables(template) {
-  const source = typeof template === "string" ? template : "";
-  const seen = /* @__PURE__ */ new Set();
-  const variables = [];
-  for (const match of source.matchAll(TEMPLATE_VARIABLE_PATTERN)) {
-    const canonicalName = canonicalizeTemplateVariableName(match[1]);
-    if (!canonicalName || seen.has(canonicalName)) {
-      continue;
-    }
-    seen.add(canonicalName);
-    variables.push({
-      name: canonicalName,
-      kind: SYSTEM_TEMPLATE_KEYS.has(canonicalName) ? "system" : "user"
-    });
-  }
-  return variables;
-}
-function getUserTemplateVariables(template) {
-  return detectTemplateVariables(template).filter((variable) => variable.kind === "user");
-}
-
-// src/shared/template/values.ts
-function buildSystemTemplateValues(now = /* @__PURE__ */ new Date(), options = {}) {
-  const date = now instanceof Date ? now : /* @__PURE__ */ new Date();
-  const locale = normalizeLocale(options?.locale);
-  const values = {
-    [SYSTEM_TEMPLATE_VARIABLES.date]: [
-      date.getFullYear(),
-      pad2(date.getMonth() + 1),
-      pad2(date.getDate())
-    ].join("-"),
-    [SYSTEM_TEMPLATE_VARIABLES.time]: `${pad2(date.getHours())}:${pad2(date.getMinutes())}`,
-    [SYSTEM_TEMPLATE_VARIABLES.weekday]: new Intl.DateTimeFormat(WEEKDAY_LOCALES[locale], {
-      weekday: locale === "ko" ? "short" : "long"
-    }).format(date),
-    [SYSTEM_TEMPLATE_VARIABLES.random]: String(Math.floor(Math.random() * 1e3) + 1)
-  };
-  if (options?.extra && typeof options.extra === "object") {
-    if (typeof options.extra.url === "string") {
-      values[SYSTEM_TEMPLATE_VARIABLES.url] = options.extra.url;
-    }
-    if (typeof options.extra.title === "string") {
-      values[SYSTEM_TEMPLATE_VARIABLES.title] = options.extra.title;
-    }
-    if (typeof options.extra.selection === "string") {
-      values[SYSTEM_TEMPLATE_VARIABLES.selection] = options.extra.selection;
-    }
-    if (typeof options.extra.counter === "string" || typeof options.extra.counter === "number") {
-      values[SYSTEM_TEMPLATE_VARIABLES.counter] = String(options.extra.counter);
-    }
-  }
-  return values;
-}
-
-// src/shared/template/render.ts
-function renderTemplatePrompt(template, values = {}) {
-  const source = typeof template === "string" ? template : "";
-  const normalizedValues = normalizeTemplateValueRecord(values);
-  return source.replace(TEMPLATE_VARIABLE_PATTERN, (_match, rawName) => {
-    const normalizedName = normalizeTemplateVariableName(rawName);
-    const canonicalName = canonicalizeTemplateVariableName(rawName);
-    if (!normalizedName) {
-      return "";
-    }
-    if (Object.prototype.hasOwnProperty.call(normalizedValues, canonicalName)) {
-      return String(normalizedValues[canonicalName] ?? "");
-    }
-    if (Object.prototype.hasOwnProperty.call(normalizedValues, normalizedName)) {
-      return String(normalizedValues[normalizedName] ?? "");
-    }
-    return `{{${normalizedName}}}`;
-  });
-}
-function findMissingTemplateValues(template, values = {}) {
-  const normalizedValues = normalizeTemplateValueRecord(values);
-  return getUserTemplateVariables(template).map((variable) => variable.name).filter((name) => !String(normalizedValues[name] ?? "").trim());
-}
-
 // src/shared/prompts/storage.ts
 async function readLocal(key, fallbackValue) {
   const result = await chrome.storage.local.get(key);
@@ -800,6 +528,100 @@ async function deleteFavoriteItem(favoriteId) {
   );
   await setPromptFavorites(nextFavorites);
   return nextFavorites;
+}
+
+// src/shared/broadcast/target-snapshots.ts
+function normalizeTargetMode(value) {
+  if (value === "new" || value === "tab") {
+    return value;
+  }
+  return "default";
+}
+function normalizeTargetTabId(value) {
+  if (value === null || value === void 0 || value === "") {
+    return null;
+  }
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : null;
+}
+function buildBroadcastTargetSnapshot(value) {
+  const siteId = safeText(value?.siteId).trim();
+  if (!siteId) {
+    return null;
+  }
+  return {
+    siteId,
+    resolvedPrompt: safeText(value?.resolvedPrompt),
+    targetMode: normalizeTargetMode(value?.targetMode),
+    targetTabId: normalizeTargetTabId(value?.targetTabId)
+  };
+}
+function normalizeBroadcastTargetSnapshots(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const seenSiteIds = /* @__PURE__ */ new Set();
+  const snapshots = [];
+  value.forEach((entry) => {
+    const snapshot = buildBroadcastTargetSnapshot(
+      entry && typeof entry === "object" && !Array.isArray(entry) ? {
+        siteId: safeText(entry.siteId),
+        resolvedPrompt: safeText(entry.resolvedPrompt),
+        targetMode: entry.targetMode,
+        targetTabId: normalizeTargetTabId(entry.targetTabId)
+      } : null
+    );
+    if (!snapshot || seenSiteIds.has(snapshot.siteId)) {
+      return;
+    }
+    seenSiteIds.add(snapshot.siteId);
+    snapshots.push(snapshot);
+  });
+  return snapshots;
+}
+function buildFallbackTargetSnapshots(siteIds, prompt) {
+  return normalizeSiteIdList(siteIds).map((siteId) => ({
+    siteId,
+    resolvedPrompt: safeText(prompt),
+    targetMode: "default",
+    targetTabId: null
+  }));
+}
+function ensureBroadcastTargetSnapshots(snapshots, siteIds, prompt) {
+  const normalized = normalizeBroadcastTargetSnapshots(snapshots);
+  if (normalized.length > 0) {
+    return normalized;
+  }
+  return buildFallbackTargetSnapshots(siteIds, prompt);
+}
+function getTargetSnapshotSiteIds(entry) {
+  const snapshots = ensureBroadcastTargetSnapshots(
+    entry?.targetSnapshots,
+    entry?.requestedSiteIds ?? entry?.sentTo,
+    entry?.text
+  );
+  return snapshots.map((snapshot) => snapshot.siteId);
+}
+function buildBroadcastTargetMessageFromSnapshot(snapshot, openTabs = []) {
+  const siteId = safeText(snapshot.siteId).trim();
+  const payload = {
+    id: siteId,
+    resolvedPrompt: safeText(snapshot.resolvedPrompt)
+  };
+  if (snapshot.targetMode === "new") {
+    payload.reuseExistingTab = false;
+    payload.target = "new";
+    return payload;
+  }
+  if (snapshot.targetMode === "tab" && snapshot.targetTabId) {
+    const matchingTab = openTabs.find(
+      (tab) => tab.siteId === siteId && Number(tab.tabId) === Number(snapshot.targetTabId)
+    );
+    if (matchingTab?.tabId) {
+      payload.tabId = matchingTab.tabId;
+    }
+  }
+  return payload;
 }
 
 // src/shared/prompts/settings-store.ts
@@ -3868,6 +3690,692 @@ function createPopupShell(deps) {
   };
 }
 
+// src/shared/template/constants.ts
+var TEMPLATE_VARIABLE_PATTERN = /{{\s*([^{}]+?)\s*}}/g;
+var SYSTEM_TEMPLATE_VARIABLES = Object.freeze({
+  date: "date",
+  time: "time",
+  weekday: "weekday",
+  clipboard: "clipboard",
+  url: "url",
+  title: "title",
+  selection: "selection",
+  counter: "counter",
+  random: "random"
+});
+var SYSTEM_TEMPLATE_DEFINITIONS = Object.freeze({
+  [SYSTEM_TEMPLATE_VARIABLES.date]: {
+    aliases: ["date", "날짜"],
+    labels: { ko: "날짜", en: "date" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.time]: {
+    aliases: ["time", "시간"],
+    labels: { ko: "시간", en: "time" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.weekday]: {
+    aliases: ["weekday", "요일"],
+    labels: { ko: "요일", en: "weekday" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.clipboard]: {
+    aliases: ["clipboard", "클립보드"],
+    labels: { ko: "클립보드", en: "clipboard" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.url]: {
+    aliases: ["url", "주소"],
+    labels: { ko: "현재 탭 URL", en: "current tab URL" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.title]: {
+    aliases: ["title", "제목"],
+    labels: { ko: "현재 탭 제목", en: "current tab title" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.selection]: {
+    aliases: ["selection", "선택"],
+    labels: { ko: "선택한 텍스트", en: "selected text" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.counter]: {
+    aliases: ["counter", "카운터"],
+    labels: { ko: "카운터", en: "counter" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.random]: {
+    aliases: ["random", "랜덤"],
+    labels: { ko: "랜덤 숫자", en: "random number" }
+  }
+});
+var SYSTEM_TEMPLATE_ALIAS_MAP = new Map(
+  Object.entries(SYSTEM_TEMPLATE_DEFINITIONS).flatMap(
+    ([canonicalName, definition]) => definition.aliases.map((alias) => [alias.toLowerCase(), canonicalName])
+  )
+);
+var SYSTEM_TEMPLATE_KEYS = new Set(Object.keys(SYSTEM_TEMPLATE_DEFINITIONS));
+var WEEKDAY_LOCALES = Object.freeze({
+  ko: "ko-KR",
+  en: "en-US"
+});
+
+// src/shared/template/normalize.ts
+function pad2(value) {
+  return String(value).padStart(2, "0");
+}
+function normalizeLocale(locale) {
+  return typeof locale === "string" && locale.toLowerCase().startsWith("ko") ? "ko" : "en";
+}
+function normalizeTemplateVariableName(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+function canonicalizeTemplateVariableName(value) {
+  const normalizedValue = normalizeTemplateVariableName(value);
+  if (!normalizedValue) {
+    return "";
+  }
+  return SYSTEM_TEMPLATE_ALIAS_MAP.get(normalizedValue.toLowerCase()) ?? normalizedValue;
+}
+function getTemplateVariableDisplayName(name, locale = "en") {
+  const canonicalName = canonicalizeTemplateVariableName(name);
+  if (!SYSTEM_TEMPLATE_KEYS.has(canonicalName)) {
+    return normalizeTemplateVariableName(name);
+  }
+  const normalizedLocale = normalizeLocale(locale);
+  return SYSTEM_TEMPLATE_DEFINITIONS[canonicalName].labels[normalizedLocale];
+}
+function normalizeTemplateValueRecord(values = {}) {
+  if (!values || typeof values !== "object" || Array.isArray(values)) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(values).map(([key, value]) => [
+      canonicalizeTemplateVariableName(key),
+      value
+    ])
+  );
+}
+
+// src/shared/template/detect.ts
+function detectTemplateVariables(template) {
+  const source = typeof template === "string" ? template : "";
+  const seen = /* @__PURE__ */ new Set();
+  const variables = [];
+  for (const match of source.matchAll(TEMPLATE_VARIABLE_PATTERN)) {
+    const canonicalName = canonicalizeTemplateVariableName(match[1]);
+    if (!canonicalName || seen.has(canonicalName)) {
+      continue;
+    }
+    seen.add(canonicalName);
+    variables.push({
+      name: canonicalName,
+      kind: SYSTEM_TEMPLATE_KEYS.has(canonicalName) ? "system" : "user"
+    });
+  }
+  return variables;
+}
+function getUserTemplateVariables(template) {
+  return detectTemplateVariables(template).filter((variable) => variable.kind === "user");
+}
+
+// src/shared/template/values.ts
+function buildSystemTemplateValues(now = /* @__PURE__ */ new Date(), options = {}) {
+  const date = now instanceof Date ? now : /* @__PURE__ */ new Date();
+  const locale = normalizeLocale(options?.locale);
+  const values = {
+    [SYSTEM_TEMPLATE_VARIABLES.date]: [
+      date.getFullYear(),
+      pad2(date.getMonth() + 1),
+      pad2(date.getDate())
+    ].join("-"),
+    [SYSTEM_TEMPLATE_VARIABLES.time]: `${pad2(date.getHours())}:${pad2(date.getMinutes())}`,
+    [SYSTEM_TEMPLATE_VARIABLES.weekday]: new Intl.DateTimeFormat(WEEKDAY_LOCALES[locale], {
+      weekday: locale === "ko" ? "short" : "long"
+    }).format(date),
+    [SYSTEM_TEMPLATE_VARIABLES.random]: String(Math.floor(Math.random() * 1e3) + 1)
+  };
+  if (options?.extra && typeof options.extra === "object") {
+    if (typeof options.extra.url === "string") {
+      values[SYSTEM_TEMPLATE_VARIABLES.url] = options.extra.url;
+    }
+    if (typeof options.extra.title === "string") {
+      values[SYSTEM_TEMPLATE_VARIABLES.title] = options.extra.title;
+    }
+    if (typeof options.extra.selection === "string") {
+      values[SYSTEM_TEMPLATE_VARIABLES.selection] = options.extra.selection;
+    }
+    if (typeof options.extra.counter === "string" || typeof options.extra.counter === "number") {
+      values[SYSTEM_TEMPLATE_VARIABLES.counter] = String(options.extra.counter);
+    }
+  }
+  return values;
+}
+
+// src/shared/template/render.ts
+function renderTemplatePrompt(template, values = {}) {
+  const source = typeof template === "string" ? template : "";
+  const normalizedValues = normalizeTemplateValueRecord(values);
+  return source.replace(TEMPLATE_VARIABLE_PATTERN, (_match, rawName) => {
+    const normalizedName = normalizeTemplateVariableName(rawName);
+    const canonicalName = canonicalizeTemplateVariableName(rawName);
+    if (!normalizedName) {
+      return "";
+    }
+    if (Object.prototype.hasOwnProperty.call(normalizedValues, canonicalName)) {
+      return String(normalizedValues[canonicalName] ?? "");
+    }
+    if (Object.prototype.hasOwnProperty.call(normalizedValues, normalizedName)) {
+      return String(normalizedValues[normalizedName] ?? "");
+    }
+    return `{{${normalizedName}}}`;
+  });
+}
+function findMissingTemplateValues(template, values = {}) {
+  const normalizedValues = normalizeTemplateValueRecord(values);
+  return getUserTemplateVariables(template).map((variable) => variable.name).filter((name) => !String(normalizedValues[name] ?? "").trim());
+}
+
+// src/popup/app/sorting.ts
+function getHistorySortOptions() {
+  return [
+    { value: "latest", label: t.historySortLatest },
+    { value: "oldest", label: t.historySortOldest },
+    { value: "mostSuccess", label: t.historySortMostSuccess },
+    { value: "mostFailure", label: t.historySortMostFailure }
+  ];
+}
+function getFavoriteSortOptions() {
+  return [
+    { value: "recentUsed", label: t.favoriteSortRecentUsed },
+    { value: "usageCount", label: t.favoriteSortUsageCount },
+    { value: "title", label: t.favoriteSortTitle },
+    { value: "createdAt", label: t.favoriteSortCreatedAt }
+  ];
+}
+function compareFavoriteTitle(left, right) {
+  return String(left.title ?? "").localeCompare(
+    String(right.title ?? ""),
+    isKorean ? "ko" : "en",
+    { sensitivity: "base" }
+  );
+}
+function sortHistoryItemsForDisplay(items, historySort = "latest") {
+  const nextItems = [...items];
+  switch (historySort) {
+    case "oldest":
+      return nextItems.sort((left, right) => compareDateValues(right.createdAt, left.createdAt));
+    case "mostSuccess":
+      return nextItems.sort((left, right) => {
+        const leftCount = Array.isArray(left.submittedSiteIds) ? left.submittedSiteIds.length : 0;
+        const rightCount = Array.isArray(right.submittedSiteIds) ? right.submittedSiteIds.length : 0;
+        return rightCount - leftCount || compareDateValues(left.createdAt, right.createdAt);
+      });
+    case "mostFailure":
+      return nextItems.sort((left, right) => {
+        const leftCount = Array.isArray(left.failedSiteIds) ? left.failedSiteIds.length : 0;
+        const rightCount = Array.isArray(right.failedSiteIds) ? right.failedSiteIds.length : 0;
+        return rightCount - leftCount || compareDateValues(left.createdAt, right.createdAt);
+      });
+    case "latest":
+    default:
+      return nextItems.sort((left, right) => compareDateValues(left.createdAt, right.createdAt));
+  }
+}
+function sortFavoriteItemsForDisplay(items, favoriteSort = "recentUsed") {
+  const nextItems = [...items];
+  nextItems.sort((left, right) => {
+    if (left.pinned && !right.pinned) {
+      return -1;
+    }
+    if (!left.pinned && right.pinned) {
+      return 1;
+    }
+    switch (favoriteSort) {
+      case "usageCount":
+        return (Number(right.usageCount) || 0) - (Number(left.usageCount) || 0) || compareDateValues(left.lastUsedAt ?? left.favoritedAt, right.lastUsedAt ?? right.favoritedAt);
+      case "title":
+        return compareFavoriteTitle(left, right) || compareDateValues(left.favoritedAt, right.favoritedAt);
+      case "createdAt":
+        return compareDateValues(left.createdAt, right.createdAt);
+      case "recentUsed":
+      default:
+        return compareDateValues(left.lastUsedAt ?? left.favoritedAt, right.lastUsedAt ?? right.favoritedAt);
+    }
+  });
+  return nextItems;
+}
+
+// src/popup/app/rendering.ts
+var { extTitle, extDesc } = popupDom.header;
+var { tabButtons: tabButtons2 } = popupDom.tabs;
+var {
+  promptInput: promptInput2,
+  promptCounter: promptCounter2,
+  clearPromptBtn,
+  templateSummary,
+  templateSummaryLabel,
+  templateChipList,
+  sitesLabel,
+  sitesContainer: sitesContainer2,
+  saveFavoriteBtn,
+  sendBtn: sendBtn2
+} = popupDom.compose;
+var { historySearchInput, historySortSelect } = popupDom.history;
+var { favoritesSearchInput, favoritesSortSelect } = popupDom.favorites;
+var {
+  settingsTitle,
+  settingsDesc,
+  reuseExistingTabsLabel,
+  reuseExistingTabsDesc,
+  openOptionsBtn,
+  clearHistoryBtn,
+  exportJsonBtn,
+  importJsonBtn,
+  waitMultiplierLabel,
+  waitMultiplierValue
+} = popupDom.settings;
+var {
+  serviceManagementTitle,
+  serviceManagementDesc,
+  addServiceBtn,
+  resetSitesBtn,
+  serviceEditorDesc,
+  serviceNameLabel,
+  serviceUrlLabel,
+  serviceInputSelectorLabel,
+  testSelectorBtn,
+  serviceInputTypeLabel,
+  serviceSubmitSelectorLabel,
+  serviceSubmitMethodLabel,
+  serviceAdvancedTitle,
+  serviceFallbackSelectorsLabel,
+  serviceAuthSelectorsLabel,
+  serviceHostnameAliasesLabel,
+  serviceSupportedRoutesLabel,
+  serviceVerifiedAtLabel,
+  serviceVerifiedRouteLabel,
+  serviceVerifiedAuthStateLabel,
+  serviceVerifiedLocaleLabel,
+  serviceVerifiedVersionLabel,
+  serviceVerifiedAuthStateSelect,
+  serviceWaitLabel,
+  serviceColorLabel,
+  serviceIconLabel,
+  serviceEnabledLabel,
+  serviceEditorCancel,
+  serviceEditorSave
+} = popupDom.serviceManagement;
+var {
+  resendModalTitle,
+  resendModalDesc,
+  resendModalCancel,
+  resendModalConfirm,
+  importReportModalTitle,
+  importReportModalDesc,
+  importReportModalConfirm
+} = popupDom.modals;
+function createPopupRendering(deps) {
+  function renderSortControls() {
+    historySortSelect.innerHTML = getHistorySortOptions().map((option) => `<option value="${escapeAttribute(option.value)}">${escapeHtml(option.label)}</option>`).join("");
+    favoritesSortSelect.innerHTML = getFavoriteSortOptions().map((option) => `<option value="${escapeAttribute(option.value)}">${escapeHtml(option.label)}</option>`).join("");
+    historySortSelect.value = state.settings.historySort;
+    favoritesSortSelect.value = state.settings.favoriteSort;
+  }
+  function getTemplateDisplayName(name) {
+    return getTemplateVariableDisplayName(name, uiLanguage);
+  }
+  function currentPromptVariables() {
+    const checkedTargets = deps.buildComposerBroadcastTargets(
+      deps.checkedSiteIds(),
+      promptInput2.value
+    );
+    if (checkedTargets.length === 0) {
+      return detectTemplateVariables(promptInput2.value);
+    }
+    return deps.detectTemplateVariablesForTargets(checkedTargets);
+  }
+  function renderTemplateSummary2() {
+    const variables = currentPromptVariables();
+    templateSummary.hidden = variables.length === 0;
+    if (variables.length === 0) {
+      templateSummaryLabel.textContent = "";
+      templateChipList.innerHTML = "";
+      return;
+    }
+    templateSummaryLabel.textContent = t.templateSummary(variables.length);
+    templateChipList.innerHTML = variables.map((variable) => {
+      const kindLabel = variable.kind === "system" ? t.templateSystemKind : t.templateUserKind;
+      const variableLabel = variable.kind === "system" ? getTemplateDisplayName(variable.name) : variable.name;
+      return `
+          <span class="template-chip ${variable.kind}">
+            <span>{{${escapeHtml(variableLabel)}}}</span>
+            <span class="template-chip-kind">${escapeHtml(kindLabel)}</span>
+          </span>
+        `;
+    }).join("");
+  }
+  function renderTabLabels2() {
+    extTitle.textContent = t.title;
+    extDesc.textContent = t.desc;
+    clearPromptBtn.textContent = t.clearPrompt;
+    sitesLabel.textContent = t.sitesLabel;
+    saveFavoriteBtn.textContent = t.saveFavorite;
+    sendBtn2.textContent = t.send;
+    historySearchInput.placeholder = t.historySearch;
+    favoritesSearchInput.placeholder = t.favoritesSearch;
+    settingsTitle.textContent = t.settingsTitle;
+    settingsDesc.textContent = t.settingsDesc;
+    reuseExistingTabsLabel.textContent = t.reuseTabsLabel;
+    reuseExistingTabsDesc.textContent = state.settings.reuseExistingTabs ? t.reuseTabsDescEnabled : t.reuseTabsDescDisabled;
+    waitMultiplierLabel.textContent = t.waitMultiplierLabel;
+    waitMultiplierValue.textContent = t.waitMultiplierValue(state.settings.waitMsMultiplier);
+    openOptionsBtn.textContent = t.openOptions;
+    clearHistoryBtn.textContent = t.clearHistory;
+    exportJsonBtn.textContent = t.exportJson;
+    importJsonBtn.textContent = t.importJson;
+    serviceManagementTitle.textContent = t.serviceManagementTitle;
+    serviceManagementDesc.textContent = t.serviceManagementDesc;
+    addServiceBtn.textContent = t.addService;
+    resetSitesBtn.textContent = t.resetServices;
+    serviceEditorDesc.textContent = t.serviceEditorDesc;
+    serviceNameLabel.textContent = t.serviceFieldName;
+    serviceUrlLabel.textContent = t.serviceFieldUrl;
+    serviceInputSelectorLabel.textContent = t.serviceFieldInputSelector;
+    testSelectorBtn.textContent = t.serviceTest;
+    serviceInputTypeLabel.textContent = t.serviceFieldInputType;
+    serviceSubmitSelectorLabel.textContent = t.serviceFieldSubmitSelector;
+    serviceSubmitMethodLabel.textContent = t.serviceFieldSubmitMethod;
+    serviceAdvancedTitle.textContent = t.serviceFieldAdvanced;
+    serviceFallbackSelectorsLabel.textContent = t.serviceFieldFallbackSelectors;
+    serviceAuthSelectorsLabel.textContent = t.serviceFieldAuthSelectors;
+    serviceHostnameAliasesLabel.textContent = t.serviceFieldHostnameAliases;
+    serviceSupportedRoutesLabel.textContent = t.serviceFieldSupportedRoutes;
+    serviceVerifiedAtLabel.textContent = t.serviceFieldVerifiedAt;
+    serviceVerifiedRouteLabel.textContent = t.serviceFieldVerifiedRoute;
+    serviceVerifiedAuthStateLabel.textContent = t.serviceFieldVerifiedAuthState;
+    serviceVerifiedLocaleLabel.textContent = t.serviceFieldVerifiedLocale;
+    serviceVerifiedVersionLabel.textContent = t.serviceFieldVerifiedVersion;
+    const verifiedAuthUnknownOption = serviceVerifiedAuthStateSelect.querySelector("option[value='']");
+    const verifiedAuthLoggedInOption = serviceVerifiedAuthStateSelect.querySelector("option[value='logged-in']");
+    const verifiedAuthLoggedOutOption = serviceVerifiedAuthStateSelect.querySelector("option[value='logged-out']");
+    const verifiedAuthSoftGatedOption = serviceVerifiedAuthStateSelect.querySelector("option[value='soft-gated']");
+    if (verifiedAuthUnknownOption) {
+      verifiedAuthUnknownOption.textContent = t.serviceVerifiedAuthStateUnknown;
+    }
+    if (verifiedAuthLoggedInOption) {
+      verifiedAuthLoggedInOption.textContent = t.serviceVerifiedAuthStateLoggedIn;
+    }
+    if (verifiedAuthLoggedOutOption) {
+      verifiedAuthLoggedOutOption.textContent = t.serviceVerifiedAuthStateLoggedOut;
+    }
+    if (verifiedAuthSoftGatedOption) {
+      verifiedAuthSoftGatedOption.textContent = t.serviceVerifiedAuthStateSoftGated;
+    }
+    serviceWaitLabel.textContent = t.serviceFieldWait;
+    serviceColorLabel.textContent = t.serviceFieldColor;
+    serviceIconLabel.textContent = t.serviceFieldIcon;
+    serviceEnabledLabel.textContent = t.serviceFieldEnabled;
+    serviceEditorCancel.textContent = t.serviceEditorCancel;
+    serviceEditorSave.textContent = t.serviceEditorSave;
+    resendModalTitle.textContent = t.resendModalTitle;
+    resendModalDesc.textContent = t.resendModalDesc;
+    resendModalCancel.textContent = t.resendModalCancel;
+    resendModalConfirm.textContent = t.resendModalConfirm;
+    importReportModalTitle.textContent = t.importReportTitle;
+    importReportModalDesc.textContent = t.importReportDesc;
+    importReportModalConfirm.textContent = t.importReportClose;
+    tabButtons2.forEach((button) => {
+      const tabId = button.dataset.tab;
+      button.textContent = tabId ? t.tabs[tabId] : "";
+    });
+    deps.applyDynamicPromptPlaceholder();
+    deps.updatePromptCounter();
+  }
+  function renderSiteCheckboxesPanel2() {
+    const previousSelection = new Set(deps.checkedSiteIds());
+    sitesContainer2.innerHTML = "";
+    deps.getEnabledSites().forEach((site) => {
+      const card = document.createElement("article");
+      card.className = "site-card checked";
+      card.dataset.siteId = site.id;
+      card.style.setProperty("--site-color", site.color || "#c24f2e");
+      card.setAttribute("role", "option");
+      card.tabIndex = 0;
+      const mainRow = document.createElement("label");
+      mainRow.className = "site-card-main";
+      mainRow.htmlFor = `site-${site.id}`;
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.id = `site-${site.id}`;
+      checkbox.value = site.id;
+      checkbox.checked = previousSelection.size > 0 ? previousSelection.has(site.id) : true;
+      const siteIcon = document.createElement("span");
+      siteIcon.className = "site-icon";
+      siteIcon.textContent = getSiteIcon(site);
+      const siteName = document.createElement("span");
+      siteName.className = "site-name";
+      siteName.textContent = `${deps.getRuntimeSiteLabel(site.id)}`;
+      const selectorWarning = state.failedSelectors.get(site.id);
+      if (selectorWarning) {
+        card.classList.add("selector-warning");
+        card.title = t.selectorWarningTooltip;
+      }
+      checkbox.addEventListener("change", () => {
+        card.classList.toggle("checked", checkbox.checked);
+        card.setAttribute("aria-selected", String(checkbox.checked));
+        card.setAttribute(
+          "aria-label",
+          `${deps.getRuntimeSiteLabel(site.id)} ${checkbox.checked ? t.ariaSelected : t.ariaNotSelected}`
+        );
+        deps.syncToggleAllLabel();
+        renderTemplateSummary2();
+      });
+      card.addEventListener("keydown", (event) => {
+        if (event.key !== " " && event.key !== "Enter") {
+          return;
+        }
+        event.preventDefault();
+        checkbox.checked = !checkbox.checked;
+        checkbox.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      const siteStatus = document.createElement("span");
+      siteStatus.className = "site-status";
+      siteStatus.setAttribute("aria-hidden", "true");
+      const warningIcon = document.createElement("span");
+      warningIcon.className = "site-warning";
+      warningIcon.setAttribute("aria-hidden", "true");
+      warningIcon.textContent = selectorWarning ? "!" : "";
+      mainRow.append(checkbox, siteIcon, siteName, warningIcon, siteStatus);
+      card.classList.toggle("checked", checkbox.checked);
+      card.setAttribute("aria-selected", String(checkbox.checked));
+      card.setAttribute(
+        "aria-label",
+        `${deps.getRuntimeSiteLabel(site.id)} ${checkbox.checked ? t.ariaSelected : t.ariaNotSelected}`
+      );
+      card.appendChild(mainRow);
+      const openTabs = deps.getOpenSiteTabs(site.id);
+      const selectedTarget = state.siteTargetSelections?.[site.id] ?? "default";
+      if (openTabs.length > 0) {
+        const tabsWrap = document.createElement("div");
+        tabsWrap.className = "site-tabs";
+        const tabsHead = document.createElement("div");
+        tabsHead.className = "site-tabs-head";
+        tabsHead.textContent = t.openTabsTitle(openTabs.length);
+        const tabsList = document.createElement("div");
+        tabsList.className = "site-tabs-list";
+        const radioName = `site-target-${site.id}`;
+        const appendTargetOption = (choiceValue, title, detail, pillText = "") => {
+          const option = document.createElement("label");
+          option.className = "site-tab-option";
+          const radio = document.createElement("input");
+          radio.type = "radio";
+          radio.name = radioName;
+          radio.value = typeof choiceValue === "number" ? `tab:${choiceValue}` : String(choiceValue);
+          radio.checked = choiceValue === selectedTarget;
+          const copy = document.createElement("span");
+          copy.className = "site-tab-copy";
+          const titleNode = document.createElement("span");
+          titleNode.className = "site-tab-title";
+          titleNode.textContent = title;
+          const detailNode = document.createElement("span");
+          detailNode.className = "site-tab-meta";
+          detailNode.textContent = detail;
+          copy.append(titleNode, detailNode);
+          option.append(radio, copy);
+          if (pillText) {
+            const pill = document.createElement("span");
+            pill.className = "site-tab-pill";
+            pill.textContent = pillText;
+            option.appendChild(pill);
+          }
+          radio.addEventListener("change", () => {
+            if (!radio.checked) {
+              return;
+            }
+            state.siteTargetSelections[site.id] = choiceValue;
+            if (!checkbox.checked) {
+              checkbox.checked = true;
+              card.classList.add("checked");
+            }
+            deps.syncToggleAllLabel();
+          });
+          tabsList.appendChild(option);
+        };
+        appendTargetOption(
+          "default",
+          t.openTabsUseDefault,
+          t.openTabsUseDefaultDetail(deps.getDefaultTargetModeLabel())
+        );
+        appendTargetOption(
+          "new",
+          t.openTabsAlwaysNew,
+          t.openTabsAlwaysNewDetail
+        );
+        openTabs.forEach((tab) => {
+          const detailText = previewText(tab.url || tab.title || "", 52);
+          const pillText = tab.active ? t.openTabsActive : tab.status === "loading" ? t.openTabsLoading : t.openTabsReady;
+          appendTargetOption(
+            tab.tabId,
+            previewText(tab.title || tab.url || `${site.name} tab`, 48),
+            detailText,
+            pillText
+          );
+        });
+        tabsWrap.append(tabsHead, tabsList);
+        card.appendChild(tabsWrap);
+      }
+      const overrideToggleRow = document.createElement("div");
+      overrideToggleRow.className = "site-override-toggle-row";
+      const overrideToggle = document.createElement("button");
+      const hasOverride = Boolean(state.sitePromptOverrides?.[site.id]?.trim());
+      overrideToggle.className = `ghost-button small-button site-override-toggle${hasOverride ? " active" : ""}`;
+      overrideToggle.type = "button";
+      overrideToggle.dataset.siteOverrideToggle = site.id;
+      overrideToggle.title = msg("popup_override_prompt_label") || "Custom prompt for this service";
+      overrideToggle.textContent = hasOverride ? `✎ ${msg("popup_override_active") || "Custom"}` : "✎";
+      const overrideWrap = document.createElement("div");
+      overrideWrap.className = "site-override-wrap";
+      overrideWrap.hidden = !hasOverride;
+      const overrideTextarea = document.createElement("textarea");
+      overrideTextarea.className = "site-override-textarea";
+      overrideTextarea.rows = 3;
+      overrideTextarea.placeholder = msg("popup_override_prompt_placeholder") || "Override prompt for this service only…";
+      overrideTextarea.value = state.sitePromptOverrides?.[site.id] ?? "";
+      overrideTextarea.dataset.siteOverrideInput = site.id;
+      overrideTextarea.addEventListener("input", () => {
+        state.sitePromptOverrides[site.id] = overrideTextarea.value;
+        const nowActive = Boolean(overrideTextarea.value.trim());
+        overrideToggle.classList.toggle("active", nowActive);
+        overrideToggle.textContent = nowActive ? `✎ ${msg("popup_override_active") || "Custom"}` : "✎";
+        renderTemplateSummary2();
+      });
+      overrideToggle.addEventListener("click", () => {
+        overrideWrap.hidden = !overrideWrap.hidden;
+        if (!overrideWrap.hidden) {
+          overrideTextarea.focus();
+        }
+      });
+      overrideWrap.appendChild(overrideTextarea);
+      overrideToggleRow.append(overrideToggle);
+      card.append(overrideToggleRow, overrideWrap);
+      sitesContainer2.appendChild(card);
+    });
+    deps.syncToggleAllLabel();
+    deps.setCardStatesFromBroadcast(state.lastBroadcast);
+  }
+  return {
+    renderSortControls,
+    renderTemplateSummary: renderTemplateSummary2,
+    renderTabLabels: renderTabLabels2,
+    renderSiteCheckboxesPanel: renderSiteCheckboxesPanel2
+  };
+}
+
+// src/popup/app/shortcuts.ts
+var { toggleAllBtn: toggleAllBtn2 } = popupDom.compose;
+var { historyList } = popupDom.history;
+var { favoritesList } = popupDom.favorites;
+function createPopupShortcutController(deps) {
+  function getPromptButtonsForActiveTab() {
+    if (state.activeTab === "history") {
+      return Array.from(historyList.querySelectorAll("[data-load-history]"));
+    }
+    if (state.activeTab === "favorites") {
+      return Array.from(
+        favoritesList.querySelectorAll("[data-load-favorite], [data-edit-favorite]")
+      );
+    }
+    return [];
+  }
+  function focusAdjacentPromptButton(direction) {
+    const buttons = getPromptButtonsForActiveTab();
+    if (buttons.length === 0) {
+      return;
+    }
+    const currentIndex = buttons.findIndex((button) => button === document.activeElement);
+    const nextIndex = currentIndex === -1 ? direction > 0 ? 0 : buttons.length - 1 : (currentIndex + direction + buttons.length) % buttons.length;
+    buttons[nextIndex]?.focus?.();
+  }
+  async function handleGlobalShortcut2(event) {
+    if (event.defaultPrevented) {
+      return;
+    }
+    const shortcutKey = event.key.toLowerCase();
+    const hasPrimaryModifier = event.ctrlKey || event.metaKey;
+    if (event.key === "Escape") {
+      if (deps.closeActiveOverlayOrMenu()) {
+        event.preventDefault();
+      }
+      return;
+    }
+    if (deps.getOpenOverlay()) {
+      return;
+    }
+    if (hasPrimaryModifier && event.shiftKey && event.key === "Enter") {
+      event.preventDefault();
+      await deps.cancelCurrentBroadcast();
+      return;
+    }
+    if (hasPrimaryModifier && !event.shiftKey && event.key === "Enter") {
+      event.preventDefault();
+      await deps.handleSend();
+      return;
+    }
+    if (hasPrimaryModifier && !event.shiftKey && ["1", "2", "3", "4"].includes(shortcutKey)) {
+      event.preventDefault();
+      deps.switchTab(["compose", "history", "favorites", "settings"][Number(shortcutKey) - 1]);
+      return;
+    }
+    if (hasPrimaryModifier && !event.shiftKey && shortcutKey === "a" && state.activeTab === "compose" && !isTextEditingTarget(event.target)) {
+      event.preventDefault();
+      toggleAllBtn2.click();
+      return;
+    }
+    if ((event.key === "ArrowDown" || event.key === "ArrowUp") && !isTextEditingTarget(event.target)) {
+      if (state.activeTab === "history" || state.activeTab === "favorites") {
+        event.preventDefault();
+        focusAdjacentPromptButton(event.key === "ArrowDown" ? 1 : -1);
+      }
+    }
+  }
+  return {
+    handleGlobalShortcut: handleGlobalShortcut2
+  };
+}
+
 // src/popup/app/list-markup.ts
 function buildEmptyState(message) {
   return `
@@ -4019,121 +4527,7 @@ function buildImportReportMarkup(summary) {
   `;
 }
 
-// src/popup/app/sorting.ts
-function getHistorySortOptions() {
-  return [
-    { value: "latest", label: t.historySortLatest },
-    { value: "oldest", label: t.historySortOldest },
-    { value: "mostSuccess", label: t.historySortMostSuccess },
-    { value: "mostFailure", label: t.historySortMostFailure }
-  ];
-}
-function getFavoriteSortOptions() {
-  return [
-    { value: "recentUsed", label: t.favoriteSortRecentUsed },
-    { value: "usageCount", label: t.favoriteSortUsageCount },
-    { value: "title", label: t.favoriteSortTitle },
-    { value: "createdAt", label: t.favoriteSortCreatedAt }
-  ];
-}
-function compareFavoriteTitle(left, right) {
-  return String(left.title ?? "").localeCompare(
-    String(right.title ?? ""),
-    isKorean ? "ko" : "en",
-    { sensitivity: "base" }
-  );
-}
-function sortHistoryItemsForDisplay(items, historySort = "latest") {
-  const nextItems = [...items];
-  switch (historySort) {
-    case "oldest":
-      return nextItems.sort((left, right) => compareDateValues(right.createdAt, left.createdAt));
-    case "mostSuccess":
-      return nextItems.sort((left, right) => {
-        const leftCount = Array.isArray(left.submittedSiteIds) ? left.submittedSiteIds.length : 0;
-        const rightCount = Array.isArray(right.submittedSiteIds) ? right.submittedSiteIds.length : 0;
-        return rightCount - leftCount || compareDateValues(left.createdAt, right.createdAt);
-      });
-    case "mostFailure":
-      return nextItems.sort((left, right) => {
-        const leftCount = Array.isArray(left.failedSiteIds) ? left.failedSiteIds.length : 0;
-        const rightCount = Array.isArray(right.failedSiteIds) ? right.failedSiteIds.length : 0;
-        return rightCount - leftCount || compareDateValues(left.createdAt, right.createdAt);
-      });
-    case "latest":
-    default:
-      return nextItems.sort((left, right) => compareDateValues(left.createdAt, right.createdAt));
-  }
-}
-function sortFavoriteItemsForDisplay(items, favoriteSort = "recentUsed") {
-  const nextItems = [...items];
-  nextItems.sort((left, right) => {
-    if (left.pinned && !right.pinned) {
-      return -1;
-    }
-    if (!left.pinned && right.pinned) {
-      return 1;
-    }
-    switch (favoriteSort) {
-      case "usageCount":
-        return (Number(right.usageCount) || 0) - (Number(left.usageCount) || 0) || compareDateValues(left.lastUsedAt ?? left.favoritedAt, right.lastUsedAt ?? right.favoritedAt);
-      case "title":
-        return compareFavoriteTitle(left, right) || compareDateValues(left.favoritedAt, right.favoritedAt);
-      case "createdAt":
-        return compareDateValues(left.createdAt, right.createdAt);
-      case "recentUsed":
-      default:
-        return compareDateValues(left.lastUsedAt ?? left.favoritedAt, right.lastUsedAt ?? right.favoritedAt);
-    }
-  });
-  return nextItems;
-}
-
-// src/popup/favorites/favorite-editor.ts
-var { promptInput: promptInput2 } = popupDom.compose;
-var {
-  favoriteModal,
-  favoriteModalTitle,
-  favoriteModalDesc,
-  favoriteModalClose,
-  favoriteTitleLabel,
-  favoriteTitleInput,
-  favoriteModeLabel,
-  favoriteModeSelect,
-  favoritePromptWrap,
-  favoritePromptLabel,
-  favoritePromptInput,
-  favoriteTargetsLabel,
-  favoriteTargetsList,
-  favoriteTagsLabel,
-  favoriteTagsInput,
-  favoriteFolderLabel,
-  favoriteFolderInput,
-  favoritePinnedInput,
-  favoritePinnedLabel,
-  favoriteScheduleEnabled,
-  favoriteScheduleEnabledLabel,
-  favoriteScheduleFields,
-  favoriteScheduledAtLabel,
-  favoriteScheduledAtInput,
-  favoriteScheduleRepeatLabel,
-  favoriteScheduleRepeatSelect,
-  favoriteSaveDefaults,
-  favoriteSaveDefaultsLabel,
-  favoriteSaveDefaultsRow,
-  favoriteDefaultFieldsWrap,
-  favoriteDefaultFieldsLabel,
-  favoriteDefaultFields,
-  favoriteChainWrap,
-  favoriteChainTitle,
-  favoriteChainDesc,
-  favoriteChainList,
-  favoriteChainAddStep,
-  favoriteModalError,
-  favoriteModalCancel,
-  favoriteModalRun,
-  favoriteModalConfirm
-} = popupDom.modals;
+// src/popup/favorites/editor-state.ts
 function compactVariableValues(values) {
   return Object.fromEntries(
     Object.entries(values ?? {}).map(([name, value]) => [String(name), String(value ?? "")]).filter(([, value]) => value.trim())
@@ -4174,313 +4568,338 @@ function toIsoDateTime(value = "") {
 function getFirstNonEmptyStepText(steps = []) {
   return steps.find((step) => step.text.trim())?.text ?? "";
 }
-function createFavoriteEditorFeature(deps) {
-  const {
-    checkedSiteIds: checkedSiteIds2,
-    getEnabledSites: getEnabledSites2,
-    getRuntimeSiteLabel: getRuntimeSiteLabel2,
-    refreshStoredData: refreshStoredData2,
-    requestFavoriteRun: requestFavoriteRun2,
-    setStatus: setStatus2,
-    showAppToast: showAppToast2,
-    getUnknownErrorText: getUnknownErrorText2,
-    openOverlay: openOverlay2,
-    closeOverlay: closeOverlay2
-  } = deps;
-  function clearStatus2() {
-    setStatus2("");
+function collectFavoriteEditorVariables(modalState) {
+  const templates = modalState.mode === "chain" ? modalState.steps.map((step) => step.text) : [modalState.prompt];
+  const seen = /* @__PURE__ */ new Set();
+  return templates.flatMap((template) => detectTemplateVariables(template)).filter((variable) => variable.kind === "user").filter((variable) => {
+    if (seen.has(variable.name)) {
+      return false;
+    }
+    seen.add(variable.name);
+    return true;
+  });
+}
+function syncFavoriteEditorVariables(modalState) {
+  const variables = collectFavoriteEditorVariables(modalState);
+  const nextDefaults = {};
+  variables.forEach((variable) => {
+    nextDefaults[variable.name] = modalState.defaultValues?.[variable.name] ?? "";
+  });
+  modalState.variables = variables;
+  modalState.defaultValues = nextDefaults;
+  if (variables.length === 0) {
+    modalState.saveDefaults = false;
   }
-  function collectFavoriteEditorVariables(modalState) {
-    const templates = modalState.mode === "chain" ? modalState.steps.map((step) => step.text) : [modalState.prompt];
-    const seen = /* @__PURE__ */ new Set();
-    return templates.flatMap((template) => detectTemplateVariables(template)).filter((variable) => variable.kind === "user").filter((variable) => {
-      if (seen.has(variable.name)) {
-        return false;
+}
+function buildFavoriteEditorStateFromItem(item) {
+  const baseDefaults = mergeTemplateSources(
+    state.templateVariableCache,
+    item?.templateDefaults ?? {}
+  );
+  const mode = item?.mode === "chain" ? "chain" : "single";
+  const steps = mode === "chain" && Array.isArray(item?.steps) && item.steps.length > 0 ? item.steps.map((step) => createFavoriteEditorStep(step.text, step.targetSiteIds, step.delayMs, step.id)) : mode === "chain" ? [createFavoriteEditorStep(item?.text ?? "", [], 0)] : [];
+  const draftState = {
+    favoriteId: item?.id ?? null,
+    prompt: item?.text ?? "",
+    sites: normalizeSiteIdList2(item?.sentTo),
+    variables: [],
+    title: item?.title ?? "",
+    saveDefaults: Boolean(
+      item?.templateDefaults && Object.keys(item.templateDefaults).length > 0
+    ),
+    defaultValues: { ...baseDefaults },
+    tags: Array.isArray(item?.tags) ? [...item.tags] : [],
+    folder: item?.folder ?? "",
+    pinned: Boolean(item?.pinned),
+    mode,
+    steps,
+    scheduleEnabled: Boolean(item?.scheduleEnabled),
+    scheduledAt: item?.scheduledAt ?? null,
+    scheduleRepeat: item?.scheduleRepeat ?? "none"
+  };
+  syncFavoriteEditorVariables(draftState);
+  return draftState;
+}
+function getFavoriteById(favoriteId) {
+  return state.favorites.find((entry) => String(entry.id) === String(favoriteId)) ?? null;
+}
+
+// src/popup/favorites/editor-events.ts
+var { promptInput: promptInput3 } = popupDom.compose;
+var {
+  favoriteModal,
+  favoriteModalClose,
+  favoriteModeSelect,
+  favoritePromptInput,
+  favoriteTargetsList,
+  favoriteSaveDefaults,
+  favoriteDefaultFields,
+  favoriteScheduleEnabled,
+  favoriteScheduleFields,
+  favoriteScheduledAtInput,
+  favoriteScheduleRepeatSelect,
+  favoriteChainAddStep,
+  favoriteChainList,
+  favoriteModalConfirm,
+  favoriteModalRun
+} = popupDom.modals;
+function createFavoriteEditorEvents(deps) {
+  function bindFavoriteEditorEvents2() {
+    favoriteModalClose.addEventListener("click", deps.dismissFavoriteModal);
+    favoriteModal.addEventListener("click", (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const dismissButton = target?.closest("[data-dismiss-favorite-modal]");
+      if (dismissButton || target === favoriteModal) {
+        deps.dismissFavoriteModal(event);
       }
-      seen.add(variable.name);
-      return true;
+    });
+    favoriteModal.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !favoriteModal.hidden) {
+        deps.dismissFavoriteModal(event);
+      }
+    });
+    favoriteSaveDefaults.addEventListener("change", () => {
+      if (!state.pendingFavoriteSave) {
+        return;
+      }
+      state.pendingFavoriteSave.saveDefaults = favoriteSaveDefaults.checked;
+      deps.renderFavoriteDefaultFields();
+    });
+    favoriteDefaultFields.addEventListener("input", (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const input = target?.closest("[data-favorite-default-input]");
+      const variableName = input?.dataset.favoriteDefaultInput;
+      if (!input || !variableName || !state.pendingFavoriteSave) {
+        return;
+      }
+      state.pendingFavoriteSave.defaultValues[variableName] = input.value;
+    });
+    favoriteModeSelect.addEventListener("change", () => {
+      const modalState = state.pendingFavoriteSave;
+      if (!modalState) {
+        return;
+      }
+      const nextMode = favoriteModeSelect.value === "chain" ? "chain" : "single";
+      if (nextMode === modalState.mode) {
+        return;
+      }
+      if (nextMode === "chain") {
+        const seedText = favoritePromptInput.value || modalState.prompt || promptInput3.value || "";
+        modalState.prompt = seedText;
+        if (modalState.steps.length === 0 || !modalState.steps.some((step) => step.text.trim())) {
+          modalState.steps = [createFavoriteEditorStep(seedText, [], 0)];
+        }
+      } else {
+        modalState.prompt = getFirstNonEmptyStepText(modalState.steps) || favoritePromptInput.value || modalState.prompt;
+      }
+      modalState.mode = nextMode;
+      deps.setFavoriteModalError("");
+      deps.renderFavoriteModal();
+    });
+    favoriteScheduleEnabled.addEventListener("change", () => {
+      const modalState = state.pendingFavoriteSave;
+      if (!modalState) {
+        return;
+      }
+      modalState.scheduleEnabled = favoriteScheduleEnabled.checked;
+      if (modalState.scheduleEnabled && !modalState.scheduledAt) {
+        const defaultDate = new Date(Date.now() + 10 * 60 * 1e3);
+        modalState.scheduledAt = defaultDate.toISOString();
+        favoriteScheduledAtInput.value = toLocalDateTimeInputValue(
+          modalState.scheduledAt
+        );
+      }
+      favoriteScheduleFields.hidden = !modalState.scheduleEnabled;
+    });
+    favoriteScheduledAtInput.addEventListener("change", () => {
+      if (!state.pendingFavoriteSave) {
+        return;
+      }
+      state.pendingFavoriteSave.scheduledAt = toIsoDateTime(
+        favoriteScheduledAtInput.value
+      );
+    });
+    favoriteScheduleRepeatSelect.addEventListener("change", () => {
+      if (!state.pendingFavoriteSave) {
+        return;
+      }
+      state.pendingFavoriteSave.scheduleRepeat = favoriteScheduleRepeatSelect.value === "daily" || favoriteScheduleRepeatSelect.value === "weekday" || favoriteScheduleRepeatSelect.value === "weekly" ? favoriteScheduleRepeatSelect.value : "none";
+    });
+    favoritePromptInput.addEventListener("input", () => {
+      const modalState = state.pendingFavoriteSave;
+      if (!modalState) {
+        return;
+      }
+      modalState.prompt = favoritePromptInput.value;
+      deps.syncFavoriteVariableUi();
+      deps.setFavoriteModalError("");
+    });
+    favoriteTargetsList.addEventListener("change", (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      const input = target?.closest("[data-favorite-target][data-site-id]");
+      const siteId = input?.dataset.siteId;
+      if (!input || !siteId || !state.pendingFavoriteSave) {
+        return;
+      }
+      const nextSelected = new Set(state.pendingFavoriteSave.sites);
+      if (input.checked) {
+        nextSelected.add(siteId);
+      } else {
+        nextSelected.delete(siteId);
+      }
+      state.pendingFavoriteSave.sites = [...nextSelected];
+    });
+    favoriteChainAddStep.addEventListener("click", () => {
+      const modalState = state.pendingFavoriteSave;
+      if (!modalState) {
+        return;
+      }
+      modalState.steps.push(createFavoriteEditorStep("", [], 0));
+      deps.renderFavoriteModal();
+      window.requestAnimationFrame(() => {
+        const inputs = Array.from(
+          favoriteChainList.querySelectorAll("[data-favorite-step-text]")
+        );
+        inputs[inputs.length - 1]?.focus?.();
+      });
+    });
+    favoriteChainList.addEventListener("input", (event) => {
+      const modalState = state.pendingFavoriteSave;
+      if (!modalState) {
+        return;
+      }
+      const target = event.target instanceof Element ? event.target : null;
+      const textInput = target?.closest("[data-favorite-step-text]");
+      if (textInput) {
+        const stepId = textInput.dataset.favoriteStepText;
+        const step2 = modalState.steps.find((entry) => entry.id === stepId);
+        if (step2) {
+          step2.text = textInput.value;
+          deps.syncFavoriteVariableUi();
+        }
+        return;
+      }
+      const delayInput = target?.closest("[data-favorite-step-delay]");
+      if (!delayInput) {
+        return;
+      }
+      const step = modalState.steps.find(
+        (entry) => entry.id === delayInput.dataset.favoriteStepDelay
+      );
+      if (step) {
+        step.delayMs = Math.max(0, Math.round(Number(delayInput.value) || 0));
+      }
+    });
+    favoriteChainList.addEventListener("change", (event) => {
+      const modalState = state.pendingFavoriteSave;
+      if (!modalState) {
+        return;
+      }
+      const target = event.target instanceof Element ? event.target : null;
+      const input = target?.closest("[data-favorite-step-target][data-site-id]");
+      const stepId = input?.dataset.favoriteStepTarget;
+      const siteId = input?.dataset.siteId;
+      if (!input || !stepId || !siteId) {
+        return;
+      }
+      const step = modalState.steps.find((entry) => entry.id === stepId);
+      if (!step) {
+        return;
+      }
+      const nextTargets = new Set(step.targetSiteIds);
+      if (input.checked) {
+        nextTargets.add(siteId);
+      } else {
+        nextTargets.delete(siteId);
+      }
+      step.targetSiteIds = [...nextTargets];
+    });
+    favoriteChainList.addEventListener("click", (event) => {
+      const modalState = state.pendingFavoriteSave;
+      if (!modalState) {
+        return;
+      }
+      const target = event.target instanceof Element ? event.target : null;
+      const deleteButton = target?.closest("[data-favorite-step-delete]");
+      if (deleteButton) {
+        modalState.steps = modalState.steps.filter(
+          (step2) => step2.id !== deleteButton.dataset.favoriteStepDelete
+        );
+        deps.renderFavoriteModal();
+        return;
+      }
+      const moveButton = target?.closest("[data-favorite-step-move]");
+      if (!moveButton) {
+        return;
+      }
+      const stepId = moveButton.dataset.favoriteStepMove;
+      const index = modalState.steps.findIndex((step2) => step2.id === stepId);
+      if (index === -1) {
+        return;
+      }
+      const direction = moveButton.dataset.direction === "down" ? 1 : -1;
+      const nextIndex = index + direction;
+      if (nextIndex < 0 || nextIndex >= modalState.steps.length) {
+        return;
+      }
+      const [step] = modalState.steps.splice(index, 1);
+      modalState.steps.splice(nextIndex, 0, step);
+      deps.renderFavoriteModal();
+    });
+    favoriteModalConfirm.addEventListener("click", () => {
+      void deps.confirmFavoriteSave().catch((error) => {
+        console.error("[AI Prompt Broadcaster] Favorite save failed.", error);
+        deps.setFavoriteModalError(
+          t.error(error?.message ?? deps.getUnknownErrorText())
+        );
+      });
+    });
+    favoriteModalRun.addEventListener("click", () => {
+      void deps.runFavoriteFromEditor().catch((error) => {
+        console.error("[AI Prompt Broadcaster] Favorite run failed.", error);
+        deps.setFavoriteModalError(
+          t.error(error?.message ?? deps.getUnknownErrorText())
+        );
+      });
     });
   }
-  function syncFavoriteEditorVariables(modalState) {
-    const variables = collectFavoriteEditorVariables(modalState);
-    const nextDefaults = {};
-    variables.forEach((variable) => {
-      nextDefaults[variable.name] = modalState.defaultValues?.[variable.name] ?? "";
-    });
-    modalState.variables = variables;
-    modalState.defaultValues = nextDefaults;
-    if (variables.length === 0) {
-      modalState.saveDefaults = false;
-    }
-  }
-  function renderFavoriteDefaultFields() {
-    const modalState = state.pendingFavoriteSave;
-    if (!modalState) {
-      favoriteDefaultFieldsWrap.hidden = true;
-      favoriteDefaultFields.innerHTML = "";
-      return;
-    }
-    const showDefaults = modalState.variables.length > 0 && modalState.saveDefaults;
-    favoriteDefaultFieldsWrap.hidden = !showDefaults;
-    if (!showDefaults) {
-      favoriteDefaultFields.innerHTML = "";
-      return;
-    }
-    favoriteDefaultFields.innerHTML = modalState.variables.map((variable) => {
-      const value = modalState.defaultValues[variable.name] ?? "";
-      return `
-          <label class="field-stack">
-            <span>${escapeHtml(variable.name)}</span>
-            <input
-              class="search-input"
-              type="text"
-              data-favorite-default-input="${escapeAttribute(variable.name)}"
-              value="${escapeAttribute(value)}"
-              placeholder="${escapeAttribute(t.templateFieldPlaceholder(variable.name))}"
-            />
-          </label>
-        `;
-    }).join("");
-  }
-  function syncFavoriteVariableUi(modalState) {
-    syncFavoriteEditorVariables(modalState);
-    favoriteSaveDefaults.checked = modalState.saveDefaults;
-    favoriteSaveDefaultsRow.hidden = modalState.variables.length === 0;
-    renderFavoriteDefaultFields();
-  }
-  function buildFavoriteTargetChecklist(selectedSiteIds = [], options = {}) {
-    const { stepId = "" } = options;
-    const selected = new Set(normalizeSiteIdList2(selectedSiteIds));
-    return getEnabledSites2().map((site) => {
-      const checked = selected.has(site.id);
-      const attributeName = stepId ? "data-favorite-step-target" : "data-favorite-target";
-      return `
-          <label class="checkbox-chip">
-            <input
-              type="checkbox"
-              ${attributeName}="${escapeAttribute(stepId || site.id)}"
-              data-site-id="${escapeAttribute(site.id)}"
-              ${checked ? "checked" : ""}
-            />
-            <span>${escapeHtml(getRuntimeSiteLabel2(site.id))}</span>
-          </label>
-        `;
-    }).join("");
-  }
-  function renderFavoriteTargets() {
-    const modalState = state.pendingFavoriteSave;
-    if (!modalState) {
-      favoriteTargetsList.innerHTML = "";
-      return;
-    }
-    favoriteTargetsList.innerHTML = buildFavoriteTargetChecklist(modalState.sites);
-  }
-  function renderFavoriteChainList() {
-    const modalState = state.pendingFavoriteSave;
-    if (!modalState || modalState.mode !== "chain") {
-      favoriteChainList.innerHTML = "";
-      favoriteChainWrap.hidden = true;
-      return;
-    }
-    favoriteChainWrap.hidden = false;
-    favoriteChainList.innerHTML = modalState.steps.map((step, index) => `
-        <article class="favorite-step-card" data-favorite-step-id="${escapeAttribute(step.id)}">
-          <div class="section-row section-row-start">
-            <strong>${escapeHtml(t.favoriteStepLabel(index + 1))}</strong>
-            <div class="favorite-step-actions">
-              <button class="ghost-button small-button" type="button" data-favorite-step-move="${escapeAttribute(step.id)}" data-direction="up" ${index === 0 ? "disabled" : ""}>${escapeHtml(t.favoriteStepMoveUp)}</button>
-              <button class="ghost-button small-button" type="button" data-favorite-step-move="${escapeAttribute(step.id)}" data-direction="down" ${index === modalState.steps.length - 1 ? "disabled" : ""}>${escapeHtml(t.favoriteStepMoveDown)}</button>
-              <button class="ghost-button danger-button small-button" type="button" data-favorite-step-delete="${escapeAttribute(step.id)}">${escapeHtml(t.delete)}</button>
-            </div>
-          </div>
-          <label class="field-stack">
-            <span>${escapeHtml(t.favoriteStepPromptLabel)}</span>
-            <textarea class="search-input textarea-input" rows="3" data-favorite-step-text="${escapeAttribute(step.id)}">${escapeHtml(step.text)}</textarea>
-          </label>
-          <label class="field-stack">
-            <span>${escapeHtml(t.favoriteStepDelayLabel)}</span>
-            <input class="search-input" type="number" min="0" step="100" data-favorite-step-delay="${escapeAttribute(step.id)}" value="${escapeAttribute(String(step.delayMs))}" />
-          </label>
-          <div class="modal-section">
-            <div class="section-row section-row-start">
-              <strong>${escapeHtml(t.favoriteStepTargetsLabel)}</strong>
-            </div>
-            <div class="favorite-targets-list">
-              ${buildFavoriteTargetChecklist(step.targetSiteIds, { stepId: step.id })}
-            </div>
-            <p class="helper-text">${escapeHtml(t.favoriteStepTargetsHint)}</p>
-          </div>
-        </article>
-      `).join("");
-  }
-  function renderFavoriteModal() {
-    const modalState = state.pendingFavoriteSave;
-    if (!modalState) {
-      return;
-    }
-    syncFavoriteEditorVariables(modalState);
-    favoriteModalTitle.textContent = modalState.favoriteId ? t.favoriteEditTitle : t.favoriteModalTitle;
-    favoriteModalDesc.textContent = modalState.favoriteId ? t.favoriteEditDesc : t.favoriteModalDesc;
-    favoriteModalCancel.textContent = t.favoriteModalCancel;
-    favoriteModalConfirm.textContent = modalState.favoriteId ? t.favoriteModalSaveChanges : t.favoriteModalConfirm;
-    favoriteModalRun.textContent = t.favoriteRunNow;
-    favoriteModalRun.hidden = !modalState.favoriteId;
-    favoriteTitleLabel.textContent = t.favoriteTitleLabel;
-    favoriteModeLabel.textContent = t.favoriteModeLabel;
-    favoriteTargetsLabel.textContent = t.favoriteTargetsLabel;
-    favoritePromptLabel.textContent = t.favoritePromptLabel;
-    favoriteTagsLabel.textContent = t.favoriteTagsLabel;
-    favoriteFolderLabel.textContent = t.favoriteFolderLabel;
-    favoritePinnedLabel.textContent = t.favoritePinnedLabel;
-    favoriteScheduleEnabledLabel.textContent = t.favoriteScheduleEnabledLabel;
-    favoriteScheduledAtLabel.textContent = t.favoriteScheduledAtLabel;
-    favoriteScheduleRepeatLabel.textContent = t.favoriteScheduleRepeatLabel;
-    favoriteSaveDefaultsLabel.textContent = t.favoriteSaveDefaultsLabel;
-    favoriteDefaultFieldsLabel.textContent = t.favoriteDefaultsLabel;
-    favoriteChainTitle.textContent = t.favoriteChainTitle;
-    favoriteChainDesc.textContent = t.favoriteChainDesc;
-    favoriteChainAddStep.textContent = t.favoriteChainAddStep;
-    favoriteTitleInput.value = modalState.title;
-    favoriteModeSelect.innerHTML = [
-      `<option value="single">${escapeHtml(t.favoriteModeSingle)}</option>`,
-      `<option value="chain">${escapeHtml(t.favoriteModeChain)}</option>`
-    ].join("");
-    favoriteModeSelect.value = modalState.mode;
-    favoritePromptWrap.hidden = modalState.mode !== "single";
-    favoritePromptInput.value = modalState.prompt;
-    favoriteTagsInput.value = modalState.tags.join(", ");
-    favoriteFolderInput.value = modalState.folder;
-    favoritePinnedInput.checked = Boolean(modalState.pinned);
-    favoriteScheduleEnabled.checked = Boolean(modalState.scheduleEnabled);
-    favoriteScheduledAtInput.value = toLocalDateTimeInputValue(modalState.scheduledAt ?? "");
-    favoriteScheduleRepeatSelect.innerHTML = [
-      `<option value="none">${escapeHtml(t.favoriteScheduleRepeatNone)}</option>`,
-      `<option value="daily">${escapeHtml(t.favoriteScheduleRepeatDaily)}</option>`,
-      `<option value="weekday">${escapeHtml(t.favoriteScheduleRepeatWeekday)}</option>`,
-      `<option value="weekly">${escapeHtml(t.favoriteScheduleRepeatWeekly)}</option>`
-    ].join("");
-    favoriteScheduleRepeatSelect.value = modalState.scheduleRepeat;
-    favoriteScheduleFields.hidden = !modalState.scheduleEnabled;
-    favoriteSaveDefaults.checked = modalState.saveDefaults;
-    favoriteSaveDefaultsRow.hidden = modalState.variables.length === 0;
-    renderFavoriteTargets();
-    renderFavoriteChainList();
-    renderFavoriteDefaultFields();
-  }
-  function buildFavoriteEditorStateFromItem(item) {
-    const baseDefaults = mergeTemplateSources(
-      state.templateVariableCache,
-      item?.templateDefaults ?? {}
-    );
-    const mode = item?.mode === "chain" ? "chain" : "single";
-    const steps = mode === "chain" && Array.isArray(item?.steps) && item.steps.length > 0 ? item.steps.map((step) => createFavoriteEditorStep(step.text, step.targetSiteIds, step.delayMs, step.id)) : mode === "chain" ? [createFavoriteEditorStep(item?.text ?? "", [], 0)] : [];
-    const draftState = {
-      favoriteId: item?.id ?? null,
-      prompt: item?.text ?? "",
-      sites: normalizeSiteIdList2(item?.sentTo),
-      variables: [],
-      title: item?.title ?? "",
-      saveDefaults: Boolean(
-        item?.templateDefaults && Object.keys(item.templateDefaults).length > 0
-      ),
-      defaultValues: { ...baseDefaults },
-      tags: Array.isArray(item?.tags) ? [...item.tags] : [],
-      folder: item?.folder ?? "",
-      pinned: Boolean(item?.pinned),
-      mode,
-      steps,
-      scheduleEnabled: Boolean(item?.scheduleEnabled),
-      scheduledAt: item?.scheduledAt ?? null,
-      scheduleRepeat: item?.scheduleRepeat ?? "none"
-    };
-    syncFavoriteEditorVariables(draftState);
-    return draftState;
-  }
-  function getFavoriteById2(favoriteId) {
-    return state.favorites.find((entry) => String(entry.id) === String(favoriteId)) ?? null;
-  }
-  function setFavoriteModalError2(message = "") {
-    favoriteModalError.hidden = !message;
-    favoriteModalError.textContent = message;
-  }
-  function hideFavoriteModal2() {
-    state.pendingFavoriteSave = null;
-    state.pendingFavoriteRunReason = "";
-    closeOverlay2(favoriteModal);
-    favoriteModalError.hidden = true;
-    favoriteModalError.textContent = "";
-    favoriteTitleInput.value = "";
-    favoriteSaveDefaults.checked = false;
-    favoriteSaveDefaultsRow.hidden = true;
-    favoriteDefaultFieldsWrap.hidden = true;
-    favoriteDefaultFields.innerHTML = "";
-    favoritePromptInput.value = "";
-  }
-  function dismissFavoriteModal2(event) {
-    event?.preventDefault();
-    event?.stopPropagation();
-    hideFavoriteModal2();
-  }
-  async function openFavoriteModal2() {
-    clearStatus2();
-    const prompt = promptInput2.value.trim();
-    if (!prompt) {
-      setStatus2(t.warnEmpty, "error");
-      promptInput2.focus();
-      return;
-    }
-    const loadedFavorite = state.loadedFavoriteId ? getFavoriteById2(state.loadedFavoriteId) : null;
-    const currentItem = loadedFavorite ? {
-      ...loadedFavorite,
-      text: prompt,
-      sentTo: checkedSiteIds2(),
-      templateDefaults: state.loadedTemplateDefaults
-    } : {
-      id: state.loadedFavoriteId || null,
-      title: state.loadedFavoriteTitle,
-      text: prompt,
-      sentTo: checkedSiteIds2(),
-      templateDefaults: state.loadedTemplateDefaults,
-      tags: [],
-      folder: "",
-      pinned: false,
-      mode: "single",
-      steps: [],
-      scheduleEnabled: false,
-      scheduledAt: null,
-      scheduleRepeat: "none"
-    };
-    state.pendingFavoriteSave = buildFavoriteEditorStateFromItem(currentItem);
-    setFavoriteModalError2("");
-    state.pendingFavoriteRunReason = "";
-    renderFavoriteModal();
-    openOverlay2(favoriteModal, favoriteTitleInput);
-    window.requestAnimationFrame(() => favoriteTitleInput.select());
-  }
-  function openFavoriteEditor2(item, options = {}) {
-    state.pendingFavoriteSave = buildFavoriteEditorStateFromItem(item);
-    state.pendingFavoriteRunReason = options.reason || "";
-    setFavoriteModalError2(options.reason || "");
-    renderFavoriteModal();
-    openOverlay2(favoriteModal, favoriteTitleInput);
-  }
+  return {
+    bindFavoriteEditorEvents: bindFavoriteEditorEvents2
+  };
+}
+
+// src/popup/favorites/editor-persist.ts
+var {
+  favoriteModeSelect: favoriteModeSelect2,
+  favoritePromptInput: favoritePromptInput2,
+  favoriteTagsInput,
+  favoriteFolderInput,
+  favoritePinnedInput,
+  favoriteScheduleEnabled: favoriteScheduleEnabled2,
+  favoriteScheduledAtInput: favoriteScheduledAtInput2,
+  favoriteScheduleRepeatSelect: favoriteScheduleRepeatSelect2,
+  favoriteSaveDefaults: favoriteSaveDefaults2,
+  favoriteTitleInput
+} = popupDom.modals;
+function createFavoriteEditorPersistence(deps) {
+  const { refreshStoredData: refreshStoredData2, setFavoriteModalError: setFavoriteModalError2 } = deps;
   async function persistFavoriteEditorChanges() {
     const modalState = state.pendingFavoriteSave;
     if (!modalState) {
       return null;
     }
     modalState.title = favoriteTitleInput.value.trim();
-    modalState.mode = favoriteModeSelect.value === "chain" ? "chain" : "single";
+    modalState.mode = favoriteModeSelect2.value === "chain" ? "chain" : "single";
     if (modalState.mode === "single") {
-      modalState.prompt = favoritePromptInput.value;
+      modalState.prompt = favoritePromptInput2.value;
     }
     modalState.tags = favoriteTagsInput.value.split(",").map((entry) => entry.trim()).filter(Boolean);
     modalState.folder = favoriteFolderInput.value.trim();
     modalState.pinned = favoritePinnedInput.checked;
-    modalState.scheduleEnabled = favoriteScheduleEnabled.checked;
-    modalState.scheduledAt = modalState.scheduleEnabled ? toIsoDateTime(favoriteScheduledAtInput.value) : null;
-    modalState.scheduleRepeat = favoriteScheduleRepeatSelect.value === "daily" || favoriteScheduleRepeatSelect.value === "weekday" || favoriteScheduleRepeatSelect.value === "weekly" ? favoriteScheduleRepeatSelect.value : "none";
-    modalState.saveDefaults = favoriteSaveDefaults.checked;
+    modalState.scheduleEnabled = favoriteScheduleEnabled2.checked;
+    modalState.scheduledAt = modalState.scheduleEnabled ? toIsoDateTime(favoriteScheduledAtInput2.value) : null;
+    modalState.scheduleRepeat = favoriteScheduleRepeatSelect2.value === "daily" || favoriteScheduleRepeatSelect2.value === "weekday" || favoriteScheduleRepeatSelect2.value === "weekly" ? favoriteScheduleRepeatSelect2.value : "none";
+    modalState.saveDefaults = favoriteSaveDefaults2.checked;
     syncFavoriteEditorVariables(modalState);
     if (modalState.scheduleEnabled && !modalState.scheduledAt) {
       setFavoriteModalError2(t.favoriteScheduleDateRequired);
@@ -4540,6 +4959,328 @@ function createFavoriteEditorFeature(deps) {
     await refreshStoredData2();
     return favorite;
   }
+  return {
+    persistFavoriteEditorChanges
+  };
+}
+
+// src/popup/favorites/editor-render.ts
+var {
+  favoriteModalTitle,
+  favoriteModalDesc,
+  favoriteTitleLabel,
+  favoriteTitleInput: favoriteTitleInput2,
+  favoriteModeLabel,
+  favoriteModeSelect: favoriteModeSelect3,
+  favoritePromptWrap,
+  favoritePromptLabel,
+  favoritePromptInput: favoritePromptInput3,
+  favoriteTargetsLabel,
+  favoriteTargetsList: favoriteTargetsList2,
+  favoriteTagsLabel,
+  favoriteTagsInput: favoriteTagsInput2,
+  favoriteFolderLabel,
+  favoriteFolderInput: favoriteFolderInput2,
+  favoritePinnedInput: favoritePinnedInput2,
+  favoritePinnedLabel,
+  favoriteScheduleEnabled: favoriteScheduleEnabled3,
+  favoriteScheduleEnabledLabel,
+  favoriteScheduleFields: favoriteScheduleFields2,
+  favoriteScheduledAtLabel,
+  favoriteScheduledAtInput: favoriteScheduledAtInput3,
+  favoriteScheduleRepeatLabel,
+  favoriteScheduleRepeatSelect: favoriteScheduleRepeatSelect3,
+  favoriteSaveDefaults: favoriteSaveDefaults3,
+  favoriteSaveDefaultsLabel,
+  favoriteSaveDefaultsRow,
+  favoriteDefaultFieldsWrap,
+  favoriteDefaultFieldsLabel,
+  favoriteDefaultFields: favoriteDefaultFields2,
+  favoriteChainWrap,
+  favoriteChainTitle,
+  favoriteChainDesc,
+  favoriteChainList: favoriteChainList2,
+  favoriteChainAddStep: favoriteChainAddStep2,
+  favoriteModalError,
+  favoriteModalCancel,
+  favoriteModalRun: favoriteModalRun2,
+  favoriteModalConfirm: favoriteModalConfirm2
+} = popupDom.modals;
+function createFavoriteEditorRenderer(deps) {
+  function setFavoriteModalError2(message = "") {
+    favoriteModalError.hidden = !message;
+    favoriteModalError.textContent = message;
+  }
+  function renderFavoriteDefaultFields() {
+    const modalState = state.pendingFavoriteSave;
+    if (!modalState) {
+      favoriteDefaultFieldsWrap.hidden = true;
+      favoriteDefaultFields2.innerHTML = "";
+      return;
+    }
+    const showDefaults = modalState.variables.length > 0 && modalState.saveDefaults;
+    favoriteDefaultFieldsWrap.hidden = !showDefaults;
+    if (!showDefaults) {
+      favoriteDefaultFields2.innerHTML = "";
+      return;
+    }
+    favoriteDefaultFields2.innerHTML = modalState.variables.map((variable) => {
+      const value = modalState.defaultValues[variable.name] ?? "";
+      return `
+          <label class="field-stack">
+            <span>${escapeHtml(variable.name)}</span>
+            <input
+              class="search-input"
+              type="text"
+              data-favorite-default-input="${escapeAttribute(variable.name)}"
+              value="${escapeAttribute(value)}"
+              placeholder="${escapeAttribute(t.templateFieldPlaceholder(variable.name))}"
+            />
+          </label>
+        `;
+    }).join("");
+  }
+  function syncFavoriteVariableUi() {
+    const modalState = state.pendingFavoriteSave;
+    if (!modalState) {
+      return;
+    }
+    syncFavoriteEditorVariables(modalState);
+    favoriteSaveDefaults3.checked = modalState.saveDefaults;
+    favoriteSaveDefaultsRow.hidden = modalState.variables.length === 0;
+    renderFavoriteDefaultFields();
+  }
+  function buildFavoriteTargetChecklist(selectedSiteIds = [], options = {}) {
+    const { stepId = "" } = options;
+    const selected = new Set(normalizeSiteIdList2(selectedSiteIds));
+    return deps.getEnabledSites().map((site) => {
+      const checked = selected.has(site.id);
+      const attributeName = stepId ? "data-favorite-step-target" : "data-favorite-target";
+      return `
+          <label class="checkbox-chip">
+            <input
+              type="checkbox"
+              ${attributeName}="${escapeAttribute(stepId || site.id)}"
+              data-site-id="${escapeAttribute(site.id)}"
+              ${checked ? "checked" : ""}
+            />
+            <span>${escapeHtml(deps.getRuntimeSiteLabel(site.id))}</span>
+          </label>
+        `;
+    }).join("");
+  }
+  function renderFavoriteTargets() {
+    const modalState = state.pendingFavoriteSave;
+    if (!modalState) {
+      favoriteTargetsList2.innerHTML = "";
+      return;
+    }
+    favoriteTargetsList2.innerHTML = buildFavoriteTargetChecklist(modalState.sites);
+  }
+  function renderFavoriteChainList() {
+    const modalState = state.pendingFavoriteSave;
+    if (!modalState || modalState.mode !== "chain") {
+      favoriteChainList2.innerHTML = "";
+      favoriteChainWrap.hidden = true;
+      return;
+    }
+    favoriteChainWrap.hidden = false;
+    favoriteChainList2.innerHTML = modalState.steps.map((step, index) => `
+        <article class="favorite-step-card" data-favorite-step-id="${escapeAttribute(step.id)}">
+          <div class="section-row section-row-start">
+            <strong>${escapeHtml(t.favoriteStepLabel(index + 1))}</strong>
+            <div class="favorite-step-actions">
+              <button class="ghost-button small-button" type="button" data-favorite-step-move="${escapeAttribute(step.id)}" data-direction="up" ${index === 0 ? "disabled" : ""}>${escapeHtml(t.favoriteStepMoveUp)}</button>
+              <button class="ghost-button small-button" type="button" data-favorite-step-move="${escapeAttribute(step.id)}" data-direction="down" ${index === modalState.steps.length - 1 ? "disabled" : ""}>${escapeHtml(t.favoriteStepMoveDown)}</button>
+              <button class="ghost-button danger-button small-button" type="button" data-favorite-step-delete="${escapeAttribute(step.id)}">${escapeHtml(t.delete)}</button>
+            </div>
+          </div>
+          <label class="field-stack">
+            <span>${escapeHtml(t.favoriteStepPromptLabel)}</span>
+            <textarea class="search-input textarea-input" rows="3" data-favorite-step-text="${escapeAttribute(step.id)}">${escapeHtml(step.text)}</textarea>
+          </label>
+          <label class="field-stack">
+            <span>${escapeHtml(t.favoriteStepDelayLabel)}</span>
+            <input class="search-input" type="number" min="0" step="100" data-favorite-step-delay="${escapeAttribute(step.id)}" value="${escapeAttribute(String(step.delayMs))}" />
+          </label>
+          <div class="modal-section">
+            <div class="section-row section-row-start">
+              <strong>${escapeHtml(t.favoriteStepTargetsLabel)}</strong>
+            </div>
+            <div class="favorite-targets-list">
+              ${buildFavoriteTargetChecklist(step.targetSiteIds, { stepId: step.id })}
+            </div>
+            <p class="helper-text">${escapeHtml(t.favoriteStepTargetsHint)}</p>
+          </div>
+        </article>
+      `).join("");
+  }
+  function renderFavoriteModal() {
+    const modalState = state.pendingFavoriteSave;
+    if (!modalState) {
+      return;
+    }
+    syncFavoriteEditorVariables(modalState);
+    favoriteModalTitle.textContent = modalState.favoriteId ? t.favoriteEditTitle : t.favoriteModalTitle;
+    favoriteModalDesc.textContent = modalState.favoriteId ? t.favoriteEditDesc : t.favoriteModalDesc;
+    favoriteModalCancel.textContent = t.favoriteModalCancel;
+    favoriteModalConfirm2.textContent = modalState.favoriteId ? t.favoriteModalSaveChanges : t.favoriteModalConfirm;
+    favoriteModalRun2.textContent = t.favoriteRunNow;
+    favoriteModalRun2.hidden = !modalState.favoriteId;
+    favoriteTitleLabel.textContent = t.favoriteTitleLabel;
+    favoriteModeLabel.textContent = t.favoriteModeLabel;
+    favoriteTargetsLabel.textContent = t.favoriteTargetsLabel;
+    favoritePromptLabel.textContent = t.favoritePromptLabel;
+    favoriteTagsLabel.textContent = t.favoriteTagsLabel;
+    favoriteFolderLabel.textContent = t.favoriteFolderLabel;
+    favoritePinnedLabel.textContent = t.favoritePinnedLabel;
+    favoriteScheduleEnabledLabel.textContent = t.favoriteScheduleEnabledLabel;
+    favoriteScheduledAtLabel.textContent = t.favoriteScheduledAtLabel;
+    favoriteScheduleRepeatLabel.textContent = t.favoriteScheduleRepeatLabel;
+    favoriteSaveDefaultsLabel.textContent = t.favoriteSaveDefaultsLabel;
+    favoriteDefaultFieldsLabel.textContent = t.favoriteDefaultsLabel;
+    favoriteChainTitle.textContent = t.favoriteChainTitle;
+    favoriteChainDesc.textContent = t.favoriteChainDesc;
+    favoriteChainAddStep2.textContent = t.favoriteChainAddStep;
+    favoriteTitleInput2.value = modalState.title;
+    favoriteModeSelect3.innerHTML = [
+      `<option value="single">${escapeHtml(t.favoriteModeSingle)}</option>`,
+      `<option value="chain">${escapeHtml(t.favoriteModeChain)}</option>`
+    ].join("");
+    favoriteModeSelect3.value = modalState.mode;
+    favoritePromptWrap.hidden = modalState.mode !== "single";
+    favoritePromptInput3.value = modalState.prompt;
+    favoriteTagsInput2.value = modalState.tags.join(", ");
+    favoriteFolderInput2.value = modalState.folder;
+    favoritePinnedInput2.checked = Boolean(modalState.pinned);
+    favoriteScheduleEnabled3.checked = Boolean(modalState.scheduleEnabled);
+    favoriteScheduledAtInput3.value = toLocalDateTimeInputValue(modalState.scheduledAt ?? "");
+    favoriteScheduleRepeatSelect3.innerHTML = [
+      `<option value="none">${escapeHtml(t.favoriteScheduleRepeatNone)}</option>`,
+      `<option value="daily">${escapeHtml(t.favoriteScheduleRepeatDaily)}</option>`,
+      `<option value="weekday">${escapeHtml(t.favoriteScheduleRepeatWeekday)}</option>`,
+      `<option value="weekly">${escapeHtml(t.favoriteScheduleRepeatWeekly)}</option>`
+    ].join("");
+    favoriteScheduleRepeatSelect3.value = modalState.scheduleRepeat;
+    favoriteScheduleFields2.hidden = !modalState.scheduleEnabled;
+    favoriteSaveDefaults3.checked = modalState.saveDefaults;
+    favoriteSaveDefaultsRow.hidden = modalState.variables.length === 0;
+    renderFavoriteTargets();
+    renderFavoriteChainList();
+    renderFavoriteDefaultFields();
+  }
+  return {
+    setFavoriteModalError: setFavoriteModalError2,
+    renderFavoriteDefaultFields,
+    syncFavoriteVariableUi,
+    renderFavoriteTargets,
+    renderFavoriteChainList,
+    renderFavoriteModal
+  };
+}
+
+// src/popup/favorites/favorite-editor.ts
+var { promptInput: promptInput4 } = popupDom.compose;
+var {
+  favoriteModal: favoriteModal2,
+  favoriteTitleInput: favoriteTitleInput3,
+  favoriteModalError: favoriteModalError2,
+  favoriteSaveDefaults: favoriteSaveDefaults4,
+  favoriteSaveDefaultsRow: favoriteSaveDefaultsRow2,
+  favoriteDefaultFieldsWrap: favoriteDefaultFieldsWrap2,
+  favoriteDefaultFields: favoriteDefaultFields3,
+  favoritePromptInput: favoritePromptInput4
+} = popupDom.modals;
+function createFavoriteEditorFeature(deps) {
+  const {
+    checkedSiteIds: checkedSiteIds2,
+    getEnabledSites: getEnabledSites2,
+    getRuntimeSiteLabel: getRuntimeSiteLabel2,
+    refreshStoredData: refreshStoredData2,
+    requestFavoriteRun: requestFavoriteRun2,
+    setStatus: setStatus2,
+    showAppToast: showAppToast2,
+    getUnknownErrorText: getUnknownErrorText2,
+    openOverlay: openOverlay2,
+    closeOverlay: closeOverlay2
+  } = deps;
+  const {
+    setFavoriteModalError: setFavoriteModalError2,
+    renderFavoriteDefaultFields,
+    syncFavoriteVariableUi,
+    renderFavoriteModal
+  } = createFavoriteEditorRenderer({
+    getEnabledSites: getEnabledSites2,
+    getRuntimeSiteLabel: getRuntimeSiteLabel2
+  });
+  const { persistFavoriteEditorChanges } = createFavoriteEditorPersistence({
+    refreshStoredData: refreshStoredData2,
+    setFavoriteModalError: setFavoriteModalError2
+  });
+  function clearStatus2() {
+    setStatus2("");
+  }
+  function hideFavoriteModal2() {
+    state.pendingFavoriteSave = null;
+    state.pendingFavoriteRunReason = "";
+    closeOverlay2(favoriteModal2);
+    favoriteModalError2.hidden = true;
+    favoriteModalError2.textContent = "";
+    favoriteTitleInput3.value = "";
+    favoriteSaveDefaults4.checked = false;
+    favoriteSaveDefaultsRow2.hidden = true;
+    favoriteDefaultFieldsWrap2.hidden = true;
+    favoriteDefaultFields3.innerHTML = "";
+    favoritePromptInput4.value = "";
+  }
+  function dismissFavoriteModal2(event) {
+    event?.preventDefault();
+    event?.stopPropagation();
+    hideFavoriteModal2();
+  }
+  async function openFavoriteModal2() {
+    clearStatus2();
+    const prompt = promptInput4.value.trim();
+    if (!prompt) {
+      setStatus2(t.warnEmpty, "error");
+      promptInput4.focus();
+      return;
+    }
+    const loadedFavorite = state.loadedFavoriteId ? getFavoriteById(state.loadedFavoriteId) : null;
+    const currentItem = loadedFavorite ? {
+      ...loadedFavorite,
+      text: prompt,
+      sentTo: checkedSiteIds2(),
+      templateDefaults: state.loadedTemplateDefaults
+    } : {
+      id: state.loadedFavoriteId || null,
+      title: state.loadedFavoriteTitle,
+      text: prompt,
+      sentTo: checkedSiteIds2(),
+      templateDefaults: state.loadedTemplateDefaults,
+      tags: [],
+      folder: "",
+      pinned: false,
+      mode: "single",
+      steps: [],
+      scheduleEnabled: false,
+      scheduledAt: null,
+      scheduleRepeat: "none"
+    };
+    state.pendingFavoriteSave = buildFavoriteEditorStateFromItem(currentItem);
+    setFavoriteModalError2("");
+    state.pendingFavoriteRunReason = "";
+    renderFavoriteModal();
+    openOverlay2(favoriteModal2, favoriteTitleInput3);
+    window.requestAnimationFrame(() => favoriteTitleInput3.select());
+  }
+  function openFavoriteEditor2(item, options = {}) {
+    state.pendingFavoriteSave = buildFavoriteEditorStateFromItem(item);
+    state.pendingFavoriteRunReason = options.reason || "";
+    setFavoriteModalError2(options.reason || "");
+    renderFavoriteModal();
+    openOverlay2(favoriteModal2, favoriteTitleInput3);
+  }
   async function confirmFavoriteSave() {
     const favorite = await persistFavoriteEditorChanges();
     if (!favorite) {
@@ -4595,224 +5336,18 @@ function createFavoriteEditorFeature(deps) {
     }
     setFavoriteModalError2(response.error ?? getUnknownErrorText2());
   }
-  function bindFavoriteEditorEvents2() {
-    favoriteModalClose.addEventListener("click", dismissFavoriteModal2);
-    favoriteModalCancel.addEventListener("click", dismissFavoriteModal2);
-    favoriteModal.addEventListener("click", (event) => {
-      const target = event.target instanceof Element ? event.target : null;
-      const dismissButton = target?.closest("[data-dismiss-favorite-modal]");
-      if (dismissButton || target === favoriteModal) {
-        dismissFavoriteModal2(event);
-      }
-    });
-    favoriteModal.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && !favoriteModal.hidden) {
-        dismissFavoriteModal2(event);
-      }
-    });
-    favoriteSaveDefaults.addEventListener("change", () => {
-      if (!state.pendingFavoriteSave) {
-        return;
-      }
-      state.pendingFavoriteSave.saveDefaults = favoriteSaveDefaults.checked;
-      renderFavoriteDefaultFields();
-    });
-    favoriteDefaultFields.addEventListener("input", (event) => {
-      const target = event.target instanceof Element ? event.target : null;
-      const input = target?.closest("[data-favorite-default-input]");
-      const variableName = input?.dataset.favoriteDefaultInput;
-      if (!input || !variableName || !state.pendingFavoriteSave) {
-        return;
-      }
-      state.pendingFavoriteSave.defaultValues[variableName] = input.value;
-    });
-    favoriteModeSelect.addEventListener("change", () => {
-      const modalState = state.pendingFavoriteSave;
-      if (!modalState) {
-        return;
-      }
-      const nextMode = favoriteModeSelect.value === "chain" ? "chain" : "single";
-      if (nextMode === modalState.mode) {
-        return;
-      }
-      if (nextMode === "chain") {
-        const seedText = favoritePromptInput.value || modalState.prompt || promptInput2.value || "";
-        modalState.prompt = seedText;
-        if (modalState.steps.length === 0 || !modalState.steps.some((step) => step.text.trim())) {
-          modalState.steps = [createFavoriteEditorStep(seedText, [], 0)];
-        }
-      } else {
-        modalState.prompt = getFirstNonEmptyStepText(modalState.steps) || favoritePromptInput.value || modalState.prompt;
-      }
-      modalState.mode = nextMode;
-      setFavoriteModalError2("");
-      renderFavoriteModal();
-    });
-    favoriteScheduleEnabled.addEventListener("change", () => {
-      const modalState = state.pendingFavoriteSave;
-      if (!modalState) {
-        return;
-      }
-      modalState.scheduleEnabled = favoriteScheduleEnabled.checked;
-      if (modalState.scheduleEnabled && !modalState.scheduledAt) {
-        const defaultDate = new Date(Date.now() + 10 * 60 * 1e3);
-        modalState.scheduledAt = defaultDate.toISOString();
-        favoriteScheduledAtInput.value = toLocalDateTimeInputValue(
-          modalState.scheduledAt
-        );
-      }
-      favoriteScheduleFields.hidden = !modalState.scheduleEnabled;
-    });
-    favoriteScheduledAtInput.addEventListener("change", () => {
-      if (!state.pendingFavoriteSave) {
-        return;
-      }
-      state.pendingFavoriteSave.scheduledAt = toIsoDateTime(
-        favoriteScheduledAtInput.value
-      );
-    });
-    favoriteScheduleRepeatSelect.addEventListener("change", () => {
-      if (!state.pendingFavoriteSave) {
-        return;
-      }
-      state.pendingFavoriteSave.scheduleRepeat = favoriteScheduleRepeatSelect.value === "daily" || favoriteScheduleRepeatSelect.value === "weekday" || favoriteScheduleRepeatSelect.value === "weekly" ? favoriteScheduleRepeatSelect.value : "none";
-    });
-    favoritePromptInput.addEventListener("input", () => {
-      const modalState = state.pendingFavoriteSave;
-      if (!modalState) {
-        return;
-      }
-      modalState.prompt = favoritePromptInput.value;
-      syncFavoriteVariableUi(modalState);
-      setFavoriteModalError2("");
-    });
-    favoriteTargetsList.addEventListener("change", (event) => {
-      const target = event.target instanceof Element ? event.target : null;
-      const input = target?.closest("[data-favorite-target][data-site-id]");
-      const siteId = input?.dataset.siteId;
-      if (!input || !siteId || !state.pendingFavoriteSave) {
-        return;
-      }
-      const nextSelected = new Set(state.pendingFavoriteSave.sites);
-      if (input.checked) {
-        nextSelected.add(siteId);
-      } else {
-        nextSelected.delete(siteId);
-      }
-      state.pendingFavoriteSave.sites = [...nextSelected];
-    });
-    favoriteChainAddStep.addEventListener("click", () => {
-      const modalState = state.pendingFavoriteSave;
-      if (!modalState) {
-        return;
-      }
-      modalState.steps.push(createFavoriteEditorStep("", [], 0));
-      renderFavoriteModal();
-      window.requestAnimationFrame(() => {
-        const inputs = Array.from(
-          favoriteChainList.querySelectorAll("[data-favorite-step-text]")
-        );
-        inputs[inputs.length - 1]?.focus?.();
-      });
-    });
-    favoriteChainList.addEventListener("input", (event) => {
-      const modalState = state.pendingFavoriteSave;
-      if (!modalState) {
-        return;
-      }
-      const target = event.target instanceof Element ? event.target : null;
-      const textInput = target?.closest("[data-favorite-step-text]");
-      if (textInput) {
-        const stepId = textInput.dataset.favoriteStepText;
-        const step2 = modalState.steps.find((entry) => entry.id === stepId);
-        if (step2) {
-          step2.text = textInput.value;
-          syncFavoriteVariableUi(modalState);
-        }
-        return;
-      }
-      const delayInput = target?.closest("[data-favorite-step-delay]");
-      if (!delayInput) {
-        return;
-      }
-      const step = modalState.steps.find(
-        (entry) => entry.id === delayInput.dataset.favoriteStepDelay
-      );
-      if (step) {
-        step.delayMs = Math.max(0, Math.round(Number(delayInput.value) || 0));
-      }
-    });
-    favoriteChainList.addEventListener("change", (event) => {
-      const modalState = state.pendingFavoriteSave;
-      if (!modalState) {
-        return;
-      }
-      const target = event.target instanceof Element ? event.target : null;
-      const input = target?.closest("[data-favorite-step-target][data-site-id]");
-      const stepId = input?.dataset.favoriteStepTarget;
-      const siteId = input?.dataset.siteId;
-      if (!input || !stepId || !siteId) {
-        return;
-      }
-      const step = modalState.steps.find((entry) => entry.id === stepId);
-      if (!step) {
-        return;
-      }
-      const nextTargets = new Set(step.targetSiteIds);
-      if (input.checked) {
-        nextTargets.add(siteId);
-      } else {
-        nextTargets.delete(siteId);
-      }
-      step.targetSiteIds = [...nextTargets];
-    });
-    favoriteChainList.addEventListener("click", (event) => {
-      const modalState = state.pendingFavoriteSave;
-      if (!modalState) {
-        return;
-      }
-      const target = event.target instanceof Element ? event.target : null;
-      const deleteButton = target?.closest("[data-favorite-step-delete]");
-      if (deleteButton) {
-        modalState.steps = modalState.steps.filter(
-          (step2) => step2.id !== deleteButton.dataset.favoriteStepDelete
-        );
-        renderFavoriteModal();
-        return;
-      }
-      const moveButton = target?.closest("[data-favorite-step-move]");
-      if (!moveButton) {
-        return;
-      }
-      const stepId = moveButton.dataset.favoriteStepMove;
-      const index = modalState.steps.findIndex((step2) => step2.id === stepId);
-      if (index === -1) {
-        return;
-      }
-      const direction = moveButton.dataset.direction === "down" ? 1 : -1;
-      const nextIndex = index + direction;
-      if (nextIndex < 0 || nextIndex >= modalState.steps.length) {
-        return;
-      }
-      const [step] = modalState.steps.splice(index, 1);
-      modalState.steps.splice(nextIndex, 0, step);
-      renderFavoriteModal();
-    });
-    favoriteModalConfirm.addEventListener("click", () => {
-      void confirmFavoriteSave().catch((error) => {
-        console.error("[AI Prompt Broadcaster] Favorite save failed.", error);
-        setFavoriteModalError2(t.error(error?.message ?? getUnknownErrorText2()));
-      });
-    });
-    favoriteModalRun.addEventListener("click", () => {
-      void runFavoriteFromEditor2().catch((error) => {
-        console.error("[AI Prompt Broadcaster] Favorite run failed.", error);
-        setFavoriteModalError2(t.error(error?.message ?? getUnknownErrorText2()));
-      });
-    });
-  }
+  const { bindFavoriteEditorEvents: bindFavoriteEditorEvents2 } = createFavoriteEditorEvents({
+    dismissFavoriteModal: dismissFavoriteModal2,
+    renderFavoriteModal,
+    renderFavoriteDefaultFields,
+    syncFavoriteVariableUi,
+    confirmFavoriteSave,
+    runFavoriteFromEditor: runFavoriteFromEditor2,
+    setFavoriteModalError: setFavoriteModalError2,
+    getUnknownErrorText: getUnknownErrorText2
+  });
   return {
-    getFavoriteById: getFavoriteById2,
+    getFavoriteById,
     setFavoriteModalError: setFavoriteModalError2,
     hideFavoriteModal: hideFavoriteModal2,
     dismissFavoriteModal: dismissFavoriteModal2,
@@ -4884,7 +5419,7 @@ function createPopupTargetsController(deps) {
   function getDefaultTargetModeLabel2() {
     return state.settings.reuseExistingTabs ? t.openTabsDefaultReuse : t.openTabsDefaultNew;
   }
-  function getDefaultSiteTargetSelection2() {
+  function getDefaultSiteTargetSelection() {
     return "default";
   }
   function syncSiteTargetSelections2() {
@@ -4901,7 +5436,7 @@ function createPopupTargetsController(deps) {
         nextSelections[siteId] = currentSelection;
         return;
       }
-      nextSelections[siteId] = getDefaultSiteTargetSelection2();
+      nextSelections[siteId] = getDefaultSiteTargetSelection();
     });
     state.siteTargetSelections = nextSelections;
   }
@@ -5002,8 +5537,621 @@ ${target.resolvedPrompt}`).join("\n\n---\n\n");
   };
 }
 
+// src/popup/compose/send-flow.ts
+function hasTargetId2(target) {
+  return typeof target.id === "string" && target.id.trim().length > 0;
+}
+function isLastBroadcastSummary(value) {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const candidate = value;
+  return typeof candidate.broadcastId === "string" && typeof candidate.status === "string" && typeof candidate.prompt === "string" && Array.isArray(candidate.siteIds);
+}
+function createPopupSendFlow(deps) {
+  function getSiteCardElement(siteId) {
+    return document.querySelector(`.site-card[data-site-id="${CSS.escape(siteId)}"]`);
+  }
+  function setSiteCardState(siteId, cardState) {
+    const card = getSiteCardElement(siteId);
+    if (!card) {
+      return;
+    }
+    card.classList.remove("sending", "sent", "failed");
+    card.classList.add(cardState);
+    card.querySelector(".retry-btn")?.remove();
+  }
+  function addRetryButton(target, mainPrompt) {
+    const siteId = target.id;
+    const card = getSiteCardElement(siteId);
+    if (!card || card.querySelector(".retry-btn")) {
+      return;
+    }
+    const retryBtn = document.createElement("button");
+    retryBtn.type = "button";
+    retryBtn.className = "secondary-btn retry-btn";
+    retryBtn.textContent = "Retry";
+    retryBtn.addEventListener("click", async () => {
+      retryBtn.disabled = true;
+      setSiteCardState(siteId, "sending");
+      try {
+        await deps.refreshOpenSiteTabs();
+        const response = await deps.sendPopupMessage(
+          {
+            action: "broadcast",
+            prompt: mainPrompt,
+            sites: deps.buildRuntimeBroadcastTargets([target])
+          },
+          1e4
+        );
+        const failedIds = Array.isArray(response?.failedTabSiteIds) ? response.failedTabSiteIds : [];
+        if (response?.ok && !failedIds.includes(siteId)) {
+          setSiteCardState(siteId, "sent");
+        } else {
+          setSiteCardState(siteId, "failed");
+          addRetryButton(target, mainPrompt);
+        }
+      } catch {
+        setSiteCardState(siteId, "failed");
+        addRetryButton(target, mainPrompt);
+      }
+    });
+    card.appendChild(retryBtn);
+  }
+  function triggerRipple2(button, event) {
+    const rect = button.getBoundingClientRect();
+    const size = Math.max(rect.width, rect.height);
+    const x = event.clientX - rect.left - size / 2;
+    const y = event.clientY - rect.top - size / 2;
+    const ripple = document.createElement("span");
+    ripple.className = "ripple";
+    ripple.style.cssText = `width:${size}px;height:${size}px;left:${x}px;top:${y}px;`;
+    button.appendChild(ripple);
+    ripple.addEventListener("animationend", () => ripple.remove(), { once: true });
+  }
+  function setCardStatesFromBroadcast2(summary) {
+    document.querySelectorAll(".site-card.sent, .site-card.failed, .site-card.sending").forEach((card) => {
+      card.classList.remove("sending", "sent", "failed");
+      card.querySelector(".retry-btn")?.remove();
+    });
+    if (!summary?.siteIds?.length) {
+      return;
+    }
+    summary.siteIds.forEach((siteId) => {
+      const status = summary.siteResults?.[siteId];
+      const code = typeof status === "string" ? status : typeof status?.code === "string" ? status.code : "";
+      if (code === "submitted") {
+        setSiteCardState(siteId, "sent");
+        return;
+      }
+      if (status) {
+        setSiteCardState(siteId, "failed");
+        return;
+      }
+      if (summary.status === "sending") {
+        setSiteCardState(siteId, "sending");
+      }
+    });
+  }
+  function applyLastBroadcastState2(summary, { silentToast = false } = {}) {
+    state.lastBroadcast = summary;
+    if (!summary) {
+      deps.clearSendSafetyTimer();
+      deps.setSendingState(false);
+      deps.setStatus("");
+      return;
+    }
+    setCardStatesFromBroadcast2(summary);
+    if (summary.status === "sending") {
+      deps.setStatus(t.sending(summary.total || summary.siteIds?.length || 0));
+      deps.setSendingState(true);
+      const signature2 = deps.buildBroadcastToastSignature(summary);
+      if (!silentToast && state.lastBroadcastToastSignature !== signature2) {
+        deps.showAppToast(t.restoredBroadcastSending, "info", 2600);
+        state.lastBroadcastToastSignature = signature2;
+      }
+      return;
+    }
+    deps.clearSendSafetyTimer();
+    deps.setSendingState(false);
+    const finishedAtMs = Date.parse(summary.finishedAt || "");
+    const isRecent = Number.isFinite(finishedAtMs) && Date.now() - finishedAtMs <= 5 * 60 * 1e3;
+    const signature = deps.buildBroadcastToastSignature(summary);
+    const successCount = (summary.submittedSiteIds ?? []).length;
+    const failedCount = (summary.failedSiteIds ?? []).length;
+    if (summary.status === "submitted") {
+      deps.setStatus(t.sent(successCount || summary.total || summary.siteIds?.length || 0), "success");
+    } else {
+      const doneMessage = msg("popup_broadcast_restored_done", [String(successCount), String(failedCount)]) || `Last broadcast: ${successCount} success, ${failedCount} failed`;
+      deps.setStatus(doneMessage, failedCount > 0 ? "warning" : "success");
+    }
+    if (!silentToast && isRecent && state.lastBroadcastToastSignature !== signature) {
+      const message = msg("popup_broadcast_restored_done", [String(successCount), String(failedCount)]) || `Last broadcast: ${successCount} success, ${failedCount} failed`;
+      deps.showAppToast(
+        {
+          message,
+          type: failedCount > 0 ? "warning" : "info",
+          duration: failedCount > 0 ? -1 : 4e3
+        }
+      );
+      state.lastBroadcastToastSignature = signature;
+    }
+  }
+  async function cancelCurrentBroadcast2() {
+    const summary = state.lastBroadcast;
+    if (!summary?.broadcastId || summary.status !== "sending") {
+      deps.setSendingState(false);
+      deps.clearSendSafetyTimer();
+      return;
+    }
+    try {
+      const response = await deps.sendPopupMessage(
+        {
+          action: "cancelBroadcast",
+          broadcastId: summary.broadcastId
+        },
+        5e3
+      );
+      if (response?.ok) {
+        applyLastBroadcastState2(response.summary ?? summary, { silentToast: true });
+        deps.setStatus(t.broadcastCancelled, "warning");
+        deps.showAppToast(t.broadcastCancelled, "warning", 2600);
+        return;
+      }
+      applyLastBroadcastState2(response?.summary ?? summary, { silentToast: true });
+      deps.setStatus(t.error(deps.getUnknownErrorText()), "error");
+    } catch (error) {
+      console.error("[AI Prompt Broadcaster] Failed to cancel broadcast.", error);
+      deps.setStatus(t.error(deps.getErrorMessage(error)), "error");
+    } finally {
+      if (state.lastBroadcast?.status !== "sending") {
+        deps.setSendingState(false);
+      }
+    }
+  }
+  async function sendResolvedPrompt2(mainPrompt, targets) {
+    if (state.isSending) {
+      return;
+    }
+    const siteIds = normalizeSiteIdList2(
+      (Array.isArray(targets) ? targets : []).map((target) => target?.id)
+    );
+    deps.setSendingState(true);
+    deps.armSendSafetyTimer();
+    siteIds.forEach((siteId) => setSiteCardState(siteId, "sending"));
+    deps.setStatus(t.sending(siteIds.length));
+    try {
+      await deps.refreshOpenSiteTabs();
+      await deps.setLastSentPrompt(mainPrompt);
+      clearAllToasts();
+      const response = await deps.sendPopupMessage(
+        {
+          action: "broadcast",
+          prompt: mainPrompt,
+          sites: deps.buildRuntimeBroadcastTargets(targets)
+        },
+        1e4
+      );
+      if (response?.ok) {
+        if (Array.isArray(response.failedTabSiteIds)) {
+          response.failedTabSiteIds.forEach((siteId) => {
+            setSiteCardState(siteId, "failed");
+            const failedTarget = targets.find(
+              (target) => hasTargetId2(target) && target.id === siteId
+            );
+            if (failedTarget) {
+              addRetryButton(failedTarget, mainPrompt);
+            }
+          });
+        }
+        deps.setStatus(t.sending(response.createdSiteCount ?? siteIds.length), "warning");
+        deps.showAppToast(t.toastSendSuccess(response.createdSiteCount ?? siteIds.length), "success", 2200);
+        if (state.settings.autoClosePopup) {
+          window.close();
+        }
+      } else {
+        siteIds.forEach((siteId) => {
+          setSiteCardState(siteId, "failed");
+          const failedTarget = targets.find(
+            (target) => hasTargetId2(target) && target.id === siteId
+          );
+          if (failedTarget) {
+            addRetryButton(failedTarget, mainPrompt);
+          }
+        });
+        deps.setStatus(t.error(response?.error ?? deps.getUnknownErrorText()), "error");
+      }
+    } catch (error) {
+      console.error("[AI Prompt Broadcaster] Broadcast send failed.", error);
+      siteIds.forEach((siteId) => {
+        setSiteCardState(siteId, "failed");
+        const failedTarget = targets.find(
+          (target) => hasTargetId2(target) && target.id === siteId
+        );
+        if (failedTarget) {
+          addRetryButton(failedTarget, mainPrompt);
+        }
+      });
+      deps.setStatus(t.error(deps.getErrorMessage(error)), "error");
+      deps.showAppToast(t.error(deps.getErrorMessage(error)), "error", 4e3);
+      deps.setSendingState(false);
+      deps.clearSendSafetyTimer();
+    } finally {
+      if (state.lastBroadcast?.status !== "sending") {
+        deps.setSendingState(false);
+      }
+    }
+  }
+  return {
+    applyLastBroadcastState: applyLastBroadcastState2,
+    cancelCurrentBroadcast: cancelCurrentBroadcast2,
+    setCardStatesFromBroadcast: setCardStatesFromBroadcast2,
+    sendResolvedPrompt: sendResolvedPrompt2,
+    triggerRipple: triggerRipple2
+  };
+}
+
+// src/popup/compose/template-modal.ts
+var {
+  templateModal,
+  templateModalTitle,
+  templateModalDesc,
+  templateModalClose,
+  templateModalSystemInfo,
+  templateFields,
+  templatePreviewLabel,
+  templatePreview,
+  templateModalError,
+  templateModalCancel,
+  templateModalConfirm
+} = popupDom.modals;
+function compactVariableValues2(values) {
+  return Object.fromEntries(
+    Object.entries(values ?? {}).map(([name, value]) => [String(name), String(value ?? "")]).filter(([, value]) => value.trim())
+  );
+}
+function mergeTemplateSources2(...sources) {
+  return Object.assign({}, ...sources.filter(Boolean));
+}
+function createPopupTemplateModal(deps) {
+  function getTemplateDisplayName(name) {
+    return getTemplateVariableDisplayName(name, uiLanguage);
+  }
+  function setTemplateModalError2(message = "") {
+    templateModalError.hidden = !message;
+    templateModalError.textContent = message;
+  }
+  function hideTemplateModal2() {
+    state.pendingTemplateSend = null;
+    deps.closeOverlay(templateModal);
+    templateModalError.hidden = true;
+    templateModalError.textContent = "";
+  }
+  async function ensureClipboardReadPermission() {
+    try {
+      if (!chrome.permissions?.contains || !chrome.permissions?.request) {
+        return false;
+      }
+      const permission = {
+        permissions: ["clipboardRead"]
+      };
+      const alreadyGranted = await chrome.permissions.contains(permission);
+      if (alreadyGranted) {
+        return true;
+      }
+      return await chrome.permissions.request(permission);
+    } catch (error) {
+      console.error("[AI Prompt Broadcaster] Failed to request clipboardRead permission.", error);
+      return false;
+    }
+  }
+  async function resolveAsyncTemplateVariables(variables) {
+    const needsTabContext = variables.some(
+      (v) => v.name === SYSTEM_TEMPLATE_VARIABLES.url || v.name === SYSTEM_TEMPLATE_VARIABLES.title || v.name === SYSTEM_TEMPLATE_VARIABLES.selection
+    );
+    const needsCounter = variables.some((v) => v.name === SYSTEM_TEMPLATE_VARIABLES.counter);
+    const extra = {};
+    if (needsTabContext) {
+      try {
+        const response = await deps.sendPopupMessage(
+          { action: "getActiveTabContext" },
+          4e3
+        );
+        if (response?.ok) {
+          extra.url = response.url ?? "";
+          extra.title = response.title ?? "";
+          extra.selection = response.selection ?? "";
+        }
+      } catch {
+      }
+    }
+    if (needsCounter) {
+      try {
+        const response = await deps.sendPopupMessage(
+          { action: "getBroadcastCounter" },
+          4e3
+        );
+        extra.counter = response?.counter != null ? String(Number(response.counter) + 1) : "1";
+      } catch {
+        extra.counter = "1";
+      }
+    }
+    return extra;
+  }
+  async function readClipboardTemplateValue() {
+    try {
+      const hasPermission = await ensureClipboardReadPermission();
+      if (!hasPermission) {
+        return {
+          ok: false,
+          text: "",
+          error: "clipboardRead permission was not granted."
+        };
+      }
+      if (!navigator.clipboard?.readText) {
+        return {
+          ok: false,
+          text: "",
+          error: "Clipboard API is not available in this context."
+        };
+      }
+      const text = await navigator.clipboard.readText();
+      return { ok: true, text };
+    } catch (error) {
+      console.error("[AI Prompt Broadcaster] Failed to read clipboard for template variable.", error);
+      return {
+        ok: false,
+        text: "",
+        error: error instanceof Error ? error.message : getUnknownErrorText()
+      };
+    }
+  }
+  function getFavoriteTemplateSources(favorite) {
+    if (favorite?.mode === "chain" && Array.isArray(favorite.steps) && favorite.steps.length > 0) {
+      return favorite.steps.map((step) => String(step?.text ?? "")).filter((text) => text.trim());
+    }
+    return [String(favorite?.text ?? "")];
+  }
+  function detectFavoriteTemplateVariables(favorite) {
+    const seen = /* @__PURE__ */ new Set();
+    return getFavoriteTemplateSources(favorite).flatMap((template) => detectTemplateVariables(template)).filter((variable) => {
+      if (seen.has(variable.name)) {
+        return false;
+      }
+      seen.add(variable.name);
+      return true;
+    });
+  }
+  async function buildPreparedFavoriteExecutionContext(favorite) {
+    const variables = detectFavoriteTemplateVariables(favorite);
+    const needsClipboard = variables.some(
+      (variable) => variable.kind === "system" && variable.name === SYSTEM_TEMPLATE_VARIABLES.clipboard
+    );
+    const asyncExtra = await resolveAsyncTemplateVariables(variables);
+    const preparedExecutionContext = {};
+    if (typeof asyncExtra.url === "string") {
+      preparedExecutionContext.url = asyncExtra.url;
+    }
+    if (typeof asyncExtra.title === "string") {
+      preparedExecutionContext.title = asyncExtra.title;
+    }
+    if (typeof asyncExtra.selection === "string") {
+      preparedExecutionContext.selection = asyncExtra.selection;
+    }
+    if (!needsClipboard) {
+      return {
+        ok: true,
+        preparedExecutionContext
+      };
+    }
+    const clipboardResult = await readClipboardTemplateValue();
+    if (!clipboardResult.ok) {
+      return {
+        ok: false,
+        reason: "clipboard_read_failed",
+        error: clipboardResult.error || t.templateClipboardError
+      };
+    }
+    preparedExecutionContext.clipboard = clipboardResult.text ?? "";
+    return {
+      ok: true,
+      preparedExecutionContext
+    };
+  }
+  async function requestFavoriteRun2(favorite, {
+    trigger = "popup",
+    allowPopupFallback = false
+  } = {}) {
+    if (!favorite?.id) {
+      return {
+        ok: false,
+        error: getUnknownErrorText()
+      };
+    }
+    const prepared = await buildPreparedFavoriteExecutionContext(favorite);
+    if (!prepared?.ok) {
+      return prepared;
+    }
+    return await deps.sendPopupMessage(
+      {
+        action: "favorite:run",
+        favoriteId: favorite.id,
+        trigger,
+        allowPopupFallback,
+        preparedExecutionContext: prepared.preparedExecutionContext
+      },
+      1e4
+    ) ?? {
+      ok: false,
+      error: getUnknownErrorText()
+    };
+  }
+  async function maybeMarkLoadedFavoriteAsUsed() {
+    if (!state.loadedFavoriteId) {
+      return;
+    }
+    try {
+      await markFavoriteUsed(state.loadedFavoriteId);
+      state.favorites = await getPromptFavorites();
+    } catch (error) {
+      console.error("[AI Prompt Broadcaster] Failed to update favorite usage.", error);
+    }
+  }
+  function buildTemplateSendPreviewStateV2() {
+    const modalState = state.pendingTemplateSend;
+    if (!modalState) {
+      return null;
+    }
+    const values = mergeTemplateSources2(modalState.systemValues, modalState.userValues);
+    const preview = deps.buildTemplatePreviewText(modalState.targets, values);
+    const missingUserValues = deps.findMissingTemplateValuesForTargets(
+      modalState.targets,
+      modalState.userValues
+    );
+    const clipboardRequired = modalState.variables.some(
+      (variable) => variable.name === SYSTEM_TEMPLATE_VARIABLES.clipboard
+    );
+    const clipboardMissing = clipboardRequired && !String(modalState.systemValues[SYSTEM_TEMPLATE_VARIABLES.clipboard] ?? "").length;
+    return {
+      values,
+      preview,
+      missingUserValues,
+      clipboardMissing
+    };
+  }
+  function renderTemplateModalV2() {
+    const modalState = state.pendingTemplateSend;
+    if (!modalState) {
+      return;
+    }
+    templateModalTitle.textContent = t.templateModalTitle;
+    templateModalDesc.textContent = t.templateModalDesc;
+    templatePreviewLabel.textContent = t.templatePreviewLabel;
+    templateModalCancel.textContent = t.templateModalCancel;
+    templateModalConfirm.textContent = t.templateModalConfirm;
+    const automaticVariables = modalState.variables.filter((variable) => variable.kind === "system");
+    if (automaticVariables.length > 0) {
+      const labels = automaticVariables.map((variable) => `{{${getTemplateDisplayName(variable.name)}}}`).join(", ");
+      const notices = [t.templateSystemNotice, labels];
+      if (automaticVariables.some((variable) => variable.name === SYSTEM_TEMPLATE_VARIABLES.clipboard)) {
+        notices.push(t.templateClipboardNotice);
+      }
+      templateModalSystemInfo.hidden = false;
+      templateModalSystemInfo.textContent = notices.join(" · ");
+    } else {
+      templateModalSystemInfo.hidden = true;
+      templateModalSystemInfo.textContent = "";
+    }
+    const userVariables = modalState.variables.filter((variable) => variable.kind === "user");
+    templateFields.innerHTML = userVariables.map((variable) => {
+      const value = modalState.userValues[variable.name] ?? "";
+      return `
+          <label class="field-stack">
+            <span>${escapeHtml(t.templateFieldLabel(variable.name))}</span>
+            <input
+              class="search-input"
+              type="text"
+              data-template-input="${escapeAttribute(variable.name)}"
+              value="${escapeAttribute(value)}"
+              placeholder="${escapeAttribute(t.templateFieldPlaceholder(variable.name))}"
+            />
+          </label>
+        `;
+    }).join("");
+    const previewState = buildTemplateSendPreviewStateV2();
+    const errorMessage = previewState?.clipboardMissing ? t.templateClipboardError : previewState && previewState.missingUserValues.length > 0 ? t.templateMissingValues : "";
+    templatePreview.textContent = previewState?.preview ?? modalState.prompt;
+    setTemplateModalError2(errorMessage);
+    templateModalConfirm.disabled = Boolean(errorMessage);
+  }
+  async function openTemplateModalV22(prompt, targets) {
+    const variables = deps.detectTemplateVariablesForTargets(targets);
+    if (variables.length === 0) {
+      await maybeMarkLoadedFavoriteAsUsed();
+      await deps.sendResolvedPrompt(prompt, deps.buildResolvedBroadcastTargets(targets));
+      return;
+    }
+    const baseDefaults = mergeTemplateSources2(
+      state.templateVariableCache,
+      state.loadedTemplateDefaults
+    );
+    const userValues = Object.fromEntries(
+      variables.filter((variable) => variable.kind === "user").map((variable) => [variable.name, baseDefaults[variable.name] ?? ""])
+    );
+    const asyncExtra = await resolveAsyncTemplateVariables(variables);
+    const systemValues = buildSystemTemplateValues(/* @__PURE__ */ new Date(), {
+      locale: uiLanguage === "ko" ? "ko" : "en",
+      extra: asyncExtra
+    });
+    if (variables.some((variable) => variable.name === SYSTEM_TEMPLATE_VARIABLES.clipboard)) {
+      const clipboardResult = await readClipboardTemplateValue();
+      if (clipboardResult.ok) {
+        systemValues[SYSTEM_TEMPLATE_VARIABLES.clipboard] = clipboardResult.text;
+      }
+    }
+    state.pendingTemplateSend = {
+      prompt,
+      targets,
+      variables,
+      userValues,
+      systemValues
+    };
+    renderTemplateModalV2();
+    deps.openOverlay(templateModal, templateFields.querySelector("input") ?? templateModalConfirm);
+  }
+  async function confirmTemplateModalSend() {
+    const modalState = state.pendingTemplateSend;
+    if (!modalState) {
+      return;
+    }
+    renderTemplateModalV2();
+    const previewState = buildTemplateSendPreviewStateV2();
+    if (!previewState || previewState.missingUserValues.length > 0 || previewState.clipboardMissing) {
+      return;
+    }
+    const cachedValues = compactVariableValues2(modalState.userValues);
+    await updateTemplateVariableCache(cachedValues);
+    state.templateVariableCache = mergeTemplateSources2(state.templateVariableCache, cachedValues);
+    const resolvedTargets = deps.buildResolvedBroadcastTargets(modalState.targets, previewState.values);
+    hideTemplateModal2();
+    await maybeMarkLoadedFavoriteAsUsed();
+    await deps.sendResolvedPrompt(modalState.prompt, resolvedTargets);
+  }
+  function bindTemplateModalEvents2(onError) {
+    templateModalClose.addEventListener("click", hideTemplateModal2);
+    templateModalCancel.addEventListener("click", hideTemplateModal2);
+    templateModal.addEventListener("click", (event) => {
+      if (event.target === templateModal) {
+        hideTemplateModal2();
+      }
+    });
+    templateFields.addEventListener("input", (event) => {
+      const input = event.target instanceof Element ? event.target.closest("[data-template-input]") : null;
+      const templateInput = input?.dataset.templateInput;
+      if (!input || !templateInput || !state.pendingTemplateSend) {
+        return;
+      }
+      state.pendingTemplateSend.userValues[templateInput] = input.value;
+      renderTemplateModalV2();
+    });
+    templateModalConfirm.addEventListener("click", () => {
+      void confirmTemplateModalSend().catch((error) => {
+        console.error("[AI Prompt Broadcaster] Template modal confirm failed.", error);
+        onError(t.error(error instanceof Error ? error.message : getUnknownErrorText()));
+      });
+    });
+  }
+  return {
+    hideTemplateModal: hideTemplateModal2,
+    setTemplateModalError: setTemplateModalError2,
+    openTemplateModalV2: openTemplateModalV22,
+    bindTemplateModalEvents: bindTemplateModalEvents2,
+    requestFavoriteRun: requestFavoriteRun2
+  };
+}
+
 // src/popup/history/controller.ts
-var { historyList } = popupDom.history;
+var { historyList: historyList2 } = popupDom.history;
 function filterItems(items, query) {
   const normalizedQuery = query.trim().toLowerCase();
   if (!normalizedQuery) {
@@ -5028,12 +6176,12 @@ function createHistoryController(deps) {
       state.settings.historySort
     );
     if (items.length === 0) {
-      historyList.innerHTML = buildEmptyState(
+      historyList2.innerHTML = buildEmptyState(
         state.historySearch ? t.noSearchResults : t.historyEmpty
       );
       return;
     }
-    historyList.innerHTML = items.map((item) => buildHistoryItemMarkup(item, {
+    historyList2.innerHTML = items.map((item) => buildHistoryItemMarkup(item, {
       openMenuKey: state.openMenuKey,
       runtimeSites: state.runtimeSites
     })).join("");
@@ -5123,8 +6271,115 @@ function createHistoryController(deps) {
   };
 }
 
+// src/popup/history/modals.ts
+var {
+  resendModal,
+  resendModalTitle: resendModalTitle2,
+  resendModalDesc: resendModalDesc2,
+  resendModalSites,
+  resendModalClose,
+  resendModalCancel: resendModalCancel2,
+  resendModalConfirm: resendModalConfirm2,
+  importReportModal,
+  importReportModalTitle: importReportModalTitle2,
+  importReportModalDesc: importReportModalDesc2,
+  importReportBody,
+  importReportModalClose,
+  importReportModalConfirm: importReportModalConfirm2
+} = popupDom.modals;
+function createPopupHistoryModals(deps) {
+  function hideResendModal2() {
+    state.pendingResendHistory = null;
+    deps.closeOverlay(resendModal);
+  }
+  function openResendModal2(historyItem) {
+    state.pendingResendHistory = historyItem;
+    resendModalTitle2.textContent = t.resendModalTitle;
+    resendModalDesc2.textContent = t.resendModalDesc;
+    resendModalCancel2.textContent = t.resendModalCancel;
+    resendModalConfirm2.textContent = t.resendModalConfirm;
+    const requestedSiteIds = getHistorySelectedSiteIds(historyItem);
+    const availableSiteIds = new Set(deps.getEnabledSites().map((site) => site.id));
+    resendModalSites.innerHTML = requestedSiteIds.map((siteId) => {
+      const site = deps.runtimeSites().find((entry) => entry.id === siteId);
+      const disabled = !availableSiteIds.has(siteId);
+      return `
+        <label class="checkbox-row">
+          <input type="checkbox" value="${escapeAttribute(siteId)}" data-resend-site="${escapeAttribute(siteId)}" ${disabled ? "disabled" : "checked"} />
+          <span>${escapeHtml(site?.name ?? siteId)}${disabled ? ` (${escapeHtml(t.resendSiteUnavailable)})` : ""}</span>
+        </label>
+      `;
+    }).join("");
+    deps.openOverlay(
+      resendModal,
+      resendModalSites.querySelector("input:not([disabled])")
+    );
+  }
+  async function confirmResendModal() {
+    const historyItem = state.pendingResendHistory;
+    if (!historyItem) {
+      return;
+    }
+    const selectedSiteIds = Array.from(
+      resendModalSites.querySelectorAll("[data-resend-site]:checked")
+    ).map((checkbox) => checkbox.value).filter(Boolean);
+    if (selectedSiteIds.length === 0) {
+      deps.setStatus(t.warnNoSite, "error");
+      return;
+    }
+    const selectedTargets = ensureBroadcastTargetSnapshots(
+      historyItem.targetSnapshots,
+      historyItem.requestedSiteIds,
+      historyItem.text
+    ).filter((snapshot) => selectedSiteIds.includes(snapshot.siteId)).map((snapshot) => buildBroadcastTargetMessageFromSnapshot(snapshot, deps.openSiteTabs())).filter((target) => typeof target.id === "string" && target.id.trim().length > 0);
+    hideResendModal2();
+    await deps.sendResolvedPrompt(historyItem.text, selectedTargets);
+  }
+  function openImportReportModal2(summary) {
+    state.pendingImportSummary = summary;
+    importReportModalTitle2.textContent = t.importReportTitle;
+    importReportModalDesc2.textContent = t.importReportDesc;
+    importReportModalConfirm2.textContent = t.importReportClose;
+    importReportBody.innerHTML = buildImportReportMarkup(summary);
+    deps.openOverlay(importReportModal, importReportModalClose);
+  }
+  function hideImportReportModal2() {
+    state.pendingImportSummary = null;
+    deps.closeOverlay(importReportModal);
+  }
+  function bindHistoryModalEvents2(getErrorMessage2) {
+    resendModalClose.addEventListener("click", hideResendModal2);
+    resendModalCancel2.addEventListener("click", hideResendModal2);
+    resendModal.addEventListener("click", (event) => {
+      if (event.target === resendModal) {
+        hideResendModal2();
+      }
+    });
+    resendModalConfirm2.addEventListener("click", () => {
+      void confirmResendModal().catch((error) => {
+        console.error("[AI Prompt Broadcaster] Resend modal confirm failed.", error);
+        deps.setStatus(t.error(getErrorMessage2(error)), "error");
+      });
+    });
+    importReportModalClose.addEventListener("click", hideImportReportModal2);
+    importReportModalConfirm2.addEventListener("click", hideImportReportModal2);
+    importReportModal.addEventListener("click", (event) => {
+      if (event.target === importReportModal) {
+        hideImportReportModal2();
+      }
+    });
+  }
+  return {
+    hideResendModal: hideResendModal2,
+    openResendModal: openResendModal2,
+    openImportReportModal: openImportReportModal2,
+    hideImportReportModal: hideImportReportModal2,
+    bindHistoryModalEvents: bindHistoryModalEvents2
+  };
+}
+
 // src/popup/favorites/controller.ts
-var { favoritesList } = popupDom.favorites;
+var { favoritesList: favoritesList2 } = popupDom.favorites;
 function getUniqueFavoriteTags() {
   const tagSet = /* @__PURE__ */ new Set();
   state.favorites.forEach((item) => {
@@ -5153,7 +6408,7 @@ function renderFavoritesFilterBar() {
     bar = document.createElement("div");
     bar.id = "favorites-filter-bar";
     bar.className = "favorites-filter-bar";
-    favoritesList.parentElement?.insertBefore(bar, favoritesList);
+    favoritesList2.parentElement?.insertBefore(bar, favoritesList2);
   }
   const allLabel = msg("popup_favorite_filter_all") || "All";
   const activeTag = state.favoritesTagFilter;
@@ -5186,19 +6441,19 @@ function createFavoritesController(deps) {
     showAppToast: showAppToast2,
     getUnknownErrorText: getUnknownErrorText2
   } = deps;
-  function getFavoriteById2(favoriteId) {
+  function getFavoriteById3(favoriteId) {
     return state.favorites.find((entry) => String(entry.id) === String(favoriteId)) ?? null;
   }
   function renderFavoritesList2() {
     renderFavoritesFilterBar();
     const items = filterFavoriteItems(state.favorites);
     if (items.length === 0) {
-      favoritesList.innerHTML = buildEmptyState(
+      favoritesList2.innerHTML = buildEmptyState(
         state.favoritesSearch || state.favoritesTagFilter || state.favoritesFolderFilter ? t.noSearchResults : t.favoritesEmpty
       );
       return;
     }
-    favoritesList.innerHTML = items.map((item) => buildFavoriteItemMarkup(item, {
+    favoritesList2.innerHTML = items.map((item) => buildFavoriteItemMarkup(item, {
       openMenuKey: state.openMenuKey,
       runtimeSites: state.runtimeSites,
       latestJob: getLatestFavoriteRunJobByFavoriteId(state.favoriteJobs, item.id)
@@ -5237,7 +6492,7 @@ function createFavoritesController(deps) {
     state.favoriteSaveTimers.set(favoriteId, nextTimer);
   }
   async function handleFavoriteAction(action, favoriteId) {
-    const item = favoriteId ? getFavoriteById2(favoriteId) : null;
+    const item = favoriteId ? getFavoriteById3(favoriteId) : null;
     if (action === "delete-favorite") {
       if (!favoriteId) {
         return;
@@ -5376,7 +6631,7 @@ function createFavoritesController(deps) {
     scheduleFavoriteTitleSave2(input.dataset.favoriteTitle ?? "", input.value, true);
   }
   return {
-    getFavoriteById: getFavoriteById2,
+    getFavoriteById: getFavoriteById3,
     renderFavoritesList: renderFavoritesList2,
     scheduleFavoriteTitleSave: scheduleFavoriteTitleSave2,
     handleFavoriteAction,
@@ -5502,7 +6757,7 @@ var {
   servicePermissionPreview,
   serviceVerifiedAtInput,
   serviceVerifiedRouteInput,
-  serviceVerifiedAuthStateSelect,
+  serviceVerifiedAuthStateSelect: serviceVerifiedAuthStateSelect2,
   serviceVerifiedLocaleInput,
   serviceVerifiedVersionInput,
   serviceWaitRange,
@@ -5548,7 +6803,7 @@ function createPopupServicesController(deps) {
       supportedRoutes: splitMultilineValues(serviceSupportedRoutesInput.value),
       verifiedAt: serviceVerifiedAtInput.value.trim(),
       verifiedRoute: serviceVerifiedRouteInput.value.trim(),
-      verifiedAuthState: serviceVerifiedAuthStateSelect.value,
+      verifiedAuthState: serviceVerifiedAuthStateSelect2.value,
       verifiedLocale: serviceVerifiedLocaleInput.value.trim(),
       verifiedVersion: serviceVerifiedVersionInput.value.trim(),
       waitMs: Number(serviceWaitRange.value),
@@ -5601,7 +6856,7 @@ function createPopupServicesController(deps) {
     serviceHostnameAliasesInput.disabled = false;
     serviceVerifiedAtInput.value = "";
     serviceVerifiedRouteInput.value = "";
-    serviceVerifiedAuthStateSelect.value = "";
+    serviceVerifiedAuthStateSelect2.value = "";
     serviceVerifiedLocaleInput.value = "";
     serviceVerifiedVersionInput.value = "";
     serviceWaitRange.value = "2000";
@@ -5645,7 +6900,7 @@ function createPopupServicesController(deps) {
     serviceHostnameAliasesInput.disabled = Boolean(site?.isBuiltIn);
     serviceVerifiedAtInput.value = site?.verifiedAt ?? "";
     serviceVerifiedRouteInput.value = site?.verifiedRoute ?? "";
-    serviceVerifiedAuthStateSelect.value = site?.verifiedAuthState ?? "";
+    serviceVerifiedAuthStateSelect2.value = site?.verifiedAuthState ?? "";
     serviceVerifiedLocaleInput.value = site?.verifiedLocale ?? "";
     serviceVerifiedVersionInput.value = site?.verifiedVersion ?? "";
     serviceWaitRange.value = String(site?.waitMs ?? 2e3);
@@ -5820,9 +7075,6 @@ function createPopupServicesController(deps) {
 async function sendPopupMessage(message, timeoutMs, fallbackValue) {
   return sendRuntimeMessageWithTimeout(message, timeoutMs, fallbackValue);
 }
-function hasTargetId2(target) {
-  return typeof target.id === "string" && target.id.trim().length > 0;
-}
 function getEventElement(target) {
   return target instanceof Element ? target : null;
 }
@@ -5832,166 +7084,159 @@ function getEventInput(target) {
 function getEventSelect(target) {
   return target instanceof HTMLSelectElement ? target : null;
 }
-function isLastBroadcastSummary(value) {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-  const candidate = value;
-  return typeof candidate.broadcastId === "string" && typeof candidate.status === "string" && typeof candidate.prompt === "string" && Array.isArray(candidate.siteIds);
-}
-var { extTitle, extDesc } = popupDom.header;
-var { tabButtons: tabButtons2, panels: panels2 } = popupDom.tabs;
+var { extTitle: extTitle2, extDesc: extDesc2 } = popupDom.header;
+var { tabButtons: tabButtons3, panels: panels2 } = popupDom.tabs;
 var {
-  promptInput: promptInput3,
-  promptCounter: promptCounter2,
-  clearPromptBtn,
-  templateSummary,
-  templateSummaryLabel,
-  templateChipList,
-  sitesLabel,
-  sitesContainer: sitesContainer2,
-  toggleAllBtn: toggleAllBtn2,
-  saveFavoriteBtn,
+  promptInput: promptInput5,
+  promptCounter: promptCounter3,
+  clearPromptBtn: clearPromptBtn2,
+  templateSummary: templateSummary2,
+  templateSummaryLabel: templateSummaryLabel2,
+  templateChipList: templateChipList2,
+  sitesLabel: sitesLabel2,
+  sitesContainer: sitesContainer3,
+  toggleAllBtn: toggleAllBtn3,
+  saveFavoriteBtn: saveFavoriteBtn2,
   cancelSendBtn: cancelSendBtn2,
-  sendBtn: sendBtn2,
+  sendBtn: sendBtn3,
   statusMsg: statusMsg2
 } = popupDom.compose;
-var { historySearchInput, historySortSelect, historyList: historyList2 } = popupDom.history;
-var { favoritesSearchInput, favoritesSortSelect, favoritesList: favoritesList2 } = popupDom.favorites;
+var { historySearchInput: historySearchInput2, historySortSelect: historySortSelect2, historyList: historyList3 } = popupDom.history;
+var { favoritesSearchInput: favoritesSearchInput2, favoritesSortSelect: favoritesSortSelect2, favoritesList: favoritesList3 } = popupDom.favorites;
 var {
-  settingsTitle,
-  settingsDesc,
+  settingsTitle: settingsTitle2,
+  settingsDesc: settingsDesc2,
   reuseExistingTabsToggle,
-  reuseExistingTabsLabel,
-  reuseExistingTabsDesc,
-  openOptionsBtn,
-  clearHistoryBtn,
-  exportJsonBtn,
-  importJsonBtn,
+  reuseExistingTabsLabel: reuseExistingTabsLabel2,
+  reuseExistingTabsDesc: reuseExistingTabsDesc2,
+  openOptionsBtn: openOptionsBtn2,
+  clearHistoryBtn: clearHistoryBtn2,
+  exportJsonBtn: exportJsonBtn2,
+  importJsonBtn: importJsonBtn2,
   importJsonInput,
-  waitMultiplierLabel,
+  waitMultiplierLabel: waitMultiplierLabel2,
   waitMultiplierRange,
-  waitMultiplierValue
+  waitMultiplierValue: waitMultiplierValue2
 } = popupDom.settings;
 var {
-  serviceManagementTitle,
-  serviceManagementDesc,
-  addServiceBtn,
-  resetSitesBtn,
+  serviceManagementTitle: serviceManagementTitle2,
+  serviceManagementDesc: serviceManagementDesc2,
+  addServiceBtn: addServiceBtn2,
+  resetSitesBtn: resetSitesBtn2,
   managedSitesList: managedSitesList2,
   serviceEditor: serviceEditor2,
   serviceEditorTitle: serviceEditorTitle2,
-  serviceEditorDesc,
-  serviceNameLabel,
+  serviceEditorDesc: serviceEditorDesc2,
+  serviceNameLabel: serviceNameLabel2,
   serviceNameInput: serviceNameInput2,
-  serviceUrlLabel,
+  serviceUrlLabel: serviceUrlLabel2,
   serviceUrlInput: serviceUrlInput2,
-  serviceInputSelectorLabel,
+  serviceInputSelectorLabel: serviceInputSelectorLabel2,
   serviceInputSelectorInput: serviceInputSelectorInput2,
-  testSelectorBtn,
-  serviceInputTypeLabel,
-  serviceSubmitSelectorLabel,
+  testSelectorBtn: testSelectorBtn2,
+  serviceInputTypeLabel: serviceInputTypeLabel2,
+  serviceSubmitSelectorLabel: serviceSubmitSelectorLabel2,
   serviceSubmitSelectorInput: serviceSubmitSelectorInput2,
-  serviceSubmitMethodLabel,
+  serviceSubmitMethodLabel: serviceSubmitMethodLabel2,
   serviceSubmitMethodSelect: serviceSubmitMethodSelect2,
-  serviceAdvancedTitle,
-  serviceFallbackSelectorsLabel,
+  serviceAdvancedTitle: serviceAdvancedTitle2,
+  serviceFallbackSelectorsLabel: serviceFallbackSelectorsLabel2,
   serviceFallbackSelectorsInput: serviceFallbackSelectorsInput2,
-  serviceAuthSelectorsLabel,
+  serviceAuthSelectorsLabel: serviceAuthSelectorsLabel2,
   serviceAuthSelectorsInput: serviceAuthSelectorsInput2,
-  serviceHostnameAliasesLabel,
+  serviceHostnameAliasesLabel: serviceHostnameAliasesLabel2,
   serviceHostnameAliasesInput: serviceHostnameAliasesInput2,
-  serviceSupportedRoutesLabel,
+  serviceSupportedRoutesLabel: serviceSupportedRoutesLabel2,
   serviceSupportedRoutesInput: serviceSupportedRoutesInput2,
   servicePermissionPreview: servicePermissionPreview2,
-  serviceVerifiedAtLabel,
+  serviceVerifiedAtLabel: serviceVerifiedAtLabel2,
   serviceVerifiedAtInput: serviceVerifiedAtInput2,
-  serviceVerifiedRouteLabel,
+  serviceVerifiedRouteLabel: serviceVerifiedRouteLabel2,
   serviceVerifiedRouteInput: serviceVerifiedRouteInput2,
-  serviceVerifiedAuthStateLabel,
-  serviceVerifiedAuthStateSelect: serviceVerifiedAuthStateSelect2,
-  serviceVerifiedLocaleLabel,
+  serviceVerifiedAuthStateLabel: serviceVerifiedAuthStateLabel2,
+  serviceVerifiedAuthStateSelect: serviceVerifiedAuthStateSelect3,
+  serviceVerifiedLocaleLabel: serviceVerifiedLocaleLabel2,
   serviceVerifiedLocaleInput: serviceVerifiedLocaleInput2,
-  serviceVerifiedVersionLabel,
+  serviceVerifiedVersionLabel: serviceVerifiedVersionLabel2,
   serviceVerifiedVersionInput: serviceVerifiedVersionInput2,
-  serviceWaitLabel,
+  serviceWaitLabel: serviceWaitLabel2,
   serviceWaitRange: serviceWaitRange2,
   serviceWaitValue: serviceWaitValue2,
-  serviceColorLabel,
+  serviceColorLabel: serviceColorLabel2,
   serviceColorInput: serviceColorInput2,
-  serviceIconLabel,
+  serviceIconLabel: serviceIconLabel2,
   serviceIconInput: serviceIconInput2,
-  serviceEnabledLabel,
+  serviceEnabledLabel: serviceEnabledLabel2,
   serviceEnabledInput: serviceEnabledInput2,
   serviceTestResult: serviceTestResult2,
   serviceEditorError: serviceEditorError2,
-  serviceEditorCancel,
-  serviceEditorSave
+  serviceEditorCancel: serviceEditorCancel2,
+  serviceEditorSave: serviceEditorSave2
 } = popupDom.serviceManagement;
 var {
-  templateModal,
-  templateModalTitle,
-  templateModalDesc,
-  templateModalClose,
-  templateModalSystemInfo,
-  templateFields,
-  templatePreviewLabel,
-  templatePreview,
-  templateModalError,
-  templateModalCancel,
-  templateModalConfirm,
-  favoriteModal: favoriteModal2,
+  templateModal: templateModal2,
+  templateModalTitle: templateModalTitle2,
+  templateModalDesc: templateModalDesc2,
+  templateModalClose: templateModalClose2,
+  templateModalSystemInfo: templateModalSystemInfo2,
+  templateFields: templateFields2,
+  templatePreviewLabel: templatePreviewLabel2,
+  templatePreview: templatePreview2,
+  templateModalError: templateModalError2,
+  templateModalCancel: templateModalCancel2,
+  templateModalConfirm: templateModalConfirm2,
+  favoriteModal: favoriteModal3,
   favoriteModalTitle: favoriteModalTitle2,
   favoriteModalDesc: favoriteModalDesc2,
   favoriteModalClose: favoriteModalClose2,
   favoriteTitleLabel: favoriteTitleLabel2,
-  favoriteTitleInput: favoriteTitleInput2,
+  favoriteTitleInput: favoriteTitleInput4,
   favoriteModeLabel: favoriteModeLabel2,
-  favoriteModeSelect: favoriteModeSelect2,
+  favoriteModeSelect: favoriteModeSelect4,
   favoriteTargetsLabel: favoriteTargetsLabel2,
-  favoriteTargetsList: favoriteTargetsList2,
+  favoriteTargetsList: favoriteTargetsList3,
   favoriteTagsLabel: favoriteTagsLabel2,
-  favoriteTagsInput: favoriteTagsInput2,
+  favoriteTagsInput: favoriteTagsInput3,
   favoriteFolderLabel: favoriteFolderLabel2,
-  favoriteFolderInput: favoriteFolderInput2,
-  favoritePinnedInput: favoritePinnedInput2,
+  favoriteFolderInput: favoriteFolderInput3,
+  favoritePinnedInput: favoritePinnedInput3,
   favoritePinnedLabel: favoritePinnedLabel2,
   favoriteScheduleEnabledRow,
-  favoriteScheduleEnabled: favoriteScheduleEnabled2,
+  favoriteScheduleEnabled: favoriteScheduleEnabled4,
   favoriteScheduleEnabledLabel: favoriteScheduleEnabledLabel2,
-  favoriteScheduleFields: favoriteScheduleFields2,
+  favoriteScheduleFields: favoriteScheduleFields3,
   favoriteScheduledAtLabel: favoriteScheduledAtLabel2,
-  favoriteScheduledAtInput: favoriteScheduledAtInput2,
+  favoriteScheduledAtInput: favoriteScheduledAtInput4,
   favoriteScheduleRepeatLabel: favoriteScheduleRepeatLabel2,
-  favoriteScheduleRepeatSelect: favoriteScheduleRepeatSelect2,
-  favoriteSaveDefaultsRow: favoriteSaveDefaultsRow2,
-  favoriteSaveDefaults: favoriteSaveDefaults2,
+  favoriteScheduleRepeatSelect: favoriteScheduleRepeatSelect4,
+  favoriteSaveDefaultsRow: favoriteSaveDefaultsRow3,
+  favoriteSaveDefaults: favoriteSaveDefaults5,
   favoriteSaveDefaultsLabel: favoriteSaveDefaultsLabel2,
-  favoriteDefaultFieldsWrap: favoriteDefaultFieldsWrap2,
+  favoriteDefaultFieldsWrap: favoriteDefaultFieldsWrap3,
   favoriteDefaultFieldsLabel: favoriteDefaultFieldsLabel2,
-  favoriteDefaultFields: favoriteDefaultFields2,
+  favoriteDefaultFields: favoriteDefaultFields4,
   favoriteChainWrap: favoriteChainWrap2,
   favoriteChainTitle: favoriteChainTitle2,
   favoriteChainDesc: favoriteChainDesc2,
-  favoriteChainList: favoriteChainList2,
-  favoriteChainAddStep: favoriteChainAddStep2,
-  favoriteModalError: favoriteModalError2,
+  favoriteChainList: favoriteChainList3,
+  favoriteChainAddStep: favoriteChainAddStep3,
+  favoriteModalError: favoriteModalError3,
   favoriteModalCancel: favoriteModalCancel2,
-  favoriteModalRun: favoriteModalRun2,
-  favoriteModalConfirm: favoriteModalConfirm2,
-  resendModal,
-  resendModalTitle,
-  resendModalDesc,
-  resendModalSites,
-  resendModalClose,
-  resendModalCancel,
-  resendModalConfirm,
-  importReportModal,
-  importReportModalTitle,
-  importReportModalDesc,
-  importReportBody,
-  importReportModalClose,
-  importReportModalConfirm
+  favoriteModalRun: favoriteModalRun3,
+  favoriteModalConfirm: favoriteModalConfirm3,
+  resendModal: resendModal2,
+  resendModalTitle: resendModalTitle3,
+  resendModalDesc: resendModalDesc3,
+  resendModalSites: resendModalSites2,
+  resendModalClose: resendModalClose2,
+  resendModalCancel: resendModalCancel3,
+  resendModalConfirm: resendModalConfirm3,
+  importReportModal: importReportModal2,
+  importReportModalTitle: importReportModalTitle3,
+  importReportModalDesc: importReportModalDesc3,
+  importReportBody: importReportBody2,
+  importReportModalClose: importReportModalClose2,
+  importReportModalConfirm: importReportModalConfirm3
 } = popupDom.modals;
 var { toastHost } = popupDom;
 var popupShell = createPopupShell({
@@ -6021,12 +7266,10 @@ var {
   applySiteSelection,
   switchTab
 } = popupShell;
-function renderSortControls() {
-  historySortSelect.innerHTML = getHistorySortOptions().map((option) => `<option value="${escapeAttribute(option.value)}">${escapeHtml(option.label)}</option>`).join("");
-  favoritesSortSelect.innerHTML = getFavoriteSortOptions().map((option) => `<option value="${escapeAttribute(option.value)}">${escapeHtml(option.label)}</option>`).join("");
-  historySortSelect.value = state.settings.historySort;
-  favoritesSortSelect.value = state.settings.favoriteSort;
-}
+var renderTemplateSummary = () => void 0;
+var renderSiteCheckboxesPanel = () => void 0;
+var renderTabLabels = () => void 0;
+var setCardStatesFromBroadcast = (_summary) => void 0;
 var popupTargetsController = createPopupTargetsController({
   getEnabledSites,
   getRuntimeSiteLabel,
@@ -6046,12 +7289,6 @@ var {
   buildResolvedBroadcastTargets,
   buildTemplatePreviewText
 } = popupTargetsController;
-function getDefaultSiteTargetSelection() {
-  return "default";
-}
-function getTemplateDisplayName(name) {
-  return getTemplateVariableDisplayName(name, uiLanguage);
-}
 var renderHistoryList = () => void 0;
 var renderFavoritesList = () => void 0;
 var scheduleFavoriteTitleSave = () => void 0;
@@ -6060,8 +7297,26 @@ function renderLists() {
   renderFavoritesList();
 }
 var hideFavoriteModal = () => void 0;
+var hideTemplateModal = () => void 0;
+var hideResendModal = () => void 0;
+var hideImportReportModal = () => void 0;
+var openTemplateModalV2 = async (_prompt, _targets) => void 0;
+var openResendModal = (_historyItem) => void 0;
+var openImportReportModal = (_summary) => void 0;
+var setTemplateModalError = (_message) => void 0;
+var requestFavoriteRun = async () => ({
+  ok: false,
+  error: getUnknownErrorText()
+});
+var applyLastBroadcastState = (_summary, _options = {}) => void 0;
+var cancelCurrentBroadcast = async () => void 0;
+var sendResolvedPrompt = async (_mainPrompt, _targets) => void 0;
+var triggerRipple = (_button, _event) => void 0;
+var bindHistoryModalEvents = (_getErrorMessage) => void 0;
+var bindTemplateModalEvents = (_onError) => void 0;
+var handleGlobalShortcut = async (_event) => void 0;
 var overlayController = createOverlayController({
-  overlays: [importReportModal, resendModal, favoriteModal2, templateModal],
+  overlays: [importReportModal2, resendModal2, favoriteModal3, templateModal2],
   closeFavoriteModal: () => hideFavoriteModal(),
   hideTemplateModal,
   hideResendModal,
@@ -6075,49 +7330,30 @@ var {
   closeActiveOverlayOrMenu,
   trapModalFocus
 } = overlayController;
-function currentPromptVariables() {
-  const checkedTargets = buildComposerBroadcastTargets(checkedSiteIds(), promptInput3.value);
-  if (checkedTargets.length === 0) {
-    return detectTemplateVariables(promptInput3.value);
-  }
-  return detectTemplateVariablesForTargets2(checkedTargets);
-}
-function renderTemplateSummary() {
-  const variables = currentPromptVariables();
-  templateSummary.hidden = variables.length === 0;
-  if (variables.length === 0) {
-    templateSummaryLabel.textContent = "";
-    templateChipList.innerHTML = "";
-    return;
-  }
-  templateSummaryLabel.textContent = t.templateSummary(variables.length);
-  templateChipList.innerHTML = variables.map((variable) => {
-    const kindLabel = variable.kind === "system" ? t.templateSystemKind : t.templateUserKind;
-    const variableLabel = variable.kind === "system" ? getTemplateDisplayName(variable.name) : variable.name;
-    return `
-        <span class="template-chip ${variable.kind}">
-          <span>{{${escapeHtml(variableLabel)}}}</span>
-          <span class="template-chip-kind">${escapeHtml(kindLabel)}</span>
-        </span>
-      `;
-  }).join("");
-}
-function compactVariableValues2(values) {
-  return Object.fromEntries(
-    Object.entries(values ?? {}).map(([name, value]) => [String(name), String(value ?? "")]).filter(([, value]) => value.trim())
-  );
-}
-function mergeTemplateSources2(...sources) {
-  return Object.assign({}, ...sources.filter(Boolean));
-}
+var popupRendering = createPopupRendering({
+  buildComposerBroadcastTargets,
+  detectTemplateVariablesForTargets: detectTemplateVariablesForTargets2,
+  checkedSiteIds,
+  getEnabledSites,
+  getRuntimeSiteLabel,
+  getOpenSiteTabs,
+  getDefaultTargetModeLabel,
+  syncToggleAllLabel,
+  setCardStatesFromBroadcast: (summary) => setCardStatesFromBroadcast(summary),
+  applyDynamicPromptPlaceholder,
+  updatePromptCounter
+});
+renderTemplateSummary = popupRendering.renderTemplateSummary;
+renderSiteCheckboxesPanel = popupRendering.renderSiteCheckboxesPanel;
+renderTabLabels = popupRendering.renderTabLabels;
 function applySettingsToControls() {
   reuseExistingTabsToggle.checked = Boolean(state.settings.reuseExistingTabs);
-  reuseExistingTabsLabel.textContent = t.reuseTabsLabel;
-  reuseExistingTabsDesc.textContent = state.settings.reuseExistingTabs ? t.reuseTabsDescEnabled : t.reuseTabsDescDisabled;
-  waitMultiplierLabel.textContent = t.waitMultiplierLabel;
+  reuseExistingTabsLabel2.textContent = t.reuseTabsLabel;
+  reuseExistingTabsDesc2.textContent = state.settings.reuseExistingTabs ? t.reuseTabsDescEnabled : t.reuseTabsDescDisabled;
+  waitMultiplierLabel2.textContent = t.waitMultiplierLabel;
   waitMultiplierRange.value = String(state.settings.waitMsMultiplier);
-  waitMultiplierValue.textContent = t.waitMultiplierValue(state.settings.waitMsMultiplier);
-  renderSortControls();
+  waitMultiplierValue2.textContent = t.waitMultiplierValue(state.settings.waitMsMultiplier);
+  popupRendering.renderSortControls();
 }
 async function loadStoredData() {
   try {
@@ -6150,10 +7386,10 @@ async function loadStoredData() {
     state.favoriteJobs = favoriteJobs;
     state.settings = settings;
     await refreshOpenSiteTabs();
-    if (typeof promptIntent?.prompt === "string" && !promptInput3.value.trim()) {
-      promptInput3.value = promptIntent.prompt;
-    } else if (!promptInput3.value.trim()) {
-      promptInput3.value = composeDraftPrompt;
+    if (typeof promptIntent?.prompt === "string" && !promptInput5.value.trim()) {
+      promptInput5.value = promptIntent.prompt;
+    } else if (!promptInput5.value.trim()) {
+      promptInput5.value = composeDraftPrompt;
     }
     applySettingsToControls();
     renderSiteCheckboxesPanel();
@@ -6195,6 +7431,69 @@ async function refreshStoredData() {
     throw error;
   }
 }
+var popupSendFlow = createPopupSendFlow({
+  refreshOpenSiteTabs,
+  sendPopupMessage: async (message, timeoutMs, fallbackValue) => await sendRuntimeMessageWithTimeout(
+    message,
+    timeoutMs,
+    fallbackValue
+  ),
+  buildRuntimeBroadcastTargets,
+  setStatus,
+  showAppToast,
+  setSendingState,
+  armSendSafetyTimer,
+  clearSendSafetyTimer,
+  buildBroadcastToastSignature,
+  getUnknownErrorText,
+  getErrorMessage,
+  setLastSentPrompt
+});
+applyLastBroadcastState = popupSendFlow.applyLastBroadcastState;
+cancelCurrentBroadcast = popupSendFlow.cancelCurrentBroadcast;
+setCardStatesFromBroadcast = popupSendFlow.setCardStatesFromBroadcast;
+sendResolvedPrompt = popupSendFlow.sendResolvedPrompt;
+triggerRipple = popupSendFlow.triggerRipple;
+var popupTemplateModal = createPopupTemplateModal({
+  sendPopupMessage: async (message, timeoutMs) => await sendRuntimeMessageWithTimeout(
+    message,
+    timeoutMs
+  ),
+  buildResolvedBroadcastTargets,
+  detectTemplateVariablesForTargets: detectTemplateVariablesForTargets2,
+  findMissingTemplateValuesForTargets: findMissingTemplateValuesForTargets2,
+  buildTemplatePreviewText,
+  sendResolvedPrompt: (prompt, targets) => sendResolvedPrompt(prompt, targets),
+  openOverlay,
+  closeOverlay
+});
+hideTemplateModal = popupTemplateModal.hideTemplateModal;
+openTemplateModalV2 = popupTemplateModal.openTemplateModalV2;
+setTemplateModalError = popupTemplateModal.setTemplateModalError;
+requestFavoriteRun = popupTemplateModal.requestFavoriteRun;
+bindTemplateModalEvents = popupTemplateModal.bindTemplateModalEvents;
+var popupHistoryModals = createPopupHistoryModals({
+  getEnabledSites,
+  runtimeSites: () => state.runtimeSites,
+  openSiteTabs: () => state.openSiteTabs,
+  setStatus,
+  sendResolvedPrompt: (prompt, targets) => sendResolvedPrompt(prompt, targets),
+  openOverlay,
+  closeOverlay
+});
+hideResendModal = popupHistoryModals.hideResendModal;
+openResendModal = popupHistoryModals.openResendModal;
+openImportReportModal = popupHistoryModals.openImportReportModal;
+hideImportReportModal = popupHistoryModals.hideImportReportModal;
+bindHistoryModalEvents = popupHistoryModals.bindHistoryModalEvents;
+var popupShortcutController = createPopupShortcutController({
+  closeActiveOverlayOrMenu,
+  getOpenOverlay,
+  cancelCurrentBroadcast: () => cancelCurrentBroadcast(),
+  handleSend,
+  switchTab
+});
+handleGlobalShortcut = popupShortcutController.handleGlobalShortcut;
 var favoriteEditorFeature = createFavoriteEditorFeature({
   checkedSiteIds,
   getEnabledSites,
@@ -6208,7 +7507,7 @@ var favoriteEditorFeature = createFavoriteEditorFeature({
   closeOverlay
 });
 var {
-  getFavoriteById,
+  getFavoriteById: getFavoriteById2,
   setFavoriteModalError,
   dismissFavoriteModal,
   openFavoriteModal,
@@ -6223,7 +7522,7 @@ async function maybeHandlePopupFavoriteIntent() {
   if (!intent?.favoriteId) {
     return;
   }
-  const favorite = getFavoriteById(intent.favoriteId);
+  const favorite = getFavoriteById2(intent.favoriteId);
   if (!favorite) {
     return;
   }
@@ -6260,116 +7559,17 @@ function setLoadedTemplateContext(item) {
   state.loadedFavoriteId = favoriteId;
 }
 function loadPromptIntoComposer(item) {
-  promptInput3.value = item.text;
-  scheduleComposeDraftSave(promptInput3.value);
+  promptInput5.value = item.text;
+  scheduleComposeDraftSave(promptInput5.value);
   applySiteSelection(
     "requestedSiteIds" in item ? getHistorySelectedSiteIds(item) : item.sentTo
   );
   setLoadedTemplateContext(item);
   renderTemplateSummary();
   switchTab("compose");
-  promptInput3.focus();
+  promptInput5.focus();
   setStatus(t.importedLoad, "success");
   showAppToast(t.importedLoad, "info", 2200);
-}
-function setCardStatesFromBroadcast(summary) {
-  document.querySelectorAll(".site-card.sent, .site-card.failed, .site-card.sending").forEach((card) => {
-    card.classList.remove("sending", "sent", "failed");
-    card.querySelector(".retry-btn")?.remove();
-  });
-  if (!summary?.siteIds?.length) {
-    return;
-  }
-  summary.siteIds.forEach((siteId) => {
-    const status = summary.siteResults?.[siteId];
-    const code = normalizeResultCode(status?.code ?? status);
-    if (code === "submitted") {
-      setSiteCardState(siteId, "sent");
-      return;
-    }
-    if (status) {
-      setSiteCardState(siteId, "failed");
-      return;
-    }
-    if (summary.status === "sending") {
-      setSiteCardState(siteId, "sending");
-    }
-  });
-}
-function applyLastBroadcastState(summary, { silentToast = false } = {}) {
-  state.lastBroadcast = summary;
-  if (!summary) {
-    clearSendSafetyTimer();
-    setSendingState(false);
-    clearStatus();
-    return;
-  }
-  setCardStatesFromBroadcast(summary);
-  if (summary.status === "sending") {
-    setStatus(t.sending(summary.total || summary.siteIds?.length || 0));
-    setSendingState(true);
-    const signature2 = buildBroadcastToastSignature(summary);
-    if (!silentToast && state.lastBroadcastToastSignature !== signature2) {
-      showAppToast(t.restoredBroadcastSending, "info", 2600);
-      state.lastBroadcastToastSignature = signature2;
-    }
-    return;
-  }
-  clearSendSafetyTimer();
-  setSendingState(false);
-  const finishedAtMs = Date.parse(summary.finishedAt || "");
-  const isRecent = Number.isFinite(finishedAtMs) && Date.now() - finishedAtMs <= 5 * 60 * 1e3;
-  const signature = buildBroadcastToastSignature(summary);
-  const successCount = (summary.submittedSiteIds ?? []).length;
-  const failedCount = (summary.failedSiteIds ?? []).length;
-  if (summary.status === "submitted") {
-    setStatus(t.sent(successCount || summary.total || summary.siteIds?.length || 0), "success");
-  } else {
-    const doneMessage = msg("popup_broadcast_restored_done", [String(successCount), String(failedCount)]) || `Last broadcast: ${successCount} success, ${failedCount} failed`;
-    setStatus(doneMessage, failedCount > 0 ? "warning" : "success");
-  }
-  if (!silentToast && isRecent && state.lastBroadcastToastSignature !== signature) {
-    const message = msg("popup_broadcast_restored_done", [String(successCount), String(failedCount)]) || `Last broadcast: ${successCount} success, ${failedCount} failed`;
-    showAppToast(
-      {
-        message,
-        type: failedCount > 0 ? "warning" : "info",
-        duration: failedCount > 0 ? -1 : 4e3
-      }
-    );
-    state.lastBroadcastToastSignature = signature;
-  }
-}
-async function cancelCurrentBroadcast() {
-  const broadcastId = state.lastBroadcast?.status === "sending" ? state.lastBroadcast.broadcastId : "";
-  if (!broadcastId) {
-    setSendingState(false);
-    clearSendSafetyTimer();
-    return;
-  }
-  cancelSendBtn2.disabled = true;
-  try {
-    const response = await sendPopupMessage(
-      {
-        action: "cancelBroadcast",
-        broadcastId
-      },
-      1e4
-    );
-    if (!response?.ok) {
-      throw new Error(getUnknownErrorText());
-    }
-    applyLastBroadcastState(response.summary ?? await getLastBroadcast(), { silentToast: true });
-    setStatus(t.broadcastCancelled, "warning");
-    showAppToast(t.broadcastCancelled, "warning", 2600);
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to cancel broadcast.", error);
-    setStatus(t.error(getErrorMessage(error)), "error");
-    showAppToast(t.error(getErrorMessage(error)), "error", 4e3);
-    if (state.lastBroadcast?.status === "sending") {
-      cancelSendBtn2.disabled = false;
-    }
-  }
 }
 function getErrorMessage(error) {
   return error instanceof Error ? error.message : getUnknownErrorText();
@@ -6379,215 +7579,6 @@ async function flushPendingSessionToasts() {
   pendingToasts.forEach((toast) => {
     showAppToast(toast);
   });
-}
-function getSiteCardElement(siteId) {
-  return sitesContainer2.querySelector(`[data-site-id="${CSS.escape(siteId)}"]`);
-}
-function setSiteCardState(siteId, cardState) {
-  const card = getSiteCardElement(siteId);
-  if (!card) {
-    return;
-  }
-  card.classList.remove("sending", "sent", "failed");
-  const retryBtn = card.querySelector(".retry-btn");
-  if (retryBtn) {
-    retryBtn.remove();
-  }
-  if (cardState) {
-    card.classList.add(cardState);
-  }
-}
-function addRetryButton(target, mainPrompt) {
-  const siteId = target?.id;
-  const card = getSiteCardElement(siteId);
-  if (!card) {
-    return;
-  }
-  const retryBtn = document.createElement("button");
-  retryBtn.type = "button";
-  retryBtn.className = "retry-btn";
-  retryBtn.textContent = "Retry";
-  retryBtn.addEventListener("click", async (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const site = state.runtimeSites.find((s) => s.id === siteId);
-    if (!site) {
-      return;
-    }
-    retryBtn.disabled = true;
-    setSiteCardState(siteId, "sending");
-    try {
-      await refreshOpenSiteTabs();
-      const response = await sendPopupMessage(
-        {
-          action: "broadcast",
-          prompt: mainPrompt,
-          sites: buildRuntimeBroadcastTargets([target])
-        },
-        1e4
-      );
-      const failedIds = Array.isArray(response?.failedTabSiteIds) ? response.failedTabSiteIds : [];
-      if (response?.ok && !failedIds.includes(siteId)) {
-        setSiteCardState(siteId, "sent");
-      } else {
-        setSiteCardState(siteId, "failed");
-        addRetryButton(target, mainPrompt);
-      }
-    } catch (_error) {
-      setSiteCardState(siteId, "failed");
-      addRetryButton(target, mainPrompt);
-    }
-  });
-  card.appendChild(retryBtn);
-}
-function triggerRipple(button, event) {
-  const rect = button.getBoundingClientRect();
-  const size = Math.max(rect.width, rect.height);
-  const x = event.clientX - rect.left - size / 2;
-  const y = event.clientY - rect.top - size / 2;
-  const ripple = document.createElement("span");
-  ripple.className = "ripple";
-  ripple.style.cssText = `width:${size}px;height:${size}px;left:${x}px;top:${y}px;`;
-  button.appendChild(ripple);
-  ripple.addEventListener("animationend", () => ripple.remove(), { once: true });
-}
-async function sendResolvedPrompt(mainPrompt, targets) {
-  if (state.isSending) {
-    return;
-  }
-  const siteIds = normalizeSiteIdList2(
-    (Array.isArray(targets) ? targets : []).map((target) => target?.id)
-  );
-  setSendingState(true);
-  armSendSafetyTimer();
-  siteIds.forEach((siteId) => setSiteCardState(siteId, "sending"));
-  setStatus(t.sending(siteIds.length));
-  try {
-    await refreshOpenSiteTabs();
-    await setLastSentPrompt(mainPrompt);
-    clearAllToasts();
-    const response = await sendPopupMessage(
-      {
-        action: "broadcast",
-        prompt: mainPrompt,
-        sites: buildRuntimeBroadcastTargets(targets)
-      },
-      1e4
-    );
-    if (response?.ok) {
-      if (Array.isArray(response.failedTabSiteIds)) {
-        response.failedTabSiteIds.forEach((siteId) => {
-          setSiteCardState(siteId, "failed");
-          const failedTarget = targets.find(
-            (target) => hasTargetId2(target) && target.id === siteId
-          );
-          if (failedTarget) {
-            addRetryButton(failedTarget, mainPrompt);
-          }
-        });
-      }
-      setStatus(t.sending(response.createdSiteCount ?? siteIds.length), "warning");
-      showAppToast(t.toastSendSuccess(response.createdSiteCount ?? siteIds.length), "success", 2200);
-      if (state.settings.autoClosePopup) {
-        window.close();
-      }
-    } else {
-      siteIds.forEach((siteId) => {
-        setSiteCardState(siteId, "failed");
-        const failedTarget = targets.find(
-          (target) => hasTargetId2(target) && target.id === siteId
-        );
-        if (failedTarget) {
-          addRetryButton(failedTarget, mainPrompt);
-        }
-      });
-      setStatus(t.error(response?.error ?? getUnknownErrorText()), "error");
-    }
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Broadcast send failed.", error);
-    siteIds.forEach((siteId) => {
-      setSiteCardState(siteId, "failed");
-      const failedTarget = targets.find(
-        (target) => hasTargetId2(target) && target.id === siteId
-      );
-      if (failedTarget) {
-        addRetryButton(failedTarget, mainPrompt);
-      }
-    });
-    setStatus(t.error(getErrorMessage(error)), "error");
-    showAppToast(t.error(getErrorMessage(error)), "error", 4e3);
-    setSendingState(false);
-    clearSendSafetyTimer();
-  } finally {
-    if (state.lastBroadcast?.status !== "sending") {
-      setSendingState(false);
-    }
-  }
-}
-function hideTemplateModal() {
-  state.pendingTemplateSend = null;
-  closeOverlay(templateModal);
-  templateModalError.hidden = true;
-  templateModalError.textContent = "";
-}
-function hideResendModal() {
-  state.pendingResendHistory = null;
-  closeOverlay(resendModal);
-}
-function openResendModal(historyItem) {
-  state.pendingResendHistory = historyItem;
-  resendModalTitle.textContent = t.resendModalTitle;
-  resendModalDesc.textContent = t.resendModalDesc;
-  resendModalCancel.textContent = t.resendModalCancel;
-  resendModalConfirm.textContent = t.resendModalConfirm;
-  const requestedSiteIds = getHistorySelectedSiteIds(historyItem);
-  const availableSiteIds = new Set(getEnabledSites().map((site) => site.id));
-  resendModalSites.innerHTML = requestedSiteIds.map((siteId) => {
-    const site = state.runtimeSites.find((entry) => entry.id === siteId);
-    const disabled = !availableSiteIds.has(siteId);
-    return `
-      <label class="checkbox-row">
-        <input type="checkbox" value="${escapeAttribute(siteId)}" data-resend-site="${escapeAttribute(siteId)}" ${disabled ? "disabled" : "checked"} />
-        <span>${escapeHtml(site?.name ?? siteId)}${disabled ? ` (${escapeHtml(t.resendSiteUnavailable)})` : ""}</span>
-      </label>
-    `;
-  }).join("");
-  openOverlay(
-    resendModal,
-    resendModalSites.querySelector("input:not([disabled])")
-  );
-}
-async function confirmResendModal() {
-  const historyItem = state.pendingResendHistory;
-  if (!historyItem) {
-    return;
-  }
-  const selectedSiteIds = Array.from(
-    resendModalSites.querySelectorAll("[data-resend-site]:checked")
-  ).map((checkbox) => checkbox.value).filter(Boolean);
-  if (selectedSiteIds.length === 0) {
-    setStatus(t.warnNoSite, "error");
-    return;
-  }
-  const selectedTargets = ensureBroadcastTargetSnapshots(
-    historyItem.targetSnapshots,
-    historyItem.requestedSiteIds,
-    historyItem.text
-  ).filter((snapshot) => selectedSiteIds.includes(snapshot.siteId)).map((snapshot) => buildBroadcastTargetMessageFromSnapshot(snapshot, state.openSiteTabs));
-  hideResendModal();
-  await sendResolvedPrompt(historyItem.text, selectedTargets);
-}
-function openImportReportModal(summary) {
-  state.pendingImportSummary = summary;
-  importReportModalTitle.textContent = t.importReportTitle;
-  importReportModalDesc.textContent = t.importReportDesc;
-  importReportModalConfirm.textContent = t.importReportClose;
-  importReportBody.innerHTML = buildImportReportMarkup(summary);
-  openOverlay(importReportModal, importReportModalClose);
-}
-function hideImportReportModal() {
-  state.pendingImportSummary = null;
-  closeOverlay(importReportModal);
 }
 var favoritesController = createFavoritesController({
   switchTab,
@@ -6609,613 +7600,11 @@ var historyController = createHistoryController({
   showAppToast
 });
 renderHistoryList = historyController.renderHistoryList;
-function getPromptButtonsForActiveTab() {
-  if (state.activeTab === "history") {
-    return Array.from(historyList2.querySelectorAll("[data-load-history]"));
-  }
-  if (state.activeTab === "favorites") {
-    return Array.from(
-      favoritesList2.querySelectorAll("[data-load-favorite], [data-edit-favorite]")
-    );
-  }
-  return [];
-}
-function focusAdjacentPromptButton(direction) {
-  const buttons = getPromptButtonsForActiveTab();
-  if (buttons.length === 0) {
-    return;
-  }
-  const currentIndex = buttons.findIndex((button) => button === document.activeElement);
-  const nextIndex = currentIndex === -1 ? direction > 0 ? 0 : buttons.length - 1 : (currentIndex + direction + buttons.length) % buttons.length;
-  buttons[nextIndex]?.focus?.();
-}
-async function handleGlobalShortcut(event) {
-  if (event.defaultPrevented) {
-    return;
-  }
-  const shortcutKey = event.key.toLowerCase();
-  const hasPrimaryModifier = event.ctrlKey || event.metaKey;
-  if (event.key === "Escape") {
-    if (closeActiveOverlayOrMenu()) {
-      event.preventDefault();
-    }
-    return;
-  }
-  if (getOpenOverlay()) {
-    return;
-  }
-  if (hasPrimaryModifier && event.shiftKey && event.key === "Enter") {
-    event.preventDefault();
-    await cancelCurrentBroadcast();
-    return;
-  }
-  if (hasPrimaryModifier && !event.shiftKey && event.key === "Enter") {
-    event.preventDefault();
-    await handleSend();
-    return;
-  }
-  if (hasPrimaryModifier && !event.shiftKey && ["1", "2", "3", "4"].includes(shortcutKey)) {
-    event.preventDefault();
-    switchTab(["compose", "history", "favorites", "settings"][Number(shortcutKey) - 1]);
-    return;
-  }
-  if (hasPrimaryModifier && !event.shiftKey && shortcutKey === "a" && state.activeTab === "compose" && !isTextEditingTarget(event.target)) {
-    event.preventDefault();
-    toggleAllBtn2.click();
-    return;
-  }
-  if ((event.key === "ArrowDown" || event.key === "ArrowUp") && !isTextEditingTarget(event.target)) {
-    if (state.activeTab === "history" || state.activeTab === "favorites") {
-      event.preventDefault();
-      focusAdjacentPromptButton(event.key === "ArrowDown" ? 1 : -1);
-    }
-  }
-}
 function resetTransientModals() {
   hideTemplateModal();
   hideFavoriteModal();
   hideResendModal();
   hideImportReportModal();
-}
-function setTemplateModalError(message = "") {
-  templateModalError.hidden = !message;
-  templateModalError.textContent = message;
-}
-async function ensureClipboardReadPermission() {
-  try {
-    if (!chrome.permissions?.contains || !chrome.permissions?.request) {
-      return false;
-    }
-    const permission = {
-      permissions: ["clipboardRead"]
-    };
-    const alreadyGranted = await chrome.permissions.contains(permission);
-    if (alreadyGranted) {
-      return true;
-    }
-    return await chrome.permissions.request(permission);
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to request clipboardRead permission.", error);
-    return false;
-  }
-}
-async function resolveAsyncTemplateVariables(variables) {
-  const needsTabContext = variables.some(
-    (v) => v.name === SYSTEM_TEMPLATE_VARIABLES.url || v.name === SYSTEM_TEMPLATE_VARIABLES.title || v.name === SYSTEM_TEMPLATE_VARIABLES.selection
-  );
-  const needsCounter = variables.some((v) => v.name === SYSTEM_TEMPLATE_VARIABLES.counter);
-  const extra = {};
-  if (needsTabContext) {
-    try {
-      const response = await sendPopupMessage(
-        { action: "getActiveTabContext" },
-        4e3
-      );
-      if (response?.ok) {
-        extra.url = response.url ?? "";
-        extra.title = response.title ?? "";
-        extra.selection = response.selection ?? "";
-      }
-    } catch (_error) {
-    }
-  }
-  if (needsCounter) {
-    try {
-      const response = await sendPopupMessage(
-        { action: "getBroadcastCounter" },
-        4e3
-      );
-      extra.counter = response?.counter != null ? String(Number(response.counter) + 1) : "1";
-    } catch (_error) {
-      extra.counter = "1";
-    }
-  }
-  return extra;
-}
-async function readClipboardTemplateValue() {
-  try {
-    const hasPermission = await ensureClipboardReadPermission();
-    if (!hasPermission) {
-      return {
-        ok: false,
-        text: "",
-        error: "clipboardRead permission was not granted."
-      };
-    }
-    if (!navigator.clipboard?.readText) {
-      return {
-        ok: false,
-        text: "",
-        error: "Clipboard API is not available in this context."
-      };
-    }
-    const text = await navigator.clipboard.readText();
-    return { ok: true, text };
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to read clipboard for template variable.", error);
-    return {
-      ok: false,
-      text: "",
-      error: getErrorMessage(error)
-    };
-  }
-}
-function getFavoriteTemplateSources(favorite) {
-  if (favorite?.mode === "chain" && Array.isArray(favorite.steps) && favorite.steps.length > 0) {
-    return favorite.steps.map((step) => String(step?.text ?? "")).filter((text) => text.trim());
-  }
-  return [String(favorite?.text ?? "")];
-}
-function detectFavoriteTemplateVariables(favorite) {
-  const seen = /* @__PURE__ */ new Set();
-  return getFavoriteTemplateSources(favorite).flatMap((template) => detectTemplateVariables(template)).filter((variable) => {
-    if (seen.has(variable.name)) {
-      return false;
-    }
-    seen.add(variable.name);
-    return true;
-  });
-}
-async function buildPreparedFavoriteExecutionContext(favorite) {
-  const variables = detectFavoriteTemplateVariables(favorite);
-  const needsClipboard = variables.some(
-    (variable) => variable.kind === "system" && variable.name === SYSTEM_TEMPLATE_VARIABLES.clipboard
-  );
-  const asyncExtra = await resolveAsyncTemplateVariables(variables);
-  const preparedExecutionContext = {};
-  if (typeof asyncExtra.url === "string") {
-    preparedExecutionContext.url = asyncExtra.url;
-  }
-  if (typeof asyncExtra.title === "string") {
-    preparedExecutionContext.title = asyncExtra.title;
-  }
-  if (typeof asyncExtra.selection === "string") {
-    preparedExecutionContext.selection = asyncExtra.selection;
-  }
-  if (!needsClipboard) {
-    return {
-      ok: true,
-      preparedExecutionContext
-    };
-  }
-  const clipboardResult = await readClipboardTemplateValue();
-  if (!clipboardResult.ok) {
-    return {
-      ok: false,
-      reason: "clipboard_read_failed",
-      error: clipboardResult.error || t.templateClipboardError
-    };
-  }
-  preparedExecutionContext.clipboard = clipboardResult.text ?? "";
-  return {
-    ok: true,
-    preparedExecutionContext
-  };
-}
-async function requestFavoriteRun(favorite, {
-  trigger = "popup",
-  allowPopupFallback = false
-} = {}) {
-  if (!favorite?.id) {
-    return {
-      ok: false,
-      error: getUnknownErrorText()
-    };
-  }
-  const prepared = await buildPreparedFavoriteExecutionContext(favorite);
-  if (!prepared?.ok) {
-    return prepared;
-  }
-  return await sendPopupMessage(
-    {
-      action: "favorite:run",
-      favoriteId: favorite.id,
-      trigger,
-      allowPopupFallback,
-      preparedExecutionContext: prepared.preparedExecutionContext
-    },
-    1e4
-  );
-}
-async function maybeMarkLoadedFavoriteAsUsed() {
-  if (!state.loadedFavoriteId) {
-    return;
-  }
-  try {
-    await markFavoriteUsed(state.loadedFavoriteId);
-    state.favorites = await getPromptFavorites();
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to update favorite usage.", error);
-  }
-}
-async function confirmTemplateModalSend() {
-  const modalState = state.pendingTemplateSend;
-  if (!modalState) {
-    return;
-  }
-  renderTemplateModalV2();
-  const previewState = buildTemplateSendPreviewStateV2();
-  if (!previewState || previewState.missingUserValues.length > 0 || previewState.clipboardMissing) {
-    return;
-  }
-  const cachedValues = compactVariableValues2(modalState.userValues);
-  await updateTemplateVariableCache(cachedValues);
-  state.templateVariableCache = mergeTemplateSources2(state.templateVariableCache, cachedValues);
-  const resolvedTargets = buildResolvedBroadcastTargets(modalState.targets, previewState.values);
-  hideTemplateModal();
-  await maybeMarkLoadedFavoriteAsUsed();
-  await sendResolvedPrompt(modalState.prompt, resolvedTargets);
-}
-function buildTemplateSendPreviewStateV2() {
-  const modalState = state.pendingTemplateSend;
-  if (!modalState) {
-    return null;
-  }
-  const values = mergeTemplateSources2(modalState.systemValues, modalState.userValues);
-  const preview = buildTemplatePreviewText(modalState.targets, values);
-  const missingUserValues = findMissingTemplateValuesForTargets2(
-    modalState.targets,
-    modalState.userValues
-  );
-  const clipboardRequired = modalState.variables.some(
-    (variable) => variable.name === SYSTEM_TEMPLATE_VARIABLES.clipboard
-  );
-  const clipboardMissing = clipboardRequired && !String(modalState.systemValues[SYSTEM_TEMPLATE_VARIABLES.clipboard] ?? "").length;
-  return {
-    values,
-    preview,
-    missingUserValues,
-    clipboardMissing
-  };
-}
-function renderTemplateModalV2() {
-  const modalState = state.pendingTemplateSend;
-  if (!modalState) {
-    return;
-  }
-  templateModalTitle.textContent = t.templateModalTitle;
-  templateModalDesc.textContent = t.templateModalDesc;
-  templatePreviewLabel.textContent = t.templatePreviewLabel;
-  templateModalCancel.textContent = t.templateModalCancel;
-  templateModalConfirm.textContent = t.templateModalConfirm;
-  const automaticVariables = modalState.variables.filter((variable) => variable.kind === "system");
-  if (automaticVariables.length > 0) {
-    const labels = automaticVariables.map((variable) => `{{${getTemplateDisplayName(variable.name)}}}`).join(", ");
-    const notices = [t.templateSystemNotice, labels];
-    if (automaticVariables.some((variable) => variable.name === SYSTEM_TEMPLATE_VARIABLES.clipboard)) {
-      notices.push(t.templateClipboardNotice);
-    }
-    templateModalSystemInfo.hidden = false;
-    templateModalSystemInfo.textContent = notices.join(" · ");
-  } else {
-    templateModalSystemInfo.hidden = true;
-    templateModalSystemInfo.textContent = "";
-  }
-  const userVariables = modalState.variables.filter((variable) => variable.kind === "user");
-  templateFields.innerHTML = userVariables.map((variable) => {
-    const value = modalState.userValues[variable.name] ?? "";
-    return `
-        <label class="field-stack">
-          <span>${escapeHtml(t.templateFieldLabel(variable.name))}</span>
-          <input
-            class="search-input"
-            type="text"
-            data-template-input="${escapeAttribute(variable.name)}"
-            value="${escapeAttribute(value)}"
-            placeholder="${escapeAttribute(t.templateFieldPlaceholder(variable.name))}"
-          />
-        </label>
-      `;
-  }).join("");
-  const previewState = buildTemplateSendPreviewStateV2();
-  const errorMessage = previewState?.clipboardMissing ? t.templateClipboardError : previewState && previewState.missingUserValues.length > 0 ? t.templateMissingValues : "";
-  templatePreview.textContent = previewState?.preview ?? modalState.prompt;
-  setTemplateModalError(errorMessage);
-  templateModalConfirm.disabled = Boolean(errorMessage);
-}
-async function openTemplateModalV2(prompt, targets) {
-  const variables = detectTemplateVariablesForTargets2(targets);
-  if (variables.length === 0) {
-    await maybeMarkLoadedFavoriteAsUsed();
-    await sendResolvedPrompt(prompt, buildResolvedBroadcastTargets(targets));
-    return;
-  }
-  const baseDefaults = mergeTemplateSources2(
-    state.templateVariableCache,
-    state.loadedTemplateDefaults
-  );
-  const userValues = Object.fromEntries(
-    variables.filter((variable) => variable.kind === "user").map((variable) => [variable.name, baseDefaults[variable.name] ?? ""])
-  );
-  const asyncExtra = await resolveAsyncTemplateVariables(variables);
-  const systemValues = buildSystemTemplateValues(/* @__PURE__ */ new Date(), {
-    locale: isKorean ? "ko" : "en",
-    extra: asyncExtra
-  });
-  if (variables.some((variable) => variable.name === SYSTEM_TEMPLATE_VARIABLES.clipboard)) {
-    const clipboardResult = await readClipboardTemplateValue();
-    if (clipboardResult.ok) {
-      systemValues[SYSTEM_TEMPLATE_VARIABLES.clipboard] = clipboardResult.text;
-    }
-  }
-  state.pendingTemplateSend = {
-    prompt,
-    targets,
-    variables,
-    userValues,
-    systemValues
-  };
-  renderTemplateModalV2();
-  openOverlay(templateModal, templateFields.querySelector("input") ?? templateModalConfirm);
-}
-function renderTabLabels() {
-  extTitle.textContent = t.title;
-  extDesc.textContent = t.desc;
-  clearPromptBtn.textContent = t.clearPrompt;
-  sitesLabel.textContent = t.sitesLabel;
-  saveFavoriteBtn.textContent = t.saveFavorite;
-  sendBtn2.textContent = t.send;
-  historySearchInput.placeholder = t.historySearch;
-  favoritesSearchInput.placeholder = t.favoritesSearch;
-  settingsTitle.textContent = t.settingsTitle;
-  settingsDesc.textContent = t.settingsDesc;
-  reuseExistingTabsLabel.textContent = t.reuseTabsLabel;
-  reuseExistingTabsDesc.textContent = state.settings.reuseExistingTabs ? t.reuseTabsDescEnabled : t.reuseTabsDescDisabled;
-  waitMultiplierLabel.textContent = t.waitMultiplierLabel;
-  waitMultiplierValue.textContent = t.waitMultiplierValue(state.settings.waitMsMultiplier);
-  openOptionsBtn.textContent = t.openOptions;
-  clearHistoryBtn.textContent = t.clearHistory;
-  exportJsonBtn.textContent = t.exportJson;
-  importJsonBtn.textContent = t.importJson;
-  serviceManagementTitle.textContent = t.serviceManagementTitle;
-  serviceManagementDesc.textContent = t.serviceManagementDesc;
-  addServiceBtn.textContent = t.addService;
-  resetSitesBtn.textContent = t.resetServices;
-  serviceEditorDesc.textContent = t.serviceEditorDesc;
-  serviceNameLabel.textContent = t.serviceFieldName;
-  serviceUrlLabel.textContent = t.serviceFieldUrl;
-  serviceInputSelectorLabel.textContent = t.serviceFieldInputSelector;
-  testSelectorBtn.textContent = t.serviceTest;
-  serviceInputTypeLabel.textContent = t.serviceFieldInputType;
-  serviceSubmitSelectorLabel.textContent = t.serviceFieldSubmitSelector;
-  serviceSubmitMethodLabel.textContent = t.serviceFieldSubmitMethod;
-  serviceAdvancedTitle.textContent = t.serviceFieldAdvanced;
-  serviceFallbackSelectorsLabel.textContent = t.serviceFieldFallbackSelectors;
-  serviceAuthSelectorsLabel.textContent = t.serviceFieldAuthSelectors;
-  serviceHostnameAliasesLabel.textContent = t.serviceFieldHostnameAliases;
-  serviceSupportedRoutesLabel.textContent = t.serviceFieldSupportedRoutes;
-  serviceVerifiedAtLabel.textContent = t.serviceFieldVerifiedAt;
-  serviceVerifiedRouteLabel.textContent = t.serviceFieldVerifiedRoute;
-  serviceVerifiedAuthStateLabel.textContent = t.serviceFieldVerifiedAuthState;
-  serviceVerifiedLocaleLabel.textContent = t.serviceFieldVerifiedLocale;
-  serviceVerifiedVersionLabel.textContent = t.serviceFieldVerifiedVersion;
-  const verifiedAuthUnknownOption = serviceVerifiedAuthStateSelect2.querySelector("option[value='']");
-  const verifiedAuthLoggedInOption = serviceVerifiedAuthStateSelect2.querySelector("option[value='logged-in']");
-  const verifiedAuthLoggedOutOption = serviceVerifiedAuthStateSelect2.querySelector("option[value='logged-out']");
-  const verifiedAuthSoftGatedOption = serviceVerifiedAuthStateSelect2.querySelector("option[value='soft-gated']");
-  if (verifiedAuthUnknownOption) {
-    verifiedAuthUnknownOption.textContent = t.serviceVerifiedAuthStateUnknown;
-  }
-  if (verifiedAuthLoggedInOption) {
-    verifiedAuthLoggedInOption.textContent = t.serviceVerifiedAuthStateLoggedIn;
-  }
-  if (verifiedAuthLoggedOutOption) {
-    verifiedAuthLoggedOutOption.textContent = t.serviceVerifiedAuthStateLoggedOut;
-  }
-  if (verifiedAuthSoftGatedOption) {
-    verifiedAuthSoftGatedOption.textContent = t.serviceVerifiedAuthStateSoftGated;
-  }
-  serviceWaitLabel.textContent = t.serviceFieldWait;
-  serviceColorLabel.textContent = t.serviceFieldColor;
-  serviceIconLabel.textContent = t.serviceFieldIcon;
-  serviceEnabledLabel.textContent = t.serviceFieldEnabled;
-  serviceEditorCancel.textContent = t.serviceEditorCancel;
-  serviceEditorSave.textContent = t.serviceEditorSave;
-  resendModalTitle.textContent = t.resendModalTitle;
-  resendModalDesc.textContent = t.resendModalDesc;
-  resendModalCancel.textContent = t.resendModalCancel;
-  resendModalConfirm.textContent = t.resendModalConfirm;
-  importReportModalTitle.textContent = t.importReportTitle;
-  importReportModalDesc.textContent = t.importReportDesc;
-  importReportModalConfirm.textContent = t.importReportClose;
-  tabButtons2.forEach((button) => {
-    const tabId = button.dataset.tab;
-    button.textContent = tabId ? t.tabs[tabId] : "";
-  });
-  applyDynamicPromptPlaceholder();
-  updatePromptCounter();
-}
-function renderSiteCheckboxesPanel() {
-  const previousSelection = new Set(checkedSiteIds());
-  sitesContainer2.innerHTML = "";
-  getEnabledSites().forEach((site) => {
-    const card = document.createElement("article");
-    card.className = "site-card checked";
-    card.dataset.siteId = site.id;
-    card.style.setProperty("--site-color", site.color || "#c24f2e");
-    card.setAttribute("role", "option");
-    card.tabIndex = 0;
-    const mainRow = document.createElement("label");
-    mainRow.className = "site-card-main";
-    mainRow.htmlFor = `site-${site.id}`;
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.id = `site-${site.id}`;
-    checkbox.value = site.id;
-    checkbox.checked = previousSelection.size > 0 ? previousSelection.has(site.id) : true;
-    const siteIcon = document.createElement("span");
-    siteIcon.className = "site-icon";
-    siteIcon.textContent = getSiteIcon(site);
-    const siteName = document.createElement("span");
-    siteName.className = "site-name";
-    siteName.textContent = `${getRuntimeSiteLabel(site.id)}`;
-    const selectorWarning = state.failedSelectors.get(site.id);
-    if (selectorWarning) {
-      card.classList.add("selector-warning");
-      card.title = t.selectorWarningTooltip;
-    }
-    checkbox.addEventListener("change", () => {
-      card.classList.toggle("checked", checkbox.checked);
-      card.setAttribute("aria-selected", String(checkbox.checked));
-      card.setAttribute(
-        "aria-label",
-        `${getRuntimeSiteLabel(site.id)} ${checkbox.checked ? t.ariaSelected : t.ariaNotSelected}`
-      );
-      syncToggleAllLabel();
-      renderTemplateSummary();
-    });
-    card.addEventListener("keydown", (event) => {
-      if (event.key !== " " && event.key !== "Enter") {
-        return;
-      }
-      event.preventDefault();
-      checkbox.checked = !checkbox.checked;
-      checkbox.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-    const siteStatus = document.createElement("span");
-    siteStatus.className = "site-status";
-    siteStatus.setAttribute("aria-hidden", "true");
-    const warningIcon = document.createElement("span");
-    warningIcon.className = "site-warning";
-    warningIcon.setAttribute("aria-hidden", "true");
-    warningIcon.textContent = selectorWarning ? "!" : "";
-    mainRow.append(checkbox, siteIcon, siteName, warningIcon, siteStatus);
-    card.classList.toggle("checked", checkbox.checked);
-    card.setAttribute("aria-selected", String(checkbox.checked));
-    card.setAttribute(
-      "aria-label",
-      `${getRuntimeSiteLabel(site.id)} ${checkbox.checked ? t.ariaSelected : t.ariaNotSelected}`
-    );
-    card.appendChild(mainRow);
-    const openTabs = getOpenSiteTabs(site.id);
-    const selectedTarget = state.siteTargetSelections?.[site.id] ?? getDefaultSiteTargetSelection();
-    if (openTabs.length > 0) {
-      const tabsWrap = document.createElement("div");
-      tabsWrap.className = "site-tabs";
-      const tabsHead = document.createElement("div");
-      tabsHead.className = "site-tabs-head";
-      tabsHead.textContent = t.openTabsTitle(openTabs.length);
-      const tabsList = document.createElement("div");
-      tabsList.className = "site-tabs-list";
-      const radioName = `site-target-${site.id}`;
-      const appendTargetOption = (choiceValue, title, detail, pillText = "") => {
-        const option = document.createElement("label");
-        option.className = "site-tab-option";
-        const radio = document.createElement("input");
-        radio.type = "radio";
-        radio.name = radioName;
-        radio.value = typeof choiceValue === "number" ? `tab:${choiceValue}` : String(choiceValue);
-        radio.checked = choiceValue === selectedTarget;
-        const copy = document.createElement("span");
-        copy.className = "site-tab-copy";
-        const titleNode = document.createElement("span");
-        titleNode.className = "site-tab-title";
-        titleNode.textContent = title;
-        const detailNode = document.createElement("span");
-        detailNode.className = "site-tab-meta";
-        detailNode.textContent = detail;
-        copy.append(titleNode, detailNode);
-        option.append(radio, copy);
-        if (pillText) {
-          const pill = document.createElement("span");
-          pill.className = "site-tab-pill";
-          pill.textContent = pillText;
-          option.appendChild(pill);
-        }
-        radio.addEventListener("change", () => {
-          if (!radio.checked) {
-            return;
-          }
-          state.siteTargetSelections[site.id] = choiceValue;
-          if (!checkbox.checked) {
-            checkbox.checked = true;
-            card.classList.add("checked");
-          }
-          syncToggleAllLabel();
-        });
-        tabsList.appendChild(option);
-      };
-      appendTargetOption(
-        "default",
-        t.openTabsUseDefault,
-        t.openTabsUseDefaultDetail(getDefaultTargetModeLabel())
-      );
-      appendTargetOption(
-        "new",
-        t.openTabsAlwaysNew,
-        t.openTabsAlwaysNewDetail
-      );
-      openTabs.forEach((tab) => {
-        const detailText = previewText(tab.url || tab.title || "", 52);
-        const pillText = tab.active ? t.openTabsActive : tab.status === "loading" ? t.openTabsLoading : t.openTabsReady;
-        appendTargetOption(
-          tab.tabId,
-          previewText(tab.title || tab.url || `${site.name} tab`, 48),
-          detailText,
-          pillText
-        );
-      });
-      tabsWrap.append(tabsHead, tabsList);
-      card.appendChild(tabsWrap);
-    }
-    const overrideToggleRow = document.createElement("div");
-    overrideToggleRow.className = "site-override-toggle-row";
-    const overrideToggle = document.createElement("button");
-    const hasOverride = Boolean(state.sitePromptOverrides?.[site.id]?.trim());
-    overrideToggle.className = `ghost-button small-button site-override-toggle${hasOverride ? " active" : ""}`;
-    overrideToggle.type = "button";
-    overrideToggle.dataset.siteOverrideToggle = site.id;
-    overrideToggle.title = msg("popup_override_prompt_label") || "Custom prompt for this service";
-    overrideToggle.textContent = hasOverride ? "✎ " + (msg("popup_override_active") || "Custom") : "✎";
-    const overrideWrap = document.createElement("div");
-    overrideWrap.className = "site-override-wrap";
-    overrideWrap.hidden = !hasOverride;
-    const overrideTextarea = document.createElement("textarea");
-    overrideTextarea.className = "site-override-textarea";
-    overrideTextarea.rows = 3;
-    overrideTextarea.placeholder = msg("popup_override_prompt_placeholder") || "Override prompt for this service only…";
-    overrideTextarea.value = state.sitePromptOverrides?.[site.id] ?? "";
-    overrideTextarea.dataset.siteOverrideInput = site.id;
-    overrideTextarea.addEventListener("input", () => {
-      state.sitePromptOverrides[site.id] = overrideTextarea.value;
-      const nowActive = Boolean(overrideTextarea.value.trim());
-      overrideToggle.classList.toggle("active", nowActive);
-      overrideToggle.textContent = nowActive ? "✎ " + (msg("popup_override_active") || "Custom") : "✎";
-      renderTemplateSummary();
-    });
-    overrideToggle.addEventListener("click", () => {
-      overrideWrap.hidden = !overrideWrap.hidden;
-      if (!overrideWrap.hidden) {
-        overrideTextarea.focus();
-      }
-    });
-    overrideWrap.appendChild(overrideTextarea);
-    overrideToggleRow.append(overrideToggle);
-    card.append(overrideToggleRow, overrideWrap);
-    sitesContainer2.appendChild(card);
-  });
-  syncToggleAllLabel();
-  setCardStatesFromBroadcast(state.lastBroadcast);
 }
 var popupServicesController = createPopupServicesController({
   refreshStoredData,
@@ -7248,11 +7637,11 @@ async function handleSend() {
     return;
   }
   clearStatus();
-  const prompt = promptInput3.value.trim();
+  const prompt = promptInput5.value.trim();
   if (!prompt) {
     setStatus(t.warnEmpty, "error");
     showAppToast(t.toastPromptEmpty, "warning", 2e3);
-    promptInput3.focus();
+    promptInput5.focus();
     return;
   }
   const selectedSiteIds = checkedSiteIds();
@@ -7277,7 +7666,7 @@ async function handleSend() {
   await openTemplateModalV2(prompt, composerTargets);
 }
 function bindGlobalEvents() {
-  tabButtons2.forEach((button) => {
+  tabButtons3.forEach((button) => {
     button.addEventListener("click", () => {
       const nextTab = button.dataset.tab;
       if (nextTab) {
@@ -7285,8 +7674,8 @@ function bindGlobalEvents() {
       }
     });
   });
-  clearPromptBtn.addEventListener("click", () => {
-    promptInput3.value = "";
+  clearPromptBtn2.addEventListener("click", () => {
+    promptInput5.value = "";
     scheduleComposeDraftSave("");
     state.loadedFavoriteId = "";
     state.loadedFavoriteTitle = "";
@@ -7295,9 +7684,9 @@ function bindGlobalEvents() {
     autoResizePromptInput();
     renderTemplateSummary();
     clearStatus();
-    promptInput3.focus();
+    promptInput5.focus();
   });
-  toggleAllBtn2.addEventListener("click", () => {
+  toggleAllBtn3.addEventListener("click", () => {
     const checkboxes = allCheckboxes();
     const shouldCheckAll = !checkboxes.every((checkbox) => checkbox.checked);
     checkboxes.forEach((checkbox) => {
@@ -7307,7 +7696,7 @@ function bindGlobalEvents() {
     syncToggleAllLabel();
     renderTemplateSummary();
   });
-  saveFavoriteBtn.addEventListener("click", () => {
+  saveFavoriteBtn2.addEventListener("click", () => {
     void openFavoriteModal().catch((error) => {
       console.error("[AI Prompt Broadcaster] Failed to open favorite modal.", error);
       setStatus(t.error(getErrorMessage(error)), "error");
@@ -7316,15 +7705,15 @@ function bindGlobalEvents() {
   cancelSendBtn2.addEventListener("click", () => {
     void cancelCurrentBroadcast();
   });
-  sendBtn2.addEventListener("click", (event) => {
-    triggerRipple(sendBtn2, event);
+  sendBtn3.addEventListener("click", (event) => {
+    triggerRipple(sendBtn3, event);
     void handleSend().catch((error) => {
       console.error("[AI Prompt Broadcaster] Send flow failed.", error);
       setStatus(t.error(getErrorMessage(error)), "error");
     });
   });
-  promptInput3.addEventListener("input", () => {
-    scheduleComposeDraftSave(promptInput3.value);
+  promptInput5.addEventListener("input", () => {
+    scheduleComposeDraftSave(promptInput5.value);
     updatePromptCounter();
     autoResizePromptInput();
     renderTemplateSummary();
@@ -7333,7 +7722,7 @@ function bindGlobalEvents() {
       card.querySelector(".retry-btn")?.remove();
     });
   });
-  promptInput3.addEventListener("keydown", (event) => {
+  promptInput5.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
       void handleSend().catch((error) => {
@@ -7342,7 +7731,7 @@ function bindGlobalEvents() {
       });
     }
   });
-  historySearchInput.addEventListener("input", (event) => {
+  historySearchInput2.addEventListener("input", (event) => {
     const target = getEventInput(event.target);
     if (!target) {
       return;
@@ -7350,7 +7739,7 @@ function bindGlobalEvents() {
     state.historySearch = target.value;
     renderHistoryList();
   });
-  historySortSelect.addEventListener("change", (event) => {
+  historySortSelect2.addEventListener("change", (event) => {
     const target = getEventSelect(event.target);
     if (!target) {
       return;
@@ -7366,7 +7755,7 @@ function bindGlobalEvents() {
       setStatus(t.error(getErrorMessage(error)), "error");
     });
   });
-  favoritesSearchInput.addEventListener("input", (event) => {
+  favoritesSearchInput2.addEventListener("input", (event) => {
     const target = getEventInput(event.target);
     if (!target) {
       return;
@@ -7374,7 +7763,7 @@ function bindGlobalEvents() {
     state.favoritesSearch = target.value;
     renderFavoritesList();
   });
-  favoritesSortSelect.addEventListener("change", (event) => {
+  favoritesSortSelect2.addEventListener("change", (event) => {
     const target = getEventSelect(event.target);
     if (!target) {
       return;
@@ -7393,22 +7782,22 @@ function bindGlobalEvents() {
   document.querySelector("[data-panel='favorites']")?.addEventListener("click", (event) => {
     favoritesController.handleFavoriteFilterBarClick(event);
   });
-  historyList2.addEventListener("click", (event) => {
+  historyList3.addEventListener("click", (event) => {
     historyController.handleHistoryListClick(event);
   });
-  historyList2.addEventListener("contextmenu", (event) => {
+  historyList3.addEventListener("contextmenu", (event) => {
     historyController.handleHistoryListContextMenu(event);
   });
-  favoritesList2.addEventListener("click", (event) => {
+  favoritesList3.addEventListener("click", (event) => {
     favoritesController.handleFavoritesListClick(event);
   });
-  favoritesList2.addEventListener("contextmenu", (event) => {
+  favoritesList3.addEventListener("contextmenu", (event) => {
     favoritesController.handleFavoritesListContextMenu(event);
   });
-  favoritesList2.addEventListener("input", (event) => {
+  favoritesList3.addEventListener("input", (event) => {
     favoritesController.handleFavoritesListInput(event);
   });
-  favoritesList2.addEventListener("blur", (event) => {
+  favoritesList3.addEventListener("blur", (event) => {
     favoritesController.handleFavoritesListBlur(event);
   }, true);
   document.addEventListener("click", (event) => {
@@ -7421,7 +7810,7 @@ function bindGlobalEvents() {
       renderLists();
     }
   });
-  clearHistoryBtn.addEventListener("click", async () => {
+  clearHistoryBtn2.addEventListener("click", async () => {
     showConfirmToast(t.clearHistoryConfirm, async () => {
       try {
         await clearPromptHistory();
@@ -7459,7 +7848,7 @@ function bindGlobalEvents() {
     if (!target) {
       return;
     }
-    waitMultiplierValue.textContent = t.waitMultiplierValue(Number(target.value));
+    waitMultiplierValue2.textContent = t.waitMultiplierValue(Number(target.value));
   });
   waitMultiplierRange.addEventListener("change", (event) => {
     const target = getEventInput(event.target);
@@ -7478,13 +7867,13 @@ function bindGlobalEvents() {
       showAppToast(t.error(getErrorMessage(error)), "error", 3200);
     });
   });
-  openOptionsBtn.addEventListener("click", () => {
+  openOptionsBtn2.addEventListener("click", () => {
     void chrome.runtime.openOptionsPage().catch((error) => {
       console.error("[AI Prompt Broadcaster] Failed to open options page.", error);
       setStatus(t.error(getErrorMessage(error)), "error");
     });
   });
-  exportJsonBtn.addEventListener("click", async () => {
+  exportJsonBtn2.addEventListener("click", async () => {
     try {
       const payload = await exportPromptData();
       const blob = new Blob([JSON.stringify(payload, null, 2)], {
@@ -7502,7 +7891,7 @@ function bindGlobalEvents() {
       setStatus(t.error(getErrorMessage(error)), "error");
     }
   });
-  importJsonBtn.addEventListener("click", () => {
+  importJsonBtn2.addEventListener("click", () => {
     importJsonInput.click();
   });
   importJsonInput.addEventListener("change", async (event) => {
@@ -7525,11 +7914,11 @@ function bindGlobalEvents() {
       importJsonInput.value = "";
     }
   });
-  addServiceBtn.addEventListener("click", () => {
+  addServiceBtn2.addEventListener("click", () => {
     resetServiceEditorForm();
     populateServiceEditor(null);
   });
-  resetSitesBtn.addEventListener("click", () => {
+  resetSitesBtn2.addEventListener("click", () => {
     showConfirmToast(t.resetServicesConfirm, async () => {
       try {
         await resetSiteSettings();
@@ -7575,7 +7964,7 @@ function bindGlobalEvents() {
       setStatus(t.error(getErrorMessage(error)), "error");
     });
   });
-  testSelectorBtn.addEventListener("click", () => {
+  testSelectorBtn2.addEventListener("click", () => {
     void testSelectorOnActiveTab();
   });
   serviceWaitRange2.addEventListener("input", () => {
@@ -7591,53 +7980,15 @@ function bindGlobalEvents() {
       renderServicePermissionPreview();
     }
   });
-  serviceEditorCancel.addEventListener("click", hideServiceEditor);
-  serviceEditorSave.addEventListener("click", () => {
+  serviceEditorCancel2.addEventListener("click", hideServiceEditor);
+  serviceEditorSave2.addEventListener("click", () => {
     void saveServiceEditorDraft();
   });
-  templateModalClose.addEventListener("click", hideTemplateModal);
-  templateModalCancel.addEventListener("click", hideTemplateModal);
-  templateModal.addEventListener("click", (event) => {
-    if (event.target === templateModal) {
-      hideTemplateModal();
-    }
-  });
-  templateFields.addEventListener("input", (event) => {
-    const input = getEventElement(event.target)?.closest("[data-template-input]");
-    const templateInput = input?.dataset.templateInput;
-    if (!input || !templateInput || !state.pendingTemplateSend) {
-      return;
-    }
-    state.pendingTemplateSend.userValues[templateInput] = input.value;
-    renderTemplateModalV2();
-  });
-  templateModalConfirm.addEventListener("click", () => {
-    void confirmTemplateModalSend().catch((error) => {
-      console.error("[AI Prompt Broadcaster] Template modal confirm failed.", error);
-      setTemplateModalError(t.error(getErrorMessage(error)));
-    });
+  bindTemplateModalEvents((message) => {
+    setTemplateModalError(message);
   });
   bindFavoriteEditorEvents();
-  resendModalClose.addEventListener("click", hideResendModal);
-  resendModalCancel.addEventListener("click", hideResendModal);
-  resendModal.addEventListener("click", (event) => {
-    if (event.target === resendModal) {
-      hideResendModal();
-    }
-  });
-  resendModalConfirm.addEventListener("click", () => {
-    void confirmResendModal().catch((error) => {
-      console.error("[AI Prompt Broadcaster] Resend modal confirm failed.", error);
-      setStatus(t.error(getErrorMessage(error)), "error");
-    });
-  });
-  importReportModalClose.addEventListener("click", hideImportReportModal);
-  importReportModalConfirm.addEventListener("click", hideImportReportModal);
-  importReportModal.addEventListener("click", (event) => {
-    if (event.target === importReportModal) {
-      hideImportReportModal();
-    }
-  });
+  bindHistoryModalEvents(getErrorMessage);
   document.addEventListener("keydown", (event) => {
     trapModalFocus(event);
     void handleGlobalShortcut(event).catch((error) => {
@@ -7713,7 +8064,7 @@ async function init() {
     applyLastBroadcastState(await getLastBroadcast(), { silentToast: false });
     await flushPendingSessionToasts();
     if (!getOpenOverlay()) {
-      promptInput3.focus();
+      promptInput5.focus();
     }
   } catch (error) {
     console.error("[AI Prompt Broadcaster] Failed to initialize popup.", error);

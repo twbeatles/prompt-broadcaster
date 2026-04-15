@@ -1,19 +1,12 @@
 import {
   appendPromptHistory,
   getAppSettings,
-  getBroadcastCounter,
   getPromptFavorites,
   getTemplateVariableCache,
   markFavoriteUsed,
   normalizeSiteIdList,
   updateFavoritePrompt,
 } from "../../shared/prompts";
-import {
-  SYSTEM_TEMPLATE_VARIABLES,
-  buildSystemTemplateValues,
-  detectTemplateVariables,
-  renderTemplatePrompt,
-} from "../../shared/template";
 import {
   enqueueUiToast,
   findFavoriteRunDedupedJob,
@@ -33,16 +26,26 @@ import type {
 } from "../../shared/types/models";
 import { NOTIFICATION_ICON_PATH } from "../app/constants";
 import { buildSiteResult } from "../app/injection-helpers";
-
-const SCHEDULED_VARIABLE_BLOCKLIST = new Set([
-  SYSTEM_TEMPLATE_VARIABLES.url,
-  SYSTEM_TEMPLATE_VARIABLES.title,
-  SYSTEM_TEMPLATE_VARIABLES.selection,
-  SYSTEM_TEMPLATE_VARIABLES.clipboard,
-]);
-const FAVORITE_JOB_ALARM_PREFIX = "apb-favorite-job:";
-const FAVORITE_JOB_INITIAL_DELAY_MS = 50;
-let favoriteExecutionChain = Promise.resolve();
+import {
+  createFavoriteExecutionContextTools,
+} from "../favorites/execution-context";
+import {
+  buildFavoriteJobAlarmName,
+  createFavoriteRunJobId,
+  FAVORITE_JOB_ALARM_PREFIX,
+  parseFavoriteJobIdFromAlarmName,
+  queueFavoriteExecution,
+  replaceFavoriteRunJob,
+  scheduleFavoriteJobAlarm,
+} from "../favorites/jobs";
+import {
+  buildScheduleAlarmName,
+  computeNextScheduledAt,
+  parseScheduleAlarmFavoriteId,
+} from "../favorites/schedules";
+import {
+  createFavoriteTemplateResolutionTools,
+} from "../favorites/template-resolution";
 
 interface FavoriteWorkflowDeps {
   getBroadcastTriggerLabel: (trigger: unknown) => FavoriteExecutionTrigger;
@@ -65,63 +68,6 @@ interface FavoriteWorkflowDeps {
   }>;
 }
 
-interface FavoriteExecutionValidationResult {
-  ok: boolean;
-  steps?: ChainStep[];
-  defaults?: Record<string, string>;
-  reason?: string;
-  message?: string;
-}
-
-interface NormalizedPreparedExecutionContext {
-  context: Partial<FavoriteRunExecutionContextSnapshot>;
-  hasClipboardValue: boolean;
-}
-
-function createFavoriteRunJobId() {
-  return typeof crypto?.randomUUID === "function"
-    ? crypto.randomUUID()
-    : `favorite-job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function buildFavoriteJobAlarmName(jobId: string) {
-  const normalizedJobId = typeof jobId === "string" ? jobId.trim() : "";
-  return normalizedJobId ? `${FAVORITE_JOB_ALARM_PREFIX}${normalizedJobId}` : "";
-}
-
-function parseFavoriteJobIdFromAlarmName(alarmName: string) {
-  const normalizedAlarmName = typeof alarmName === "string" ? alarmName.trim() : "";
-  return normalizedAlarmName.startsWith(FAVORITE_JOB_ALARM_PREFIX)
-    ? normalizedAlarmName.slice(FAVORITE_JOB_ALARM_PREFIX.length)
-    : "";
-}
-
-async function scheduleFavoriteJobAlarm(jobId: string, delayMs = FAVORITE_JOB_INITIAL_DELAY_MS) {
-  const alarmName = buildFavoriteJobAlarmName(jobId);
-  if (!alarmName) {
-    return;
-  }
-
-  chrome.alarms.create(alarmName, {
-    when: Date.now() + Math.max(FAVORITE_JOB_INITIAL_DELAY_MS, Math.round(Number(delayMs) || 0)),
-  });
-}
-
-function replaceFavoriteRunJob(
-  jobs: FavoriteRunJobRecord[],
-  nextJob: FavoriteRunJobRecord
-): FavoriteRunJobRecord[] {
-  const nextJobs = jobs.filter((job) => job.jobId !== nextJob.jobId);
-  nextJobs.unshift(nextJob);
-  return nextJobs;
-}
-
-function queueFavoriteExecution<T>(task: () => Promise<T>): Promise<T> {
-  const resultPromise = favoriteExecutionChain.then(task, task);
-  favoriteExecutionChain = resultPromise.then(() => undefined, () => undefined);
-  return resultPromise;
-}
-
 export function createFavoriteWorkflow(deps: FavoriteWorkflowDeps) {
   const {
     getBroadcastTriggerLabel,
@@ -141,58 +87,26 @@ export function createFavoriteWorkflow(deps: FavoriteWorkflowDeps) {
     substitutions: string[] = [],
     fallback = ""
   ) => getI18nMessage(key, substitutions) || fallback;
-
-  const createEmptyExecutionContext = (): FavoriteRunExecutionContextSnapshot => ({
-    tabId: null,
-    windowId: null,
-    url: "",
-    title: "",
-    selection: "",
-    clipboard: "",
+  const {
+    createEmptyExecutionContext,
+    normalizePreparedExecutionContext,
+    mergeExecutionContext,
+    getExecutionTabContextFromSender,
+  } = createFavoriteExecutionContextTools({
+    rememberNormalTab,
+    getPreferredNormalActiveTab,
+    isInjectableTabUrl,
+    getSelectedTextFromTab,
   });
-
-  const hasOwn = (value: unknown, key: string) =>
-    Boolean(value) && typeof value === "object" && !Array.isArray(value) &&
-    Object.prototype.hasOwnProperty.call(value, key);
-
-  function normalizePreparedExecutionContext(value: unknown): NormalizedPreparedExecutionContext {
-    if (!value || typeof value !== "object" || Array.isArray(value)) {
-      return {
-        context: {},
-        hasClipboardValue: false,
-      };
-    }
-
-    const source = value as Record<string, unknown>;
-    const tabId = Number(source.tabId);
-    const windowId = Number(source.windowId);
-
-    return {
-      context: {
-        ...(hasOwn(source, "tabId") ? { tabId: Number.isFinite(tabId) ? tabId : null } : {}),
-        ...(hasOwn(source, "windowId") ? { windowId: Number.isFinite(windowId) ? windowId : null } : {}),
-        ...(hasOwn(source, "url") ? { url: typeof source.url === "string" ? source.url : "" } : {}),
-        ...(hasOwn(source, "title") ? { title: typeof source.title === "string" ? source.title : "" } : {}),
-        ...(hasOwn(source, "selection") ? { selection: typeof source.selection === "string" ? source.selection : "" } : {}),
-        ...(hasOwn(source, "clipboard") ? { clipboard: typeof source.clipboard === "string" ? source.clipboard : "" } : {}),
-      },
-      hasClipboardValue: hasOwn(source, "clipboard"),
-    };
-  }
-
-  function mergeExecutionContext(
-    base: FavoriteRunExecutionContextSnapshot,
-    prepared: Partial<FavoriteRunExecutionContextSnapshot>
-  ): FavoriteRunExecutionContextSnapshot {
-    return {
-      tabId: hasOwn(prepared, "tabId") ? prepared.tabId ?? null : base.tabId,
-      windowId: hasOwn(prepared, "windowId") ? prepared.windowId ?? null : base.windowId,
-      url: hasOwn(prepared, "url") ? prepared.url ?? "" : base.url,
-      title: hasOwn(prepared, "title") ? prepared.title ?? "" : base.title,
-      selection: hasOwn(prepared, "selection") ? prepared.selection ?? "" : base.selection,
-      clipboard: hasOwn(prepared, "clipboard") ? prepared.clipboard ?? "" : base.clipboard,
-    };
-  }
+  const {
+    getFavoriteExecutionSteps,
+    getFavoriteTargetSiteIds,
+    previewFavoriteText,
+    detectFavoriteExecutionBlockers,
+    buildFavoriteStepPrompt,
+  } = createFavoriteTemplateResolutionTools({
+    getWorkflowMessage,
+  });
 
   function getQueuedMessage() {
     return getWorkflowMessage("favorite_run_message_queued", [], "Queued");
@@ -244,241 +158,6 @@ export function createFavoriteWorkflow(deps: FavoriteWorkflowDeps) {
     }
 
     return job.message;
-  }
-
-  function buildScheduleAlarmName(favoriteId: string) {
-    const normalizedFavoriteId =
-      typeof favoriteId === "string" ? favoriteId.trim() : "";
-    return normalizedFavoriteId ? `apb-schedule:${normalizedFavoriteId}` : "";
-  }
-
-  function parseScheduleAlarmFavoriteId(alarmName: string) {
-    const normalizedAlarmName =
-      typeof alarmName === "string" ? alarmName.trim() : "";
-    return normalizedAlarmName.startsWith("apb-schedule:")
-      ? alarmName.slice("apb-schedule:".length)
-      : "";
-  }
-
-  function getFavoriteExecutionSteps(favorite: FavoritePrompt | null | undefined): ChainStep[] {
-    const favoriteTargetSiteIds = normalizeSiteIdList(favorite?.sentTo);
-
-    if (favorite?.mode === "chain" && Array.isArray(favorite.steps) && favorite.steps.length > 0) {
-      return favorite.steps
-        .filter((step) => typeof step?.text === "string" && step.text.trim())
-        .map((step, index) => ({
-          id:
-            typeof step.id === "string" && step.id.trim()
-              ? step.id.trim()
-              : `step-${index + 1}`,
-          text: step.text,
-          delayMs: Math.max(0, Math.round(Number(step.delayMs) || 0)),
-          targetSiteIds: (() => {
-            const stepTargets = normalizeSiteIdList(step.targetSiteIds);
-            return stepTargets.length > 0 ? stepTargets : favoriteTargetSiteIds;
-          })(),
-        }));
-    }
-
-    const text = typeof favorite?.text === "string" ? favorite.text : "";
-    return [{
-      id: `${favorite?.id ?? "favorite"}-single`,
-      text,
-      delayMs: 0,
-      targetSiteIds: favoriteTargetSiteIds,
-    }];
-  }
-
-  function getFavoriteTargetSiteIds(step: ChainStep) {
-    return normalizeSiteIdList(step?.targetSiteIds);
-  }
-
-  function previewFavoriteText(favorite: FavoritePrompt | null | undefined) {
-    const source = favorite?.mode === "chain"
-      ? getFavoriteExecutionSteps(favorite)[0]?.text ?? favorite?.text ?? ""
-      : favorite?.text ?? "";
-    const collapsed = String(source ?? "").replace(/\s+/g, " ").trim();
-    return collapsed.length > 80 ? `${collapsed.slice(0, 80)}...` : collapsed;
-  }
-
-  async function getExecutionTabContextFromSender(
-    sender: chrome.runtime.MessageSender | undefined
-  ): Promise<FavoriteRunExecutionContextSnapshot> {
-    const senderTab = sender?.tab;
-    if (senderTab && Number.isFinite(senderTab.id) && isInjectableTabUrl(senderTab.url ?? "")) {
-      const senderTabId = Number(senderTab.id);
-      await rememberNormalTab(senderTab).catch(() => null);
-      return {
-        tabId: senderTabId,
-        windowId: Number.isFinite(senderTab.windowId) ? senderTab.windowId : null,
-        url: typeof senderTab.url === "string" ? senderTab.url : "",
-        title: typeof senderTab.title === "string" ? senderTab.title : "",
-        selection: await getSelectedTextFromTab(senderTabId).catch(() => ""),
-        clipboard: "",
-      };
-    }
-
-    const activeTab = await getPreferredNormalActiveTab();
-    if (!activeTab?.id || !isInjectableTabUrl(activeTab?.url ?? "")) {
-      return createEmptyExecutionContext();
-    }
-
-    return {
-      tabId: activeTab.id,
-      windowId: Number.isFinite(activeTab.windowId) ? activeTab.windowId : null,
-      url: typeof activeTab.url === "string" ? activeTab.url : "",
-      title: typeof activeTab.title === "string" ? activeTab.title : "",
-      selection: await getSelectedTextFromTab(activeTab.id).catch(() => ""),
-      clipboard: "",
-    };
-  }
-
-  function buildFavoriteUserDefaults(
-    templateVariableCache: Record<string, string>,
-    favorite: FavoritePrompt | null | undefined
-  ) {
-    return {
-      ...(templateVariableCache ?? {}),
-      ...((favorite?.templateDefaults && typeof favorite.templateDefaults === "object")
-        ? favorite.templateDefaults
-        : {}),
-    };
-  }
-
-  function detectFavoriteExecutionBlockers(
-    favorite: FavoritePrompt | null | undefined,
-    executionContext: FavoriteRunExecutionContextSnapshot,
-    templateVariableCache: Record<string, string>,
-    trigger: FavoriteExecutionTrigger,
-    options: {
-      hasPreparedClipboardValue?: boolean;
-    } = {}
-  ): FavoriteExecutionValidationResult {
-    const steps = getFavoriteExecutionSteps(favorite);
-    const defaults = buildFavoriteUserDefaults(templateVariableCache, favorite);
-    const scheduled = trigger === "scheduled";
-    const contextAvailable = Boolean(
-      executionContext.tabId !== null ||
-      executionContext.windowId !== null ||
-      executionContext.url ||
-      executionContext.title ||
-      executionContext.selection
-    );
-
-    for (const step of steps) {
-      const targetSiteIds = getFavoriteTargetSiteIds(step);
-      if (targetSiteIds.length === 0) {
-        return {
-          ok: false,
-          reason: "missing_targets",
-          message: getWorkflowMessage(
-            "favorite_run_error_missing_targets",
-            [],
-            "Favorite does not have any target services.",
-          ),
-        };
-      }
-
-      const variables = detectTemplateVariables(step.text);
-      const missingUserValues = variables
-        .filter((variable) => variable.kind === "user")
-        .map((variable) => variable.name)
-        .filter((name) => !String(defaults[name] ?? "").trim());
-
-      if (missingUserValues.length > 0) {
-        return {
-          ok: false,
-          reason: "missing_template_values",
-          message: getWorkflowMessage(
-            "favorite_run_error_missing_template_values",
-            [missingUserValues.join(", ")],
-            `Missing template values: ${missingUserValues.join(", ")}`,
-          ),
-        };
-      }
-
-      const systemVariables = variables
-        .filter((variable) => variable.kind === "system")
-        .map((variable) => variable.name);
-
-      if (scheduled) {
-        const blocked = systemVariables.filter((name) =>
-          SCHEDULED_VARIABLE_BLOCKLIST.has(name as typeof SYSTEM_TEMPLATE_VARIABLES.url)
-        );
-        if (blocked.length > 0) {
-          return {
-            ok: false,
-            reason: "scheduled_unsupported_variable",
-            message: getWorkflowMessage(
-              "favorite_run_error_scheduled_unsupported_variable",
-              [blocked.join(", ")],
-              `Scheduled favorites cannot resolve ${blocked.join(", ")}.`,
-            ),
-          };
-        }
-      } else {
-        if (
-          systemVariables.includes(SYSTEM_TEMPLATE_VARIABLES.clipboard) &&
-          !options.hasPreparedClipboardValue
-        ) {
-          return {
-            ok: false,
-            reason: "clipboard_unavailable",
-            message: getWorkflowMessage(
-              "favorite_run_error_clipboard_popup_required",
-              [],
-              "Clipboard-backed favorites need popup input.",
-            ),
-          };
-        }
-
-        const needsTabContext = systemVariables.some((name) =>
-          name === SYSTEM_TEMPLATE_VARIABLES.url ||
-          name === SYSTEM_TEMPLATE_VARIABLES.title ||
-          name === SYSTEM_TEMPLATE_VARIABLES.selection
-        );
-
-        if (needsTabContext && !contextAvailable) {
-          return {
-            ok: false,
-            reason: "tab_context_unavailable",
-            message: getWorkflowMessage(
-              "favorite_run_error_tab_context_unavailable",
-              [],
-              "Current tab context is unavailable for this favorite.",
-            ),
-          };
-        }
-      }
-    }
-
-    return {
-      ok: true,
-      steps,
-      defaults,
-    };
-  }
-
-  async function buildFavoriteStepPrompt(
-    step: ChainStep,
-    templateDefaults: Record<string, string>,
-    executionContext: FavoriteRunExecutionContextSnapshot
-  ) {
-    const counter = await getBroadcastCounter().catch(() => 0);
-    const values = {
-      ...(templateDefaults ?? {}),
-      ...buildSystemTemplateValues(new Date(), {
-        extra: {
-          url: executionContext.url ?? "",
-          title: executionContext.title ?? "",
-          selection: executionContext.selection ?? "",
-          counter: String(Number(counter) + 1 || 1),
-        },
-      }),
-      [SYSTEM_TEMPLATE_VARIABLES.clipboard]: executionContext.clipboard ?? "",
-    };
-
-    return renderTemplatePrompt(step.text, values);
   }
 
   async function createFavoriteFailureHistory(
@@ -888,33 +567,6 @@ export function createFavoriteWorkflow(deps: FavoriteWorkflowDeps) {
         await appendFavoriteRunJobFailureHistory(job, stepIndex, errorMessage);
       }
     }
-  }
-
-  function computeNextScheduledAt(repeat: string, scheduledAt: string | null, now = new Date()) {
-    const normalizedRepeat = typeof repeat === "string" ? repeat : "none";
-    if (normalizedRepeat === "none") {
-      return null;
-    }
-
-    const baseDate = Number.isFinite(Date.parse(String(scheduledAt ?? "")))
-      ? new Date(String(scheduledAt))
-      : new Date(now);
-    const nextDate = new Date(baseDate);
-
-    do {
-      if (normalizedRepeat === "daily") {
-        nextDate.setDate(nextDate.getDate() + 1);
-      } else if (normalizedRepeat === "weekly") {
-        nextDate.setDate(nextDate.getDate() + 7);
-      } else {
-        nextDate.setDate(nextDate.getDate() + 1);
-        while (nextDate.getDay() === 0 || nextDate.getDay() === 6) {
-          nextDate.setDate(nextDate.getDate() + 1);
-        }
-      }
-    } while (nextDate.getTime() <= now.getTime());
-
-    return nextDate.toISOString();
   }
 
   async function reconcileFavoriteSchedules() {
