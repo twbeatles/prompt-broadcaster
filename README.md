@@ -284,11 +284,11 @@ For build and packaging steps, see [docs/build-guide.md](docs/build-guide.md). F
 - **Favorites tag, folder, and pin system** — categorize saved prompts with tags and folders; pin important ones to the top
 - **Favorite duplication and sort controls** — duplicate saved prompts and sort by recent use, usage count, title, or creation date
 - **Custom service ordering** — reorder service cards from the options `Services` section with `Move up` / `Move down`, and reuse that order across popup, favorite editor, and options
-- **History resend selection and bulk delete tools** — choose a subset of the original services when replaying history and delete selected or aged entries from options
+- **History resend selection and bulk delete tools** — choose a subset of the original services when replaying history, with stale specific-tab targets disabled until you reselect them, and delete selected or aged entries from options
 - **Expanded dashboard analytics** — activity heatmap, per-service success trends, top failure reasons, and strategy summary on the options dashboard
 - **Scheduled-run result summary** — the options `Schedules` section separates the last scheduled run from manual runs and surfaces its status plus representative failure detail
 - **Per-service prompt overrides** — assign a different prompt to individual service cards without changing the main prompt
-- JSON export/import for history, favorites, template cache, settings, and service configuration, including `broadcastCounter`, history resend snapshots, structured selector verification metadata, `supportedRoutes`, and export `version: 8`
+- JSON export/import for history, favorites, template cache, settings, and service configuration, including `broadcastCounter`, history resend snapshots, structured selector verification metadata, `supportedRoutes`, and export `version: 8`; custom-site host permissions are requested in one batch before commit and denied origins abort the import before local data changes
 - History keeps requested, submitted, failed, and per-site snapshot prompt data so partial broadcasts can be replayed accurately
 - **Detailed import reports and structured result codes** — popup/options show rejected services, rewritten ids, built-in adjustments, service-level result codes, and selector verification metadata
 - **Extended template variables** — 9+ system variables including `{{url}}`, `{{title}}`, `{{selection}}`, `{{counter}}`, and `{{random}}`
@@ -372,6 +372,7 @@ GIF placeholder: `docs/assets/usage-demo.gif`
 - The popup can list currently open AI tabs in the active browser window and let you target a specific tab per service.
 - A reusable-tab setting is available in both the popup settings tab and the options page.
 - The default routing mode reuses a matching open AI tab before opening a new one when `reuseExistingTabs` is enabled.
+- Specific-tab targets are strict. If the selected tab disappears or no longer qualifies for reuse, the send/replay fails for that site instead of silently falling back to a different tab or a new tab.
 - Reuse candidates must still pass a lightweight preflight: matching service host, non-auth/non-settings route, visible editable prompt surface, and submit surface availability when the service requires click-submit.
 - Cancelling a broadcast closes only tabs opened by the current broadcast and leaves reused conversation tabs untouched.
 
@@ -410,8 +411,10 @@ Template prompts support both user-defined variables and built-in system variabl
 - Chain execution is sequential. If any step finishes with a result other than `submitted`, the remaining steps are skipped.
 - Favorites can store one-time or repeating schedules (`daily`, `weekday`, `weekly`) and the options page exposes a dedicated `Schedules` section for toggle, `Run now`, and `Edit in popup` actions.
 - Scheduled execution auto-resolves only `{{date}}`, `{{time}}`, `{{weekday}}`, `{{random}}`, and `{{counter}}`. Favorites that need `{{url}}`, `{{title}}`, `{{selection}}`, or `{{clipboard}}` are skipped and recorded as failed schedule runs.
+- Scheduled chain validation now records the actual failing step text and `chainStepIndex`, so schedule summaries no longer collapse later-step failures into step 1.
 - Popup-triggered favorite runs pre-resolve `{{url}}`, `{{title}}`, `{{selection}}`, and `{{clipboard}}` before handing off to the background worker. Popup fallbacks from quick palette or options retry automatically once that context is available.
-- Favorite runs now queue as background jobs immediately, dedupe only overlapping `queued/running` runs for the same favorite, and expose a light `queued/running/done/failed` status in popup and options.
+- Favorite runs now queue as background jobs immediately, dedupe only overlapping `queued/running` runs for the same favorite, and expose a light `queued/running/done/failed/skipped` status in popup and options.
+- Scheduled overlaps do not write duplicate prompt history. They append a terminal `skipped` favorite job while the live `queued/running` badge continues to reflect the active run.
 - The options `Schedules` section now separates the last **scheduled** execution from manual runs and shows its timestamp, status, and representative failure detail when present.
 - The quick palette uses a shadow-root overlay on the current page. Its search behavior now matches popup favorite search across title, body text, folder, tags, and `#tag` queries. Fully resolvable favorites run immediately; favorites that still need popup input fall back through a popup handoff intent.
 
@@ -425,7 +428,7 @@ Template prompts support both user-defined variables and built-in system variabl
 - `Esc` closes the currently open modal or menu.
 - `Ctrl/Cmd+A` toggles all services only when focus is outside a text field; normal select-all behavior is preserved inside inputs.
 - History and favorites support keyboard roving focus and have popup sort controls for display order.
-- Reopening the popup restores the unsent compose draft first; one-shot popup handoff prompts override the draft only once and are then consumed.
+- Reopening the popup restores the one-shot `popupPromptIntent` first, then the unsent compose draft, then `lastSentPrompt` as a final fallback.
 
 ### Per-Service Prompt Overrides
 Expand a service card in the compose view and enable the **Custom prompt for this service** toggle to enter a prompt that will be used exclusively for that service. The main prompt is used when the override is left blank or the toggle is off.
@@ -453,6 +456,7 @@ Each stored service result now uses a structured code rather than a free-form st
 - JSON export always writes `version: 8`.
 - Import applies staged migrations from older payloads (`v1 -> v2 -> v3 -> v4 -> v5 -> v6 -> v7 -> v8`) before normalizing settings, favorites, and history records.
 - `v8` preserves structured selector verification metadata (`verifiedAt`, `verifiedRoute`, `verifiedAuthState`, `verifiedLocale`, `verifiedVersion`) and `supportedRoutes`. Legacy `lastVerified` remains for compatibility and is derived from `verifiedAt` when available.
+- Import requests all required custom-site host permissions in one preflight batch, aborts before commit if any requested origin stays denied, and applies the local data update through one `chrome.storage.local.set` call. Optional permission cleanup after commit is best-effort only.
 - Both popup and options show a detailed import report modal listing accepted services, rejected services, denied origins, rewritten ids, alias validation errors, and built-in override adjustments.
 
 ### Custom Service Advanced Settings
@@ -560,11 +564,13 @@ The smoke script verifies:
 - textarea-first Grok selector preference and soft-gated auth coexistence
 - custom service permission cleanup for shared and unused origins
 - JSON import repair for alias-based custom service permissions and invalid built-in click-submit overrides
+- batched custom-site permission preflight and atomic local import commit behavior
 - `broadcastCounter` export/import/reset semantics
 - import migration to export `version: 8` defaults
 - history replay snapshot fallback and resend routing safety
-- draft-first popup restore and popup handoff consumption
+- popup restore precedence (`popupPromptIntent -> composeDraftPrompt -> lastSentPrompt`) and popup handoff consumption
 - favorite background job dedupe helpers and runtime-state cleanup
+- scheduled overlap skip-job visibility and active-job precedence
 - quick palette filtering and execution handoff
 - favorite chain/schedule field normalization for legacy imports
 - favorites search across title, text, tags, folders, and `#tag`

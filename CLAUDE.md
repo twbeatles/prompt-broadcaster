@@ -113,13 +113,14 @@ Favorite runs use the same popup-side context preparation for `{{url}}`, `{{titl
 - Popup can query the current normal browser window for open AI tabs mapped to configured services.
 - Service cards can target a specific tab, force a new tab, or follow the default reuse policy.
 - Default reuse behavior is stored in `appSettings.reuseExistingTabs` and can be changed from the popup or options page.
+- Specific-tab routing is strict. If the selected tab disappears or fails reusable-tab preflight, background records `tab_closed` for that site instead of silently downgrading to default/new-tab routing.
 - Matching hostname alone is not enough for reuse. Background also preflights the tab for non-auth/non-settings route, `supportedRoutes` allowlist match, visible editable prompt surface, and required submit controls.
 - `SelectorCheckMode` now supports `input-and-conditional-submit` for services whose submit button appears only after text entry. Reusable-tab preflight skips the empty-state submit check for that mode, while actual injection still waits through `submitPrompt()`.
 - Cancelling a broadcast only closes tabs opened for that broadcast. Reused tabs are preserved.
 
 ### Custom service permissions
 - Runtime sites expose `permissionPatterns` derived from `url + hostnameAliases`.
-- Popup save, JSON import, and background permission checks all require the full origin set for a custom service.
+- Popup send, popup save, and JSON import all batch-request the full origin set for each custom service and treat denied origins as a hard stop for that operation.
 - Deleting custom services, resetting service settings, or replacing imported custom services should remove unused optional host permissions.
 
 ### Import/export and counter semantics
@@ -129,16 +130,17 @@ Favorite runs use the same popup-side context preparation for `{{url}}`, `{{titl
 - `appSettings.historyLimit` is now a default visible history cap only. Lower values hide older rows in popup/options without deleting stored history, and export/import still operate on the full stored history.
 - History and last-broadcast records store structured `siteResults` (`SiteInjectionResult`) instead of plain status strings.
 - History and last-broadcast records also store `targetSnapshots` so retries and history replay reuse the original per-site resolved prompt and routing mode.
+- History replay should disable stale specific-tab snapshots in the resend modal instead of silently falling back to default routing.
 - Favorites also keep `mode`, `steps`, `scheduleEnabled`, `scheduledAt`, `scheduleRepeat`, `usageCount`, and `lastUsedAt`, and `appSettings` includes `waitMsMultiplier`, `historySort`, and `favoriteSort`.
 - `appSettings.siteOrder` stores the persisted runtime-site ordering used by popup, favorite editor, and options services.
-- Favorite runs now queue as background jobs, dedupe only overlapping `queued/running` executions per favorite, and surface light progress through `favoriteRunJobs` in session state.
+- Favorite runs now queue as background jobs, dedupe only overlapping `queued/running` executions per favorite, surface light progress through `favoriteRunJobs` in session state, and record scheduled overlaps as terminal `skipped` jobs without creating duplicate prompt history.
 - History rows can also store `originFavoriteId`, `chainRunId`, `chainStepIndex`, `chainStepCount`, and `trigger`.
 - Reset-data flows should clear `broadcastCounter`, `strategyStats`, history, favorites, template cache, prompt draft/sent state, site data, and session runtime state such as `pendingBroadcasts`, `pendingInjections`, `pendingSelectorChecks`, `pendingUiToasts`, `lastBroadcast`, `popupPromptIntent`, and `favoriteRunJobs`.
 - CSV exports are built through `src/shared/export/csv.ts`, which quotes cells and prefixes formula-leading values with `'`.
 
 ### Background state consistency
 - Pending injections, pending broadcasts, pending selector checks, and selector alerts are mirrored in background memory and written through a serialized mutation chain.
-- History append, last-broadcast sync, counter updates, and completion notifications should happen off the same finalized broadcast state, not ad-hoc read-modify-write calls from multiple surfaces.
+- Completed broadcast side effects must be isolated best-effort steps. `lastBroadcast` sync, favorite completion sync, and waiter resolution should still happen even if history append, focus restore, or notifications fail.
 - Favorite prompt rendering plus queue submission is serialized so concurrent `{{counter}}` favorite runs do not reuse the same counter value.
 
 ### Runtime messaging trust boundary
@@ -157,8 +159,8 @@ When `chrome.action.openPopup()` fails because Chrome has no active browser wind
 - Single favorites can now edit prompt body text directly inside the favorite editor without switching back to the composer first.
 - Chain favorites stop immediately when any step result is not `submitted`.
 - Scheduled favorites are reconciled through `chrome.alarms`, and options exposes a dedicated `Schedules` section.
-- The options `Schedules` section also separates the last scheduled execution from manual runs and surfaces its timestamp, status, and representative failure detail.
-- Popup composer restore is draft-first: unsent draft is restored before any last-sent prompt, and popup handoff is consumed after one use.
+- The options `Schedules` section also separates the last scheduled execution from manual runs and surfaces its timestamp, status, and representative failure detail, including the actual failing chain step when validation stops a later step.
+- Popup composer restore is `popupPromptIntent -> composeDraftPrompt -> lastSentPrompt`, and popup handoff is consumed after one use.
 - Quick palette uses `Alt+Shift+F`, matches popup favorite search across title/text/folder/tags/`#tag`, and falls back to popup handoff when additional inputs are required.
 - Options `Services` supports accessible `Move up` / `Move down` ordering controls, persisted through `appSettings.siteOrder`.
 - Options `Dashboard` now renders a weekday/hour heatmap, per-service success trends, top failure reasons, and a strategy summary in addition to the original overview cards.

@@ -3,6 +3,7 @@ export function createChromeMock({ grantedOrigins = [], requestGrantsMissingOrig
   const sessionStorage = {};
   const alarms = {};
   const granted = new Set(grantedOrigins);
+  const permissionRequests = [];
 
   function createStorageArea(store) {
     return {
@@ -51,6 +52,9 @@ export function createChromeMock({ grantedOrigins = [], requestGrantsMissingOrig
     __getAlarms() {
       return { ...alarms };
     },
+    __getPermissionRequests() {
+      return permissionRequests.map((origins) => [...origins]);
+    },
     storage: {
       local: createStorageArea(localStorage),
       session: createStorageArea(sessionStorage),
@@ -62,6 +66,7 @@ export function createChromeMock({ grantedOrigins = [], requestGrantsMissingOrig
       },
       async request(permission) {
         const origins = Array.isArray(permission?.origins) ? permission.origins : [];
+        permissionRequests.push([...origins]);
         if (!requestGrantsMissingOrigins) {
           return false;
         }
@@ -73,6 +78,20 @@ export function createChromeMock({ grantedOrigins = [], requestGrantsMissingOrig
         const origins = Array.isArray(permission?.origins) ? permission.origins : [];
         origins.forEach((origin) => granted.delete(origin));
         return true;
+      },
+    },
+    notifications: {
+      async create() {
+        return "notification-id";
+      },
+      onClicked: {
+        addListener() {},
+      },
+    },
+    runtime: {
+      getURL(path = "") {
+        const normalizedPath = String(path ?? "").replace(/^\/+/, "");
+        return `chrome-extension://test/${normalizedPath}`;
       },
     },
     i18n: {

@@ -2,11 +2,12 @@ import {
   buildBroadcastTargetMessageFromSnapshot,
   ensureBroadcastTargetSnapshots,
 } from "../../shared/broadcast/target-snapshots";
+import type { BroadcastTargetSnapshot } from "../../shared/types/models";
 import type { OpenSiteTab, PromptHistoryItem, RuntimeSite } from "../../shared/types/models";
 import type { PopupOverlayController, PopupState } from "../../shared/types/popup";
 import { popupDom } from "../app/dom";
 import { escapeAttribute, escapeHtml } from "../app/helpers";
-import { t } from "../app/i18n";
+import { msg, t } from "../app/i18n";
 import { buildImportReportMarkup, getHistorySelectedSiteIds } from "../app/list-markup";
 import { state } from "../app/state";
 
@@ -37,7 +38,7 @@ interface PopupHistoryModalsDeps {
       id: string;
       tabId?: number;
       reuseExistingTab?: boolean;
-      target?: string;
+      target?: "new" | "tab";
       promptOverride?: string;
       resolvedPrompt?: string;
     }>,
@@ -47,8 +48,43 @@ interface PopupHistoryModalsDeps {
 }
 
 export function createPopupHistoryModals(deps: PopupHistoryModalsDeps) {
+  function getUnavailableReason(snapshot: BroadcastTargetSnapshot, site: RuntimeSite | undefined): string {
+    if (!site) {
+      return t.resendSiteUnavailable;
+    }
+
+    if (snapshot.targetMode === "tab") {
+      return msg("popup_resend_selected_tab_unavailable") || "Selected tab unavailable";
+    }
+
+    return t.resendSiteUnavailable;
+  }
+
+  function isSnapshotAvailable(
+    snapshot: BroadcastTargetSnapshot,
+    site: RuntimeSite | undefined,
+    availableSiteIds: Set<string>,
+  ): boolean {
+    if (!site || !availableSiteIds.has(snapshot.siteId)) {
+      return false;
+    }
+
+    if (snapshot.targetMode !== "tab") {
+      return true;
+    }
+
+    if (!snapshot.targetTabId) {
+      return false;
+    }
+
+    return deps.openSiteTabs().some(
+      (tab) => tab.siteId === snapshot.siteId && Number(tab.tabId) === Number(snapshot.targetTabId),
+    );
+  }
+
   function hideResendModal() {
     state.pendingResendHistory = null;
+    resendModalConfirm.disabled = false;
     deps.closeOverlay(resendModal);
   }
 
@@ -59,19 +95,36 @@ export function createPopupHistoryModals(deps: PopupHistoryModalsDeps) {
     resendModalCancel.textContent = t.resendModalCancel;
     resendModalConfirm.textContent = t.resendModalConfirm;
 
+    const snapshots = ensureBroadcastTargetSnapshots(
+      historyItem.targetSnapshots,
+      historyItem.requestedSiteIds,
+      historyItem.text,
+    );
     const requestedSiteIds = getHistorySelectedSiteIds(historyItem);
     const availableSiteIds = new Set(deps.getEnabledSites().map((site) => site.id));
+    let selectableCount = 0;
 
     resendModalSites.innerHTML = requestedSiteIds.map((siteId) => {
       const site = deps.runtimeSites().find((entry) => entry.id === siteId);
-      const disabled = !availableSiteIds.has(siteId);
+      const snapshot = snapshots.find((entry) => entry.siteId === siteId) ?? null;
+      const disabled = !snapshot || !isSnapshotAvailable(snapshot, site, availableSiteIds);
+      const reason = snapshot ? getUnavailableReason(snapshot, site) : t.resendSiteUnavailable;
+      if (!disabled) {
+        selectableCount += 1;
+      }
+
       return `
         <label class="checkbox-row">
           <input type="checkbox" value="${escapeAttribute(siteId)}" data-resend-site="${escapeAttribute(siteId)}" ${disabled ? "disabled" : "checked"} />
-          <span>${escapeHtml(site?.name ?? siteId)}${disabled ? ` (${escapeHtml(t.resendSiteUnavailable)})` : ""}</span>
+          <span>${escapeHtml(site?.name ?? siteId)}${disabled ? ` (${escapeHtml(reason)})` : ""}</span>
         </label>
       `;
     }).join("");
+
+    resendModalConfirm.disabled = selectableCount === 0;
+    resendModalDesc.textContent = selectableCount === 0
+      ? `${t.resendModalDesc} ${msg("popup_resend_no_available_targets") || "No previously selected targets are currently available."}`
+      : t.resendModalDesc;
 
     deps.openOverlay(
       resendModal,
@@ -92,7 +145,10 @@ export function createPopupHistoryModals(deps: PopupHistoryModalsDeps) {
       .filter(Boolean);
 
     if (selectedSiteIds.length === 0) {
-      deps.setStatus(t.warnNoSite, "error");
+      deps.setStatus(
+        msg("popup_resend_no_available_targets") || "No previously selected targets are currently available.",
+        "error",
+      );
       return;
     }
 
@@ -108,7 +164,7 @@ export function createPopupHistoryModals(deps: PopupHistoryModalsDeps) {
         id: string;
         tabId?: number;
         reuseExistingTab?: boolean;
-        target?: string;
+        target?: "new" | "tab";
         promptOverride?: string;
         resolvedPrompt?: string;
       } => typeof target.id === "string" && target.id.trim().length > 0);

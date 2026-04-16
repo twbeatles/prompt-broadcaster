@@ -5,7 +5,10 @@ import {
   updateFavoriteMeta,
   updateFavoriteTitle,
 } from "../../shared/prompts";
-import { getLatestFavoriteRunJobByFavoriteId } from "../../shared/runtime-state";
+import {
+  getActiveFavoriteRunJobByFavoriteId,
+  getLatestFavoriteRunJobByFavoriteId,
+} from "../../shared/runtime-state";
 import type { FavoritePrompt } from "../../shared/types/models";
 import { popupDom } from "../app/dom";
 import { buildEmptyState, buildFavoriteItemMarkup } from "../app/list-markup";
@@ -115,12 +118,14 @@ export function createFavoritesController(deps: FavoritesControllerDeps) {
     }
 
     favoritesList.innerHTML = items
-      .map((item) => buildFavoriteItemMarkup(item, {
-        openMenuKey: state.openMenuKey,
-        runtimeSites: state.runtimeSites,
-        latestJob: getLatestFavoriteRunJobByFavoriteId(state.favoriteJobs, item.id),
-      }))
-      .join("");
+        .map((item) => buildFavoriteItemMarkup(item, {
+          openMenuKey: state.openMenuKey,
+          runtimeSites: state.runtimeSites,
+          latestJob:
+            getActiveFavoriteRunJobByFavoriteId(state.favoriteJobs, item.id)
+            ?? getLatestFavoriteRunJobByFavoriteId(state.favoriteJobs, item.id),
+        }))
+        .join("");
   }
 
   function setFavoriteTitleInState(favoriteId: string, title: string): void {

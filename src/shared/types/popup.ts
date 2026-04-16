@@ -31,7 +31,7 @@ export interface PopupTemplateTarget {
   id: string;
   tabId?: number;
   reuseExistingTab?: boolean;
-  target?: string;
+  target?: "new" | "tab";
   promptTemplate?: string;
   promptOverride?: string;
   resolvedPrompt?: string;

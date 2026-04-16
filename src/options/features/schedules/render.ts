@@ -1,5 +1,8 @@
 // @ts-nocheck
-import { getLatestFavoriteRunJobByFavoriteId } from "../../../shared/runtime-state";
+import {
+  getActiveFavoriteRunJobByFavoriteId,
+  getLatestFavoriteRunJobByFavoriteId,
+} from "../../../shared/runtime-state";
 import { escapeHTML } from "../../../shared/security";
 import { optionsDom } from "../../app/dom";
 import { t } from "../../app/i18n";
@@ -53,7 +56,9 @@ function buildScheduledRunDetailMarkup(summary) {
 }
 
 function buildFavoriteJobStatusMarkup(favoriteId) {
-  const job = getLatestFavoriteRunJobByFavoriteId(state.favoriteJobs, favoriteId);
+  const job =
+    getActiveFavoriteRunJobByFavoriteId(state.favoriteJobs, favoriteId)
+    || getLatestFavoriteRunJobByFavoriteId(state.favoriteJobs, favoriteId);
   if (!job?.jobId) {
     return "";
   }

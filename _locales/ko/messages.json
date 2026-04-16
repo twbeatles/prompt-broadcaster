@@ -280,6 +280,9 @@
   "favorite_run_message_deduped": {
     "message": "같은 즐겨찾기 실행이 이미 대기 중입니다."
   },
+  "favorite_run_message_skipped_active": {
+    "message": "다른 실행이 진행 중이라 이번 실행을 건너뛰었습니다."
+  },
   "favorite_run_message_step_progress": {
     "message": "$CURRENT$ / $TOTAL$ 단계",
     "placeholders": {
@@ -664,6 +667,17 @@
     "placeholders": {
       "service": {
         "content": "$1"
+      }
+    }
+  },
+  "toast_selected_tab_unavailable": {
+    "message": "$SERVICE$에서 선택한 탭을 사용할 수 없습니다.",
+    "placeholders": {
+      "service": {
+        "content": "$1"
+      },
+      "tab": {
+        "content": "$2"
       }
     }
   },
@@ -1366,6 +1380,12 @@
   },
   "popup_resend_site_unavailable": {
     "message": "사용 불가"
+  },
+  "popup_resend_selected_tab_unavailable": {
+    "message": "선택한 탭을 사용할 수 없음"
+  },
+  "popup_resend_no_available_targets": {
+    "message": "이전에 선택했던 대상 중 현재 다시 보낼 수 있는 항목이 없습니다."
   },
   "popup_import_report_title": {
     "message": "가져오기 상세"

@@ -345,11 +345,6 @@ async function getBroadcastCounter() {
     return 0;
   }
 }
-async function setBroadcastCounter(value) {
-  const normalized = normalizeBroadcastCounter(value);
-  await writeLocal(LOCAL_STORAGE_KEYS.broadcastCounter, normalized);
-  return normalized;
-}
 
 // src/shared/prompts/favorites-store.ts
 function buildFavoriteEntry(entry) {
@@ -613,7 +608,11 @@ function buildBroadcastTargetMessageFromSnapshot(snapshot, openTabs = []) {
     payload.target = "new";
     return payload;
   }
-  if (snapshot.targetMode === "tab" && snapshot.targetTabId) {
+  if (snapshot.targetMode === "tab") {
+    payload.target = "tab";
+    if (snapshot.targetTabId) {
+      payload.tabId = snapshot.targetTabId;
+    }
     const matchingTab = openTabs.find(
       (tab) => tab.siteId === siteId && Number(tab.tabId) === Number(snapshot.targetTabId)
     );
@@ -1413,6 +1412,74 @@ function validateHostnameAliases(value) {
   };
 }
 
+// src/shared/sites/permissions.ts
+function normalizeOriginPatterns(originPatterns) {
+  return Array.from(
+    new Set(
+      (Array.isArray(originPatterns) ? originPatterns : []).filter((pattern) => typeof pattern === "string" && pattern.trim().length > 0).map((pattern) => pattern.trim())
+    )
+  );
+}
+async function containsOriginPermission(originPattern) {
+  try {
+    if (!chrome.permissions?.contains || !originPattern) {
+      return false;
+    }
+    return await chrome.permissions.contains({
+      origins: [originPattern]
+    });
+  } catch (_error) {
+    return false;
+  }
+}
+async function findMissingOriginPermissions(originPatterns = []) {
+  const normalizedOriginPatterns = normalizeOriginPatterns(originPatterns);
+  const missingOrigins = [];
+  for (const originPattern of normalizedOriginPatterns) {
+    if (!await containsOriginPermission(originPattern)) {
+      missingOrigins.push(originPattern);
+    }
+  }
+  return missingOrigins;
+}
+async function requestOriginPermissions(originPatterns = []) {
+  const requestedOrigins = normalizeOriginPatterns(originPatterns);
+  if (requestedOrigins.length === 0) {
+    return {
+      granted: true,
+      requestedOrigins: [],
+      deniedOrigins: []
+    };
+  }
+  const missingBeforeRequest = await findMissingOriginPermissions(requestedOrigins);
+  if (missingBeforeRequest.length > 0) {
+    try {
+      const granted = chrome.permissions?.request ? await chrome.permissions.request({ origins: missingBeforeRequest }) : false;
+      if (!granted) {
+        const deniedOrigins2 = await findMissingOriginPermissions(requestedOrigins);
+        return {
+          granted: deniedOrigins2.length === 0,
+          requestedOrigins,
+          deniedOrigins: deniedOrigins2
+        };
+      }
+    } catch (_error) {
+      const deniedOrigins2 = await findMissingOriginPermissions(requestedOrigins);
+      return {
+        granted: deniedOrigins2.length === 0,
+        requestedOrigins,
+        deniedOrigins: deniedOrigins2
+      };
+    }
+  }
+  const deniedOrigins = await findMissingOriginPermissions(requestedOrigins);
+  return {
+    granted: deniedOrigins.length === 0,
+    requestedOrigins,
+    deniedOrigins
+  };
+}
+
 // src/shared/security.ts
 function isValidURL(value) {
   try {
@@ -1870,68 +1937,61 @@ var CURRENT_EXPORT_VERSION = 8;
 function asImportPayload(value) {
   return safeObject(value);
 }
-async function containsOriginPermission(originPattern) {
-  try {
-    if (!chrome.permissions?.contains || !originPattern) {
-      return false;
+function createImportSummary(targetVersion, sourceVersion, importedCustomSites, customSiteImport, builtInStateImport, builtInOverrideImport) {
+  return {
+    version: targetVersion,
+    migratedFromVersion: sourceVersion,
+    customSites: {
+      importedCount: importedCustomSites.length,
+      acceptedIds: customSiteImport.acceptedSites.map((site) => site.id),
+      acceptedNames: customSiteImport.acceptedSites.map((site) => site.name),
+      rejected: customSiteImport.rejectedSites,
+      rewrittenIds: customSiteImport.rewrittenIds,
+      deniedOrigins: customSiteImport.deniedOrigins
+    },
+    builtInSiteStates: {
+      appliedIds: builtInStateImport.appliedIds,
+      droppedIds: builtInStateImport.droppedIds
+    },
+    builtInSiteOverrides: {
+      appliedIds: builtInOverrideImport.appliedIds,
+      droppedIds: builtInOverrideImport.droppedIds,
+      adjustedIds: builtInOverrideImport.adjustedIds
     }
-    return await chrome.permissions.contains({
-      origins: [originPattern]
-    });
-  } catch (_error) {
-    return false;
-  }
+  };
 }
-async function findMissingOriginPermissions(originPatterns = []) {
-  const missingOrigins = [];
-  for (const originPattern of Array.isArray(originPatterns) ? originPatterns : []) {
-    if (!originPattern) {
-      continue;
-    }
-    if (!await containsOriginPermission(originPattern)) {
-      missingOrigins.push(originPattern);
-    }
-  }
-  return missingOrigins;
+function createImportPermissionDeniedError(importSummary) {
+  const error = new Error("Import failed.");
+  return Object.assign(error, {
+    code: "import_permission_denied",
+    importSummary
+  });
 }
 async function repairImportedCustomSitesWithPermissions(rawSites) {
   const repaired = repairImportedCustomSites(rawSites);
   const requestedOrigins = /* @__PURE__ */ new Set();
   const deniedOrigins = /* @__PURE__ */ new Set();
-  const blockedOrigins = /* @__PURE__ */ new Set();
   const acceptedSites = [];
   const permissionDeniedSites = [];
+  const requestedPermissionPatterns = Array.from(
+    new Set(
+      repaired.repairedSites.flatMap(
+        (site) => Array.isArray(site?.permissionPatterns) ? site.permissionPatterns.filter((pattern) => typeof pattern === "string" && pattern.trim()) : []
+      )
+    )
+  );
+  const permissionRequestResult = await requestOriginPermissions(requestedPermissionPatterns);
+  permissionRequestResult.requestedOrigins.forEach((origin) => requestedOrigins.add(origin));
+  permissionRequestResult.deniedOrigins.forEach((origin) => deniedOrigins.add(origin));
   for (const site of repaired.repairedSites) {
     const permissionPatterns = Array.isArray(site?.permissionPatterns) ? site.permissionPatterns.filter((pattern) => typeof pattern === "string" && pattern.trim()) : [];
     permissionPatterns.forEach((origin) => requestedOrigins.add(origin));
-    const blockedForSite = permissionPatterns.filter((origin) => blockedOrigins.has(origin));
-    if (blockedForSite.length > 0) {
-      blockedForSite.forEach((origin) => deniedOrigins.add(origin));
-      permissionDeniedSites.push({
-        id: safeText2(site.id) || void 0,
-        name: safeText2(site.name) || "Custom AI",
-        reason: "permission_denied",
-        origins: blockedForSite
-      });
-      continue;
-    }
     const missingOrigins = await findMissingOriginPermissions(permissionPatterns);
     if (missingOrigins.length === 0) {
       acceptedSites.push(site);
       continue;
     }
-    try {
-      const granted = chrome.permissions?.request ? await chrome.permissions.request({ origins: missingOrigins }) : false;
-      if (granted) {
-        acceptedSites.push(site);
-        continue;
-      }
-    } catch (_error) {
-    }
-    missingOrigins.forEach((origin) => {
-      blockedOrigins.add(origin);
-      deniedOrigins.add(origin);
-    });
+    missingOrigins.forEach((origin) => deniedOrigins.add(origin));
     permissionDeniedSites.push({
       id: safeText2(site.id) || void 0,
       name: safeText2(site.name) || "Custom AI",
@@ -2112,17 +2172,39 @@ async function importPromptData(jsonString) {
   const customSiteImport = await repairImportedCustomSitesWithPermissions(importedCustomSites);
   const builtInStateImport = repairImportedBuiltInStates(importedBuiltInSiteStates);
   const builtInOverrideImport = repairImportedBuiltInOverrides(importedBuiltInSiteOverrides);
-  await setAppSettings(importedSettings);
-  await Promise.all([
-    setBroadcastCounter(importedBroadcastCounter),
-    setPromptFavorites(normalizedFavorites),
-    setTemplateVariableCache(templateVariableCache),
-    setCustomSites(customSiteImport.acceptedSites),
-    setBuiltInSiteStates(builtInStateImport.normalized),
-    setBuiltInSiteOverrides(builtInOverrideImport.normalized)
-  ]);
-  await cleanupUnusedCustomSitePermissions(previousCustomSites, customSiteImport.acceptedSites);
-  await setPromptHistory(normalizedHistory);
+  const importSummary = createImportSummary(
+    targetVersion,
+    sourceVersion,
+    importedCustomSites,
+    customSiteImport,
+    builtInStateImport,
+    builtInOverrideImport
+  );
+  if (customSiteImport.deniedOrigins.length > 0) {
+    throw createImportPermissionDeniedError({
+      ...importSummary,
+      customSites: {
+        ...importSummary.customSites,
+        acceptedIds: [],
+        acceptedNames: []
+      }
+    });
+  }
+  await chrome.storage.local.set({
+    [LOCAL_STORAGE_KEYS.broadcastCounter]: importedBroadcastCounter,
+    [LOCAL_STORAGE_KEYS.favorites]: normalizedFavorites,
+    [LOCAL_STORAGE_KEYS.templateVariableCache]: templateVariableCache,
+    [LOCAL_STORAGE_KEYS.settings]: importedSettings,
+    [LOCAL_STORAGE_KEYS.history]: normalizedHistory,
+    [SITE_STORAGE_KEYS.customSites]: customSiteImport.acceptedSites,
+    [SITE_STORAGE_KEYS.builtInSiteStates]: builtInStateImport.normalized,
+    [SITE_STORAGE_KEYS.builtInSiteOverrides]: builtInOverrideImport.normalized
+  });
+  try {
+    await cleanupUnusedCustomSitePermissions(previousCustomSites, customSiteImport.acceptedSites);
+  } catch (cleanupError) {
+    console.warn("[AI Prompt Broadcaster] Imported data was committed, but optional permission cleanup failed.", cleanupError);
+  }
   return {
     broadcastCounter: importedBroadcastCounter,
     history: normalizedHistory,
@@ -2132,27 +2214,7 @@ async function importPromptData(jsonString) {
     customSites: customSiteImport.acceptedSites,
     builtInSiteStates: builtInStateImport.normalized,
     builtInSiteOverrides: builtInOverrideImport.normalized,
-    importSummary: {
-      version: targetVersion,
-      migratedFromVersion: sourceVersion,
-      customSites: {
-        importedCount: importedCustomSites.length,
-        acceptedIds: customSiteImport.acceptedSites.map((site) => site.id),
-        acceptedNames: customSiteImport.acceptedSites.map((site) => site.name),
-        rejected: customSiteImport.rejectedSites,
-        rewrittenIds: customSiteImport.rewrittenIds,
-        deniedOrigins: customSiteImport.deniedOrigins
-      },
-      builtInSiteStates: {
-        appliedIds: builtInStateImport.appliedIds,
-        droppedIds: builtInStateImport.droppedIds
-      },
-      builtInSiteOverrides: {
-        appliedIds: builtInOverrideImport.appliedIds,
-        droppedIds: builtInOverrideImport.droppedIds,
-        adjustedIds: builtInOverrideImport.adjustedIds
-      }
-    }
+    importSummary
   };
 }
 
@@ -2210,10 +2272,34 @@ async function getComposeDraftPrompt() {
   }
   return normalizePrompt(result[LOCAL_PROMPT_STATE_KEYS.legacyLastPrompt]);
 }
+function pickRestoredComposePrompt({
+  currentPrompt = "",
+  popupPromptIntent = null,
+  composeDraftPrompt = "",
+  lastSentPrompt = ""
+} = {}) {
+  const normalizedCurrentPrompt = normalizePrompt(currentPrompt);
+  if (normalizedCurrentPrompt.trim()) {
+    return normalizedCurrentPrompt;
+  }
+  const intentPrompt = normalizePrompt(popupPromptIntent?.prompt);
+  if (intentPrompt.trim()) {
+    return intentPrompt;
+  }
+  const draftPrompt = normalizePrompt(composeDraftPrompt);
+  if (draftPrompt.trim()) {
+    return draftPrompt;
+  }
+  return normalizePrompt(lastSentPrompt);
+}
 async function setComposeDraftPrompt(prompt) {
   await chrome.storage.local.set({
     [LOCAL_PROMPT_STATE_KEYS.composeDraftPrompt]: normalizePrompt(prompt)
   });
+}
+async function getLastSentPrompt() {
+  const result = await chrome.storage.local.get(LOCAL_PROMPT_STATE_KEYS.lastSentPrompt);
+  return normalizePrompt(result[LOCAL_PROMPT_STATE_KEYS.lastSentPrompt]);
 }
 async function setLastSentPrompt(prompt) {
   await chrome.storage.local.set({
@@ -2489,6 +2575,13 @@ function getLatestFavoriteRunJobByFavoriteId(jobs, favoriteId) {
     return null;
   }
   return [...jobs].filter((job) => safeText(job.favoriteId).trim() === normalizedFavoriteId).sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))[0] ?? null;
+}
+function getActiveFavoriteRunJobByFavoriteId(jobs, favoriteId) {
+  const normalizedFavoriteId = safeText(favoriteId).trim();
+  if (!normalizedFavoriteId) {
+    return null;
+  }
+  return [...jobs].filter((job) => safeText(job.favoriteId).trim() === normalizedFavoriteId).filter((job) => job.status === "queued" || job.status === "running").sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))[0] ?? null;
 }
 
 // src/shared/runtime-state/ui-toasts.ts
@@ -5487,9 +5580,12 @@ function createPopupTargetsController(deps) {
       const payload = { id: target.id };
       if (typeof target.tabId === "number") {
         payload.tabId = target.tabId;
+        payload.target = "tab";
       } else if (target.target === "new" || target.reuseExistingTab === false) {
         payload.reuseExistingTab = false;
         payload.target = "new";
+      } else if (target.target === "tab") {
+        payload.target = "tab";
       }
       if (typeof target.promptOverride === "string" && target.promptOverride.trim()) {
         payload.promptOverride = target.promptOverride;
@@ -6288,8 +6384,32 @@ var {
   importReportModalConfirm: importReportModalConfirm2
 } = popupDom.modals;
 function createPopupHistoryModals(deps) {
+  function getUnavailableReason(snapshot, site) {
+    if (!site) {
+      return t.resendSiteUnavailable;
+    }
+    if (snapshot.targetMode === "tab") {
+      return msg("popup_resend_selected_tab_unavailable") || "Selected tab unavailable";
+    }
+    return t.resendSiteUnavailable;
+  }
+  function isSnapshotAvailable(snapshot, site, availableSiteIds) {
+    if (!site || !availableSiteIds.has(snapshot.siteId)) {
+      return false;
+    }
+    if (snapshot.targetMode !== "tab") {
+      return true;
+    }
+    if (!snapshot.targetTabId) {
+      return false;
+    }
+    return deps.openSiteTabs().some(
+      (tab) => tab.siteId === snapshot.siteId && Number(tab.tabId) === Number(snapshot.targetTabId)
+    );
+  }
   function hideResendModal2() {
     state.pendingResendHistory = null;
+    resendModalConfirm2.disabled = false;
     deps.closeOverlay(resendModal);
   }
   function openResendModal2(historyItem) {
@@ -6298,18 +6418,31 @@ function createPopupHistoryModals(deps) {
     resendModalDesc2.textContent = t.resendModalDesc;
     resendModalCancel2.textContent = t.resendModalCancel;
     resendModalConfirm2.textContent = t.resendModalConfirm;
+    const snapshots = ensureBroadcastTargetSnapshots(
+      historyItem.targetSnapshots,
+      historyItem.requestedSiteIds,
+      historyItem.text
+    );
     const requestedSiteIds = getHistorySelectedSiteIds(historyItem);
     const availableSiteIds = new Set(deps.getEnabledSites().map((site) => site.id));
+    let selectableCount = 0;
     resendModalSites.innerHTML = requestedSiteIds.map((siteId) => {
       const site = deps.runtimeSites().find((entry) => entry.id === siteId);
-      const disabled = !availableSiteIds.has(siteId);
+      const snapshot = snapshots.find((entry) => entry.siteId === siteId) ?? null;
+      const disabled = !snapshot || !isSnapshotAvailable(snapshot, site, availableSiteIds);
+      const reason = snapshot ? getUnavailableReason(snapshot, site) : t.resendSiteUnavailable;
+      if (!disabled) {
+        selectableCount += 1;
+      }
       return `
         <label class="checkbox-row">
           <input type="checkbox" value="${escapeAttribute(siteId)}" data-resend-site="${escapeAttribute(siteId)}" ${disabled ? "disabled" : "checked"} />
-          <span>${escapeHtml(site?.name ?? siteId)}${disabled ? ` (${escapeHtml(t.resendSiteUnavailable)})` : ""}</span>
+          <span>${escapeHtml(site?.name ?? siteId)}${disabled ? ` (${escapeHtml(reason)})` : ""}</span>
         </label>
       `;
     }).join("");
+    resendModalConfirm2.disabled = selectableCount === 0;
+    resendModalDesc2.textContent = selectableCount === 0 ? `${t.resendModalDesc} ${msg("popup_resend_no_available_targets") || "No previously selected targets are currently available."}` : t.resendModalDesc;
     deps.openOverlay(
       resendModal,
       resendModalSites.querySelector("input:not([disabled])")
@@ -6324,7 +6457,10 @@ function createPopupHistoryModals(deps) {
       resendModalSites.querySelectorAll("[data-resend-site]:checked")
     ).map((checkbox) => checkbox.value).filter(Boolean);
     if (selectedSiteIds.length === 0) {
-      deps.setStatus(t.warnNoSite, "error");
+      deps.setStatus(
+        msg("popup_resend_no_available_targets") || "No previously selected targets are currently available.",
+        "error"
+      );
       return;
     }
     const selectedTargets = ensureBroadcastTargetSnapshots(
@@ -6456,7 +6592,7 @@ function createFavoritesController(deps) {
     favoritesList2.innerHTML = items.map((item) => buildFavoriteItemMarkup(item, {
       openMenuKey: state.openMenuKey,
       runtimeSites: state.runtimeSites,
-      latestJob: getLatestFavoriteRunJobByFavoriteId(state.favoriteJobs, item.id)
+      latestJob: getActiveFavoriteRunJobByFavoriteId(state.favoriteJobs, item.id) ?? getLatestFavoriteRunJobByFavoriteId(state.favoriteJobs, item.id)
     })).join("");
   }
   function setFavoriteTitleInState(favoriteId, title) {
@@ -6974,12 +7110,8 @@ function createPopupServicesController(deps) {
       if (patterns.length === 0) {
         return false;
       }
-      const permission = { origins: patterns };
-      const alreadyGranted = await chrome.permissions.contains(permission);
-      if (alreadyGranted) {
-        return true;
-      }
-      return await chrome.permissions.request(permission);
+      const result = await requestOriginPermissions(patterns);
+      return result.granted;
     } catch (error) {
       console.error("[AI Prompt Broadcaster] Failed to request site host permission.", error);
       return false;
@@ -7083,6 +7215,13 @@ function getEventInput(target) {
 }
 function getEventSelect(target) {
   return target instanceof HTMLSelectElement ? target : null;
+}
+function getImportErrorSummary(error) {
+  if (!error || typeof error !== "object" || !("importSummary" in error)) {
+    return null;
+  }
+  const summary = error.importSummary;
+  return summary ?? null;
 }
 var { extTitle: extTitle2, extDesc: extDesc2 } = popupDom.header;
 var { tabButtons: tabButtons3, panels: panels2 } = popupDom.tabs;
@@ -7315,6 +7454,7 @@ var triggerRipple = (_button, _event) => void 0;
 var bindHistoryModalEvents = (_getErrorMessage) => void 0;
 var bindTemplateModalEvents = (_onError) => void 0;
 var handleGlobalShortcut = async (_event) => void 0;
+var hasRestoredStoredPrompt = false;
 var overlayController = createOverlayController({
   overlays: [importReportModal2, resendModal2, favoriteModal3, templateModal2],
   closeFavoriteModal: () => hideFavoriteModal(),
@@ -7364,6 +7504,7 @@ async function loadStoredData() {
       runtimeSites,
       promptIntent,
       composeDraftPrompt,
+      lastSentPrompt,
       failedSelectors,
       favoriteJobs,
       settings
@@ -7374,6 +7515,7 @@ async function loadStoredData() {
       getRuntimeSites(),
       consumePopupPromptIntent(),
       getComposeDraftPrompt(),
+      getLastSentPrompt(),
       getFailedSelectors(),
       getFavoriteRunJobs(),
       getAppSettings()
@@ -7386,10 +7528,14 @@ async function loadStoredData() {
     state.favoriteJobs = favoriteJobs;
     state.settings = settings;
     await refreshOpenSiteTabs();
-    if (typeof promptIntent?.prompt === "string" && !promptInput5.value.trim()) {
-      promptInput5.value = promptIntent.prompt;
-    } else if (!promptInput5.value.trim()) {
-      promptInput5.value = composeDraftPrompt;
+    if (!hasRestoredStoredPrompt) {
+      promptInput5.value = pickRestoredComposePrompt({
+        currentPrompt: promptInput5.value,
+        popupPromptIntent: promptIntent,
+        composeDraftPrompt,
+        lastSentPrompt
+      });
+      hasRestoredStoredPrompt = true;
     }
     applySettingsToControls();
     renderSiteCheckboxesPanel();
@@ -7652,12 +7798,14 @@ async function handleSend() {
   }
   const composerTargets = buildComposerBroadcastTargets(selectedSiteIds, prompt);
   const selectedSites = state.runtimeSites.filter((site) => selectedSiteIds.includes(site.id));
-  for (const site of selectedSites) {
-    if (!site.isCustom) {
-      continue;
-    }
-    const granted = await ensureSiteOriginPermission(site.url, site.hostnameAliases);
-    if (!granted) {
+  const customSitePermissionPatterns = Array.from(
+    new Set(
+      selectedSites.filter((site) => site.isCustom).flatMap((site) => Array.isArray(site.permissionPatterns) ? site.permissionPatterns : []).filter((pattern) => typeof pattern === "string" && pattern.trim().length > 0)
+    )
+  );
+  if (customSitePermissionPatterns.length > 0) {
+    const permissionResult = await requestOriginPermissions(customSitePermissionPatterns);
+    if (!permissionResult.granted) {
       setStatus(t.servicePermissionDenied, "error");
       showAppToast(t.servicePermissionDenied, "error", 4e3);
       return;
@@ -7908,7 +8056,12 @@ function bindGlobalEvents() {
       showAppToast(buildImportSummaryText(result.importSummary, { short: true }), "success", 2600);
       openImportReportModal(result.importSummary);
     } catch (error) {
+      const importSummary = getImportErrorSummary(error);
+      if (importSummary) {
+        openImportReportModal(importSummary);
+      }
       setStatus(t.importFailed, "error");
+      showAppToast(t.importFailed, "error", 4e3);
       console.error("[AI Prompt Broadcaster] JSON import failed.", error);
     } finally {
       importJsonInput.value = "";

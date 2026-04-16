@@ -11,7 +11,7 @@ export interface BroadcastSiteTargetMessage {
   tabId?: number;
   reuseExistingTab?: boolean;
   openInNewTab?: boolean;
-  target?: string;
+  target?: "new" | "tab";
   promptOverride?: string;
   resolvedPrompt?: string;
 }

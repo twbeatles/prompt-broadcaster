@@ -22,6 +22,7 @@ export {
   setPopupFavoriteIntent,
 } from "./popup-intent";
 export {
+  getActiveFavoriteRunJobByFavoriteId,
   findFavoriteRunDedupedJob,
   findFavoriteRunJobByBroadcastId,
   getFavoriteRunJobById,

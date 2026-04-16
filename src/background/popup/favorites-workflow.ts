@@ -128,6 +128,14 @@ export function createFavoriteWorkflow(deps: FavoriteWorkflowDeps) {
     return getWorkflowMessage("favorite_run_message_failed", [], "Favorite run failed");
   }
 
+  function getSkippedActiveMessage() {
+    return getWorkflowMessage(
+      "favorite_run_message_skipped_active",
+      [],
+      "Skipped because another run is active.",
+    );
+  }
+
   function getStepProgressMessage(stepIndex: number, stepCount: number) {
     return getWorkflowMessage(
       "favorite_run_message_step_progress",
@@ -312,6 +320,34 @@ export function createFavoriteWorkflow(deps: FavoriteWorkflowDeps) {
 
     const finalDedupedJob = queueState.dedupedJob;
     if (finalDedupedJob) {
+      if (trigger === "scheduled") {
+        const skippedAt = nowIso();
+        const skippedJob: FavoriteRunJobRecord = {
+          jobId: createFavoriteRunJobId(),
+          favoriteId: favorite.id,
+          trigger,
+          status: "skipped",
+          mode: favorite.mode === "chain" ? "chain" : "single",
+          stepCount: steps.length,
+          completedSteps: Math.min(
+            Number(finalDedupedJob.completedSteps ?? 0),
+            Number(steps.length ?? 0),
+          ),
+          currentStepIndex: finalDedupedJob.currentStepIndex ?? (steps.length > 0 ? 0 : null),
+          chainRunId: favorite.mode === "chain" ? buildChainRunId() : null,
+          currentBroadcastId: null,
+          message: getSkippedActiveMessage(),
+          createdAt: skippedAt,
+          updatedAt: skippedAt,
+          favoriteTitle: favorite.title || previewFavoriteText(favorite),
+          steps,
+          templateDefaults: { ...(defaults ?? {}) },
+          executionContext: { ...executionContext },
+        };
+
+        await updateFavoriteRunJobs((jobs) => replaceFavoriteRunJob(jobs, skippedJob));
+      }
+
       return {
         ok: true,
         deduped: true,
@@ -379,11 +415,22 @@ export function createFavoriteWorkflow(deps: FavoriteWorkflowDeps) {
         await createFavoriteFailureHistory({
           favoriteId: favorite?.id ?? null,
           message: validation.message,
-          requestedSiteIds: getFavoriteExecutionSteps(favorite)[0]?.targetSiteIds ?? favorite?.sentTo ?? [],
-          text: getFavoriteExecutionSteps(favorite)[0]?.text ?? favorite?.text ?? "",
+          requestedSiteIds:
+            validation.failingStepTargetSiteIds
+            ?? getFavoriteExecutionSteps(favorite)[0]?.targetSiteIds
+            ?? favorite?.sentTo
+            ?? [],
+          text:
+            validation.failingStepText
+            ?? getFavoriteExecutionSteps(favorite)[0]?.text
+            ?? favorite?.text
+            ?? "",
           trigger,
           chainRunId,
-          chainStepIndex: favorite?.mode === "chain" ? 0 : null,
+          chainStepIndex:
+            favorite?.mode === "chain"
+              ? validation.failingStepIndex ?? 0
+              : null,
           chainStepCount: favorite?.mode === "chain" ? getFavoriteExecutionSteps(favorite).length : null,
         });
         await enqueueUiToast({

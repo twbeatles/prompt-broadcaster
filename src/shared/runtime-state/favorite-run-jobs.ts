@@ -181,6 +181,21 @@ export function getLatestFavoriteRunJobByFavoriteId(
     .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))[0] ?? null;
 }
 
+export function getActiveFavoriteRunJobByFavoriteId(
+  jobs: FavoriteRunJobRecord[],
+  favoriteId: string,
+): FavoriteRunJobRecord | null {
+  const normalizedFavoriteId = safeText(favoriteId).trim();
+  if (!normalizedFavoriteId) {
+    return null;
+  }
+
+  return [...jobs]
+    .filter((job) => safeText(job.favoriteId).trim() === normalizedFavoriteId)
+    .filter((job) => job.status === "queued" || job.status === "running")
+    .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))[0] ?? null;
+}
+
 export function findFavoriteRunJobByBroadcastId(
   jobs: FavoriteRunJobRecord[],
   broadcastId: string
@@ -197,14 +212,5 @@ export function findFavoriteRunDedupedJob(
   jobs: FavoriteRunJobRecord[],
   favoriteId: string
 ): FavoriteRunJobRecord | null {
-  const latest = getLatestFavoriteRunJobByFavoriteId(jobs, favoriteId);
-  if (!latest) {
-    return null;
-  }
-
-  if (latest.status === "queued" || latest.status === "running") {
-    return latest;
-  }
-
-  return null;
+  return getActiveFavoriteRunJobByFavoriteId(jobs, favoriteId);
 }

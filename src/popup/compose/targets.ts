@@ -160,7 +160,7 @@ export function createPopupTargetsController(deps: PopupTargetsDeps) {
     id: string;
     tabId?: number;
     reuseExistingTab?: boolean;
-    target?: string;
+    target?: "new" | "tab";
     promptOverride?: string;
     resolvedPrompt?: string;
   }> {
@@ -171,9 +171,12 @@ export function createPopupTargetsController(deps: PopupTargetsDeps) {
 
         if (typeof target.tabId === "number") {
           payload.tabId = target.tabId;
+          payload.target = "tab";
         } else if (target.target === "new" || target.reuseExistingTab === false) {
           payload.reuseExistingTab = false;
           payload.target = "new";
+        } else if (target.target === "tab") {
+          payload.target = "tab";
         }
 
         if (typeof target.promptOverride === "string" && target.promptOverride.trim()) {

@@ -163,7 +163,12 @@ export function buildBroadcastTargetMessageFromSnapshot(
     return payload;
   }
 
-  if (snapshot.targetMode === "tab" && snapshot.targetTabId) {
+  if (snapshot.targetMode === "tab") {
+    payload.target = "tab";
+    if (snapshot.targetTabId) {
+      payload.tabId = snapshot.targetTabId;
+    }
+
     const matchingTab = openTabs.find(
       (tab) => tab.siteId === siteId && Number(tab.tabId) === Number(snapshot.targetTabId)
     );

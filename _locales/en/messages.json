@@ -280,6 +280,9 @@
   "favorite_run_message_deduped": {
     "message": "Favorite run is already queued."
   },
+  "favorite_run_message_skipped_active": {
+    "message": "Skipped because another run is active."
+  },
   "favorite_run_message_step_progress": {
     "message": "Step $CURRENT$/$TOTAL$",
     "placeholders": {
@@ -664,6 +667,17 @@
     "placeholders": {
       "service": {
         "content": "$1"
+      }
+    }
+  },
+  "toast_selected_tab_unavailable": {
+    "message": "$SERVICE$ selected tab is unavailable.",
+    "placeholders": {
+      "service": {
+        "content": "$1"
+      },
+      "tab": {
+        "content": "$2"
       }
     }
   },
@@ -1366,6 +1380,12 @@
   },
   "popup_resend_site_unavailable": {
     "message": "Unavailable"
+  },
+  "popup_resend_selected_tab_unavailable": {
+    "message": "Selected tab unavailable"
+  },
+  "popup_resend_no_available_targets": {
+    "message": "No previously selected targets are currently available."
   },
   "popup_import_report_title": {
     "message": "Import Details"

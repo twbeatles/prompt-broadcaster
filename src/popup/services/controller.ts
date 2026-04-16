@@ -1,6 +1,7 @@
 import {
   buildSitePermissionPatterns,
   deleteCustomSite,
+  requestOriginPermissions,
   saveBuiltInSiteOverride,
   saveCustomSite,
   setRuntimeSiteEnabled,
@@ -339,13 +340,8 @@ export function createPopupServicesController(
         return false;
       }
 
-      const permission = { origins: patterns };
-      const alreadyGranted = await chrome.permissions.contains(permission);
-      if (alreadyGranted) {
-        return true;
-      }
-
-      return await chrome.permissions.request(permission);
+      const result = await requestOriginPermissions(patterns);
+      return result.granted;
     } catch (error) {
       console.error("[AI Prompt Broadcaster] Failed to request site host permission.", error);
       return false;

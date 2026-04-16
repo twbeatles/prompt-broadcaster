@@ -298,7 +298,8 @@ Runtime site records can include:
 - `verifiedLocale`
 - `verifiedVersion`
 
-Custom service permissions are derived from `url + hostnameAliases`. Save, import, and runtime execution checks are all-or-nothing for that required origin set.
+Custom service permissions are derived from `url + hostnameAliases`. Popup send, save, and JSON import batch-request the full required origin set and treat denied origins as a hard stop for that operation.
+JSON import now finishes in staged order: parse/migrate -> normalize/repair -> permission preflight -> one `chrome.storage.local.set` commit -> best-effort permission cleanup.
 Runtime site ordering is persisted separately in `appSettings.siteOrder` and then applied consistently by popup, favorite editor, and options services.
 
 ### Prompt, Favorite, and Runtime State Storage
@@ -330,6 +331,7 @@ Important session-storage keys:
 - `favoriteRunJobs`
 
 The background worker mirrors `pendingInjections`, `pendingBroadcasts`, `pendingSelectorChecks`, and `selectorAlerts` in memory and updates them through a serialized mutation chain so overlapping completions and cancellations do not lose results. Favorite popup intents and favorite run jobs are stored through `src/shared/runtime-state/`.
+Popup compose restoration is intentionally one-shot on load with precedence `popupPromptIntent -> composeDraftPrompt -> lastSentPrompt`.
 
 ### Prompt History Schema
 
@@ -340,6 +342,7 @@ History entries are normalized in `src/shared/prompts/history-store.ts` and incl
 - `failedSiteIds`
 - `sentTo` as a backward-compatible mirror of `submittedSiteIds`
 - `siteResults: Record<string, SiteInjectionResult>`
+- `targetSnapshots`, which capture the original per-site resolved prompt and routing mode for retry/history replay
 - optional favorite/chain metadata:
   - `originFavoriteId`
   - `chainRunId`
@@ -363,6 +366,7 @@ Chain favorites store ordered steps. Scheduled favorites use the same record as 
 
 Background favorite jobs also persist a normalized step list plus `FavoriteRunExecutionContextSnapshot`, which now includes a prepared `clipboard` field for popup-triggered runs.
 Favorite prompt rendering plus queue submission is serialized so concurrent `{{counter}}` favorite runs do not reuse the same counter value.
+Active job lookups prefer `queued/running` records over newer terminal records so scheduled `skipped` jobs do not hide a live execution badge.
 
 ### Structured Result Codes
 
@@ -390,6 +394,7 @@ Favorite prompt rendering plus queue submission is serialized so concurrent `{{c
 - runtime site verification metadata is preserved as structured fields, while `lastVerified` is derived from `verifiedAt` when available
 - runtime site route policy is preserved through normalized `supportedRoutes`
 - `appSettings.historyLimit` is a non-destructive default visible cap. Popup/options history lists apply it at read time, while storage and JSON export keep the full history set.
+- denied custom-site origins abort import before the local commit, while post-commit permission cleanup failures are best-effort only
 - reset-data clears the counter together with the rest of the user data
 
 ### Strategy Stats and Pending Tab Tracking
@@ -407,7 +412,7 @@ Favorite prompt rendering plus queue submission is serialized so concurrent `{{c
 3. Popup sends a broadcast request with resolved targets.
 4. Background resolves routing, opens or reuses tabs, and records pending state.
 5. Injector writes the prompt, submits it, and reports a structured result.
-6. Background updates history, last-broadcast state, badge state, and notifications.
+6. Background finalizes the summary first, then guarantees `lastBroadcast` sync, favorite completion sync, and waiter resolution even if history append, focus restore, or notifications fail.
 
 ### Favorite Run / Chain Run
 
@@ -419,6 +424,7 @@ Favorite prompt rendering plus queue submission is serialized so concurrent `{{c
 6. Empty chain-step target overrides inherit the favorite default targets.
 7. If any step result is not `submitted`, the remaining chain steps are skipped.
 8. Favorite-run dedupe blocks only overlapping `queued/running` jobs for the same favorite.
+9. Scheduled overlaps add a terminal `skipped` job instead of duplicate prompt history, while UI badges keep showing the active run first.
 
 ### Scheduled Favorite Run
 
@@ -426,7 +432,8 @@ Favorite prompt rendering plus queue submission is serialized so concurrent `{{c
 2. When `chrome.alarms` fires, background loads the favorite and validates scheduled-safe variables.
 3. One-time schedules clear themselves after execution.
 4. Repeating schedules compute the next `scheduledAt` and re-register the alarm.
-5. Options summarizes the latest `trigger === "scheduled"` history entry separately from manual runs so failed schedules stay visible even after later manual retries.
+5. Scheduled validation failures write history against the actual failing chain step (`chainStepIndex`, text, target sites) rather than collapsing everything to step 1.
+6. Options summarizes the latest `trigger === "scheduled"` history entry separately from manual runs so failed schedules stay visible even after later manual retries.
 
 ### Quick Palette
 
@@ -487,11 +494,13 @@ Current smoke coverage includes:
 - built-in override repair for invalid click-submit imports
 - `broadcastCounter` export/import/reset semantics
 - import migration to export `version: 8`
+- batched permission preflight plus atomic import commit behavior
 - `supportedRoutes` normalization and route-aware preflight
 - pending selector escalation (`pendingSelectorChecks`)
 - `siteOrder` normalization and ordering reuse
 - favorite chain/schedule field normalization for legacy imports
 - favorite run job dedupe, effective chain-target fallback, and prepared clipboard context
+- scheduled overlap skip-job recording and active-job preference
 - favorite `{{counter}}` serialization across concurrent runs
 - failure history creation for pre-broadcast favorite job failures
 - scheduled-run summary isolation from manual runs

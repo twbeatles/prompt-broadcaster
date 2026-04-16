@@ -771,11 +771,6 @@ async function getBroadcastCounter() {
     return 0;
   }
 }
-async function setBroadcastCounter(value) {
-  const normalized = normalizeBroadcastCounter(value);
-  await writeLocal(LOCAL_STORAGE_KEYS.broadcastCounter, normalized);
-  return normalized;
-}
 
 // src/shared/prompts/favorites-store.ts
 function buildFavoriteEntry(entry) {
@@ -1714,6 +1709,74 @@ function validateHostnameAliases(value) {
   };
 }
 
+// src/shared/sites/permissions.ts
+function normalizeOriginPatterns(originPatterns) {
+  return Array.from(
+    new Set(
+      (Array.isArray(originPatterns) ? originPatterns : []).filter((pattern) => typeof pattern === "string" && pattern.trim().length > 0).map((pattern) => pattern.trim())
+    )
+  );
+}
+async function containsOriginPermission(originPattern) {
+  try {
+    if (!chrome.permissions?.contains || !originPattern) {
+      return false;
+    }
+    return await chrome.permissions.contains({
+      origins: [originPattern]
+    });
+  } catch (_error) {
+    return false;
+  }
+}
+async function findMissingOriginPermissions(originPatterns = []) {
+  const normalizedOriginPatterns = normalizeOriginPatterns(originPatterns);
+  const missingOrigins = [];
+  for (const originPattern of normalizedOriginPatterns) {
+    if (!await containsOriginPermission(originPattern)) {
+      missingOrigins.push(originPattern);
+    }
+  }
+  return missingOrigins;
+}
+async function requestOriginPermissions(originPatterns = []) {
+  const requestedOrigins = normalizeOriginPatterns(originPatterns);
+  if (requestedOrigins.length === 0) {
+    return {
+      granted: true,
+      requestedOrigins: [],
+      deniedOrigins: []
+    };
+  }
+  const missingBeforeRequest = await findMissingOriginPermissions(requestedOrigins);
+  if (missingBeforeRequest.length > 0) {
+    try {
+      const granted = chrome.permissions?.request ? await chrome.permissions.request({ origins: missingBeforeRequest }) : false;
+      if (!granted) {
+        const deniedOrigins2 = await findMissingOriginPermissions(requestedOrigins);
+        return {
+          granted: deniedOrigins2.length === 0,
+          requestedOrigins,
+          deniedOrigins: deniedOrigins2
+        };
+      }
+    } catch (_error) {
+      const deniedOrigins2 = await findMissingOriginPermissions(requestedOrigins);
+      return {
+        granted: deniedOrigins2.length === 0,
+        requestedOrigins,
+        deniedOrigins: deniedOrigins2
+      };
+    }
+  }
+  const deniedOrigins = await findMissingOriginPermissions(requestedOrigins);
+  return {
+    granted: deniedOrigins.length === 0,
+    requestedOrigins,
+    deniedOrigins
+  };
+}
+
 // src/shared/security.ts
 function escapeHTML(str) {
   if (typeof str !== "string") {
@@ -2157,79 +2220,67 @@ async function getTemplateVariableCache() {
   const rawCache = await readLocal(LOCAL_STORAGE_KEYS.templateVariableCache, {});
   return normalizeTemplateDefaults(rawCache);
 }
-async function setTemplateVariableCache(cache) {
-  const normalized = normalizeTemplateDefaults(cache);
-  await writeLocal(LOCAL_STORAGE_KEYS.templateVariableCache, normalized);
-  return normalized;
-}
 
 // src/shared/prompts/import-export.ts
 var CURRENT_EXPORT_VERSION = 8;
 function asImportPayload(value) {
   return safeObject(value);
 }
-async function containsOriginPermission(originPattern) {
-  try {
-    if (!chrome.permissions?.contains || !originPattern) {
-      return false;
+function createImportSummary(targetVersion, sourceVersion, importedCustomSites, customSiteImport, builtInStateImport, builtInOverrideImport) {
+  return {
+    version: targetVersion,
+    migratedFromVersion: sourceVersion,
+    customSites: {
+      importedCount: importedCustomSites.length,
+      acceptedIds: customSiteImport.acceptedSites.map((site) => site.id),
+      acceptedNames: customSiteImport.acceptedSites.map((site) => site.name),
+      rejected: customSiteImport.rejectedSites,
+      rewrittenIds: customSiteImport.rewrittenIds,
+      deniedOrigins: customSiteImport.deniedOrigins
+    },
+    builtInSiteStates: {
+      appliedIds: builtInStateImport.appliedIds,
+      droppedIds: builtInStateImport.droppedIds
+    },
+    builtInSiteOverrides: {
+      appliedIds: builtInOverrideImport.appliedIds,
+      droppedIds: builtInOverrideImport.droppedIds,
+      adjustedIds: builtInOverrideImport.adjustedIds
     }
-    return await chrome.permissions.contains({
-      origins: [originPattern]
-    });
-  } catch (_error) {
-    return false;
-  }
+  };
 }
-async function findMissingOriginPermissions(originPatterns = []) {
-  const missingOrigins = [];
-  for (const originPattern of Array.isArray(originPatterns) ? originPatterns : []) {
-    if (!originPattern) {
-      continue;
-    }
-    if (!await containsOriginPermission(originPattern)) {
-      missingOrigins.push(originPattern);
-    }
-  }
-  return missingOrigins;
+function createImportPermissionDeniedError(importSummary) {
+  const error = new Error("Import failed.");
+  return Object.assign(error, {
+    code: "import_permission_denied",
+    importSummary
+  });
 }
 async function repairImportedCustomSitesWithPermissions(rawSites) {
   const repaired = repairImportedCustomSites(rawSites);
   const requestedOrigins = /* @__PURE__ */ new Set();
   const deniedOrigins = /* @__PURE__ */ new Set();
-  const blockedOrigins = /* @__PURE__ */ new Set();
   const acceptedSites = [];
   const permissionDeniedSites = [];
+  const requestedPermissionPatterns = Array.from(
+    new Set(
+      repaired.repairedSites.flatMap(
+        (site) => Array.isArray(site?.permissionPatterns) ? site.permissionPatterns.filter((pattern) => typeof pattern === "string" && pattern.trim()) : []
+      )
+    )
+  );
+  const permissionRequestResult = await requestOriginPermissions(requestedPermissionPatterns);
+  permissionRequestResult.requestedOrigins.forEach((origin) => requestedOrigins.add(origin));
+  permissionRequestResult.deniedOrigins.forEach((origin) => deniedOrigins.add(origin));
   for (const site of repaired.repairedSites) {
     const permissionPatterns = Array.isArray(site?.permissionPatterns) ? site.permissionPatterns.filter((pattern) => typeof pattern === "string" && pattern.trim()) : [];
     permissionPatterns.forEach((origin) => requestedOrigins.add(origin));
-    const blockedForSite = permissionPatterns.filter((origin) => blockedOrigins.has(origin));
-    if (blockedForSite.length > 0) {
-      blockedForSite.forEach((origin) => deniedOrigins.add(origin));
-      permissionDeniedSites.push({
-        id: safeText2(site.id) || void 0,
-        name: safeText2(site.name) || "Custom AI",
-        reason: "permission_denied",
-        origins: blockedForSite
-      });
-      continue;
-    }
     const missingOrigins = await findMissingOriginPermissions(permissionPatterns);
     if (missingOrigins.length === 0) {
       acceptedSites.push(site);
       continue;
     }
-    try {
-      const granted = chrome.permissions?.request ? await chrome.permissions.request({ origins: missingOrigins }) : false;
-      if (granted) {
-        acceptedSites.push(site);
-        continue;
-      }
-    } catch (_error) {
-    }
-    missingOrigins.forEach((origin) => {
-      blockedOrigins.add(origin);
-      deniedOrigins.add(origin);
-    });
+    missingOrigins.forEach((origin) => deniedOrigins.add(origin));
     permissionDeniedSites.push({
       id: safeText2(site.id) || void 0,
       name: safeText2(site.name) || "Custom AI",
@@ -2410,17 +2461,39 @@ async function importPromptData(jsonString) {
   const customSiteImport = await repairImportedCustomSitesWithPermissions(importedCustomSites);
   const builtInStateImport = repairImportedBuiltInStates(importedBuiltInSiteStates);
   const builtInOverrideImport = repairImportedBuiltInOverrides(importedBuiltInSiteOverrides);
-  await setAppSettings(importedSettings);
-  await Promise.all([
-    setBroadcastCounter(importedBroadcastCounter),
-    setPromptFavorites(normalizedFavorites),
-    setTemplateVariableCache(templateVariableCache),
-    setCustomSites(customSiteImport.acceptedSites),
-    setBuiltInSiteStates(builtInStateImport.normalized),
-    setBuiltInSiteOverrides(builtInOverrideImport.normalized)
-  ]);
-  await cleanupUnusedCustomSitePermissions(previousCustomSites, customSiteImport.acceptedSites);
-  await setPromptHistory(normalizedHistory);
+  const importSummary = createImportSummary(
+    targetVersion,
+    sourceVersion,
+    importedCustomSites,
+    customSiteImport,
+    builtInStateImport,
+    builtInOverrideImport
+  );
+  if (customSiteImport.deniedOrigins.length > 0) {
+    throw createImportPermissionDeniedError({
+      ...importSummary,
+      customSites: {
+        ...importSummary.customSites,
+        acceptedIds: [],
+        acceptedNames: []
+      }
+    });
+  }
+  await chrome.storage.local.set({
+    [LOCAL_STORAGE_KEYS.broadcastCounter]: importedBroadcastCounter,
+    [LOCAL_STORAGE_KEYS.favorites]: normalizedFavorites,
+    [LOCAL_STORAGE_KEYS.templateVariableCache]: templateVariableCache,
+    [LOCAL_STORAGE_KEYS.settings]: importedSettings,
+    [LOCAL_STORAGE_KEYS.history]: normalizedHistory,
+    [SITE_STORAGE_KEYS.customSites]: customSiteImport.acceptedSites,
+    [SITE_STORAGE_KEYS.builtInSiteStates]: builtInStateImport.normalized,
+    [SITE_STORAGE_KEYS.builtInSiteOverrides]: builtInOverrideImport.normalized
+  });
+  try {
+    await cleanupUnusedCustomSitePermissions(previousCustomSites, customSiteImport.acceptedSites);
+  } catch (cleanupError) {
+    console.warn("[AI Prompt Broadcaster] Imported data was committed, but optional permission cleanup failed.", cleanupError);
+  }
   return {
     broadcastCounter: importedBroadcastCounter,
     history: normalizedHistory,
@@ -2430,27 +2503,7 @@ async function importPromptData(jsonString) {
     customSites: customSiteImport.acceptedSites,
     builtInSiteStates: builtInStateImport.normalized,
     builtInSiteOverrides: builtInOverrideImport.normalized,
-    importSummary: {
-      version: targetVersion,
-      migratedFromVersion: sourceVersion,
-      customSites: {
-        importedCount: importedCustomSites.length,
-        acceptedIds: customSiteImport.acceptedSites.map((site) => site.id),
-        acceptedNames: customSiteImport.acceptedSites.map((site) => site.name),
-        rejected: customSiteImport.rejectedSites,
-        rewrittenIds: customSiteImport.rewrittenIds,
-        deniedOrigins: customSiteImport.deniedOrigins
-      },
-      builtInSiteStates: {
-        appliedIds: builtInStateImport.appliedIds,
-        droppedIds: builtInStateImport.droppedIds
-      },
-      builtInSiteOverrides: {
-        appliedIds: builtInOverrideImport.appliedIds,
-        droppedIds: builtInOverrideImport.droppedIds,
-        adjustedIds: builtInOverrideImport.adjustedIds
-      }
-    }
+    importSummary
   };
 }
 
@@ -2661,6 +2714,13 @@ function getLatestFavoriteRunJobByFavoriteId(jobs, favoriteId) {
     return null;
   }
   return [...jobs].filter((job) => safeText(job.favoriteId).trim() === normalizedFavoriteId).sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))[0] ?? null;
+}
+function getActiveFavoriteRunJobByFavoriteId(jobs, favoriteId) {
+  const normalizedFavoriteId = safeText(favoriteId).trim();
+  if (!normalizedFavoriteId) {
+    return null;
+  }
+  return [...jobs].filter((job) => safeText(job.favoriteId).trim() === normalizedFavoriteId).filter((job) => job.status === "queued" || job.status === "running").sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))[0] ?? null;
 }
 
 // src/shared/runtime-state/strategy-stats.ts
@@ -3820,7 +3880,7 @@ function buildScheduledRunDetailMarkup(summary) {
   `;
 }
 function buildFavoriteJobStatusMarkup(favoriteId) {
-  const job = getLatestFavoriteRunJobByFavoriteId(state.favoriteJobs, favoriteId);
+  const job = getActiveFavoriteRunJobByFavoriteId(state.favoriteJobs, favoriteId) || getLatestFavoriteRunJobByFavoriteId(state.favoriteJobs, favoriteId);
   if (!job?.jobId) {
     return "";
   }
@@ -4319,6 +4379,12 @@ function downloadBlob2(filename, content, type) {
   anchor.click();
   URL.revokeObjectURL(url);
 }
+function getImportErrorSummary(error) {
+  if (!error || typeof error !== "object" || !("importSummary" in error)) {
+    return null;
+  }
+  return error.importSummary ?? null;
+}
 function bindExportImportEvents({ loadData: loadData2 }) {
   settingsExportJson.addEventListener("click", async () => {
     try {
@@ -4352,9 +4418,13 @@ function bindExportImportEvents({ loadData: loadData2 }) {
       showAppToast(buildImportSummaryText(result.importSummary, { short: true }), "success", 2600);
       openImportReportModal(result.importSummary);
     } catch (error) {
+      const importSummary = getImportErrorSummary(error);
+      if (importSummary) {
+        openImportReportModal(importSummary);
+      }
       console.error("[AI Prompt Broadcaster] Failed to import JSON.", error);
-      setStatus(error?.message ?? t.settings.importFailed, "error");
-      showAppToast(error?.message ?? t.settings.importFailed, "error", 3e3);
+      setStatus(t.settings.importFailed, "error");
+      showAppToast(t.settings.importFailed, "error", 3e3);
     } finally {
       settingsImportJsonInput.value = "";
     }

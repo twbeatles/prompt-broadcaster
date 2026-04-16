@@ -848,7 +848,7 @@ async function main() {
     assert.equal(normalizedSite.verifiedVersion, "verified-site-apr-2026");
   });
 
-  await runStep("import repair keeps valid sites and rejects invalid or unauthorized ones", async () => {
+  await runStep("import aborts on denied custom-site permissions and preserves previous state", async () => {
     const chromeMock = createChromeMock({
       grantedOrigins: [
         "https://allowed.example.com/*",
@@ -863,6 +863,15 @@ async function main() {
     });
     const module = await loadBundledModule("src/shared/stores/prompt-store.ts", chromeMock);
     await chromeMock.storage.local.set({
+      appSettings: {
+        ...module.DEFAULT_SETTINGS,
+        historyLimit: 12,
+      },
+      promptHistory: [{
+        id: 1,
+        text: "Existing history entry",
+        createdAt: "2026-04-01T00:00:00.000Z",
+      }],
       customSites: [
         {
           id: "legacy",
@@ -874,6 +883,158 @@ async function main() {
         },
       ],
     });
+
+    let importError = null;
+    try {
+      await module.importPromptData(JSON.stringify({
+        settings: { historyLimit: 55 },
+        customSites: [
+          {
+            id: "chatgpt",
+            name: "Mirror",
+            url: "https://mirror.example.com/",
+            inputSelector: "#mirror-input",
+            inputType: "textarea",
+            submitMethod: "enter",
+          },
+          {
+            id: "my-ai",
+            name: "My AI",
+            url: "https://allowed.example.com/",
+            inputSelector: "#prompt",
+            inputType: "textarea",
+            submitMethod: "enter",
+          },
+          {
+            id: "my-ai",
+            name: "Duplicate AI",
+            url: "https://second.example.com/",
+            inputSelector: "#prompt",
+            inputType: "textarea",
+            submitMethod: "enter",
+          },
+          {
+            id: "alias-ok",
+            name: "Alias OK",
+            url: "https://alias-ok.example.com/",
+            hostnameAliases: ["alias-ok-mirror.example.com"],
+            inputSelector: "#prompt",
+            inputType: "textarea",
+            submitMethod: "enter",
+          },
+          {
+            id: "alias-denied",
+            name: "Alias Denied",
+            url: "https://alias-denied.example.com/",
+            hostnameAliases: ["alias-missing.example.com"],
+            inputSelector: "#prompt",
+            inputType: "textarea",
+            submitMethod: "enter",
+          },
+          {
+            id: "alias-invalid",
+            name: "Alias Invalid",
+            url: "https://alias-invalid.example.com/",
+            hostnameAliases: [" https://alias-invalid.example.com/ "],
+            inputSelector: "#prompt",
+            inputType: "textarea",
+            submitMethod: "enter",
+          },
+          {
+            id: "bad-url",
+            name: "Broken",
+            url: "notaurl",
+            inputSelector: "#broken",
+            inputType: "textarea",
+            submitMethod: "enter",
+          },
+          {
+            id: "needs-permission",
+            name: "Denied AI",
+            url: "https://denied.example.com/",
+            inputSelector: "#prompt",
+            inputType: "textarea",
+            submitMethod: "enter",
+          },
+        ],
+        builtInSiteStates: {
+          chatgpt: { enabled: false },
+          unknown: { enabled: false },
+        },
+        builtInSiteOverrides: {
+          chatgpt: {
+            inputSelector: "#override",
+            inputType: "invalid",
+            selectorCheckMode: "bad-mode",
+            submitMethod: "click",
+            submitSelector: "",
+          },
+          unknown: {
+            inputSelector: "#ignored",
+          },
+        },
+      }));
+    } catch (error) {
+      importError = error;
+    }
+
+    assert.ok(importError);
+    assert.equal(importError.code, "import_permission_denied");
+    assert.deepEqual(sortStrings(importError.importSummary.customSites.deniedOrigins), [
+      "https://alias-missing.example.com/*",
+      "https://denied.example.com/*",
+    ]);
+    assert.equal(importError.importSummary.customSites.acceptedIds.length, 0);
+    assert.equal(importError.importSummary.customSites.rejected.length, 4);
+    assert.deepEqual(
+      importError.importSummary.customSites.rejected.find((entry) => entry.id === "alias-invalid"),
+      {
+        id: "alias-invalid",
+        name: "Alias Invalid",
+        reason: "validation_failed",
+        errors: ["Hostname alias line 1 must not include leading or trailing whitespace."],
+      },
+    );
+    assert.deepEqual(chromeMock.__getPermissionRequests(), [[
+      "https://alias-missing.example.com/*",
+      "https://denied.example.com/*",
+    ]]);
+
+    const storageAfterFailure = chromeMock.__getStorage().local;
+    assert.equal(storageAfterFailure.appSettings.historyLimit, 12);
+    assert.equal(storageAfterFailure.customSites.length, 1);
+    assert.equal(storageAfterFailure.customSites[0].id, "legacy");
+    assert.equal(storageAfterFailure.promptHistory[0].text, "Existing history entry");
+    assert.ok(chromeMock.__getGrantedOrigins().includes("https://legacy.example.com/*"));
+  });
+
+  await runStep("import repair batches permissions once and keeps valid custom sites", async () => {
+    const chromeMock = createChromeMock({
+      grantedOrigins: [
+        "https://allowed.example.com/*",
+        "https://alias-denied.example.com/*",
+        "https://alias-ok-mirror.example.com/*",
+        "https://alias-ok.example.com/*",
+        "https://legacy.example.com/*",
+        "https://mirror.example.com/*",
+        "https://second.example.com/*",
+      ],
+      requestGrantsMissingOrigins: true,
+    });
+    const module = await loadBundledModule("src/shared/stores/prompt-store.ts", chromeMock);
+    await chromeMock.storage.local.set({
+      customSites: [
+        {
+          id: "legacy",
+          name: "Legacy",
+          url: "https://legacy.example.com/",
+          inputSelector: "#legacy",
+          inputType: "textarea",
+          submitMethod: "enter",
+        },
+      ],
+    });
+
     const result = await module.importPromptData(JSON.stringify({
       settings: { historyLimit: 55 },
       customSites: [
@@ -963,28 +1124,22 @@ async function main() {
       },
     }));
 
-    assert.equal(result.customSites.length, 4);
+    assert.equal(result.customSites.length, 6);
     assert.deepEqual(result.customSites.map((site) => site.id), [
       "custom-chatgpt",
       "my-ai",
       "my-ai-2",
       "alias-ok",
+      "alias-denied",
+      "needs-permission",
     ]);
-    assert.equal(result.importSummary.customSites.rejected.length, 4);
-    assert.deepEqual(sortStrings(result.importSummary.customSites.deniedOrigins), [
+    assert.equal(result.importSummary.customSites.rejected.length, 2);
+    assert.deepEqual(result.importSummary.customSites.deniedOrigins, []);
+    assert.equal(result.importSummary.customSites.rewrittenIds.length, 2);
+    assert.deepEqual(chromeMock.__getPermissionRequests(), [[
       "https://alias-missing.example.com/*",
       "https://denied.example.com/*",
-    ]);
-    assert.equal(result.importSummary.customSites.rewrittenIds.length, 2);
-    assert.deepEqual(
-      result.importSummary.customSites.rejected.find((entry) => entry.id === "alias-invalid"),
-      {
-        id: "alias-invalid",
-        name: "Alias Invalid",
-        reason: "validation_failed",
-        errors: ["Hostname alias line 1 must not include leading or trailing whitespace."],
-      },
-    );
+    ]]);
     assert.deepEqual(Object.keys(result.builtInSiteStates), ["chatgpt"]);
     assert.deepEqual(Object.keys(result.builtInSiteOverrides), ["chatgpt"]);
     assert.equal(result.builtInSiteOverrides.chatgpt.inputSelector, "#override");
@@ -998,6 +1153,186 @@ async function main() {
       "button[data-testid='send-button'], button[aria-label*='send' i], button[aria-label*='보내기' i]",
     );
     assert.ok(!chromeMock.__getGrantedOrigins().includes("https://legacy.example.com/*"));
+  });
+
+  await runStep("import commits local state once and tolerates post-commit cleanup failure", async () => {
+    const chromeMock = createChromeMock({
+      grantedOrigins: [
+        "https://legacy.example.com/*",
+        "https://new.example.com/*",
+      ],
+    });
+    const module = await loadBundledModule("src/shared/stores/prompt-store.ts", chromeMock);
+
+    await chromeMock.storage.local.set({
+      appSettings: {
+        ...module.DEFAULT_SETTINGS,
+        historyLimit: 9,
+      },
+      customSites: [{
+        id: "legacy",
+        name: "Legacy",
+        url: "https://legacy.example.com/",
+        inputSelector: "#legacy",
+        inputType: "textarea",
+        submitMethod: "enter",
+      }],
+      promptHistory: [{
+        id: 1,
+        text: "before",
+        createdAt: "2026-04-01T00:00:00.000Z",
+      }],
+      promptFavorites: [{
+        id: "fav-before",
+        title: "Before",
+        text: "before",
+        createdAt: "2026-04-01T00:00:00.000Z",
+        favoritedAt: "2026-04-01T00:00:00.000Z",
+      }],
+      templateVariableCache: {
+        topic: "before",
+      },
+      broadcastCounter: 1,
+    });
+
+    const originalLocalSet = chromeMock.storage.local.set;
+    const commitCalls = [];
+    chromeMock.storage.local.set = async (nextValue) => {
+      commitCalls.push(Object.keys(nextValue ?? {}).sort());
+      return originalLocalSet(nextValue);
+    };
+    chromeMock.permissions.remove = async () => {
+      throw new Error("cleanup failed");
+    };
+
+    const result = await module.importPromptData(JSON.stringify({
+      version: 8,
+      broadcastCounter: 5,
+      history: [{
+        id: 9,
+        text: "after",
+        createdAt: "2026-04-02T00:00:00.000Z",
+      }],
+      favorites: [{
+        id: "fav-after",
+        title: "After",
+        text: "after",
+        createdAt: "2026-04-02T00:00:00.000Z",
+        favoritedAt: "2026-04-02T00:00:00.000Z",
+      }],
+      templateVariableCache: {
+        topic: "after",
+      },
+      settings: {
+        historyLimit: 44,
+      },
+      customSites: [{
+        id: "new-site",
+        name: "New Site",
+        url: "https://new.example.com/",
+        inputSelector: "#prompt",
+        inputType: "textarea",
+        submitMethod: "enter",
+      }],
+    }));
+
+    assert.equal(commitCalls.length, 1);
+    assert.deepEqual(commitCalls[0], [
+      "appSettings",
+      "broadcastCounter",
+      "builtInSiteOverrides",
+      "builtInSiteStates",
+      "customSites",
+      "promptFavorites",
+      "promptHistory",
+      "templateVariableCache",
+    ]);
+    assert.equal(result.broadcastCounter, 5);
+    assert.equal(chromeMock.__getStorage().local.appSettings.historyLimit, 44);
+    assert.equal(chromeMock.__getStorage().local.customSites[0].id, "new-site");
+    assert.equal(chromeMock.__getStorage().local.promptHistory[0].text, "after");
+  });
+
+  await runStep("import commit failure leaves previous local state untouched", async () => {
+    const chromeMock = createChromeMock({
+      grantedOrigins: ["https://new.example.com/*"],
+    });
+    const module = await loadBundledModule("src/shared/stores/prompt-store.ts", chromeMock);
+
+    await chromeMock.storage.local.set({
+      appSettings: {
+        ...module.DEFAULT_SETTINGS,
+        historyLimit: 9,
+      },
+      customSites: [],
+      promptHistory: [{
+        id: 1,
+        text: "before",
+        createdAt: "2026-04-01T00:00:00.000Z",
+      }],
+      promptFavorites: [{
+        id: "fav-before",
+        title: "Before",
+        text: "before",
+        createdAt: "2026-04-01T00:00:00.000Z",
+        favoritedAt: "2026-04-01T00:00:00.000Z",
+      }],
+      templateVariableCache: {
+        topic: "before",
+      },
+      broadcastCounter: 1,
+    });
+
+    const originalLocalSet = chromeMock.storage.local.set;
+    chromeMock.storage.local.set = async (nextValue) => {
+      if (Object.prototype.hasOwnProperty.call(nextValue ?? {}, "appSettings")) {
+        throw new Error("atomic commit failed");
+      }
+
+      return originalLocalSet(nextValue);
+    };
+
+    await assert.rejects(
+      module.importPromptData(JSON.stringify({
+        version: 8,
+        broadcastCounter: 5,
+        history: [{
+          id: 9,
+          text: "after",
+          createdAt: "2026-04-02T00:00:00.000Z",
+        }],
+        favorites: [{
+          id: "fav-after",
+          title: "After",
+          text: "after",
+          createdAt: "2026-04-02T00:00:00.000Z",
+          favoritedAt: "2026-04-02T00:00:00.000Z",
+        }],
+        templateVariableCache: {
+          topic: "after",
+        },
+        settings: {
+          historyLimit: 44,
+        },
+        customSites: [{
+          id: "new-site",
+          name: "New Site",
+          url: "https://new.example.com/",
+          inputSelector: "#prompt",
+          inputType: "textarea",
+          submitMethod: "enter",
+        }],
+      })),
+      /atomic commit failed/,
+    );
+
+    const storageAfterFailure = chromeMock.__getStorage().local;
+    assert.equal(storageAfterFailure.appSettings.historyLimit, 9);
+    assert.equal(storageAfterFailure.customSites.length, 0);
+    assert.equal(storageAfterFailure.promptHistory[0].text, "before");
+    assert.equal(storageAfterFailure.promptFavorites[0].id, "fav-before");
+    assert.equal(storageAfterFailure.templateVariableCache.topic, "before");
+    assert.equal(storageAfterFailure.broadcastCounter, 1);
   });
 
   await runStep("broadcast counter export import and favorite search stay consistent", async () => {
@@ -1215,7 +1550,7 @@ async function main() {
     );
   });
 
-  await runStep("broadcast target snapshots preserve resend routing and safe tab fallback", async () => {
+  await runStep("broadcast target snapshots preserve strict resend routing", async () => {
     const module = await loadBundledModule("src/shared/broadcast/target-snapshots.ts", createChromeMock());
 
     assert.deepEqual(
@@ -1281,6 +1616,7 @@ async function main() {
       {
         id: "claude",
         resolvedPrompt: "Resolved Claude prompt",
+        target: "tab",
         tabId: 77,
       },
     );
@@ -1295,6 +1631,8 @@ async function main() {
       {
         id: "claude",
         resolvedPrompt: "Resolved Claude prompt",
+        target: "tab",
+        tabId: 77,
       },
     );
 
@@ -1372,7 +1710,7 @@ async function main() {
     );
   });
 
-  await runStep("prompt state keeps draft handoff and last sent prompt separate", async () => {
+  await runStep("prompt state keeps restore precedence as handoff then draft then last sent", async () => {
     const chromeMock = createChromeMock();
     const module = await loadBundledModule("src/shared/prompt-state.ts", chromeMock);
 
@@ -1393,9 +1731,40 @@ async function main() {
     const consumedIntent = await module.consumePopupPromptIntent();
     assert.equal(consumedIntent?.prompt, "popup handoff");
     assert.equal(await module.getPopupPromptIntent(), null);
+    assert.equal(
+      module.pickRestoredComposePrompt({
+        popupPromptIntent: { prompt: "popup handoff", createdAt: "2026-04-03T00:00:00.000Z" },
+        composeDraftPrompt: "draft from composer",
+        lastSentPrompt: "resolved send payload",
+      }),
+      "popup handoff",
+    );
+    assert.equal(
+      module.pickRestoredComposePrompt({
+        composeDraftPrompt: "draft from composer",
+        lastSentPrompt: "resolved send payload",
+      }),
+      "draft from composer",
+    );
+    assert.equal(
+      module.pickRestoredComposePrompt({
+        composeDraftPrompt: "",
+        lastSentPrompt: "resolved send payload",
+      }),
+      "resolved send payload",
+    );
+    assert.equal(
+      module.pickRestoredComposePrompt({
+        currentPrompt: "already typing",
+        popupPromptIntent: { prompt: "popup handoff", createdAt: "2026-04-03T00:00:00.000Z" },
+        composeDraftPrompt: "draft from composer",
+        lastSentPrompt: "resolved send payload",
+      }),
+      "already typing",
+    );
   });
 
-  await runStep("favorite run job helpers dedupe active runs only", async () => {
+  await runStep("favorite run job helpers prefer active jobs over newer skipped jobs", async () => {
     const module = await loadBundledModule("src/shared/runtime-state/favorite-run-jobs.ts", createChromeMock());
 
     const runningJob = module.normalizeFavoriteRunJobRecord({
@@ -1420,9 +1789,32 @@ async function main() {
       createdAt: "2026-04-03T00:00:00.000Z",
       updatedAt: "2026-04-03T00:00:06.000Z",
     });
+    const recentSkippedJob = module.normalizeFavoriteRunJobRecord({
+      jobId: "job-skipped",
+      favoriteId: "fav-1",
+      status: "skipped",
+      mode: "chain",
+      stepCount: 2,
+      completedSteps: 1,
+      currentStepIndex: 1,
+      createdAt: "2026-04-03T00:00:00.000Z",
+      updatedAt: "2026-04-03T00:00:12.000Z",
+    });
 
     assert.equal(
       module.findFavoriteRunDedupedJob([runningJob], "fav-1")?.jobId,
+      "job-running",
+    );
+    assert.equal(
+      module.getLatestFavoriteRunJobByFavoriteId([runningJob, recentSkippedJob], "fav-1")?.jobId,
+      "job-skipped",
+    );
+    assert.equal(
+      module.getActiveFavoriteRunJobByFavoriteId([runningJob, recentSkippedJob], "fav-1")?.jobId,
+      "job-running",
+    );
+    assert.equal(
+      module.findFavoriteRunDedupedJob([runningJob, recentSkippedJob], "fav-1")?.jobId,
       "job-running",
     );
     assert.equal(
@@ -1558,6 +1950,93 @@ async function main() {
     assert.equal(jobs.length, 1);
     assert.equal(responses.filter((response) => response?.deduped).length, 1);
     assert.equal(responses.filter((response) => response?.ok).length, 2);
+  });
+
+  await runStep("scheduled overlap records skipped job without hiding the active run", async () => {
+    const chromeMock = createChromeMock();
+    const workflowModule = await loadBundledModule("src/background/popup/favorites-workflow.ts", chromeMock);
+    const jobsModule = await loadBundledModule("src/shared/runtime-state/favorite-run-jobs.ts", chromeMock);
+    const baseMs = Date.now();
+    const nowIso = new Date(baseMs).toISOString();
+
+    await chromeMock.storage.local.set({
+      promptFavorites: [{
+        id: "fav-scheduled",
+        title: "Scheduled favorite",
+        text: "Run once",
+        sentTo: ["claude"],
+        createdAt: nowIso,
+        favoritedAt: nowIso,
+        templateDefaults: {},
+        tags: [],
+        folder: "",
+        pinned: false,
+        usageCount: 0,
+        lastUsedAt: null,
+        mode: "single",
+        steps: [],
+        scheduleEnabled: true,
+        scheduledAt: "09:00",
+        scheduleRepeat: "daily",
+      }],
+      promptHistory: [],
+      templateVariableCache: {},
+      broadcastCounter: 0,
+    });
+    await chromeMock.storage.session.set({
+      favoriteRunJobs: [{
+        jobId: "job-running",
+        favoriteId: "fav-scheduled",
+        trigger: "scheduled",
+        status: "running",
+        mode: "single",
+        stepCount: 1,
+        completedSteps: 0,
+        currentStepIndex: 0,
+        currentBroadcastId: "broadcast-running",
+        message: "Running",
+        createdAt: nowIso,
+        updatedAt: new Date(baseMs - 1000).toISOString(),
+        favoriteTitle: "Scheduled favorite",
+        steps: [],
+        templateDefaults: {},
+        executionContext: {},
+      }],
+    });
+
+    const workflow = workflowModule.createFavoriteWorkflow({
+      getBroadcastTriggerLabel: (trigger) => trigger ?? "scheduled",
+      getI18nMessage: () => "",
+      rememberNormalTab: async () => null,
+      getPreferredNormalActiveTab: async () => null,
+      isInjectableTabUrl: () => true,
+      getSelectedTextFromTab: async () => "",
+      openPopupWithPrompt: async () => {},
+      nowIso: () => new Date(baseMs + 1000).toISOString(),
+      buildChainRunId: () => "chain-scheduled",
+      queueBroadcastRequest: async () => ({ ok: true, broadcastId: "broadcast-should-not-run" }),
+    });
+
+    const response = await workflow.handleFavoriteRunMessage({
+      favoriteId: "fav-scheduled",
+      trigger: "scheduled",
+      allowPopupFallback: false,
+    }, {});
+
+    assert.equal(response?.ok, true);
+    assert.equal(response?.deduped, true);
+    assert.equal(response?.jobId, "job-running");
+
+    const storedJobs = chromeMock.__getStorage().session.favoriteRunJobs ?? [];
+    assert.equal(storedJobs.length, 2);
+    assert.equal(storedJobs.filter((job) => job.status === "running").length, 1);
+    assert.equal(storedJobs.filter((job) => job.status === "skipped").length, 1);
+    assert.equal(storedJobs.find((job) => job.status === "skipped")?.message, "Skipped because another run is active.");
+    assert.equal((chromeMock.__getStorage().local.promptHistory ?? []).length, 0);
+    assert.equal(
+      jobsModule.findFavoriteRunDedupedJob(storedJobs, "fav-scheduled")?.jobId,
+      "job-running",
+    );
   });
 
   await runStep("favorite workflow serializes counter variables across concurrent alarms", async () => {
@@ -1872,6 +2351,81 @@ async function main() {
     assert.equal(storage.local.promptHistory?.[0]?.originFavoriteId, "fav-fail");
     assert.deepEqual(storage.local.promptHistory?.[0]?.requestedSiteIds, ["claude"]);
     assert.deepEqual(storage.local.promptHistory?.[0]?.failedSiteIds, ["claude"]);
+  });
+
+  await runStep("scheduled chain validation records the actual failing step in history", async () => {
+    const chromeMock = createChromeMock();
+    const module = await loadBundledModule("src/background/popup/favorites-workflow.ts", chromeMock);
+    const nowIso = "2026-04-03T00:00:00.000Z";
+
+    await chromeMock.storage.local.set({
+      promptFavorites: [{
+        id: "fav-chain-fail",
+        title: "Chain favorite",
+        text: "First step",
+        sentTo: ["chatgpt"],
+        createdAt: nowIso,
+        favoritedAt: nowIso,
+        templateDefaults: {},
+        tags: [],
+        folder: "",
+        pinned: false,
+        usageCount: 0,
+        lastUsedAt: null,
+        mode: "chain",
+        steps: [
+          {
+            id: "step-1",
+            text: "Step one",
+            delayMs: 0,
+            targetSiteIds: ["chatgpt"],
+          },
+          {
+            id: "step-2",
+            text: "Needs {{selection}}",
+            delayMs: 0,
+            targetSiteIds: ["claude"],
+          },
+        ],
+        scheduleEnabled: true,
+        scheduledAt: "09:00",
+        scheduleRepeat: "daily",
+      }],
+      promptHistory: [],
+      templateVariableCache: {},
+      broadcastCounter: 0,
+    });
+
+    const workflow = module.createFavoriteWorkflow({
+      getBroadcastTriggerLabel: (trigger) => trigger ?? "scheduled",
+      getI18nMessage: () => "",
+      rememberNormalTab: async () => null,
+      getPreferredNormalActiveTab: async () => null,
+      isInjectableTabUrl: () => true,
+      getSelectedTextFromTab: async () => "",
+      openPopupWithPrompt: async () => {},
+      nowIso: () => nowIso,
+      buildChainRunId: () => "chain-failing-step",
+      queueBroadcastRequest: async () => ({ ok: true, broadcastId: "broadcast-should-not-run" }),
+    });
+
+    const response = await workflow.handleFavoriteRunMessage({
+      favoriteId: "fav-chain-fail",
+      trigger: "scheduled",
+      allowPopupFallback: false,
+    }, {});
+
+    assert.equal(response?.ok, false);
+    assert.equal(response?.reason, "scheduled_unsupported_variable");
+
+    const historyEntry = chromeMock.__getStorage().local.promptHistory?.[0];
+    assert.equal(historyEntry.originFavoriteId, "fav-chain-fail");
+    assert.equal(historyEntry.chainRunId, "chain-failing-step");
+    assert.equal(historyEntry.chainStepIndex, 1);
+    assert.equal(historyEntry.chainStepCount, 2);
+    assert.equal(historyEntry.text, "Needs {{selection}}");
+    assert.deepEqual(historyEntry.requestedSiteIds, ["claude"]);
+    assert.equal(historyEntry.siteResults.claude.message, "Scheduled favorites cannot resolve selection.");
   });
 
   await runStep("csv export helper escapes formulas safely", async () => {

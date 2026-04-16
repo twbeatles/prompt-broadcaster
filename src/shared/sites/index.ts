@@ -61,6 +61,11 @@ export {
   normalizeHostnameAliasEntry,
   validateHostnameAliases,
 } from "./hostname-aliases";
+export {
+  containsOriginPermission,
+  findMissingOriginPermissions,
+  requestOriginPermissions,
+} from "./permissions";
 export { validateSiteDraft } from "./validation";
 export {
   repairImportedBuiltInOverrides,

@@ -39,6 +39,8 @@ import {
 import {
   consumePopupPromptIntent,
   getComposeDraftPrompt,
+  getLastSentPrompt,
+  pickRestoredComposePrompt,
   setComposeDraftPrompt,
   setLastSentPrompt,
 } from "../../shared/prompt-state";
@@ -47,13 +49,12 @@ import {
   drainPendingUiToasts,
   getFavoriteRunJobs,
   getFailedSelectors,
-  getLatestFavoriteRunJobByFavoriteId,
   getLastBroadcast,
 } from "../../shared/runtime-state";
 import {
-  buildSitePermissionPatterns,
   deleteCustomSite,
   getRuntimeSites,
+  requestOriginPermissions,
   resetSiteSettings,
   saveBuiltInSiteOverride,
   saveCustomSite,
@@ -174,6 +175,15 @@ function getEventInput(target: EventTarget | null): HTMLInputElement | null {
 
 function getEventSelect(target: EventTarget | null): HTMLSelectElement | null {
   return target instanceof HTMLSelectElement ? target : null;
+}
+
+function getImportErrorSummary(error: unknown): PopupState["pendingImportSummary"] {
+  if (!error || typeof error !== "object" || !("importSummary" in error)) {
+    return null;
+  }
+
+  const summary = (error as { importSummary?: PopupState["pendingImportSummary"] }).importSummary;
+  return summary ?? null;
 }
 
 const { extTitle, extDesc } = popupDom.header;
@@ -431,6 +441,7 @@ let triggerRipple = (_button: HTMLButtonElement, _event: MouseEvent): void => un
 let bindHistoryModalEvents = (_getErrorMessage: (error: unknown) => string): void => undefined;
 let bindTemplateModalEvents = (_onError: (message: string) => void): void => undefined;
 let handleGlobalShortcut = async (_event: KeyboardEvent): Promise<void> => undefined;
+let hasRestoredStoredPrompt = false;
 
 const overlayController = createOverlayController({
   overlays: [importReportModal, resendModal, favoriteModal, templateModal],
@@ -485,6 +496,7 @@ async function loadStoredData() {
       runtimeSites,
       promptIntent,
       composeDraftPrompt,
+      lastSentPrompt,
       failedSelectors,
       favoriteJobs,
       settings,
@@ -495,6 +507,7 @@ async function loadStoredData() {
       getRuntimeSites(),
       consumePopupPromptIntent(),
       getComposeDraftPrompt(),
+      getLastSentPrompt(),
       getFailedSelectors(),
       getFavoriteRunJobs(),
       getAppSettings(),
@@ -510,10 +523,14 @@ async function loadStoredData() {
 
     await refreshOpenSiteTabs();
 
-    if (typeof promptIntent?.prompt === "string" && !promptInput.value.trim()) {
-      promptInput.value = promptIntent.prompt;
-    } else if (!promptInput.value.trim()) {
-      promptInput.value = composeDraftPrompt;
+    if (!hasRestoredStoredPrompt) {
+      promptInput.value = pickRestoredComposePrompt({
+        currentPrompt: promptInput.value,
+        popupPromptIntent: promptIntent,
+        composeDraftPrompt,
+        lastSentPrompt,
+      });
+      hasRestoredStoredPrompt = true;
     }
 
     applySettingsToControls();
@@ -819,13 +836,17 @@ async function handleSend() {
   const composerTargets = buildComposerBroadcastTargets(selectedSiteIds, prompt);
   const selectedSites = state.runtimeSites.filter((site) => selectedSiteIds.includes(site.id));
 
-  for (const site of selectedSites) {
-    if (!site.isCustom) {
-      continue;
-    }
-
-    const granted = await ensureSiteOriginPermission(site.url, site.hostnameAliases);
-    if (!granted) {
+  const customSitePermissionPatterns = Array.from(
+    new Set(
+      selectedSites
+        .filter((site) => site.isCustom)
+        .flatMap((site) => Array.isArray(site.permissionPatterns) ? site.permissionPatterns : [])
+        .filter((pattern): pattern is string => typeof pattern === "string" && pattern.trim().length > 0)
+    ),
+  );
+  if (customSitePermissionPatterns.length > 0) {
+    const permissionResult = await requestOriginPermissions(customSitePermissionPatterns);
+    if (!permissionResult.granted) {
       setStatus(t.servicePermissionDenied, "error");
       showAppToast(t.servicePermissionDenied, "error", 4000);
       return;
@@ -1119,7 +1140,13 @@ function bindGlobalEvents() {
       showAppToast(buildImportSummaryText(result.importSummary, { short: true }), "success", 2600);
       openImportReportModal(result.importSummary);
     } catch (error) {
+      const importSummary = getImportErrorSummary(error);
+      if (importSummary) {
+        openImportReportModal(importSummary);
+      }
+
       setStatus(t.importFailed, "error");
+      showAppToast(t.importFailed, "error", 4000);
       console.error("[AI Prompt Broadcaster] JSON import failed.", error);
     } finally {
       importJsonInput.value = "";

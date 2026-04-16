@@ -130,6 +130,7 @@ const DEFAULT_SUBMIT_RETRY_COUNT = 1;
 interface ResolvedBroadcastTarget {
   site: RuntimeInjectionSiteConfig;
   targetTabId: number | null;
+  requireExplicitTab: boolean;
   forceNewTab: boolean;
   promptOverride?: string;
   resolvedPrompt?: string;
@@ -450,6 +451,21 @@ function normalizeTargetTabId(value: unknown): number | null {
   return Number.isFinite(numericValue) ? numericValue : null;
 }
 
+function buildSelectedTabUnavailableMessage(siteName: string, tabId: number | null): string {
+  const label = siteName || "AI service";
+  if (Number.isFinite(Number(tabId))) {
+    return (
+      getI18nMessage("toast_selected_tab_unavailable", [label, String(tabId)]) ||
+      `${label} selected tab #${String(tabId)} is unavailable.`
+    );
+  }
+
+  return (
+    getI18nMessage("toast_selected_tab_unavailable", [label]) ||
+    `${label} selected tab is unavailable.`
+  );
+}
+
 async function resolveSelectedTargets(
   siteRefs: Array<string | BroadcastSiteTargetMessage>,
 ): Promise<ResolvedBroadcastTarget[]> {
@@ -461,6 +477,7 @@ async function resolveSelectedTargets(
   for (const siteRef of Array.isArray(siteRefs) ? siteRefs : []) {
     let resolvedSite = null;
     let targetTabId = null;
+    let requireExplicitTab = false;
     let forceNewTab = false;
     let promptOverride: string | undefined;
     let resolvedPrompt: string | undefined;
@@ -475,6 +492,7 @@ async function resolveSelectedTargets(
       }
 
       targetTabId = normalizeTargetTabId(siteRef.tabId);
+      requireExplicitTab = siteRef.target === "tab" || targetTabId !== null;
       forceNewTab =
         siteRef.reuseExistingTab === false ||
         siteRef.openInNewTab === true ||
@@ -497,6 +515,7 @@ async function resolveSelectedTargets(
     resolvedTargets.push({
       site: buildInjectionConfig(resolvedSite),
       targetTabId,
+      requireExplicitTab,
       forceNewTab,
       promptOverride,
       resolvedPrompt,
@@ -762,21 +781,53 @@ async function findReusableTabsForSites(
 
 async function getExplicitReusableTabForTarget(
   target: ResolvedBroadcastTarget,
-): Promise<chrome.tabs.Tab | null> {
+): Promise<{
+  requested: boolean;
+  tab: chrome.tabs.Tab | null;
+  message?: string;
+}> {
+  if (!target?.requireExplicitTab) {
+    return {
+      requested: false,
+      tab: null,
+    };
+  }
+
   const targetTabId = Number(target?.targetTabId);
   if (!Number.isFinite(targetTabId)) {
-    return null;
+    return {
+      requested: true,
+      tab: null,
+      message: buildSelectedTabUnavailableMessage(target.site?.name ?? "", null),
+    };
   }
 
   try {
     const tab = await chrome.tabs.get(targetTabId);
     if (!tab?.id || !isInjectableTabUrl(tab?.url ?? "")) {
-      return null;
+      return {
+        requested: true,
+        tab: null,
+        message: buildSelectedTabUnavailableMessage(target.site?.name ?? "", targetTabId),
+      };
     }
 
-    return (await isReusableTabForSite(tab, target.site)) ? tab : null;
+    return (await isReusableTabForSite(tab, target.site))
+      ? {
+          requested: true,
+          tab,
+        }
+      : {
+          requested: true,
+          tab: null,
+          message: buildSelectedTabUnavailableMessage(target.site?.name ?? "", targetTabId),
+        };
   } catch (_error) {
-    return null;
+    return {
+      requested: true,
+      tab: null,
+      message: buildSelectedTabUnavailableMessage(target.site?.name ?? "", targetTabId),
+    };
   }
 }
 
@@ -1372,23 +1423,40 @@ async function recordBroadcastSiteResult(
 
     const { summary, completedRecord } = mutationResult;
 
-    try {
-      if (completedRecord) {
-        const suppressCompletionEffects = suppressedCompletedBroadcastIds.has(broadcastId);
-        suppressedCompletedBroadcastIds.delete(broadcastId);
+    const runSideEffect = async (
+      label: string,
+      effect: () => Promise<void>,
+    ): Promise<void> => {
+      try {
+        await effect();
+      } catch (sideEffectError) {
+        console.error("[AI Prompt Broadcaster] Broadcast completion side effect failed.", {
+          broadcastId,
+          siteId,
+          result,
+          label,
+          sideEffectError,
+        });
+      }
+    };
 
-        if (suppressCompletionEffects) {
-          await syncLastBroadcast(summary);
-          void handleFavoriteBroadcastCompletion(summary).catch((error) => {
-            console.error("[AI Prompt Broadcaster] Favorite job completion sync failed.", {
-              broadcastId,
-              error,
-            });
-          });
-          resolveBroadcastCompletionWaiter(broadcastId, summary);
-          return summary;
-        }
+    if (completedRecord) {
+      const suppressCompletionEffects = suppressedCompletedBroadcastIds.has(broadcastId);
+      suppressedCompletedBroadcastIds.delete(broadcastId);
 
+      await runSideEffect("syncLastBroadcast", async () => {
+        await syncLastBroadcast(summary);
+      });
+      await runSideEffect("handleFavoriteBroadcastCompletion", async () => {
+        await handleFavoriteBroadcastCompletion(summary);
+      });
+      resolveBroadcastCompletionWaiter(broadcastId, summary);
+
+      if (suppressCompletionEffects) {
+        return summary;
+      }
+
+      await runSideEffect("appendPromptHistory", async () => {
         await appendPromptHistory({
           id: Date.now(),
           text: completedRecord.prompt,
@@ -1406,26 +1474,16 @@ async function recordBroadcastSiteResult(
           chainStepCount: completedRecord.chainStepCount ?? null,
           trigger: completedRecord.trigger ?? "popup",
         });
-
-        await syncLastBroadcast(summary);
+      });
+      await runSideEffect("restoreBroadcastFocus", async () => {
         await restoreBroadcastFocus(completedRecord);
+      });
+      await runSideEffect("maybeCreateBroadcastNotification", async () => {
         await maybeCreateBroadcastNotification(summary);
-        void handleFavoriteBroadcastCompletion(summary).catch((error) => {
-          console.error("[AI Prompt Broadcaster] Favorite job completion sync failed.", {
-            broadcastId,
-            error,
-          });
-        });
-        resolveBroadcastCompletionWaiter(broadcastId, summary);
-      } else {
+      });
+    } else {
+      await runSideEffect("syncLastBroadcast", async () => {
         await syncLastBroadcast(summary);
-      }
-    } catch (sideEffectError) {
-      console.error("[AI Prompt Broadcaster] Broadcast completion side effect failed.", {
-        broadcastId,
-        siteId,
-        result,
-        sideEffectError,
       });
     }
 
@@ -2120,8 +2178,16 @@ async function queueResolvedBroadcastRequest(
       }
 
       const explicitTab = await getExplicitReusableTabForTarget(target);
+      if (explicitTab.requested && !explicitTab.tab) {
+        failedTabSiteIds.push(site.id);
+        await recordBroadcastSiteResult(broadcast.id, site.id, buildSiteResult("tab_closed", {
+          message: explicitTab.message ?? buildSelectedTabUnavailableMessage(site.name, target.targetTabId),
+        }));
+        continue;
+      }
+
       const reusableTab =
-        explicitTab ??
+        explicitTab.tab ??
         (
           !target.forceNewTab && settings.reuseExistingTabs
             ? reusableTabsBySiteId.get(site.id) ?? null

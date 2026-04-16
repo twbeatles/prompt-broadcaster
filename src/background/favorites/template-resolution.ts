@@ -25,6 +25,9 @@ export interface FavoriteExecutionValidationResult {
   defaults?: Record<string, string>;
   reason?: string;
   message?: string;
+  failingStepIndex?: number | null;
+  failingStepText?: string;
+  failingStepTargetSiteIds?: string[];
 }
 
 interface FavoriteTemplateResolutionDeps {
@@ -109,7 +112,7 @@ export function createFavoriteTemplateResolutionTools(
       executionContext.selection,
     );
 
-    for (const step of steps) {
+    for (const [stepIndex, step] of steps.entries()) {
       const targetSiteIds = getFavoriteTargetSiteIds(step);
       if (targetSiteIds.length === 0) {
         return {
@@ -120,6 +123,9 @@ export function createFavoriteTemplateResolutionTools(
             [],
             "Favorite does not have any target services.",
           ),
+          failingStepIndex: stepIndex,
+          failingStepText: step.text,
+          failingStepTargetSiteIds: targetSiteIds,
         };
       }
 
@@ -138,6 +144,9 @@ export function createFavoriteTemplateResolutionTools(
             [missingUserValues.join(", ")],
             `Missing template values: ${missingUserValues.join(", ")}`,
           ),
+          failingStepIndex: stepIndex,
+          failingStepText: step.text,
+          failingStepTargetSiteIds: targetSiteIds,
         };
       }
 
@@ -158,6 +167,9 @@ export function createFavoriteTemplateResolutionTools(
               [blocked.join(", ")],
               `Scheduled favorites cannot resolve ${blocked.join(", ")}.`,
             ),
+            failingStepIndex: stepIndex,
+            failingStepText: step.text,
+            failingStepTargetSiteIds: targetSiteIds,
           };
         }
       } else {
@@ -173,6 +185,9 @@ export function createFavoriteTemplateResolutionTools(
               [],
               "Clipboard-backed favorites need popup input.",
             ),
+            failingStepIndex: stepIndex,
+            failingStepText: step.text,
+            failingStepTargetSiteIds: targetSiteIds,
           };
         }
 
@@ -191,6 +206,9 @@ export function createFavoriteTemplateResolutionTools(
               [],
               "Current tab context is unavailable for this favorite.",
             ),
+            failingStepIndex: stepIndex,
+            failingStepText: step.text,
+            failingStepTargetSiteIds: targetSiteIds,
           };
         }
       }

@@ -81,14 +81,17 @@ The smoke flow loads local fixtures from `qa/fixtures/` and validates the built 
 - selection helper double-injection guard
 - JSON import repair for invalid, duplicate, and unauthorized custom services
 - alias-based custom-service permission requests and cleanup of unused optional origins
+- batched custom-site permission preflight and atomic local import commits
 - built-in override import repair for `click` configurations with empty selectors
 - `broadcastCounter` export/import/reset consistency
 - import migration and export `version: 8` normalization
 - `supportedRoutes` normalization and reusable-tab route gating
 - pending selector escalation (`pendingSelectorChecks` -> confirmed warning)
 - `siteOrder` normalization and ordering reuse
+- popup restore precedence and one-shot popup handoff consumption
 - favorite chain/schedule field backfill for legacy imports
 - favorite run job dedupe behavior, chain target fallback, and prepared clipboard context
+- scheduled overlap skip-job recording and active-job preference
 - favorite `{{counter}}` serialization across concurrent runs
 - chain stop on non-`submitted` completion
 - favorite failure-history recording for queue failures before broadcast creation
@@ -184,15 +187,16 @@ The generated ZIP contains the built extension from `dist/` only.
    For Perplexity specifically, confirm that the prompt is inserted once into `#ask-input[data-lexical-editor='true']` and that submission still succeeds through the standard submit path
 10. Walk through [release-selector-verification-checklist.md](release-selector-verification-checklist.md) for every built-in touched by the release
 11. Verify that a per-service prompt override with template variables resolves correctly and that retry reuses the originally rendered prompt even after editing the popup text
-12. Add, import, delete, and reset a custom service and confirm optional host permissions are granted and cleaned up only for the required origins
+12. Add, import, delete, and reset a custom service and confirm optional host permissions are batch-requested, import aborts when any required origin stays denied, and cleanup only removes unused origins after commit
 13. Confirm that popup sorting, favorite duplication, resend-service selection, import-report modals, and the integrated favorite editor all behave correctly
    Verify that single favorites can edit prompt body text inline and that single/chain mode switches preserve expected values
 14. Verify single favorites, chain favorites, scheduled favorites, and the options `Schedules` section
-   Confirm the options action label is `Edit in popup`, and that the services section opens the popup manager for detailed editing
+   Confirm the options action label is `Edit in popup`, that the services section opens the popup manager for detailed editing, and that scheduled overlap leaves a `skipped` job without hiding any active run
 15. Trigger popup-side favorite runs that use `{{clipboard}}`, `{{url}}`, or `{{selection}}` and confirm they queue without opening the editor unnecessarily
 16. Trigger the quick palette with `Alt+Shift+F` on an injectable page and confirm both direct execution and popup fallback flows
 17. Confirm popup fallback resumes automatically when only popup-resolvable context was missing, and opens the editor only when user-variable input is still required
 18. Confirm that cancelling a broadcast leaves reused tabs open and closes only newly opened tabs
+   Also confirm that stale explicit-tab targets fail with `tab_closed` semantics instead of silently falling back to another tab or a new tab
 19. In options `Dashboard`, confirm the heatmap, service trend, top failure reason, and strategy summary panels render with sane labels and escaped content
 20. In options `Services`, reorder services with `Move up` / `Move down` and confirm the same order appears in popup compose and favorite editor target checklists
 21. Trigger **Reset data** and confirm it clears both local prompt data and in-memory/session runtime state, including `pendingSelectorChecks` and strategy stats
@@ -217,6 +221,7 @@ Before uploading, run these manual checks in a real Chrome window:
 - popup opens without showing a stale modal overlay
 - favorites-save modal opens and closes normally
 - ChatGPT, Gemini, Claude, Grok, and Perplexity all inject and submit from the built `dist/` extension
+- stale explicit-tab sends/replays fail cleanly instead of silently rerouting
 - Claude specifically reaches a real prompt submit path rather than clicking a decoy action button
 - Perplexity specifically uses the exact Lexical composer selector and should not duplicate the prompt text before submit
 - custom-service add/import/delete/reset keeps optional host permissions aligned with `url + hostnameAliases`

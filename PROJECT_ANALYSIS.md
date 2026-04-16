@@ -1,7 +1,7 @@
 # AI Prompt Broadcaster - 프로젝트 구조 분석
 
-> 기준일: 2026-04-15
-> 최종 업데이트: 2026-04-15 (popup/content/options 구조 추가 분할, docs 정합성 반영)
+> 기준일: 2026-04-16
+> 최종 업데이트: 2026-04-16 (routing/import/popup restore 안정화 패스 및 docs 정합성 반영)
 > 분석 범위: 전체 소스코드, 빌드 시스템, 데이터 흐름, UI 구조
 
 ---
@@ -403,6 +403,10 @@ JSON export/import:
 - `v8`에서 유지되는 대표 항목:
   - `supportedRoutes`
   - built-in/custom route normalization
+- 커스텀 서비스 permission은 `url + hostnameAliases` 전체 origin 세트를 기준으로 batch preflight 한다.
+- import는 permission preflight가 끝난 뒤 관련 local 키를 한 번의 `chrome.storage.local.set`으로 커밋한다.
+- 필요한 origin 중 하나라도 계속 거부되면 import 전체를 중단하고 기존 local state는 유지한다.
+- commit 이후 unused permission cleanup 실패는 best-effort 경고로만 처리한다.
 
 ---
 
@@ -428,6 +432,12 @@ content/injector.js 주입
 siteResults / history / lastBroadcast 업데이트
 ```
 
+추가 안정화 규칙:
+
+- 특정 탭(`targetMode: "tab"`)은 엄격한 의미로 취급된다. 선택한 탭이 사라졌거나 reusable-tab preflight를 통과하지 못하면 다른 탭/새 탭으로 자동 downgrade하지 않고 `tab_closed`로 실패 처리한다.
+- background 완료 후처리는 `lastBroadcast` sync, favorite completion sync, waiter resolve를 우선 보장하고, history append / focus restore / notification은 각각 best-effort로 분리한다.
+- popup compose 복원 우선순위는 `popupPromptIntent -> composeDraftPrompt -> lastSentPrompt`이며, 초기 restore 1회만 적용한다.
+
 ### 7.2 즐겨찾기 실행
 
 - popup `Run now`
@@ -444,6 +454,8 @@ siteResults / history / lastBroadcast 업데이트
 - step별 `targetSiteIds`가 비어 있으면 favorite 기본 `sentTo`를 상속하고, 값이 있으면 그것으로 override
 - 어떤 step이든 결과가 `submitted`가 아니면 즉시 중단
 - dedupe는 같은 favorite의 `queued/running` 겹침만 막고, 완료/실패 직후 재실행은 허용
+- scheduled 중복 실행은 prompt history를 추가하지 않고 terminal `skipped` favorite job만 남긴다.
+- active job lookup은 최신 terminal job보다 `queued/running` job을 우선한다.
 
 ### 7.4 Scheduled favorite
 
@@ -453,6 +465,7 @@ siteResults / history / lastBroadcast 업데이트
 - `daily`, `weekday`, `weekly`는 다음 `scheduledAt` 갱신 후 재등록
 - `url/title/selection/clipboard`가 필요한 템플릿은 schedule 실행 시 block
 - options `Schedules`는 manual run과 분리된 최근 scheduled 실행 시각/상태/대표 실패 상세를 별도로 노출
+- chain validation 실패는 실제 막힌 step의 `chainStepIndex`, step text, target sites 기준으로 history를 남긴다.
 
 ### 7.5 Quick palette
 

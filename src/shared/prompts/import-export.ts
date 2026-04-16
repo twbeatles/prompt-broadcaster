@@ -3,24 +3,24 @@ import {
   repairImportedBuiltInOverrides,
   repairImportedBuiltInStates,
   repairImportedCustomSites,
+  findMissingOriginPermissions,
   getBuiltInSiteOverrides,
   getBuiltInSiteStates,
   getCustomSites,
-  setBuiltInSiteOverrides,
-  setBuiltInSiteStates,
-  setCustomSites,
+  requestOriginPermissions,
+  SITE_STORAGE_KEYS,
 } from "../sites";
-import { DEFAULT_SETTINGS } from "./constants";
+import {
+  DEFAULT_SETTINGS,
+  LOCAL_STORAGE_KEYS,
+} from "./constants";
 import {
   buildFavoriteEntry,
   getPromptFavorites,
-  setPromptFavorites,
 } from "./favorites-store";
 import {
   buildHistoryEntry,
-  getPromptHistory,
   getStoredPromptHistory,
-  setPromptHistory,
 } from "./history-store";
 import {
   ensureUniqueNumericId,
@@ -34,16 +34,15 @@ import {
 } from "./normalizers";
 import {
   getBroadcastCounter,
-  setBroadcastCounter,
 } from "./broadcast-counter";
-import { getAppSettings, setAppSettings } from "./settings-store";
+import { getAppSettings } from "./settings-store";
 import {
   getTemplateVariableCache,
-  setTemplateVariableCache,
 } from "./template-cache-store";
 import { safeText } from "../sites";
 import type {
   FavoritePrompt,
+  ImportSummary,
   ImportRejectedSite,
   PromptHistoryItem,
 } from "../types/models";
@@ -59,44 +58,80 @@ function asImportPayload(value: unknown): Record<string, unknown> {
   return safeObject(value);
 }
 
-async function containsOriginPermission(originPattern: string): Promise<boolean> {
-  try {
-    if (!chrome.permissions?.contains || !originPattern) {
-      return false;
-    }
-
-    return await chrome.permissions.contains({
-      origins: [originPattern],
-    });
-  } catch (_error) {
-    return false;
-  }
+function createImportSummary(
+  targetVersion: number,
+  sourceVersion: number,
+  importedCustomSites: unknown[],
+  customSiteImport: {
+    acceptedSites: AcceptedCustomSite[];
+    rejectedSites: ImportRejectedSite[];
+    rewrittenIds: Array<{ from: string; to: string; name: string }>;
+    deniedOrigins: string[];
+  },
+  builtInStateImport: {
+    appliedIds: string[];
+    droppedIds: string[];
+  },
+  builtInOverrideImport: {
+    appliedIds: string[];
+    droppedIds: string[];
+    adjustedIds: string[];
+  },
+): ImportSummary {
+  return {
+    version: targetVersion,
+    migratedFromVersion: sourceVersion,
+    customSites: {
+      importedCount: importedCustomSites.length,
+      acceptedIds: customSiteImport.acceptedSites.map((site) => site.id),
+      acceptedNames: customSiteImport.acceptedSites.map((site) => site.name),
+      rejected: customSiteImport.rejectedSites,
+      rewrittenIds: customSiteImport.rewrittenIds,
+      deniedOrigins: customSiteImport.deniedOrigins,
+    },
+    builtInSiteStates: {
+      appliedIds: builtInStateImport.appliedIds,
+      droppedIds: builtInStateImport.droppedIds,
+    },
+    builtInSiteOverrides: {
+      appliedIds: builtInOverrideImport.appliedIds,
+      droppedIds: builtInOverrideImport.droppedIds,
+      adjustedIds: builtInOverrideImport.adjustedIds,
+    },
+  };
 }
 
-async function findMissingOriginPermissions(originPatterns: string[] = []): Promise<string[]> {
-  const missingOrigins: string[] = [];
-
-  for (const originPattern of Array.isArray(originPatterns) ? originPatterns : []) {
-    if (!originPattern) {
-      continue;
-    }
-
-    if (!(await containsOriginPermission(originPattern))) {
-      missingOrigins.push(originPattern);
-    }
-  }
-
-  return missingOrigins;
+function createImportPermissionDeniedError(importSummary: ImportSummary): Error & {
+  code: "import_permission_denied";
+  importSummary: ImportSummary;
+} {
+  const error = new Error("Import failed.");
+  return Object.assign(error, {
+    code: "import_permission_denied" as const,
+    importSummary,
+  });
 }
 
 async function repairImportedCustomSitesWithPermissions(rawSites: unknown) {
   const repaired = repairImportedCustomSites(rawSites);
   const requestedOrigins = new Set<string>();
   const deniedOrigins = new Set<string>();
-  const blockedOrigins = new Set<string>();
 
   const acceptedSites: AcceptedCustomSite[] = [];
   const permissionDeniedSites: ImportRejectedSite[] = [];
+
+  const requestedPermissionPatterns = Array.from(
+    new Set(
+      repaired.repairedSites.flatMap((site) =>
+        Array.isArray(site?.permissionPatterns)
+          ? site.permissionPatterns.filter((pattern) => typeof pattern === "string" && pattern.trim())
+          : []
+      )
+    )
+  );
+  const permissionRequestResult = await requestOriginPermissions(requestedPermissionPatterns);
+  permissionRequestResult.requestedOrigins.forEach((origin) => requestedOrigins.add(origin));
+  permissionRequestResult.deniedOrigins.forEach((origin) => deniedOrigins.add(origin));
 
   for (const site of repaired.repairedSites) {
     const permissionPatterns = Array.isArray(site?.permissionPatterns)
@@ -105,41 +140,13 @@ async function repairImportedCustomSitesWithPermissions(rawSites: unknown) {
 
     permissionPatterns.forEach((origin) => requestedOrigins.add(origin));
 
-    const blockedForSite = permissionPatterns.filter((origin) => blockedOrigins.has(origin));
-    if (blockedForSite.length > 0) {
-      blockedForSite.forEach((origin) => deniedOrigins.add(origin));
-      permissionDeniedSites.push({
-        id: safeText(site.id) || undefined,
-        name: safeText(site.name) || "Custom AI",
-        reason: "permission_denied",
-        origins: blockedForSite,
-      });
-      continue;
-    }
-
     const missingOrigins = await findMissingOriginPermissions(permissionPatterns);
     if (missingOrigins.length === 0) {
       acceptedSites.push(site as AcceptedCustomSite);
       continue;
     }
 
-    try {
-      const granted = chrome.permissions?.request
-      ? await chrome.permissions.request({ origins: missingOrigins })
-        : false;
-
-      if (granted) {
-        acceptedSites.push(site as AcceptedCustomSite);
-        continue;
-      }
-    } catch (_error) {
-      // Fall through to rejection.
-    }
-
-    missingOrigins.forEach((origin) => {
-      blockedOrigins.add(origin);
-      deniedOrigins.add(origin);
-    });
+    missingOrigins.forEach((origin) => deniedOrigins.add(origin));
     permissionDeniedSites.push({
       id: safeText(site.id) || undefined,
       name: safeText(site.name) || "Custom AI",
@@ -344,18 +351,41 @@ export async function importPromptData(jsonString: string) {
   const customSiteImport = await repairImportedCustomSitesWithPermissions(importedCustomSites);
   const builtInStateImport = repairImportedBuiltInStates(importedBuiltInSiteStates);
   const builtInOverrideImport = repairImportedBuiltInOverrides(importedBuiltInSiteOverrides);
+  const importSummary = createImportSummary(
+    targetVersion,
+    sourceVersion,
+    importedCustomSites,
+    customSiteImport,
+    builtInStateImport,
+    builtInOverrideImport,
+  );
 
-  await setAppSettings(importedSettings);
-  await Promise.all([
-    setBroadcastCounter(importedBroadcastCounter),
-    setPromptFavorites(normalizedFavorites),
-    setTemplateVariableCache(templateVariableCache),
-    setCustomSites(customSiteImport.acceptedSites),
-    setBuiltInSiteStates(builtInStateImport.normalized),
-    setBuiltInSiteOverrides(builtInOverrideImport.normalized),
-  ]);
-  await cleanupUnusedCustomSitePermissions(previousCustomSites, customSiteImport.acceptedSites);
-  await setPromptHistory(normalizedHistory);
+  if (customSiteImport.deniedOrigins.length > 0) {
+    throw createImportPermissionDeniedError({
+      ...importSummary,
+      customSites: {
+        ...importSummary.customSites,
+        acceptedIds: [],
+        acceptedNames: [],
+      },
+    });
+  }
+
+  await chrome.storage.local.set({
+    [LOCAL_STORAGE_KEYS.broadcastCounter]: importedBroadcastCounter,
+    [LOCAL_STORAGE_KEYS.favorites]: normalizedFavorites,
+    [LOCAL_STORAGE_KEYS.templateVariableCache]: templateVariableCache,
+    [LOCAL_STORAGE_KEYS.settings]: importedSettings,
+    [LOCAL_STORAGE_KEYS.history]: normalizedHistory,
+    [SITE_STORAGE_KEYS.customSites]: customSiteImport.acceptedSites,
+    [SITE_STORAGE_KEYS.builtInSiteStates]: builtInStateImport.normalized,
+    [SITE_STORAGE_KEYS.builtInSiteOverrides]: builtInOverrideImport.normalized,
+  });
+  try {
+    await cleanupUnusedCustomSitePermissions(previousCustomSites, customSiteImport.acceptedSites);
+  } catch (cleanupError) {
+    console.warn("[AI Prompt Broadcaster] Imported data was committed, but optional permission cleanup failed.", cleanupError);
+  }
 
   return {
     broadcastCounter: importedBroadcastCounter,
@@ -366,26 +396,6 @@ export async function importPromptData(jsonString: string) {
     customSites: customSiteImport.acceptedSites,
     builtInSiteStates: builtInStateImport.normalized,
     builtInSiteOverrides: builtInOverrideImport.normalized,
-    importSummary: {
-      version: targetVersion,
-      migratedFromVersion: sourceVersion,
-      customSites: {
-        importedCount: importedCustomSites.length,
-        acceptedIds: customSiteImport.acceptedSites.map((site) => site.id),
-        acceptedNames: customSiteImport.acceptedSites.map((site) => site.name),
-        rejected: customSiteImport.rejectedSites,
-        rewrittenIds: customSiteImport.rewrittenIds,
-        deniedOrigins: customSiteImport.deniedOrigins,
-      },
-      builtInSiteStates: {
-        appliedIds: builtInStateImport.appliedIds,
-        droppedIds: builtInStateImport.droppedIds,
-      },
-      builtInSiteOverrides: {
-        appliedIds: builtInOverrideImport.appliedIds,
-        droppedIds: builtInOverrideImport.droppedIds,
-        adjustedIds: builtInOverrideImport.adjustedIds,
-      },
-    },
+    importSummary,
   };
 }

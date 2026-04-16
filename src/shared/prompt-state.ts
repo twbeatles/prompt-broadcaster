@@ -45,6 +45,35 @@ export async function getComposeDraftPrompt(): Promise<string> {
   return normalizePrompt(result[LOCAL_PROMPT_STATE_KEYS.legacyLastPrompt]);
 }
 
+export function pickRestoredComposePrompt({
+  currentPrompt = "",
+  popupPromptIntent = null,
+  composeDraftPrompt = "",
+  lastSentPrompt = "",
+}: {
+  currentPrompt?: string;
+  popupPromptIntent?: PopupPromptIntent | null;
+  composeDraftPrompt?: string;
+  lastSentPrompt?: string;
+} = {}): string {
+  const normalizedCurrentPrompt = normalizePrompt(currentPrompt);
+  if (normalizedCurrentPrompt.trim()) {
+    return normalizedCurrentPrompt;
+  }
+
+  const intentPrompt = normalizePrompt(popupPromptIntent?.prompt);
+  if (intentPrompt.trim()) {
+    return intentPrompt;
+  }
+
+  const draftPrompt = normalizePrompt(composeDraftPrompt);
+  if (draftPrompt.trim()) {
+    return draftPrompt;
+  }
+
+  return normalizePrompt(lastSentPrompt);
+}
+
 export async function setComposeDraftPrompt(prompt: string): Promise<void> {
   await chrome.storage.local.set({
     [LOCAL_PROMPT_STATE_KEYS.composeDraftPrompt]: normalizePrompt(prompt),

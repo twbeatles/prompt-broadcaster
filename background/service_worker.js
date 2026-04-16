@@ -2262,12 +2262,12 @@ function getFavoriteRunJobById(jobs, jobId) {
   }
   return jobs.find((job) => job.jobId === normalizedJobId) ?? null;
 }
-function getLatestFavoriteRunJobByFavoriteId(jobs, favoriteId) {
+function getActiveFavoriteRunJobByFavoriteId(jobs, favoriteId) {
   const normalizedFavoriteId = safeText(favoriteId).trim();
   if (!normalizedFavoriteId) {
     return null;
   }
-  return [...jobs].filter((job) => safeText(job.favoriteId).trim() === normalizedFavoriteId).sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))[0] ?? null;
+  return [...jobs].filter((job) => safeText(job.favoriteId).trim() === normalizedFavoriteId).filter((job) => job.status === "queued" || job.status === "running").sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))[0] ?? null;
 }
 function findFavoriteRunJobByBroadcastId(jobs, broadcastId) {
   const normalizedBroadcastId = safeText(broadcastId).trim();
@@ -2277,14 +2277,7 @@ function findFavoriteRunJobByBroadcastId(jobs, broadcastId) {
   return jobs.find((job) => safeText(job.currentBroadcastId).trim() === normalizedBroadcastId) ?? null;
 }
 function findFavoriteRunDedupedJob(jobs, favoriteId) {
-  const latest = getLatestFavoriteRunJobByFavoriteId(jobs, favoriteId);
-  if (!latest) {
-    return null;
-  }
-  if (latest.status === "queued" || latest.status === "running") {
-    return latest;
-  }
-  return null;
+  return getActiveFavoriteRunJobByFavoriteId(jobs, favoriteId);
 }
 
 // src/shared/runtime-state/onboarding.ts
@@ -3199,7 +3192,7 @@ function createFavoriteTemplateResolutionTools(deps) {
     const contextAvailable = Boolean(
       executionContext.tabId !== null || executionContext.windowId !== null || executionContext.url || executionContext.title || executionContext.selection
     );
-    for (const step of steps) {
+    for (const [stepIndex, step] of steps.entries()) {
       const targetSiteIds = getFavoriteTargetSiteIds(step);
       if (targetSiteIds.length === 0) {
         return {
@@ -3209,7 +3202,10 @@ function createFavoriteTemplateResolutionTools(deps) {
             "favorite_run_error_missing_targets",
             [],
             "Favorite does not have any target services."
-          )
+          ),
+          failingStepIndex: stepIndex,
+          failingStepText: step.text,
+          failingStepTargetSiteIds: targetSiteIds
         };
       }
       const variables = detectTemplateVariables(step.text);
@@ -3222,7 +3218,10 @@ function createFavoriteTemplateResolutionTools(deps) {
             "favorite_run_error_missing_template_values",
             [missingUserValues.join(", ")],
             `Missing template values: ${missingUserValues.join(", ")}`
-          )
+          ),
+          failingStepIndex: stepIndex,
+          failingStepText: step.text,
+          failingStepTargetSiteIds: targetSiteIds
         };
       }
       const systemVariables = variables.filter((variable) => variable.kind === "system").map((variable) => variable.name);
@@ -3238,7 +3237,10 @@ function createFavoriteTemplateResolutionTools(deps) {
               "favorite_run_error_scheduled_unsupported_variable",
               [blocked.join(", ")],
               `Scheduled favorites cannot resolve ${blocked.join(", ")}.`
-            )
+            ),
+            failingStepIndex: stepIndex,
+            failingStepText: step.text,
+            failingStepTargetSiteIds: targetSiteIds
           };
         }
       } else {
@@ -3250,7 +3252,10 @@ function createFavoriteTemplateResolutionTools(deps) {
               "favorite_run_error_clipboard_popup_required",
               [],
               "Clipboard-backed favorites need popup input."
-            )
+            ),
+            failingStepIndex: stepIndex,
+            failingStepText: step.text,
+            failingStepTargetSiteIds: targetSiteIds
           };
         }
         const needsTabContext = systemVariables.some(
@@ -3264,7 +3269,10 @@ function createFavoriteTemplateResolutionTools(deps) {
               "favorite_run_error_tab_context_unavailable",
               [],
               "Current tab context is unavailable for this favorite."
-            )
+            ),
+            failingStepIndex: stepIndex,
+            failingStepText: step.text,
+            failingStepTargetSiteIds: targetSiteIds
           };
         }
       }
@@ -3350,6 +3358,13 @@ function createFavoriteWorkflow(deps) {
   }
   function getFailedMessage() {
     return getWorkflowMessage("favorite_run_message_failed", [], "Favorite run failed");
+  }
+  function getSkippedActiveMessage() {
+    return getWorkflowMessage(
+      "favorite_run_message_skipped_active",
+      [],
+      "Skipped because another run is active."
+    );
   }
   function getStepProgressMessage(stepIndex, stepCount) {
     return getWorkflowMessage(
@@ -3488,6 +3503,32 @@ function createFavoriteWorkflow(deps) {
     });
     const finalDedupedJob = queueState.dedupedJob;
     if (finalDedupedJob) {
+      if (trigger === "scheduled") {
+        const skippedAt = nowIso2();
+        const skippedJob = {
+          jobId: createFavoriteRunJobId(),
+          favoriteId: favorite.id,
+          trigger,
+          status: "skipped",
+          mode: favorite.mode === "chain" ? "chain" : "single",
+          stepCount: steps.length,
+          completedSteps: Math.min(
+            Number(finalDedupedJob.completedSteps ?? 0),
+            Number(steps.length ?? 0)
+          ),
+          currentStepIndex: finalDedupedJob.currentStepIndex ?? (steps.length > 0 ? 0 : null),
+          chainRunId: favorite.mode === "chain" ? buildChainRunId2() : null,
+          currentBroadcastId: null,
+          message: getSkippedActiveMessage(),
+          createdAt: skippedAt,
+          updatedAt: skippedAt,
+          favoriteTitle: favorite.title || previewFavoriteText(favorite),
+          steps,
+          templateDefaults: { ...defaults ?? {} },
+          executionContext: { ...executionContext }
+        };
+        await updateFavoriteRunJobs((jobs) => replaceFavoriteRunJob(jobs, skippedJob));
+      }
       return {
         ok: true,
         deduped: true,
@@ -3540,11 +3581,11 @@ function createFavoriteWorkflow(deps) {
         await createFavoriteFailureHistory({
           favoriteId: favorite?.id ?? null,
           message: validation.message,
-          requestedSiteIds: getFavoriteExecutionSteps(favorite)[0]?.targetSiteIds ?? favorite?.sentTo ?? [],
-          text: getFavoriteExecutionSteps(favorite)[0]?.text ?? favorite?.text ?? "",
+          requestedSiteIds: validation.failingStepTargetSiteIds ?? getFavoriteExecutionSteps(favorite)[0]?.targetSiteIds ?? favorite?.sentTo ?? [],
+          text: validation.failingStepText ?? getFavoriteExecutionSteps(favorite)[0]?.text ?? favorite?.text ?? "",
           trigger,
           chainRunId,
-          chainStepIndex: favorite?.mode === "chain" ? 0 : null,
+          chainStepIndex: favorite?.mode === "chain" ? validation.failingStepIndex ?? 0 : null,
           chainStepCount: favorite?.mode === "chain" ? getFavoriteExecutionSteps(favorite).length : null
         });
         await enqueueUiToast({
@@ -4829,6 +4870,13 @@ function normalizeTargetTabId2(value) {
   const numericValue = Number(value);
   return Number.isFinite(numericValue) ? numericValue : null;
 }
+function buildSelectedTabUnavailableMessage(siteName, tabId) {
+  const label = siteName || "AI service";
+  if (Number.isFinite(Number(tabId))) {
+    return getI18nMessage("toast_selected_tab_unavailable", [label, String(tabId)]) || `${label} selected tab #${String(tabId)} is unavailable.`;
+  }
+  return getI18nMessage("toast_selected_tab_unavailable", [label]) || `${label} selected tab is unavailable.`;
+}
 async function resolveSelectedTargets(siteRefs) {
   const runtimeSites = await getRuntimeSites();
   cacheRuntimeSites(runtimeSites);
@@ -4837,6 +4885,7 @@ async function resolveSelectedTargets(siteRefs) {
   for (const siteRef of Array.isArray(siteRefs) ? siteRefs : []) {
     let resolvedSite = null;
     let targetTabId = null;
+    let requireExplicitTab = false;
     let forceNewTab = false;
     let promptOverride;
     let resolvedPrompt;
@@ -4849,6 +4898,7 @@ async function resolveSelectedTargets(siteRefs) {
         resolvedSite = buildInjectionConfig(siteRef);
       }
       targetTabId = normalizeTargetTabId2(siteRef.tabId);
+      requireExplicitTab = siteRef.target === "tab" || targetTabId !== null;
       forceNewTab = siteRef.reuseExistingTab === false || siteRef.openInNewTab === true || siteRef.target === "new";
       promptOverride = typeof siteRef.promptOverride === "string" && siteRef.promptOverride.trim() ? siteRef.promptOverride.trim() : void 0;
       resolvedPrompt = typeof siteRef.resolvedPrompt === "string" ? siteRef.resolvedPrompt : void 0;
@@ -4860,6 +4910,7 @@ async function resolveSelectedTargets(siteRefs) {
     resolvedTargets.push({
       site: buildInjectionConfig(resolvedSite),
       targetTabId,
+      requireExplicitTab,
       forceNewTab,
       promptOverride,
       resolvedPrompt
@@ -5062,18 +5113,43 @@ async function findReusableTabsForSites(sites, options = {}) {
   }
 }
 async function getExplicitReusableTabForTarget(target) {
+  if (!target?.requireExplicitTab) {
+    return {
+      requested: false,
+      tab: null
+    };
+  }
   const targetTabId = Number(target?.targetTabId);
   if (!Number.isFinite(targetTabId)) {
-    return null;
+    return {
+      requested: true,
+      tab: null,
+      message: buildSelectedTabUnavailableMessage(target.site?.name ?? "", null)
+    };
   }
   try {
     const tab = await chrome.tabs.get(targetTabId);
     if (!tab?.id || !isInjectableTabUrl(tab?.url ?? "")) {
-      return null;
+      return {
+        requested: true,
+        tab: null,
+        message: buildSelectedTabUnavailableMessage(target.site?.name ?? "", targetTabId)
+      };
     }
-    return await isReusableTabForSite(tab, target.site) ? tab : null;
+    return await isReusableTabForSite(tab, target.site) ? {
+      requested: true,
+      tab
+    } : {
+      requested: true,
+      tab: null,
+      message: buildSelectedTabUnavailableMessage(target.site?.name ?? "", targetTabId)
+    };
   } catch (_error) {
-    return null;
+    return {
+      requested: true,
+      tab: null,
+      message: buildSelectedTabUnavailableMessage(target.site?.name ?? "", targetTabId)
+    };
   }
 }
 var { openPopupWithPrompt, openOnboardingPage } = createPopupLauncher();
@@ -5526,21 +5602,33 @@ async function recordBroadcastSiteResult(broadcastId, siteId, resultInput) {
       return null;
     }
     const { summary, completedRecord } = mutationResult;
-    try {
-      if (completedRecord) {
-        const suppressCompletionEffects = suppressedCompletedBroadcastIds.has(broadcastId);
-        suppressedCompletedBroadcastIds.delete(broadcastId);
-        if (suppressCompletionEffects) {
-          await syncLastBroadcast(summary);
-          void handleFavoriteBroadcastCompletion(summary).catch((error) => {
-            console.error("[AI Prompt Broadcaster] Favorite job completion sync failed.", {
-              broadcastId,
-              error
-            });
-          });
-          resolveBroadcastCompletionWaiter(broadcastId, summary);
-          return summary;
-        }
+    const runSideEffect = async (label, effect) => {
+      try {
+        await effect();
+      } catch (sideEffectError) {
+        console.error("[AI Prompt Broadcaster] Broadcast completion side effect failed.", {
+          broadcastId,
+          siteId,
+          result,
+          label,
+          sideEffectError
+        });
+      }
+    };
+    if (completedRecord) {
+      const suppressCompletionEffects = suppressedCompletedBroadcastIds.has(broadcastId);
+      suppressedCompletedBroadcastIds.delete(broadcastId);
+      await runSideEffect("syncLastBroadcast", async () => {
+        await syncLastBroadcast(summary);
+      });
+      await runSideEffect("handleFavoriteBroadcastCompletion", async () => {
+        await handleFavoriteBroadcastCompletion(summary);
+      });
+      resolveBroadcastCompletionWaiter(broadcastId, summary);
+      if (suppressCompletionEffects) {
+        return summary;
+      }
+      await runSideEffect("appendPromptHistory", async () => {
         await appendPromptHistory({
           id: Date.now(),
           text: completedRecord.prompt,
@@ -5558,25 +5646,16 @@ async function recordBroadcastSiteResult(broadcastId, siteId, resultInput) {
           chainStepCount: completedRecord.chainStepCount ?? null,
           trigger: completedRecord.trigger ?? "popup"
         });
-        await syncLastBroadcast(summary);
+      });
+      await runSideEffect("restoreBroadcastFocus", async () => {
         await restoreBroadcastFocus(completedRecord);
+      });
+      await runSideEffect("maybeCreateBroadcastNotification", async () => {
         await maybeCreateBroadcastNotification(summary);
-        void handleFavoriteBroadcastCompletion(summary).catch((error) => {
-          console.error("[AI Prompt Broadcaster] Favorite job completion sync failed.", {
-            broadcastId,
-            error
-          });
-        });
-        resolveBroadcastCompletionWaiter(broadcastId, summary);
-      } else {
+      });
+    } else {
+      await runSideEffect("syncLastBroadcast", async () => {
         await syncLastBroadcast(summary);
-      }
-    } catch (sideEffectError) {
-      console.error("[AI Prompt Broadcaster] Broadcast completion side effect failed.", {
-        broadcastId,
-        siteId,
-        result,
-        sideEffectError
       });
     }
     return summary;
@@ -6116,7 +6195,14 @@ async function queueResolvedBroadcastRequest(prompt, selectedTargets, metadata =
         }
       }
       const explicitTab = await getExplicitReusableTabForTarget(target);
-      const reusableTab = explicitTab ?? (!target.forceNewTab && settings.reuseExistingTabs ? reusableTabsBySiteId.get(site.id) ?? null : null);
+      if (explicitTab.requested && !explicitTab.tab) {
+        failedTabSiteIds.push(site.id);
+        await recordBroadcastSiteResult(broadcast.id, site.id, buildSiteResult("tab_closed", {
+          message: explicitTab.message ?? buildSelectedTabUnavailableMessage(site.name, target.targetTabId)
+        }));
+        continue;
+      }
+      const reusableTab = explicitTab.tab ?? (!target.forceNewTab && settings.reuseExistingTabs ? reusableTabsBySiteId.get(site.id) ?? null : null);
       const targetTab = reusableTab ?? await chrome.tabs.create({
         url: site.url,
         active: false

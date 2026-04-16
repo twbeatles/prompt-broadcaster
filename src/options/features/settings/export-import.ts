@@ -21,6 +21,14 @@ function downloadBlob(filename, content, type) {
   URL.revokeObjectURL(url);
 }
 
+function getImportErrorSummary(error) {
+  if (!error || typeof error !== "object" || !("importSummary" in error)) {
+    return null;
+  }
+
+  return error.importSummary ?? null;
+}
+
 export function bindExportImportEvents({ loadData }) {
   settingsExportJson.addEventListener("click", async () => {
     try {
@@ -57,9 +65,14 @@ export function bindExportImportEvents({ loadData }) {
       showAppToast(buildImportSummaryText(result.importSummary, { short: true }), "success", 2600);
       openImportReportModal(result.importSummary);
     } catch (error) {
+      const importSummary = getImportErrorSummary(error);
+      if (importSummary) {
+        openImportReportModal(importSummary);
+      }
+
       console.error("[AI Prompt Broadcaster] Failed to import JSON.", error);
-      setStatus(error?.message ?? t.settings.importFailed, "error");
-      showAppToast(error?.message ?? t.settings.importFailed, "error", 3000);
+      setStatus(t.settings.importFailed, "error");
+      showAppToast(t.settings.importFailed, "error", 3000);
     } finally {
       settingsImportJsonInput.value = "";
     }
