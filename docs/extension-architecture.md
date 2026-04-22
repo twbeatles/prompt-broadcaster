@@ -21,6 +21,9 @@ prompt-broadcaster/
 │   ├── background/
 │   │   ├── app/
 │   │   │   ├── bootstrap.ts
+│   │   │   ├── bootstrap/
+│   │   │   │   ├── runtime-events.ts
+│   │   │   │   └── tab-targets.ts
 │   │   │   ├── constants.ts
 │   │   │   └── injection-helpers.ts
 │   │   ├── commands/
@@ -30,6 +33,10 @@ prompt-broadcaster/
 │   │   ├── messages/
 │   │   │   └── router.ts
 │   │   ├── popup/
+│   │   │   ├── favorites-workflow/
+│   │   │   │   ├── entrypoints.ts
+│   │   │   │   ├── messages.ts
+│   │   │   │   └── run-jobs.ts
 │   │   │   ├── favorites-workflow.ts
 │   │   │   └── launcher.ts
 │   │   ├── runtime/
@@ -59,11 +66,40 @@ prompt-broadcaster/
 │   │   └── main.ts
 │   ├── popup/
 │   │   ├── app/
+│   │   │   ├── bootstrap/
+│   │   │   │   ├── composer.ts
+│   │   │   │   ├── favorite-intent.ts
+│   │   │   │   ├── events/
+│   │   │   │   └── storage.ts
+│   │   │   ├── i18n/
+│   │   │   │   ├── catalog.ts
+│   │   │   │   ├── core.ts
+│   │   │   │   └── helpers.ts
+│   │   │   └── rendering/
+│   │   │       ├── site-panel.ts
+│   │   │       ├── sort-controls.ts
+│   │   │       ├── tab-labels.ts
+│   │   │       ├── template-summary.ts
+│   │   │       └── types.ts
 │   │   ├── compose/
+│   │   │   ├── send-flow/
+│   │   │   │   ├── broadcast-state.ts
+│   │   │   │   ├── card-state.ts
+│   │   │   │   ├── send-execution.ts
+│   │   │   │   └── types.ts
+│   │   │   └── template-modal/
+│   │   │       ├── helpers.ts
+│   │   │       ├── preparation.ts
+│   │   │       ├── rendering.ts
+│   │   │       └── types.ts
 │   │   ├── favorites/
 │   │   ├── history/
 │   │   ├── overlays/
 │   │   ├── services/
+│   │   │   └── controller/
+│   │   │       ├── editor.ts
+│   │   │       ├── managed-sites.ts
+│   │   │       └── types.ts
 │   │   ├── ui/
 │   │   └── main.ts
 │   └── shared/
@@ -74,6 +110,11 @@ prompt-broadcaster/
 │       ├── prompts/
 │       ├── runtime-state/
 │       ├── sites/
+│       │   └── normalizers/
+│       │       ├── core.ts
+│       │       ├── ids.ts
+│       │       ├── site-records.ts
+│       │       └── types.ts
 │       ├── stores/
 │       ├── template/
 │       ├── template-utils.ts
@@ -149,10 +190,13 @@ Responsibilities:
 - resolve tab routing, including reusable tabs, specific tab targets, and forced new tabs
 - open target tabs and track pending broadcasts
 - maintain action badge state, notifications, selector alerts, and popup reopen flow
+- keep tab targeting and reusable-tab preflight rules split in `src/background/app/bootstrap/tab-targets.ts`
 - run favorite execution workflows through `src/background/popup/favorites-workflow.ts`
+- keep favorite workflow entrypoints, queued-job execution, and user-facing status messages split under `src/background/popup/favorites-workflow/`
 - reconcile favorite schedules with `chrome.alarms`
 - launch or fall back to popup windows through `src/background/popup/launcher.ts`
 - handle quick palette command injection through `src/background/commands/quick-palette.ts`
+- keep Chrome listener registration split in `src/background/app/bootstrap/runtime-events.ts`
 - delegate timeout scaling, selector normalization, result-code mapping, and adaptive strategy ordering to `src/background/app/injection-helpers.ts`
 
 ### Popup
@@ -172,10 +216,16 @@ Responsibilities:
 Popup helper boundaries:
 
 - `src/popup/app/dom.ts`: DOM registry
+- `src/popup/app/bootstrap/{composer,storage,favorite-intent,events/*}.ts`: popup bootstrap collaborators for compose flow, storage sync, favorite intents, and DOM/runtime event binding
 - `src/popup/app/helpers.ts`, `sorting.ts`, `list-markup.ts`: pure formatting and markup helpers
 - `src/popup/app/shell.ts`: popup status, toast, tab-switch, draft-save, and composer shell helpers
+- `src/popup/app/i18n/{core,catalog,helpers}.ts`: popup copy catalog, Chrome i18n wrappers, and result-message helpers
+- `src/popup/app/rendering/{sort-controls,template-summary,tab-labels,site-panel}.ts`: popup rendering split by control and panel responsibility
 - `src/popup/compose/targets.ts`: open-tab discovery, target selection sync, and runtime target payload helpers
+- `src/popup/compose/send-flow/{card-state,broadcast-state,send-execution,types}.ts`: popup send execution, retry UI, and restored-broadcast state
+- `src/popup/compose/template-modal/{helpers,preparation,rendering,types}.ts`: template-variable preparation and modal rendering
 - `src/popup/favorites/favorite-editor.ts`: modal state, chain steps, schedule fields, favorite run/edit actions
+- `src/popup/services/controller/{editor,managed-sites,types}.ts`: service-editor form state and managed-site list rendering
 - `src/popup/history/`, `src/popup/overlays/`, `src/popup/services/`: list interaction, modal/overlay coordination, and managed-site editing
 - `src/shared/chrome/messaging.ts`: timeout-safe runtime messaging helper shared by popup/options/content surfaces
 
@@ -281,6 +331,12 @@ Responsibilities:
 - built-in site definitions
 - user overrides for built-ins
 - custom user-added sites
+
+Recent normalization work is split so the barrel file stays small:
+
+- `src/shared/sites/normalizers/core.ts`: primitive normalization helpers and origin/hostname derivation
+- `src/shared/sites/normalizers/ids.ts`: custom/imported site id derivation
+- `src/shared/sites/normalizers/site-records.ts`: built-in override repair plus runtime site-record assembly
 
 This merged view is used by popup, options, and background.
 

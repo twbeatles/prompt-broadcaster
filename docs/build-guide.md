@@ -44,8 +44,9 @@ Create a fresh extension bundle in `dist/`:
 npm run build
 ```
 
-This also refreshes the generated root runtime mirrors such as `background/service_worker.js` and `popup/popup.js`.
+This also refreshes the generated root runtime mirrors such as `background/service_worker.js`, `popup/popup.js`, and `options/options.js`.
 Before bundling, the build validates locale placeholder usage and `en/ko` locale key parity.
+Recent refactors keep composition roots thin, so edits may live in sibling folders such as `src/background/app/bootstrap/`, `src/background/popup/favorites-workflow/`, `src/popup/app/{bootstrap,i18n,rendering}/`, `src/popup/compose/{send-flow,template-modal}/`, `src/popup/services/controller/`, and `src/shared/sites/normalizers/`. Review those source folders together with the generated root runtime mirrors before committing a release build.
 
 If you want to wipe `dist/` first:
 

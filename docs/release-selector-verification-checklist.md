@@ -49,6 +49,18 @@ Use this checklist before shipping selector or route changes.
 - If a custom service uses `supportedRoutes`, verify unsupported routes are skipped rather than warned.
 - If hostname aliases were changed, verify selector checks and reusable-tab detection behave consistently on every allowed hostname.
 
+## Metadata sync after verification
+- Update structured verification fields for every changed service: `verifiedAt`, `verifiedRoute`, `verifiedAuthState`, `verifiedLocale`, `verifiedVersion`, and any changed `supportedRoutes`.
+- Treat `lastVerified` as a compatibility field only. If `verifiedAt` is present, let the code derive `lastVerified` instead of hand-editing both.
+- Re-run `npm run selector:audit` after selector or route-policy changes and carry the recorded route/auth/locale details into release notes when behavior stays best-effort or soft-gated.
+
+## Source touchpoints for selector changes
+- `src/config/sites/builtins.ts`: built-in selector, route, and verification metadata source of truth.
+- `src/shared/sites/normalizers/site-records.ts`: built-in override repair and runtime site-record normalization logic.
+- `src/background/app/bootstrap/tab-targets.ts`: reusable-tab preflight and supported-route assumptions that must stay aligned with selector policy.
+- `src/popup/services/controller/editor.ts`: custom-service editor validation and advanced verification fields in popup settings.
+- `src/popup/app/i18n/catalog.ts` and `_locales/*/messages.json`: user-facing wording when selector or verification states require new copy.
+
 ## Release notes
 - Capture the verification date, route, auth state, locale, and UI version/build tag for every changed service.
 - If a service remains best-effort or soft-gated, note the limitation explicitly in release notes or audit docs.

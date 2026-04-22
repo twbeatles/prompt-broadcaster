@@ -55,17 +55,21 @@ To package a release zip:
 
 ### Logic
 - `src/shared/sites/`: built-in, override, and custom site merging
+- `src/shared/sites/normalizers.ts` + `src/shared/sites/normalizers/{core,ids,site-records}.ts`: site-record normalization, id derivation, and built-in/custom record assembly
 - `src/shared/sites/order.ts`: persisted runtime site ordering helper
 - `src/shared/prompts/`: history, favorites, template cache, broadcast counter, import/export, and settings
 - `src/shared/chrome/messaging.ts`: timeout-safe runtime messaging helper for popup/options/content surfaces
 - `src/shared/runtime-state/`: last broadcast, UI toasts, selector warning state, and strategy stats
 - `src/shared/template/`: template detection and rendering
-- `src/popup/app/bootstrap.ts`: popup orchestration and feature wiring
+- `src/popup/app/bootstrap.ts` + `src/popup/app/bootstrap/{composer,storage,favorite-intent,events/*}.ts`: popup orchestration, state restore, and event wiring
 - `src/popup/app/dom.ts`, `helpers.ts`, `sorting.ts`, `list-markup.ts`: popup DOM registry and pure UI helpers
-- `src/popup/app/i18n.ts`, `src/popup/app/state.ts`: popup state and copy
+- `src/popup/app/i18n.ts` + `src/popup/app/i18n/{core,catalog,helpers}.ts`, `src/popup/app/state.ts`: popup state and localized copy helpers
+- `src/popup/app/rendering.ts` + `src/popup/app/rendering/{sort-controls,template-summary,tab-labels,site-panel}.ts`: popup rendering splits for tabs, lists, and site cards
 - `src/popup/favorites/favorite-editor.ts`: integrated favorite editor for single/chain/schedule flows
+- `src/popup/compose/send-flow.ts` + `src/popup/compose/send-flow/{card-state,broadcast-state,send-execution,types}.ts`: popup send, retry, and restored-broadcast state
+- `src/popup/compose/template-modal.ts` + `src/popup/compose/template-modal/{helpers,preparation,rendering,types}.ts`: template-variable resolution modal flow
 - `src/popup/compose/`: popup target selection, open-tab routing, template preview, and send-flow helpers
-- `src/popup/services/`: popup service editor, permission preview, selector test, and managed-site rendering
+- `src/popup/services/controller.ts` + `src/popup/services/controller/{editor,managed-sites,types}.ts`: popup service editor, permission preview, selector test, and managed-site rendering
 - `src/options/app/bootstrap.ts`: options orchestration and section wiring
 - `src/options/core/`: shared status, navigation, data refresh, and filter helpers
 - `src/options/features/`: dashboard, history, schedules, services, and settings sections
@@ -73,13 +77,13 @@ To package a release zip:
 - `src/options/features/dashboard-metrics.ts`: pure dashboard aggregation for cards, heatmap, trends, failures, and strategy summary
 - `src/options/features/schedule-summary.ts`: pure scheduled-run summary helper used by options schedules UI
 - `src/options/ui/charts.ts`: chart rendering
-- `src/background/app/bootstrap.ts`: service worker composition root
+- `src/background/app/bootstrap.ts` + `src/background/app/bootstrap/{tab-targets,runtime-events}.ts`: service worker composition root plus tab-routing and listener-registration helpers
 - `src/background/runtime/`, `src/background/session/`, `src/background/tabs/`: runtime handler map, session-state mutation store, and normal-window/tab routing helpers
 - `src/background/commands/quick-palette.ts`: command handling and content-script injection for the page overlay
 - `src/background/context-menu/index.ts`: context-menu lifecycle
 - `src/background/messages/router.ts`: runtime message routing
 - `src/background/popup/launcher.ts`: popup/open-window fallback handling
-- `src/background/popup/favorites-workflow.ts`: favorite run, chain, and schedule workflow
+- `src/background/popup/favorites-workflow.ts` + `src/background/popup/favorites-workflow/{entrypoints,run-jobs,messages}.ts`: favorite run, chain, and schedule workflow
 - `src/background/selection/runtime.ts`: active-tab selection helpers
 - `src/background/app/injection-helpers.ts`: timeout scaling, selector normalization, result mapping, adaptive strategy ordering
 - `src/content/palette/`: shadow-root quick palette overlay split into `main.ts`, `state.ts`, `render.ts`, `events.ts`, and `runtime.ts`

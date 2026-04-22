@@ -42,13 +42,10 @@ import {
   getEnabledRuntimeSites,
   getRuntimeSites,
   shouldProbeSubmitAfterInput,
-  shouldRequireVisibleSubmitSurface,
 } from "../../shared/sites";
-import { evaluateReusableTabSnapshot } from "../../shared/sites/reuse-preflight";
 import {
   BADGE_CLEAR_ALARM,
   BADGE_CLEAR_DELAY_MS,
-  CAPTURE_SELECTION_COMMAND,
   CONTEXT_MENU_ALL_ID,
   CONTEXT_MENU_ROOT_ID,
   CONTEXT_MENU_SITE_PREFIX,
@@ -62,7 +59,6 @@ import {
   PENDING_SELECTOR_CHECKS_KEY,
   PENDING_TIMEOUT_MS,
   POPUP_PAGE_URL,
-  QUICK_PALETTE_COMMAND,
   RECONCILE_ALARM,
   SELECTOR_ALERTS_KEY,
   SELECTOR_CHECKER_SCRIPT_PATH,
@@ -85,6 +81,11 @@ import {
   clearPendingSelectorChecksForService,
   registerPendingSelectorCheck,
 } from "./selector-pending";
+import {
+  createBackgroundTabTargetResolver,
+  type ResolvedBroadcastTarget,
+} from "./bootstrap/tab-targets";
+import { registerBackgroundChromeEvents } from "./bootstrap/runtime-events";
 import { createPopupLauncher } from "../popup/launcher";
 import { createQuickPaletteCommand } from "../commands/quick-palette";
 import { createSelectionRuntime } from "../selection/runtime";
@@ -117,7 +118,6 @@ import type {
   LastBroadcastSummary,
   PendingBroadcastRecord,
   PendingInjectionRecord,
-  ReusableTabSurfaceSnapshot,
   RuntimeInjectionSiteConfig,
   RuntimeSite,
   SiteInjectionResult,
@@ -126,15 +126,6 @@ import type { BackgroundBroadcastWaiter } from "../../shared/types/background";
 
 const DEFAULT_SUBMIT_BUTTON_WAIT_TIMEOUT_MS = 5000;
 const DEFAULT_SUBMIT_RETRY_COUNT = 1;
-
-interface ResolvedBroadcastTarget {
-  site: RuntimeInjectionSiteConfig;
-  targetTabId: number | null;
-  requireExplicitTab: boolean;
-  forceNewTab: boolean;
-  promptOverride?: string;
-  resolvedPrompt?: string;
-}
 
 interface ExecuteScriptAttempt {
   name: string;
@@ -174,10 +165,6 @@ interface ServiceTestProbeFailure {
 
 type ServiceTestProbeResult = ServiceTestProbeSuccess | ServiceTestProbeFailure;
 
-type PreferredInjectableNormalTabResult =
-  | { ok: true; tab: chrome.tabs.Tab; reason?: undefined }
-  | { ok: false; reason: string; tab?: chrome.tabs.Tab | null };
-
 type InjectPromptFn =
   (prompt: string, config: any) => Promise<ExecuteScriptInjectionResult> | ExecuteScriptInjectionResult;
 type SubmitPromptFn =
@@ -203,7 +190,6 @@ const selectionCache = new Map<number, string>();
 const suppressedCompletedBroadcastIds = new Set<string>();
 let contextMenuRefreshChain: Promise<void> = Promise.resolve();
 let injectionProcessChain: Promise<void> = Promise.resolve();
-let runtimeSiteLookupCache: Map<string, RuntimeSite> | null = null;
 
 const SCHEDULED_VARIABLE_BLOCKLIST = new Set([
   SYSTEM_TEMPLATE_VARIABLES.url,
@@ -228,27 +214,6 @@ function sleep(ms: number): Promise<void> {
 
 function clonePlainValue<T>(value: T): T {
   return value ? JSON.parse(JSON.stringify(value)) : value;
-}
-
-function cacheRuntimeSites(sites: RuntimeSite[]): Map<string, RuntimeSite> {
-  runtimeSiteLookupCache = new Map(
-    (Array.isArray(sites) ? sites : [])
-      .filter((site) => typeof site?.id === "string" && site.id.trim())
-      .map((site) => [site.id.trim(), site])
-  );
-  return runtimeSiteLookupCache ?? new Map<string, RuntimeSite>();
-}
-
-async function getRuntimeSiteLookup(forceRefresh = false): Promise<Map<string, RuntimeSite>> {
-  if (!runtimeSiteLookupCache || forceRefresh) {
-    try {
-      cacheRuntimeSites(await getRuntimeSites());
-    } catch (_error) {
-      runtimeSiteLookupCache = new Map();
-    }
-  }
-
-  return runtimeSiteLookupCache ?? new Map<string, RuntimeSite>();
 }
 
 function normalizePrompt(value: unknown): string {
@@ -337,23 +302,47 @@ const {
   removePendingInjection,
 } = backgroundSessionStore;
 
+let getPreferredNormalActiveTab: (
+  preferredWindowId?: number | null,
+) => Promise<chrome.tabs.Tab | null> = async () => null;
+
+const backgroundTabTargetResolver = createBackgroundTabTargetResolver({
+  getRuntimeSites,
+  getPendingInjections,
+  getPreferredNormalActiveTab: (preferredWindowId) =>
+    getPreferredNormalActiveTab(preferredWindowId),
+  getI18nMessage,
+});
+const {
+  getSiteById,
+  getSiteForUrl,
+  resolveSelectedTargets,
+  buildSelectedTabUnavailableMessage,
+  isInjectableTabUrl,
+  getSitePermissionPatterns,
+  isSameSiteOrigin,
+  isReusableTabForSite,
+  isCustomSitePermissionGranted,
+  findReusableTabsForSites,
+  getExplicitReusableTabForTarget,
+  getPreferredInjectableNormalTab,
+} = backgroundTabTargetResolver;
+
 const backgroundTabsRuntime = createBackgroundTabsRuntime({
   getRuntimeSites,
   isInjectableTabUrl,
   isSameSiteOrigin,
   isReusableTabForSite,
 });
-const {
-  rememberNormalTab,
-  getPreferredNormalWindowId,
-  getPreferredNormalActiveTab,
-  getFocusedTabContext,
-  waitForTabInteractionReady,
-  restoreFocusedTabContext,
-  getOpenAiTabsForWindow,
-  clearRememberedTab,
-  resetRememberedState,
-} = backgroundTabsRuntime;
+const rememberNormalTab = backgroundTabsRuntime.rememberNormalTab;
+const getPreferredNormalWindowId = backgroundTabsRuntime.getPreferredNormalWindowId;
+getPreferredNormalActiveTab = backgroundTabsRuntime.getPreferredNormalActiveTab;
+const getFocusedTabContext = backgroundTabsRuntime.getFocusedTabContext;
+const waitForTabInteractionReady = backgroundTabsRuntime.waitForTabInteractionReady;
+const restoreFocusedTabContext = backgroundTabsRuntime.restoreFocusedTabContext;
+const getOpenAiTabsForWindow = backgroundTabsRuntime.getOpenAiTabsForWindow;
+const clearRememberedTab = backgroundTabsRuntime.clearRememberedTab;
+const resetRememberedState = backgroundTabsRuntime.resetRememberedState;
 
 function queuePendingInjection(tabId: number, tab: chrome.tabs.Tab): Promise<void> {
   if (!Number.isFinite(Number(tabId))) {
@@ -423,414 +412,6 @@ async function restoreBroadcastFocus(record: PendingBroadcastRecord | null | und
   });
 }
 
-async function getSiteById(siteId: string): Promise<RuntimeSite | null> {
-  const siteLookup = await getRuntimeSiteLookup();
-  return siteLookup.get(siteId) ?? null;
-}
-
-async function getSiteForUrl(urlString: string): Promise<RuntimeSite | null> {
-  try {
-    const url = new URL(urlString);
-    const sites = [...(await getRuntimeSiteLookup()).values()];
-    const normalizedHostname = url.hostname.toLowerCase();
-
-    return (
-      sites.find((site) => getAllowedSiteHostnames(site).has(normalizedHostname)) ?? null
-    );
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to resolve site for URL.", {
-      urlString,
-      error,
-    });
-    return null;
-  }
-}
-
-function normalizeTargetTabId(value: unknown): number | null {
-  const numericValue = Number(value);
-  return Number.isFinite(numericValue) ? numericValue : null;
-}
-
-function buildSelectedTabUnavailableMessage(siteName: string, tabId: number | null): string {
-  const label = siteName || "AI service";
-  if (Number.isFinite(Number(tabId))) {
-    return (
-      getI18nMessage("toast_selected_tab_unavailable", [label, String(tabId)]) ||
-      `${label} selected tab #${String(tabId)} is unavailable.`
-    );
-  }
-
-  return (
-    getI18nMessage("toast_selected_tab_unavailable", [label]) ||
-    `${label} selected tab is unavailable.`
-  );
-}
-
-async function resolveSelectedTargets(
-  siteRefs: Array<string | BroadcastSiteTargetMessage>,
-): Promise<ResolvedBroadcastTarget[]> {
-  const runtimeSites = await getRuntimeSites();
-  cacheRuntimeSites(runtimeSites);
-  const resolvedTargets: ResolvedBroadcastTarget[] = [];
-  const seenIds = new Set<string>();
-
-  for (const siteRef of Array.isArray(siteRefs) ? siteRefs : []) {
-    let resolvedSite = null;
-    let targetTabId = null;
-    let requireExplicitTab = false;
-    let forceNewTab = false;
-    let promptOverride: string | undefined;
-    let resolvedPrompt: string | undefined;
-
-    if (typeof siteRef === "string") {
-      resolvedSite = runtimeSites.find((site) => site.id === siteRef) ?? null;
-    } else if (siteRef && typeof siteRef === "object") {
-      if (typeof siteRef.id === "string") {
-        resolvedSite = runtimeSites.find((site) => site.id === siteRef.id) ?? buildInjectionConfig(siteRef);
-      } else {
-        resolvedSite = buildInjectionConfig(siteRef);
-      }
-
-      targetTabId = normalizeTargetTabId(siteRef.tabId);
-      requireExplicitTab = siteRef.target === "tab" || targetTabId !== null;
-      forceNewTab =
-        siteRef.reuseExistingTab === false ||
-        siteRef.openInNewTab === true ||
-        siteRef.target === "new";
-      promptOverride =
-        typeof siteRef.promptOverride === "string" && siteRef.promptOverride.trim()
-          ? siteRef.promptOverride.trim()
-          : undefined;
-      resolvedPrompt =
-        typeof siteRef.resolvedPrompt === "string"
-          ? siteRef.resolvedPrompt
-          : undefined;
-    }
-
-    if (!resolvedSite || !resolvedSite.id || seenIds.has(resolvedSite.id)) {
-      continue;
-    }
-
-    seenIds.add(resolvedSite.id);
-    resolvedTargets.push({
-      site: buildInjectionConfig(resolvedSite),
-      targetTabId,
-      requireExplicitTab,
-      forceNewTab,
-      promptOverride,
-      resolvedPrompt,
-    });
-  }
-
-  return resolvedTargets;
-}
-
-function isInjectableTabUrl(urlString: string): boolean {
-  try {
-    const url = new URL(urlString);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch (_error) {
-    return false;
-  }
-}
-
-function getAllowedSiteHostnames(site: Partial<RuntimeSite> | null | undefined): Set<string> {
-  const siteUrl = typeof site?.url === "string" ? site.url : "";
-  return new Set(
-    [
-      site?.hostname,
-      ...(Array.isArray(site?.hostnameAliases) ? site.hostnameAliases : []),
-      isInjectableTabUrl(siteUrl) ? new URL(siteUrl).hostname : "",
-    ]
-      .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
-      .map((entry) => entry.trim().toLowerCase())
-  );
-}
-
-function getSitePermissionPatterns(site: Partial<RuntimeSite> | null | undefined): string[] {
-  return Array.isArray(site?.permissionPatterns)
-    ? site.permissionPatterns.filter((pattern) => typeof pattern === "string" && pattern.trim())
-    : [];
-}
-
-async function runReusableTabPreflight(tabId: number, site: RuntimeSite): Promise<boolean> {
-  try {
-    const inputSelectors = normalizeSelectorEntries([
-      site?.inputSelector,
-      ...(Array.isArray(site?.fallbackSelectors) ? site.fallbackSelectors : []),
-    ]);
-    const authSelectors = normalizeSelectorEntries(site?.authSelectors);
-    const submitRequirement = buildSubmitRequirement(site);
-    const submitSelectors = shouldRequireVisibleSubmitSurface(submitRequirement)
-      ? normalizeSelectorEntries([site?.submitSelector])
-      : [];
-
-    const [result] = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: ({ nextInputSelectors, nextAuthSelectors, nextSubmitSelectors }) => {
-        function isElementVisible(element: Element): boolean {
-          if (!(element instanceof HTMLElement) && !(element instanceof SVGElement)) {
-            return true;
-          }
-
-          const style = window.getComputedStyle(element);
-          if (
-            (element instanceof HTMLElement && element.hidden) ||
-            element.getAttribute("hidden") !== null ||
-            element.getAttribute("aria-hidden") === "true" ||
-            style.display === "none" ||
-            style.visibility === "hidden" ||
-            style.visibility === "collapse"
-          ) {
-            return false;
-          }
-
-          return element.getClientRects().length > 0;
-        }
-
-        function isEditableElement(element: Element): boolean {
-          if (element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement) {
-            return !element.readOnly;
-          }
-
-          return element instanceof HTMLElement ? element.isContentEditable : false;
-        }
-
-        function collectElementsDeep(
-          selector: string,
-          root: Document | ShadowRoot,
-          matches: Element[],
-          seen: Set<Element>,
-        ): void {
-          if (typeof root.querySelectorAll === "function") {
-            for (const element of Array.from(root.querySelectorAll(selector))) {
-              if (!seen.has(element)) {
-                seen.add(element);
-                matches.push(element);
-              }
-            }
-          }
-
-          const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
-          let current: Node | null = walker.currentNode;
-          while (current) {
-            if (current instanceof Element && current.shadowRoot) {
-              collectElementsDeep(selector, current.shadowRoot, matches, seen);
-            }
-            current = walker.nextNode();
-          }
-        }
-
-        function findDeep(selectors: string[], { editableOnly = false }: { editableOnly?: boolean } = {}): boolean {
-          for (const selector of selectors) {
-            try {
-              const matches: Element[] = [];
-              collectElementsDeep(selector, document, matches, new Set());
-              const match = matches.find((element) =>
-                isElementVisible(element) && (!editableOnly || isEditableElement(element))
-              );
-              if (match) {
-                return true;
-              }
-            } catch (_error) {
-              // Ignore invalid or stale selectors during lightweight preflight.
-            }
-          }
-
-          return false;
-        }
-
-        return {
-          pathname: window.location.pathname,
-          hasPromptSurface: findDeep(nextInputSelectors, { editableOnly: true }),
-          hasAuthSurface: findDeep(nextAuthSelectors),
-          hasSubmitSurface:
-            nextSubmitSelectors.length === 0 ? true : findDeep(nextSubmitSelectors),
-        };
-      },
-      args: [{
-        nextInputSelectors: inputSelectors,
-        nextAuthSelectors: authSelectors,
-        nextSubmitSelectors: submitSelectors,
-      }],
-    });
-
-    const snapshot = (result?.result ?? {}) as ReusableTabSurfaceSnapshot;
-    return evaluateReusableTabSnapshot({
-      pathname: snapshot.pathname,
-      supportedRoutes: Array.isArray(site?.supportedRoutes) ? site.supportedRoutes : [],
-      hasPromptSurface: snapshot.hasPromptSurface,
-      hasAuthSurface: snapshot.hasAuthSurface,
-      hasSubmitSurface: snapshot.hasSubmitSurface,
-      submitRequirement,
-    }).ok === true;
-  } catch (_error) {
-    return false;
-  }
-}
-
-async function isReusableTabForSite(tab: chrome.tabs.Tab, site: RuntimeSite): Promise<boolean> {
-  const tabId = tab.id;
-  const tabUrl = typeof tab.url === "string" ? tab.url : "";
-  if (typeof tabId !== "number" || !isInjectableTabUrl(tabUrl)) {
-    return false;
-  }
-
-  if (!isSameSiteOrigin(tabUrl, site)) {
-    return false;
-  }
-
-  return runReusableTabPreflight(tabId, site);
-}
-
-async function isCustomSitePermissionGranted(site: RuntimeSite): Promise<boolean> {
-  const permissionPatterns = getSitePermissionPatterns(site);
-  if (!site?.isCustom || permissionPatterns.length === 0) {
-    return true;
-  }
-
-  try {
-    return await chrome.permissions.contains({
-      origins: permissionPatterns,
-    });
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to check custom site permission.", {
-      siteId: site?.id,
-      error,
-    });
-    return false;
-  }
-}
-
-function scoreReusableTabForSite(tab: chrome.tabs.Tab, site: RuntimeSite): number {
-  const tabUrl = typeof tab?.url === "string" ? tab.url : "";
-  const siteUrl = typeof site?.url === "string" ? site.url : "";
-  const exactUrlMatch = Boolean(siteUrl && tabUrl.startsWith(siteUrl));
-  const activePenalty = tab?.active ? 10 : 0;
-
-  return (exactUrlMatch ? 0 : 5) + activePenalty;
-}
-
-async function findReusableTabsForSites(
-  sites: RuntimeSite[],
-  options: { windowId?: number | null; excludeTabId?: number | null } = {},
-): Promise<Map<string, chrome.tabs.Tab>> {
-  const windowId = Number(options?.windowId);
-  if (!Number.isFinite(windowId)) {
-    return new Map();
-  }
-
-  try {
-    const [tabs, pendingInjections] = await Promise.all([
-      chrome.tabs.query({ windowId }),
-      getPendingInjections(),
-    ]);
-
-    const excludedTabIds = new Set(
-      Object.keys(pendingInjections)
-        .map((tabId) => Number(tabId))
-        .filter((tabId) => Number.isFinite(tabId))
-    );
-
-    if (Number.isFinite(Number(options?.excludeTabId))) {
-      excludedTabIds.add(Number(options.excludeTabId));
-    }
-
-    const reusableTabsBySiteId = new Map<string, chrome.tabs.Tab>();
-    const usedTabIds = new Set<number>();
-
-    for (const site of Array.isArray(sites) ? sites : []) {
-      const candidates = tabs
-        .filter((tab) => {
-          const candidateId = tab.id;
-          const candidateUrl = typeof tab.url === "string" ? tab.url : "";
-          if (typeof candidateId !== "number" || usedTabIds.has(candidateId) || excludedTabIds.has(candidateId)) {
-            return false;
-          }
-
-          if (!isInjectableTabUrl(candidateUrl)) {
-            return false;
-          }
-
-          return isSameSiteOrigin(candidateUrl, site);
-        })
-        .sort((left, right) => scoreReusableTabForSite(left, site) - scoreReusableTabForSite(right, site));
-
-      for (const candidate of candidates) {
-        if (!(await isReusableTabForSite(candidate, site))) {
-          continue;
-        }
-
-        reusableTabsBySiteId.set(site.id, candidate);
-        if (typeof candidate.id === "number") {
-          usedTabIds.add(candidate.id);
-        }
-        break;
-      }
-    }
-
-    return reusableTabsBySiteId;
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to discover reusable AI tabs.", {
-      windowId,
-      error,
-    });
-    return new Map();
-  }
-}
-
-async function getExplicitReusableTabForTarget(
-  target: ResolvedBroadcastTarget,
-): Promise<{
-  requested: boolean;
-  tab: chrome.tabs.Tab | null;
-  message?: string;
-}> {
-  if (!target?.requireExplicitTab) {
-    return {
-      requested: false,
-      tab: null,
-    };
-  }
-
-  const targetTabId = Number(target?.targetTabId);
-  if (!Number.isFinite(targetTabId)) {
-    return {
-      requested: true,
-      tab: null,
-      message: buildSelectedTabUnavailableMessage(target.site?.name ?? "", null),
-    };
-  }
-
-  try {
-    const tab = await chrome.tabs.get(targetTabId);
-    if (!tab?.id || !isInjectableTabUrl(tab?.url ?? "")) {
-      return {
-        requested: true,
-        tab: null,
-        message: buildSelectedTabUnavailableMessage(target.site?.name ?? "", targetTabId),
-      };
-    }
-
-    return (await isReusableTabForSite(tab, target.site))
-      ? {
-          requested: true,
-          tab,
-        }
-      : {
-          requested: true,
-          tab: null,
-          message: buildSelectedTabUnavailableMessage(target.site?.name ?? "", targetTabId),
-        };
-  } catch (_error) {
-    return {
-      requested: true,
-      tab: null,
-      message: buildSelectedTabUnavailableMessage(target.site?.name ?? "", targetTabId),
-    };
-  }
-}
-
 const { openPopupWithPrompt, openOnboardingPage } = createPopupLauncher();
 const {
   getSelectedTextFromTab,
@@ -889,31 +470,6 @@ const {
   buildChainRunId,
   queueBroadcastRequest,
 });
-
-
-async function getPreferredInjectableNormalTab(): Promise<PreferredInjectableNormalTabResult> {
-  const tab = await getPreferredNormalActiveTab();
-  if (!tab?.id) {
-    return {
-      ok: false,
-      reason: "no_tab",
-    };
-  }
-
-  const tabUrl = typeof tab.url === "string" ? tab.url : "";
-  if (!isInjectableTabUrl(tabUrl)) {
-    return {
-      ok: false,
-      reason: "invalid_tab",
-      tab,
-    };
-  }
-
-  return {
-    ok: true,
-    tab,
-  };
-}
 
 async function runServiceTestOnTab(
   tabId: number,
@@ -1914,20 +1470,6 @@ async function injectIntoTab(
   return (executionResult?.result as ExecuteScriptInjectionResult | null | undefined) ?? null;
 }
 
-function isSameSiteOrigin(tabUrl: string, site: RuntimeSite): boolean {
-  try {
-    const hostname = new URL(tabUrl).hostname.toLowerCase();
-    return getAllowedSiteHostnames(site).has(hostname);
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to compare site origin.", {
-      tabUrl,
-      site,
-      error,
-    });
-    return false;
-  }
-}
-
 async function handlePendingInjectionTimeout(
   tabId: number,
   job: PendingInjectionRecord,
@@ -2655,166 +2197,29 @@ registerRuntimeMessageRouter(buildRuntimeHandlers({
   },
   handleQuickPaletteExecuteMessage,
 }));
-
-chrome.runtime.onInstalled.addListener(({ reason }) => {
-  void (async () => {
-    await createContextMenus();
-    await initializeServiceWorker();
-
-    if (reason === "install") {
-      await setOnboardingCompleted(false);
-      await openOnboardingPage();
-    }
-  })();
+registerBackgroundChromeEvents({
+  createContextMenus,
+  initializeServiceWorker,
+  markOnboardingPending: () => setOnboardingCompleted(false),
+  openOnboardingPage,
+  handleCaptureSelectedTextCommand,
+  handleQuickPaletteCommand,
+  getContextMenuTargetSiteIds,
+  handleContextMenuBroadcast,
+  selectionCache,
+  maybeInjectDynamicSelectorChecker,
+  queuePendingInjection,
+  rememberNormalTab,
+  clearRememberedTab,
+  getPendingInjections,
+  recordBroadcastSiteResult,
+  removePendingInjection,
+  activeInjections,
+  clearBadge,
+  reconcilePendingInjections,
+  handleFavoriteRunJobAlarm,
+  parseScheduleAlarmFavoriteId,
+  handleFavoriteScheduleAlarm,
+  openPopupWithPrompt,
+  reconcileFavoriteSchedules,
 });
-
-chrome.runtime.onStartup.addListener(() => {
-  void initializeServiceWorker();
-});
-
-chrome.commands.onCommand.addListener((command) => {
-  if (command === CAPTURE_SELECTION_COMMAND) {
-    void handleCaptureSelectedTextCommand();
-    return;
-  }
-
-  if (command === QUICK_PALETTE_COMMAND) {
-    void handleQuickPaletteCommand();
-  }
-});
-
-chrome.contextMenus.onClicked.addListener((info, tab) => {
-  void (async () => {
-    try {
-      const siteIds = await getContextMenuTargetSiteIds(info.menuItemId);
-      if (siteIds.length === 0) {
-        return;
-      }
-
-      const selectedText = typeof info.selectionText === "string"
-        ? info.selectionText.trim()
-        : "";
-
-      if (!selectedText && typeof tab?.id === "number") {
-        const cachedText = selectionCache.get(tab.id) ?? "";
-        if (cachedText.trim()) {
-          await handleContextMenuBroadcast(cachedText, siteIds);
-        }
-        return;
-      }
-
-      if (typeof tab?.id === "number" && selectedText) {
-        selectionCache.set(tab.id, selectedText);
-      }
-
-      await handleContextMenuBroadcast(selectedText, siteIds);
-    } catch (error) {
-      console.error("[AI Prompt Broadcaster] Context menu click handling failed.", error);
-    }
-  })();
-});
-
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status !== "complete") {
-    return;
-  }
-
-  void maybeInjectDynamicSelectorChecker(tabId, tab);
-  void queuePendingInjection(tabId, tab);
-});
-
-chrome.tabs.onActivated.addListener((activeInfo) => {
-  void (async () => {
-    try {
-      const tab = await chrome.tabs.get(activeInfo.tabId);
-      await rememberNormalTab(tab);
-    } catch (_error) {
-      // Ignore hint update failures.
-    }
-  })();
-});
-
-chrome.windows.onFocusChanged.addListener((windowId) => {
-  if (!Number.isFinite(windowId) || windowId === chrome.windows.WINDOW_ID_NONE) {
-    return;
-  }
-
-  void (async () => {
-    try {
-      const windowInfo = await chrome.windows.get(windowId).catch(() => null);
-      if (windowInfo?.type !== "normal") {
-        return;
-      }
-
-      const [activeTab] = await chrome.tabs.query({
-        active: true,
-        windowId,
-      });
-      await rememberNormalTab(activeTab);
-    } catch (_error) {
-      // Ignore hint update failures.
-    }
-  })();
-});
-
-chrome.tabs.onRemoved.addListener((tabId) => {
-  void (async () => {
-    try {
-      selectionCache.delete(tabId);
-      clearRememberedTab(tabId);
-      const pending = await getPendingInjections();
-      const job = pending[String(tabId)];
-
-      if (job?.broadcastId && job?.siteId) {
-        await recordBroadcastSiteResult(job.broadcastId, job.siteId, "tab_closed");
-      }
-
-      await removePendingInjection(tabId);
-      activeInjections.delete(tabId);
-    } catch (error) {
-      console.error("[AI Prompt Broadcaster] Tab removal cleanup failed.", {
-        tabId,
-        error,
-      });
-      activeInjections.delete(tabId);
-    }
-  })();
-});
-
-chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === RECONCILE_ALARM) {
-    void reconcilePendingInjections();
-    return;
-  }
-
-  if (alarm.name === BADGE_CLEAR_ALARM) {
-    void clearBadge();
-    return;
-  }
-
-  if (alarm.name.startsWith("apb-favorite-job:")) {
-    void handleFavoriteRunJobAlarm(alarm.name);
-    return;
-  }
-
-  const favoriteId = parseScheduleAlarmFavoriteId(alarm.name);
-  if (favoriteId) {
-    void handleFavoriteScheduleAlarm(favoriteId);
-  }
-});
-
-chrome.notifications.onClicked.addListener(() => {
-  void openPopupWithPrompt();
-});
-
-chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName === "local" && (changes.customSites || changes.builtInSiteStates || changes.builtInSiteOverrides)) {
-    void createContextMenus();
-  }
-
-  if (areaName === "local" && changes.promptFavorites) {
-    void reconcileFavoriteSchedules();
-  }
-});
-
-void initializeServiceWorker();

@@ -1,7 +1,7 @@
 # AI Prompt Broadcaster - 프로젝트 구조 분석
 
-> 기준일: 2026-04-16
-> 최종 업데이트: 2026-04-16 (routing/import/popup restore 안정화 패스 및 docs 정합성 반영)
+> 기준일: 2026-04-22
+> 최종 업데이트: 2026-04-22 (popup/background/shared SOLID 분할 리팩터링 및 docs 정합성 반영)
 > 분석 범위: 전체 소스코드, 빌드 시스템, 데이터 흐름, UI 구조
 
 ---
@@ -31,6 +31,7 @@ prompt-broadcaster/
 │   ├── background/
 │   │   ├── app/
 │   │   │   ├── bootstrap.ts
+│   │   │   ├── bootstrap/
 │   │   │   ├── constants.ts
 │   │   │   ├── injection-helpers.ts
 │   │   │   ├── selector-alerts.ts
@@ -42,6 +43,7 @@ prompt-broadcaster/
 │   │   ├── messages/
 │   │   │   └── router.ts
 │   │   ├── popup/
+│   │   │   ├── favorites-workflow/
 │   │   │   ├── favorites-workflow.ts
 │   │   │   └── launcher.ts
 │   │   ├── runtime/
@@ -69,11 +71,17 @@ prompt-broadcaster/
 │   │   └── main.ts
 │   ├── popup/
 │   │   ├── app/
+│   │   │   ├── bootstrap/
+│   │   │   ├── i18n/
+│   │   │   └── rendering/
 │   │   ├── compose/
+│   │   │   ├── send-flow/
+│   │   │   └── template-modal/
 │   │   ├── favorites/
 │   │   ├── history/
 │   │   ├── overlays/
 │   │   ├── services/
+│   │   │   └── controller/
 │   │   ├── ui/
 │   │   └── main.ts
 │   └── shared/
@@ -85,6 +93,7 @@ prompt-broadcaster/
 │       ├── prompts/
 │       ├── runtime-state/
 │       ├── sites/
+│       │   └── normalizers/
 │       ├── stores/
 │       ├── template/
 │       ├── template-utils.ts
@@ -118,6 +127,7 @@ prompt-broadcaster/
 
 - `src/*/main.ts`는 얇은 엔트리포인트다.
 - 실제 런타임 책임은 `background/{commands,popup,runtime,session,tabs}`, `options/features/*`, `popup/{compose,favorites,history,overlays,services}`처럼 기능 기준으로 나뉜다.
+- 최근 분할로 `background/app/bootstrap/*`, `background/popup/favorites-workflow/*`, `popup/app/{bootstrap,i18n,rendering}/*`, `popup/compose/{send-flow,template-modal}/*`, `popup/services/controller/*`, `shared/sites/normalizers/*`가 조립 파일 아래의 세부 책임을 담당한다.
 - 스타일도 `popup/styles/partials`, `options/styles/partials`로 쪼개져 있다.
 - `src/config/sites.ts`는 하위 호환 re-export 역할만 한다.
 
@@ -148,6 +158,16 @@ prompt-broadcaster/
 
 - `src/background/app/bootstrap.ts`
 
+최근 하위 분리:
+
+- `src/background/app/bootstrap/tab-targets.ts`
+  - 재사용 탭 후보 탐색
+  - 명시 탭 검증
+  - 사이트별 target 결정
+- `src/background/app/bootstrap/runtime-events.ts`
+  - Chrome listener 등록
+  - command/context menu/alarm/storage/runtime 이벤트 wiring
+
 세부 기능:
 
 - `src/background/messages/router.ts`
@@ -160,6 +180,10 @@ prompt-broadcaster/
   - popup 준비 context(`url/title/selection/clipboard`) 병합
   - favorite run job / failure history / popup fallback 정리
   - popup handoff intent 저장
+- `src/background/popup/favorites-workflow/{entrypoints,run-jobs,messages}.ts`
+  - 요청 진입점
+  - queued/running job 실행
+  - 사용자 노출 메시지 조립
 - `src/background/popup/launcher.ts`
   - toolbar popup 재오픈
   - active browser window 부재 시 standalone popup fallback
@@ -187,12 +211,38 @@ prompt-broadcaster/
 
 - `src/popup/app/bootstrap.ts`
 
+최근 하위 분리:
+
+- `src/popup/app/bootstrap/{composer,storage,favorite-intent,events/*}.ts`
+  - compose 액션
+  - popup 저장소 로드/동기화
+  - favorite handoff intent 처리
+  - DOM/runtime/modal 이벤트 binding
+
 세부 기능:
 
 - `src/popup/app/dom.ts`
   - DOM registry
 - `src/popup/app/helpers.ts`, `sorting.ts`, `list-markup.ts`
   - pure formatting / markup
+- `src/popup/app/i18n/{core,catalog,helpers}.ts`
+  - locale wrapper
+  - copy catalog
+  - import/service-test 결과 메시지 조립
+- `src/popup/app/rendering/{sort-controls,template-summary,tab-labels,site-panel}.ts`
+  - 정렬 UI
+  - 템플릿 요약
+  - 탭 라벨
+  - 서비스 카드 패널 렌더링
+- `src/popup/compose/send-flow/{card-state,broadcast-state,send-execution,types}.ts`
+  - 카드 상태 표시
+  - last broadcast 복원
+  - 실제 전송 및 재시도 흐름
+- `src/popup/compose/template-modal/{helpers,preparation,rendering,types}.ts`
+  - 템플릿 변수 탐지/준비/미리보기
+- `src/popup/services/controller/{editor,managed-sites,types}.ts`
+  - 서비스 편집기 폼
+  - managed sites 렌더링
 - `src/popup/favorites/favorite-editor.ts`
   - 즐겨찾기 통합 편집기
   - single/chain mode 전환
@@ -657,14 +707,14 @@ npm run qa:smoke
 | 목적 | 우선 확인 파일 |
 |---|---|
 | built-in 사이트 추가 | `src/config/sites/builtins.ts`, `manifest.json` |
-| background 메시지/라우팅 수정 | `src/background/messages/router.ts`, `src/background/app/bootstrap.ts` |
-| favorite 실행/예약/체인 수정 | `src/background/popup/favorites-workflow.ts`, `src/popup/favorites/favorite-editor.ts` |
+| background 메시지/라우팅 수정 | `src/background/messages/router.ts`, `src/background/app/bootstrap.ts`, `src/background/app/bootstrap/*` |
+| favorite 실행/예약/체인 수정 | `src/background/popup/favorites-workflow.ts`, `src/background/popup/favorites-workflow/*`, `src/popup/favorites/favorite-editor.ts` |
 | quick palette 수정 | `src/background/commands/quick-palette.ts`, `src/content/palette/*` |
-| popup UI 수정 | `src/popup/app/bootstrap.ts`, `src/popup/app/*`, `popup/popup.html`, `popup/styles/partials/*` |
+| popup UI 수정 | `src/popup/app/bootstrap.ts`, `src/popup/app/bootstrap/*`, `src/popup/app/i18n/*`, `src/popup/app/rendering/*`, `src/popup/compose/send-flow/*`, `src/popup/compose/template-modal/*`, `src/popup/services/controller/*`, `popup/popup.html`, `popup/styles/partials/*` |
 | options UI 수정 | `src/options/app/bootstrap.ts`, `src/options/features/*`, `options/options.html`, `options/styles/partials/*` |
 | 템플릿 변수 수정 | `src/shared/template/` |
 | 타입 수정 | `src/shared/types/models.ts`, `src/shared/types/messages.ts` |
-| import/export 수정 | `src/shared/prompts/import-export.ts` |
+| import/export 수정 | `src/shared/prompts/import-export.ts`, `src/shared/sites/normalizers/*` |
 | smoke 테스트 수정 | `scripts/qa-smoke.mjs`, `scripts/qa-smoke/*` |
 
 ---

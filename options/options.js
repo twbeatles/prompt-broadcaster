@@ -1218,102 +1218,7 @@ var BUILT_IN_SITE_STYLE_MAP = Object.freeze({
   perplexity: { color: "#20808d", icon: "Px" }
 });
 
-// src/shared/sites/verification.ts
-var ISO_MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
-var ISO_DATE_PATTERN = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
-function normalizeText(value) {
-  return typeof value === "string" ? value.trim() : "";
-}
-function hasOwnKey(value, key) {
-  return Boolean(value) && typeof value === "object" && Object.prototype.hasOwnProperty.call(value, key);
-}
-function resolveTextField(primary, fallback, key) {
-  if (hasOwnKey(primary, key)) {
-    return normalizeText(primary[key]);
-  }
-  return normalizeText(fallback[key]);
-}
-function normalizeLegacyLastVerified(value) {
-  const normalized = normalizeText(value);
-  return ISO_MONTH_PATTERN.test(normalized) ? normalized : "";
-}
-function normalizeVerifiedAt(value) {
-  const normalized = normalizeText(value);
-  return ISO_DATE_PATTERN.test(normalized) ? normalized : "";
-}
-function normalizeVerifiedAuthState(value) {
-  const normalized = normalizeText(value);
-  return VALID_VERIFIED_AUTH_STATES.has(normalized) ? normalized : "";
-}
-function deriveLegacyLastVerified(verifiedAt) {
-  return normalizeVerifiedAt(verifiedAt).slice(0, 7);
-}
-function buildVerificationMetadata(primaryValue, fallbackValue = {}) {
-  const primary = primaryValue && typeof primaryValue === "object" && !Array.isArray(primaryValue) ? primaryValue : {};
-  const fallback = fallbackValue && typeof fallbackValue === "object" && !Array.isArray(fallbackValue) ? fallbackValue : {};
-  const primaryHasVerifiedAt = hasOwnKey(primary, "verifiedAt");
-  const primaryVerifiedAt = normalizeVerifiedAt(primary.verifiedAt);
-  const fallbackVerifiedAt = normalizeVerifiedAt(fallback.verifiedAt);
-  const verifiedAt = primaryHasVerifiedAt ? primaryVerifiedAt : primaryVerifiedAt || fallbackVerifiedAt;
-  const lastVerified = verifiedAt ? deriveLegacyLastVerified(verifiedAt) : primaryHasVerifiedAt ? "" : normalizeLegacyLastVerified(primary.lastVerified) || normalizeLegacyLastVerified(fallback.lastVerified);
-  return {
-    lastVerified,
-    verifiedAt,
-    verifiedRoute: resolveTextField(primary, fallback, "verifiedRoute"),
-    verifiedAuthState: hasOwnKey(primary, "verifiedAuthState") ? normalizeVerifiedAuthState(primary.verifiedAuthState) : normalizeVerifiedAuthState(primary.verifiedAuthState) || normalizeVerifiedAuthState(fallback.verifiedAuthState),
-    verifiedLocale: resolveTextField(primary, fallback, "verifiedLocale"),
-    verifiedVersion: resolveTextField(primary, fallback, "verifiedVersion")
-  };
-}
-
-// src/shared/sites/selector-utils.ts
-var AUTH_PATH_SEGMENTS = Object.freeze([
-  "/login",
-  "/logout",
-  "/sign-in",
-  "/signin",
-  "/auth"
-]);
-var SETTINGS_PATH_SEGMENTS = Object.freeze([
-  "/settings",
-  "/preferences",
-  "/account",
-  "/billing"
-]);
-function normalizePathname(pathname) {
-  return typeof pathname === "string" ? pathname.trim().toLowerCase() : "";
-}
-function normalizeRoutePrefix(value) {
-  const normalized = normalizePathname(value);
-  if (!normalized) {
-    return "";
-  }
-  const basePath = normalized.split("#")[0]?.split("?")[0] ?? "";
-  if (!basePath.startsWith("/")) {
-    return "";
-  }
-  const trimmed = basePath.replace(/\/+$/g, "");
-  return trimmed || "/";
-}
-function normalizeSupportedRoutes(value) {
-  const rawEntries = Array.isArray(value) ? value : typeof value === "string" ? value.split(/\r?\n/g) : [];
-  return Array.from(
-    new Set(
-      rawEntries.map((entry) => normalizeRoutePrefix(entry)).filter(Boolean)
-    )
-  );
-}
-function getConfiguredSupportedRoutes(site) {
-  const explicitRoutes = normalizeSupportedRoutes(site?.supportedRoutes);
-  if (explicitRoutes.length > 0) {
-    return explicitRoutes;
-  }
-  const fallbackRoute = normalizeRoutePrefix(site?.verifiedRoute);
-  return fallbackRoute && fallbackRoute !== "/" ? [fallbackRoute] : [];
-}
-
-// src/shared/sites/normalizers.ts
-var BUILT_IN_SITE_STYLE_LOOKUP = BUILT_IN_SITE_STYLE_MAP;
+// src/shared/sites/normalizers/core.ts
 function safeText2(value) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -1424,6 +1329,18 @@ function buildOriginPatterns(url, hostnameAliases = []) {
     return [];
   }
 }
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+function stringifyComparable(value) {
+  try {
+    return JSON.stringify(value ?? null);
+  } catch (_error) {
+    return "";
+  }
+}
+
+// src/shared/sites/normalizers/ids.ts
 function createCustomSiteId(name) {
   const slug = safeText2(name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32);
   return `custom-${slug || Date.now()}-${Date.now().toString(36).slice(-4)}`;
@@ -1448,16 +1365,103 @@ function ensureUniqueImportedSiteId(baseId, usedIds) {
   usedIds.add(candidate);
   return candidate;
 }
-function isPlainObject(value) {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+// src/shared/sites/verification.ts
+var ISO_MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+var ISO_DATE_PATTERN = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+function normalizeText(value) {
+  return typeof value === "string" ? value.trim() : "";
 }
-function stringifyComparable(value) {
-  try {
-    return JSON.stringify(value ?? null);
-  } catch (_error) {
+function hasOwnKey(value, key) {
+  return Boolean(value) && typeof value === "object" && Object.prototype.hasOwnProperty.call(value, key);
+}
+function resolveTextField(primary, fallback, key) {
+  if (hasOwnKey(primary, key)) {
+    return normalizeText(primary[key]);
+  }
+  return normalizeText(fallback[key]);
+}
+function normalizeLegacyLastVerified(value) {
+  const normalized = normalizeText(value);
+  return ISO_MONTH_PATTERN.test(normalized) ? normalized : "";
+}
+function normalizeVerifiedAt(value) {
+  const normalized = normalizeText(value);
+  return ISO_DATE_PATTERN.test(normalized) ? normalized : "";
+}
+function normalizeVerifiedAuthState(value) {
+  const normalized = normalizeText(value);
+  return VALID_VERIFIED_AUTH_STATES.has(normalized) ? normalized : "";
+}
+function deriveLegacyLastVerified(verifiedAt) {
+  return normalizeVerifiedAt(verifiedAt).slice(0, 7);
+}
+function buildVerificationMetadata(primaryValue, fallbackValue = {}) {
+  const primary = primaryValue && typeof primaryValue === "object" && !Array.isArray(primaryValue) ? primaryValue : {};
+  const fallback = fallbackValue && typeof fallbackValue === "object" && !Array.isArray(fallbackValue) ? fallbackValue : {};
+  const primaryHasVerifiedAt = hasOwnKey(primary, "verifiedAt");
+  const primaryVerifiedAt = normalizeVerifiedAt(primary.verifiedAt);
+  const fallbackVerifiedAt = normalizeVerifiedAt(fallback.verifiedAt);
+  const verifiedAt = primaryHasVerifiedAt ? primaryVerifiedAt : primaryVerifiedAt || fallbackVerifiedAt;
+  const lastVerified = verifiedAt ? deriveLegacyLastVerified(verifiedAt) : primaryHasVerifiedAt ? "" : normalizeLegacyLastVerified(primary.lastVerified) || normalizeLegacyLastVerified(fallback.lastVerified);
+  return {
+    lastVerified,
+    verifiedAt,
+    verifiedRoute: resolveTextField(primary, fallback, "verifiedRoute"),
+    verifiedAuthState: hasOwnKey(primary, "verifiedAuthState") ? normalizeVerifiedAuthState(primary.verifiedAuthState) : normalizeVerifiedAuthState(primary.verifiedAuthState) || normalizeVerifiedAuthState(fallback.verifiedAuthState),
+    verifiedLocale: resolveTextField(primary, fallback, "verifiedLocale"),
+    verifiedVersion: resolveTextField(primary, fallback, "verifiedVersion")
+  };
+}
+
+// src/shared/sites/selector-utils.ts
+var AUTH_PATH_SEGMENTS = Object.freeze([
+  "/login",
+  "/logout",
+  "/sign-in",
+  "/signin",
+  "/auth"
+]);
+var SETTINGS_PATH_SEGMENTS = Object.freeze([
+  "/settings",
+  "/preferences",
+  "/account",
+  "/billing"
+]);
+function normalizePathname(pathname) {
+  return typeof pathname === "string" ? pathname.trim().toLowerCase() : "";
+}
+function normalizeRoutePrefix(value) {
+  const normalized = normalizePathname(value);
+  if (!normalized) {
     return "";
   }
+  const basePath = normalized.split("#")[0]?.split("?")[0] ?? "";
+  if (!basePath.startsWith("/")) {
+    return "";
+  }
+  const trimmed = basePath.replace(/\/+$/g, "");
+  return trimmed || "/";
 }
+function normalizeSupportedRoutes(value) {
+  const rawEntries = Array.isArray(value) ? value : typeof value === "string" ? value.split(/\r?\n/g) : [];
+  return Array.from(
+    new Set(
+      rawEntries.map((entry) => normalizeRoutePrefix(entry)).filter(Boolean)
+    )
+  );
+}
+function getConfiguredSupportedRoutes(site) {
+  const explicitRoutes = normalizeSupportedRoutes(site?.supportedRoutes);
+  if (explicitRoutes.length > 0) {
+    return explicitRoutes;
+  }
+  const fallbackRoute = normalizeRoutePrefix(site?.verifiedRoute);
+  return fallbackRoute && fallbackRoute !== "/" ? [fallbackRoute] : [];
+}
+
+// src/shared/sites/normalizers/site-records.ts
+var BUILT_IN_SITE_STYLE_LOOKUP = BUILT_IN_SITE_STYLE_MAP;
 var PERPLEXITY_PRIMARY_INPUT_SELECTOR = "#ask-input[data-lexical-editor='true'][role='textbox']";
 var PERPLEXITY_SELECTOR_FALLBACKS = [
   "div#ask-input[data-lexical-editor='true'][role='textbox']",
@@ -1466,7 +1470,9 @@ var PERPLEXITY_SELECTOR_FALLBACKS = [
   "div[contenteditable='true'][role='textbox']"
 ];
 function normalizeSelectorArray(value) {
-  return Array.isArray(value) ? value.filter((entry) => typeof entry === "string" && Boolean(entry.trim())).map((entry) => entry.trim()) : [];
+  return Array.isArray(value) ? value.filter(
+    (entry) => typeof entry === "string" && Boolean(entry.trim())
+  ).map((entry) => entry.trim()) : [];
 }
 function normalizePerplexitySelectors(site = {}) {
   if (safeText2(site?.id) !== "perplexity") {
@@ -1490,6 +1496,11 @@ function normalizePerplexitySelectors(site = {}) {
     inputSelector: PERPLEXITY_PRIMARY_INPUT_SELECTOR,
     fallbackSelectors: mergedFallbackSelectors
   };
+}
+function normalizeTrimmedStringArray(value) {
+  return Array.isArray(value) ? value.filter(
+    (entry) => typeof entry === "string" && Boolean(entry.trim())
+  ) : [];
 }
 function buildBaseSiteRecord(site, builtInMeta = {}) {
   const style = BUILT_IN_SITE_STYLE_LOOKUP[safeText2(site.id)] ?? {};
@@ -1518,9 +1529,7 @@ function buildBaseSiteRecord(site, builtInMeta = {}) {
     waitMs: normalizeWaitMs(site.waitMs, 2e3),
     fallbackSelectors: normalizedSelectors.fallbackSelectors,
     fallback: normalizeBoolean2(site.fallback, true),
-    authSelectors: Array.isArray(site.authSelectors) ? site.authSelectors.filter(
-      (entry) => typeof entry === "string" && Boolean(entry.trim())
-    ) : [],
+    authSelectors: normalizeTrimmedStringArray(site.authSelectors),
     lastVerified: verification.lastVerified,
     verifiedAt: verification.verifiedAt,
     verifiedRoute: verification.verifiedRoute,
@@ -1566,17 +1575,12 @@ function sanitizeBuiltInOverride(override = {}, originalSite = {}) {
         "input-and-submit"
       )
     ),
-    waitMs: normalizeWaitMs(override.waitMs, normalizeWaitMs(originalSite.waitMs, 2e3)),
-    fallbackSelectors: Array.isArray(override.fallbackSelectors) ? override.fallbackSelectors.filter(
-      (entry) => typeof entry === "string" && Boolean(entry.trim())
-    ) : Array.isArray(originalSite.fallbackSelectors) ? originalSite.fallbackSelectors.filter(
-      (entry) => typeof entry === "string" && Boolean(entry.trim())
-    ) : [],
-    authSelectors: Array.isArray(override.authSelectors) ? override.authSelectors.filter(
-      (entry) => typeof entry === "string" && Boolean(entry.trim())
-    ) : Array.isArray(originalSite.authSelectors) ? originalSite.authSelectors.filter(
-      (entry) => typeof entry === "string" && Boolean(entry.trim())
-    ) : [],
+    waitMs: normalizeWaitMs(
+      override.waitMs,
+      normalizeWaitMs(originalSite.waitMs, 2e3)
+    ),
+    fallbackSelectors: Array.isArray(override.fallbackSelectors) ? normalizeTrimmedStringArray(override.fallbackSelectors) : Array.isArray(originalSite.fallbackSelectors) ? normalizeTrimmedStringArray(originalSite.fallbackSelectors) : [],
+    authSelectors: Array.isArray(override.authSelectors) ? normalizeTrimmedStringArray(override.authSelectors) : Array.isArray(originalSite.authSelectors) ? normalizeTrimmedStringArray(originalSite.authSelectors) : [],
     lastVerified: verification.lastVerified,
     verifiedAt: verification.verifiedAt,
     verifiedRoute: verification.verifiedRoute,
@@ -1623,7 +1627,10 @@ function normalizeCustomSite(site) {
       url,
       hostname,
       hostnameAliases: normalizeHostnameAliases(source?.hostnameAliases, hostname),
-      supportedRoutes: Object.prototype.hasOwnProperty.call(source, "supportedRoutes") ? source?.supportedRoutes : void 0,
+      supportedRoutes: Object.prototype.hasOwnProperty.call(
+        source,
+        "supportedRoutes"
+      ) ? source?.supportedRoutes : void 0,
       inputSelector: safeText2(source?.inputSelector),
       inputType: normalizeInputType(source?.inputType, "textarea"),
       submitSelector: safeText2(source?.submitSelector),

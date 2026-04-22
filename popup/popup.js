@@ -1,3 +1,17 @@
+// src/shared/runtime-state/constants.ts
+var LOCAL_RUNTIME_KEYS = Object.freeze({
+  failedSelectors: "failedSelectors",
+  onboardingCompleted: "onboardingCompleted",
+  strategyStats: "strategyStats"
+});
+var SESSION_RUNTIME_KEYS = Object.freeze({
+  pendingUiToasts: "pendingUiToasts",
+  lastBroadcast: "lastBroadcast",
+  pendingSelectorChecks: "pendingSelectorChecks",
+  popupFavoriteIntent: "popupFavoriteIntent",
+  favoriteRunJobs: "favoriteRunJobs"
+});
+
 // src/shared/prompts/constants.ts
 var LOCAL_STORAGE_KEYS = Object.freeze({
   history: "promptHistory",
@@ -327,6 +341,104 @@ function normalizeChainSteps(value, fallback = {}) {
   return [];
 }
 
+// src/shared/broadcast/target-snapshots.ts
+function normalizeTargetMode(value) {
+  if (value === "new" || value === "tab") {
+    return value;
+  }
+  return "default";
+}
+function normalizeTargetTabId(value) {
+  if (value === null || value === void 0 || value === "") {
+    return null;
+  }
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : null;
+}
+function buildBroadcastTargetSnapshot(value) {
+  const siteId = safeText(value?.siteId).trim();
+  if (!siteId) {
+    return null;
+  }
+  return {
+    siteId,
+    resolvedPrompt: safeText(value?.resolvedPrompt),
+    targetMode: normalizeTargetMode(value?.targetMode),
+    targetTabId: normalizeTargetTabId(value?.targetTabId)
+  };
+}
+function normalizeBroadcastTargetSnapshots(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const seenSiteIds = /* @__PURE__ */ new Set();
+  const snapshots = [];
+  value.forEach((entry) => {
+    const snapshot = buildBroadcastTargetSnapshot(
+      entry && typeof entry === "object" && !Array.isArray(entry) ? {
+        siteId: safeText(entry.siteId),
+        resolvedPrompt: safeText(entry.resolvedPrompt),
+        targetMode: entry.targetMode,
+        targetTabId: normalizeTargetTabId(entry.targetTabId)
+      } : null
+    );
+    if (!snapshot || seenSiteIds.has(snapshot.siteId)) {
+      return;
+    }
+    seenSiteIds.add(snapshot.siteId);
+    snapshots.push(snapshot);
+  });
+  return snapshots;
+}
+function buildFallbackTargetSnapshots(siteIds, prompt) {
+  return normalizeSiteIdList(siteIds).map((siteId) => ({
+    siteId,
+    resolvedPrompt: safeText(prompt),
+    targetMode: "default",
+    targetTabId: null
+  }));
+}
+function ensureBroadcastTargetSnapshots(snapshots, siteIds, prompt) {
+  const normalized = normalizeBroadcastTargetSnapshots(snapshots);
+  if (normalized.length > 0) {
+    return normalized;
+  }
+  return buildFallbackTargetSnapshots(siteIds, prompt);
+}
+function getTargetSnapshotSiteIds(entry) {
+  const snapshots = ensureBroadcastTargetSnapshots(
+    entry?.targetSnapshots,
+    entry?.requestedSiteIds ?? entry?.sentTo,
+    entry?.text
+  );
+  return snapshots.map((snapshot) => snapshot.siteId);
+}
+function buildBroadcastTargetMessageFromSnapshot(snapshot, openTabs = []) {
+  const siteId = safeText(snapshot.siteId).trim();
+  const payload = {
+    id: siteId,
+    resolvedPrompt: safeText(snapshot.resolvedPrompt)
+  };
+  if (snapshot.targetMode === "new") {
+    payload.reuseExistingTab = false;
+    payload.target = "new";
+    return payload;
+  }
+  if (snapshot.targetMode === "tab") {
+    payload.target = "tab";
+    if (snapshot.targetTabId) {
+      payload.tabId = snapshot.targetTabId;
+    }
+    const matchingTab = openTabs.find(
+      (tab) => tab.siteId === siteId && Number(tab.tabId) === Number(snapshot.targetTabId)
+    );
+    if (matchingTab?.tabId) {
+      payload.tabId = matchingTab.tabId;
+    }
+  }
+  return payload;
+}
+
 // src/shared/prompts/storage.ts
 async function readLocal(key, fallbackValue) {
   const result = await chrome.storage.local.get(key);
@@ -523,104 +635,6 @@ async function deleteFavoriteItem(favoriteId) {
   );
   await setPromptFavorites(nextFavorites);
   return nextFavorites;
-}
-
-// src/shared/broadcast/target-snapshots.ts
-function normalizeTargetMode(value) {
-  if (value === "new" || value === "tab") {
-    return value;
-  }
-  return "default";
-}
-function normalizeTargetTabId(value) {
-  if (value === null || value === void 0 || value === "") {
-    return null;
-  }
-  const numericValue = Number(value);
-  return Number.isFinite(numericValue) ? numericValue : null;
-}
-function buildBroadcastTargetSnapshot(value) {
-  const siteId = safeText(value?.siteId).trim();
-  if (!siteId) {
-    return null;
-  }
-  return {
-    siteId,
-    resolvedPrompt: safeText(value?.resolvedPrompt),
-    targetMode: normalizeTargetMode(value?.targetMode),
-    targetTabId: normalizeTargetTabId(value?.targetTabId)
-  };
-}
-function normalizeBroadcastTargetSnapshots(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  const seenSiteIds = /* @__PURE__ */ new Set();
-  const snapshots = [];
-  value.forEach((entry) => {
-    const snapshot = buildBroadcastTargetSnapshot(
-      entry && typeof entry === "object" && !Array.isArray(entry) ? {
-        siteId: safeText(entry.siteId),
-        resolvedPrompt: safeText(entry.resolvedPrompt),
-        targetMode: entry.targetMode,
-        targetTabId: normalizeTargetTabId(entry.targetTabId)
-      } : null
-    );
-    if (!snapshot || seenSiteIds.has(snapshot.siteId)) {
-      return;
-    }
-    seenSiteIds.add(snapshot.siteId);
-    snapshots.push(snapshot);
-  });
-  return snapshots;
-}
-function buildFallbackTargetSnapshots(siteIds, prompt) {
-  return normalizeSiteIdList(siteIds).map((siteId) => ({
-    siteId,
-    resolvedPrompt: safeText(prompt),
-    targetMode: "default",
-    targetTabId: null
-  }));
-}
-function ensureBroadcastTargetSnapshots(snapshots, siteIds, prompt) {
-  const normalized = normalizeBroadcastTargetSnapshots(snapshots);
-  if (normalized.length > 0) {
-    return normalized;
-  }
-  return buildFallbackTargetSnapshots(siteIds, prompt);
-}
-function getTargetSnapshotSiteIds(entry) {
-  const snapshots = ensureBroadcastTargetSnapshots(
-    entry?.targetSnapshots,
-    entry?.requestedSiteIds ?? entry?.sentTo,
-    entry?.text
-  );
-  return snapshots.map((snapshot) => snapshot.siteId);
-}
-function buildBroadcastTargetMessageFromSnapshot(snapshot, openTabs = []) {
-  const siteId = safeText(snapshot.siteId).trim();
-  const payload = {
-    id: siteId,
-    resolvedPrompt: safeText(snapshot.resolvedPrompt)
-  };
-  if (snapshot.targetMode === "new") {
-    payload.reuseExistingTab = false;
-    payload.target = "new";
-    return payload;
-  }
-  if (snapshot.targetMode === "tab") {
-    payload.target = "tab";
-    if (snapshot.targetTabId) {
-      payload.tabId = snapshot.targetTabId;
-    }
-    const matchingTab = openTabs.find(
-      (tab) => tab.siteId === siteId && Number(tab.tabId) === Number(snapshot.targetTabId)
-    );
-    if (matchingTab?.tabId) {
-      payload.tabId = matchingTab.tabId;
-    }
-  }
-  return payload;
 }
 
 // src/shared/prompts/settings-store.ts
@@ -921,102 +935,7 @@ var BUILT_IN_SITE_STYLE_MAP = Object.freeze({
   perplexity: { color: "#20808d", icon: "Px" }
 });
 
-// src/shared/sites/verification.ts
-var ISO_MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
-var ISO_DATE_PATTERN = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
-function normalizeText(value) {
-  return typeof value === "string" ? value.trim() : "";
-}
-function hasOwnKey(value, key) {
-  return Boolean(value) && typeof value === "object" && Object.prototype.hasOwnProperty.call(value, key);
-}
-function resolveTextField(primary, fallback, key) {
-  if (hasOwnKey(primary, key)) {
-    return normalizeText(primary[key]);
-  }
-  return normalizeText(fallback[key]);
-}
-function normalizeLegacyLastVerified(value) {
-  const normalized = normalizeText(value);
-  return ISO_MONTH_PATTERN.test(normalized) ? normalized : "";
-}
-function normalizeVerifiedAt(value) {
-  const normalized = normalizeText(value);
-  return ISO_DATE_PATTERN.test(normalized) ? normalized : "";
-}
-function normalizeVerifiedAuthState(value) {
-  const normalized = normalizeText(value);
-  return VALID_VERIFIED_AUTH_STATES.has(normalized) ? normalized : "";
-}
-function deriveLegacyLastVerified(verifiedAt) {
-  return normalizeVerifiedAt(verifiedAt).slice(0, 7);
-}
-function buildVerificationMetadata(primaryValue, fallbackValue = {}) {
-  const primary = primaryValue && typeof primaryValue === "object" && !Array.isArray(primaryValue) ? primaryValue : {};
-  const fallback = fallbackValue && typeof fallbackValue === "object" && !Array.isArray(fallbackValue) ? fallbackValue : {};
-  const primaryHasVerifiedAt = hasOwnKey(primary, "verifiedAt");
-  const primaryVerifiedAt = normalizeVerifiedAt(primary.verifiedAt);
-  const fallbackVerifiedAt = normalizeVerifiedAt(fallback.verifiedAt);
-  const verifiedAt = primaryHasVerifiedAt ? primaryVerifiedAt : primaryVerifiedAt || fallbackVerifiedAt;
-  const lastVerified = verifiedAt ? deriveLegacyLastVerified(verifiedAt) : primaryHasVerifiedAt ? "" : normalizeLegacyLastVerified(primary.lastVerified) || normalizeLegacyLastVerified(fallback.lastVerified);
-  return {
-    lastVerified,
-    verifiedAt,
-    verifiedRoute: resolveTextField(primary, fallback, "verifiedRoute"),
-    verifiedAuthState: hasOwnKey(primary, "verifiedAuthState") ? normalizeVerifiedAuthState(primary.verifiedAuthState) : normalizeVerifiedAuthState(primary.verifiedAuthState) || normalizeVerifiedAuthState(fallback.verifiedAuthState),
-    verifiedLocale: resolveTextField(primary, fallback, "verifiedLocale"),
-    verifiedVersion: resolveTextField(primary, fallback, "verifiedVersion")
-  };
-}
-
-// src/shared/sites/selector-utils.ts
-var AUTH_PATH_SEGMENTS = Object.freeze([
-  "/login",
-  "/logout",
-  "/sign-in",
-  "/signin",
-  "/auth"
-]);
-var SETTINGS_PATH_SEGMENTS = Object.freeze([
-  "/settings",
-  "/preferences",
-  "/account",
-  "/billing"
-]);
-function normalizePathname(pathname) {
-  return typeof pathname === "string" ? pathname.trim().toLowerCase() : "";
-}
-function normalizeRoutePrefix(value) {
-  const normalized = normalizePathname(value);
-  if (!normalized) {
-    return "";
-  }
-  const basePath = normalized.split("#")[0]?.split("?")[0] ?? "";
-  if (!basePath.startsWith("/")) {
-    return "";
-  }
-  const trimmed = basePath.replace(/\/+$/g, "");
-  return trimmed || "/";
-}
-function normalizeSupportedRoutes(value) {
-  const rawEntries = Array.isArray(value) ? value : typeof value === "string" ? value.split(/\r?\n/g) : [];
-  return Array.from(
-    new Set(
-      rawEntries.map((entry) => normalizeRoutePrefix(entry)).filter(Boolean)
-    )
-  );
-}
-function getConfiguredSupportedRoutes(site) {
-  const explicitRoutes = normalizeSupportedRoutes(site?.supportedRoutes);
-  if (explicitRoutes.length > 0) {
-    return explicitRoutes;
-  }
-  const fallbackRoute = normalizeRoutePrefix(site?.verifiedRoute);
-  return fallbackRoute && fallbackRoute !== "/" ? [fallbackRoute] : [];
-}
-
-// src/shared/sites/normalizers.ts
-var BUILT_IN_SITE_STYLE_LOOKUP = BUILT_IN_SITE_STYLE_MAP;
+// src/shared/sites/normalizers/core.ts
 function safeText2(value) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -1127,6 +1046,18 @@ function buildOriginPatterns(url, hostnameAliases = []) {
     return [];
   }
 }
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+function stringifyComparable(value) {
+  try {
+    return JSON.stringify(value ?? null);
+  } catch (_error) {
+    return "";
+  }
+}
+
+// src/shared/sites/normalizers/ids.ts
 function createCustomSiteId(name) {
   const slug = safeText2(name).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32);
   return `custom-${slug || Date.now()}-${Date.now().toString(36).slice(-4)}`;
@@ -1151,16 +1082,103 @@ function ensureUniqueImportedSiteId(baseId, usedIds) {
   usedIds.add(candidate);
   return candidate;
 }
-function isPlainObject(value) {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+
+// src/shared/sites/verification.ts
+var ISO_MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+var ISO_DATE_PATTERN = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+function normalizeText(value) {
+  return typeof value === "string" ? value.trim() : "";
 }
-function stringifyComparable(value) {
-  try {
-    return JSON.stringify(value ?? null);
-  } catch (_error) {
+function hasOwnKey(value, key) {
+  return Boolean(value) && typeof value === "object" && Object.prototype.hasOwnProperty.call(value, key);
+}
+function resolveTextField(primary, fallback, key) {
+  if (hasOwnKey(primary, key)) {
+    return normalizeText(primary[key]);
+  }
+  return normalizeText(fallback[key]);
+}
+function normalizeLegacyLastVerified(value) {
+  const normalized = normalizeText(value);
+  return ISO_MONTH_PATTERN.test(normalized) ? normalized : "";
+}
+function normalizeVerifiedAt(value) {
+  const normalized = normalizeText(value);
+  return ISO_DATE_PATTERN.test(normalized) ? normalized : "";
+}
+function normalizeVerifiedAuthState(value) {
+  const normalized = normalizeText(value);
+  return VALID_VERIFIED_AUTH_STATES.has(normalized) ? normalized : "";
+}
+function deriveLegacyLastVerified(verifiedAt) {
+  return normalizeVerifiedAt(verifiedAt).slice(0, 7);
+}
+function buildVerificationMetadata(primaryValue, fallbackValue = {}) {
+  const primary = primaryValue && typeof primaryValue === "object" && !Array.isArray(primaryValue) ? primaryValue : {};
+  const fallback = fallbackValue && typeof fallbackValue === "object" && !Array.isArray(fallbackValue) ? fallbackValue : {};
+  const primaryHasVerifiedAt = hasOwnKey(primary, "verifiedAt");
+  const primaryVerifiedAt = normalizeVerifiedAt(primary.verifiedAt);
+  const fallbackVerifiedAt = normalizeVerifiedAt(fallback.verifiedAt);
+  const verifiedAt = primaryHasVerifiedAt ? primaryVerifiedAt : primaryVerifiedAt || fallbackVerifiedAt;
+  const lastVerified = verifiedAt ? deriveLegacyLastVerified(verifiedAt) : primaryHasVerifiedAt ? "" : normalizeLegacyLastVerified(primary.lastVerified) || normalizeLegacyLastVerified(fallback.lastVerified);
+  return {
+    lastVerified,
+    verifiedAt,
+    verifiedRoute: resolveTextField(primary, fallback, "verifiedRoute"),
+    verifiedAuthState: hasOwnKey(primary, "verifiedAuthState") ? normalizeVerifiedAuthState(primary.verifiedAuthState) : normalizeVerifiedAuthState(primary.verifiedAuthState) || normalizeVerifiedAuthState(fallback.verifiedAuthState),
+    verifiedLocale: resolveTextField(primary, fallback, "verifiedLocale"),
+    verifiedVersion: resolveTextField(primary, fallback, "verifiedVersion")
+  };
+}
+
+// src/shared/sites/selector-utils.ts
+var AUTH_PATH_SEGMENTS = Object.freeze([
+  "/login",
+  "/logout",
+  "/sign-in",
+  "/signin",
+  "/auth"
+]);
+var SETTINGS_PATH_SEGMENTS = Object.freeze([
+  "/settings",
+  "/preferences",
+  "/account",
+  "/billing"
+]);
+function normalizePathname(pathname) {
+  return typeof pathname === "string" ? pathname.trim().toLowerCase() : "";
+}
+function normalizeRoutePrefix(value) {
+  const normalized = normalizePathname(value);
+  if (!normalized) {
     return "";
   }
+  const basePath = normalized.split("#")[0]?.split("?")[0] ?? "";
+  if (!basePath.startsWith("/")) {
+    return "";
+  }
+  const trimmed = basePath.replace(/\/+$/g, "");
+  return trimmed || "/";
 }
+function normalizeSupportedRoutes(value) {
+  const rawEntries = Array.isArray(value) ? value : typeof value === "string" ? value.split(/\r?\n/g) : [];
+  return Array.from(
+    new Set(
+      rawEntries.map((entry) => normalizeRoutePrefix(entry)).filter(Boolean)
+    )
+  );
+}
+function getConfiguredSupportedRoutes(site) {
+  const explicitRoutes = normalizeSupportedRoutes(site?.supportedRoutes);
+  if (explicitRoutes.length > 0) {
+    return explicitRoutes;
+  }
+  const fallbackRoute = normalizeRoutePrefix(site?.verifiedRoute);
+  return fallbackRoute && fallbackRoute !== "/" ? [fallbackRoute] : [];
+}
+
+// src/shared/sites/normalizers/site-records.ts
+var BUILT_IN_SITE_STYLE_LOOKUP = BUILT_IN_SITE_STYLE_MAP;
 var PERPLEXITY_PRIMARY_INPUT_SELECTOR = "#ask-input[data-lexical-editor='true'][role='textbox']";
 var PERPLEXITY_SELECTOR_FALLBACKS = [
   "div#ask-input[data-lexical-editor='true'][role='textbox']",
@@ -1169,7 +1187,9 @@ var PERPLEXITY_SELECTOR_FALLBACKS = [
   "div[contenteditable='true'][role='textbox']"
 ];
 function normalizeSelectorArray(value) {
-  return Array.isArray(value) ? value.filter((entry) => typeof entry === "string" && Boolean(entry.trim())).map((entry) => entry.trim()) : [];
+  return Array.isArray(value) ? value.filter(
+    (entry) => typeof entry === "string" && Boolean(entry.trim())
+  ).map((entry) => entry.trim()) : [];
 }
 function normalizePerplexitySelectors(site = {}) {
   if (safeText2(site?.id) !== "perplexity") {
@@ -1193,6 +1213,11 @@ function normalizePerplexitySelectors(site = {}) {
     inputSelector: PERPLEXITY_PRIMARY_INPUT_SELECTOR,
     fallbackSelectors: mergedFallbackSelectors
   };
+}
+function normalizeTrimmedStringArray(value) {
+  return Array.isArray(value) ? value.filter(
+    (entry) => typeof entry === "string" && Boolean(entry.trim())
+  ) : [];
 }
 function buildBaseSiteRecord(site, builtInMeta = {}) {
   const style = BUILT_IN_SITE_STYLE_LOOKUP[safeText2(site.id)] ?? {};
@@ -1221,9 +1246,7 @@ function buildBaseSiteRecord(site, builtInMeta = {}) {
     waitMs: normalizeWaitMs(site.waitMs, 2e3),
     fallbackSelectors: normalizedSelectors.fallbackSelectors,
     fallback: normalizeBoolean2(site.fallback, true),
-    authSelectors: Array.isArray(site.authSelectors) ? site.authSelectors.filter(
-      (entry) => typeof entry === "string" && Boolean(entry.trim())
-    ) : [],
+    authSelectors: normalizeTrimmedStringArray(site.authSelectors),
     lastVerified: verification.lastVerified,
     verifiedAt: verification.verifiedAt,
     verifiedRoute: verification.verifiedRoute,
@@ -1269,17 +1292,12 @@ function sanitizeBuiltInOverride(override = {}, originalSite = {}) {
         "input-and-submit"
       )
     ),
-    waitMs: normalizeWaitMs(override.waitMs, normalizeWaitMs(originalSite.waitMs, 2e3)),
-    fallbackSelectors: Array.isArray(override.fallbackSelectors) ? override.fallbackSelectors.filter(
-      (entry) => typeof entry === "string" && Boolean(entry.trim())
-    ) : Array.isArray(originalSite.fallbackSelectors) ? originalSite.fallbackSelectors.filter(
-      (entry) => typeof entry === "string" && Boolean(entry.trim())
-    ) : [],
-    authSelectors: Array.isArray(override.authSelectors) ? override.authSelectors.filter(
-      (entry) => typeof entry === "string" && Boolean(entry.trim())
-    ) : Array.isArray(originalSite.authSelectors) ? originalSite.authSelectors.filter(
-      (entry) => typeof entry === "string" && Boolean(entry.trim())
-    ) : [],
+    waitMs: normalizeWaitMs(
+      override.waitMs,
+      normalizeWaitMs(originalSite.waitMs, 2e3)
+    ),
+    fallbackSelectors: Array.isArray(override.fallbackSelectors) ? normalizeTrimmedStringArray(override.fallbackSelectors) : Array.isArray(originalSite.fallbackSelectors) ? normalizeTrimmedStringArray(originalSite.fallbackSelectors) : [],
+    authSelectors: Array.isArray(override.authSelectors) ? normalizeTrimmedStringArray(override.authSelectors) : Array.isArray(originalSite.authSelectors) ? normalizeTrimmedStringArray(originalSite.authSelectors) : [],
     lastVerified: verification.lastVerified,
     verifiedAt: verification.verifiedAt,
     verifiedRoute: verification.verifiedRoute,
@@ -1326,7 +1344,10 @@ function normalizeCustomSite(site) {
       url,
       hostname,
       hostnameAliases: normalizeHostnameAliases(source?.hostnameAliases, hostname),
-      supportedRoutes: Object.prototype.hasOwnProperty.call(source, "supportedRoutes") ? source?.supportedRoutes : void 0,
+      supportedRoutes: Object.prototype.hasOwnProperty.call(
+        source,
+        "supportedRoutes"
+      ) ? source?.supportedRoutes : void 0,
       inputSelector: safeText2(source?.inputSelector),
       inputType: normalizeInputType(source?.inputType, "textarea"),
       submitSelector: safeText2(source?.submitSelector),
@@ -2238,114 +2259,6 @@ function matchesFavoriteSearch(item, query) {
   return values.some((value) => normalizeSearchValue(value).includes(normalizedQuery));
 }
 
-// src/shared/prompt-state.ts
-var LOCAL_PROMPT_STATE_KEYS = Object.freeze({
-  composeDraftPrompt: "composeDraftPrompt",
-  lastSentPrompt: "lastSentPrompt",
-  legacyLastPrompt: "lastPrompt"
-});
-var SESSION_PROMPT_STATE_KEYS = Object.freeze({
-  popupPromptIntent: "popupPromptIntent"
-});
-function normalizePrompt(value) {
-  return typeof value === "string" ? value : "";
-}
-function normalizePopupPromptIntent(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
-  const source = value;
-  const prompt = normalizePrompt(source.prompt);
-  const createdAt = typeof source.createdAt === "string" && Number.isFinite(Date.parse(source.createdAt)) ? new Date(source.createdAt).toISOString() : (/* @__PURE__ */ new Date()).toISOString();
-  return {
-    prompt,
-    createdAt
-  };
-}
-async function getComposeDraftPrompt() {
-  const result = await chrome.storage.local.get([
-    LOCAL_PROMPT_STATE_KEYS.composeDraftPrompt,
-    LOCAL_PROMPT_STATE_KEYS.legacyLastPrompt
-  ]);
-  if (typeof result[LOCAL_PROMPT_STATE_KEYS.composeDraftPrompt] === "string") {
-    return normalizePrompt(result[LOCAL_PROMPT_STATE_KEYS.composeDraftPrompt]);
-  }
-  return normalizePrompt(result[LOCAL_PROMPT_STATE_KEYS.legacyLastPrompt]);
-}
-function pickRestoredComposePrompt({
-  currentPrompt = "",
-  popupPromptIntent = null,
-  composeDraftPrompt = "",
-  lastSentPrompt = ""
-} = {}) {
-  const normalizedCurrentPrompt = normalizePrompt(currentPrompt);
-  if (normalizedCurrentPrompt.trim()) {
-    return normalizedCurrentPrompt;
-  }
-  const intentPrompt = normalizePrompt(popupPromptIntent?.prompt);
-  if (intentPrompt.trim()) {
-    return intentPrompt;
-  }
-  const draftPrompt = normalizePrompt(composeDraftPrompt);
-  if (draftPrompt.trim()) {
-    return draftPrompt;
-  }
-  return normalizePrompt(lastSentPrompt);
-}
-async function setComposeDraftPrompt(prompt) {
-  await chrome.storage.local.set({
-    [LOCAL_PROMPT_STATE_KEYS.composeDraftPrompt]: normalizePrompt(prompt)
-  });
-}
-async function getLastSentPrompt() {
-  const result = await chrome.storage.local.get(LOCAL_PROMPT_STATE_KEYS.lastSentPrompt);
-  return normalizePrompt(result[LOCAL_PROMPT_STATE_KEYS.lastSentPrompt]);
-}
-async function setLastSentPrompt(prompt) {
-  await chrome.storage.local.set({
-    [LOCAL_PROMPT_STATE_KEYS.lastSentPrompt]: normalizePrompt(prompt)
-  });
-}
-async function getPopupPromptIntent() {
-  const result = await chrome.storage.session.get(SESSION_PROMPT_STATE_KEYS.popupPromptIntent);
-  return normalizePopupPromptIntent(result[SESSION_PROMPT_STATE_KEYS.popupPromptIntent]);
-}
-async function setPopupPromptIntent(value) {
-  const normalized = normalizePopupPromptIntent(
-    typeof value === "string" ? {
-      prompt: value,
-      createdAt: (/* @__PURE__ */ new Date()).toISOString()
-    } : value
-  );
-  if (!normalized) {
-    await chrome.storage.session.remove([SESSION_PROMPT_STATE_KEYS.popupPromptIntent]);
-    return null;
-  }
-  await chrome.storage.session.set({
-    [SESSION_PROMPT_STATE_KEYS.popupPromptIntent]: normalized
-  });
-  return normalized;
-}
-async function consumePopupPromptIntent() {
-  const current = await getPopupPromptIntent();
-  await setPopupPromptIntent(null);
-  return current;
-}
-
-// src/shared/runtime-state/constants.ts
-var LOCAL_RUNTIME_KEYS = Object.freeze({
-  failedSelectors: "failedSelectors",
-  onboardingCompleted: "onboardingCompleted",
-  strategyStats: "strategyStats"
-});
-var SESSION_RUNTIME_KEYS = Object.freeze({
-  pendingUiToasts: "pendingUiToasts",
-  lastBroadcast: "lastBroadcast",
-  pendingSelectorChecks: "pendingSelectorChecks",
-  popupFavoriteIntent: "popupFavoriteIntent",
-  favoriteRunJobs: "favoriteRunJobs"
-});
-
 // src/shared/runtime-state/normalizers.ts
 function isPlainObject2(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -2600,41 +2513,98 @@ async function drainPendingUiToasts() {
   return current;
 }
 
-// src/shared/sites/order.ts
-function normalizeSiteOrder(siteOrder) {
-  if (!Array.isArray(siteOrder)) {
-    return [];
-  }
-  return Array.from(
-    new Set(
-      siteOrder.filter((entry) => typeof entry === "string" && entry.trim()).map((entry) => entry.trim())
-    )
-  );
+// src/shared/prompt-state.ts
+var LOCAL_PROMPT_STATE_KEYS = Object.freeze({
+  composeDraftPrompt: "composeDraftPrompt",
+  lastSentPrompt: "lastSentPrompt",
+  legacyLastPrompt: "lastPrompt"
+});
+var SESSION_PROMPT_STATE_KEYS = Object.freeze({
+  popupPromptIntent: "popupPromptIntent"
+});
+function normalizePrompt(value) {
+  return typeof value === "string" ? value : "";
 }
-function sortSitesByOrder(sites = [], siteOrder) {
-  const normalizedOrder = normalizeSiteOrder(siteOrder);
-  if (normalizedOrder.length === 0) {
-    return [...Array.isArray(sites) ? sites : []];
+function normalizePopupPromptIntent(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
   }
-  const siteMap = /* @__PURE__ */ new Map();
-  const unorderedSites = [];
-  (Array.isArray(sites) ? sites : []).forEach((site) => {
-    const siteId = typeof site?.id === "string" ? site.id.trim() : "";
-    if (!siteId) {
-      unorderedSites.push(site);
-      return;
-    }
-    siteMap.set(siteId, site);
+  const source = value;
+  const prompt = normalizePrompt(source.prompt);
+  const createdAt = typeof source.createdAt === "string" && Number.isFinite(Date.parse(source.createdAt)) ? new Date(source.createdAt).toISOString() : (/* @__PURE__ */ new Date()).toISOString();
+  return {
+    prompt,
+    createdAt
+  };
+}
+async function getComposeDraftPrompt() {
+  const result = await chrome.storage.local.get([
+    LOCAL_PROMPT_STATE_KEYS.composeDraftPrompt,
+    LOCAL_PROMPT_STATE_KEYS.legacyLastPrompt
+  ]);
+  if (typeof result[LOCAL_PROMPT_STATE_KEYS.composeDraftPrompt] === "string") {
+    return normalizePrompt(result[LOCAL_PROMPT_STATE_KEYS.composeDraftPrompt]);
+  }
+  return normalizePrompt(result[LOCAL_PROMPT_STATE_KEYS.legacyLastPrompt]);
+}
+function pickRestoredComposePrompt({
+  currentPrompt = "",
+  popupPromptIntent = null,
+  composeDraftPrompt = "",
+  lastSentPrompt = ""
+} = {}) {
+  const normalizedCurrentPrompt = normalizePrompt(currentPrompt);
+  if (normalizedCurrentPrompt.trim()) {
+    return normalizedCurrentPrompt;
+  }
+  const intentPrompt = normalizePrompt(popupPromptIntent?.prompt);
+  if (intentPrompt.trim()) {
+    return intentPrompt;
+  }
+  const draftPrompt = normalizePrompt(composeDraftPrompt);
+  if (draftPrompt.trim()) {
+    return draftPrompt;
+  }
+  return normalizePrompt(lastSentPrompt);
+}
+async function setComposeDraftPrompt(prompt) {
+  await chrome.storage.local.set({
+    [LOCAL_PROMPT_STATE_KEYS.composeDraftPrompt]: normalizePrompt(prompt)
   });
-  const orderedSites = normalizedOrder.map((siteId) => siteMap.get(siteId)).filter((site) => Boolean(site));
-  const orderedIds = new Set(orderedSites.map((site) => String(site.id).trim()));
-  return [
-    ...orderedSites,
-    ...(Array.isArray(sites) ? sites : []).filter((site) => {
-      const siteId = typeof site?.id === "string" ? site.id.trim() : "";
-      return !siteId || !orderedIds.has(siteId);
-    })
-  ];
+}
+async function getLastSentPrompt() {
+  const result = await chrome.storage.local.get(LOCAL_PROMPT_STATE_KEYS.lastSentPrompt);
+  return normalizePrompt(result[LOCAL_PROMPT_STATE_KEYS.lastSentPrompt]);
+}
+async function setLastSentPrompt(prompt) {
+  await chrome.storage.local.set({
+    [LOCAL_PROMPT_STATE_KEYS.lastSentPrompt]: normalizePrompt(prompt)
+  });
+}
+async function getPopupPromptIntent() {
+  const result = await chrome.storage.session.get(SESSION_PROMPT_STATE_KEYS.popupPromptIntent);
+  return normalizePopupPromptIntent(result[SESSION_PROMPT_STATE_KEYS.popupPromptIntent]);
+}
+async function setPopupPromptIntent(value) {
+  const normalized = normalizePopupPromptIntent(
+    typeof value === "string" ? {
+      prompt: value,
+      createdAt: (/* @__PURE__ */ new Date()).toISOString()
+    } : value
+  );
+  if (!normalized) {
+    await chrome.storage.session.remove([SESSION_PROMPT_STATE_KEYS.popupPromptIntent]);
+    return null;
+  }
+  await chrome.storage.session.set({
+    [SESSION_PROMPT_STATE_KEYS.popupPromptIntent]: normalized
+  });
+  return normalized;
+}
+async function consumePopupPromptIntent() {
+  const current = await getPopupPromptIntent();
+  await setPopupPromptIntent(null);
+  return current;
 }
 
 // src/shared/chrome/messaging.ts
@@ -2679,6 +2649,577 @@ function sendRuntimeMessage(message, timeoutMs = 0, fallbackValue = null) {
 }
 function sendRuntimeMessageWithTimeout(message, timeoutMs = DEFAULT_RUNTIME_MESSAGE_TIMEOUT_MS, fallbackValue = null) {
   return sendRuntimeMessage(message, timeoutMs, fallbackValue);
+}
+
+// src/popup/app/i18n/core.ts
+var uiLanguage = chrome.i18n.getUILanguage().toLowerCase();
+var isKorean = uiLanguage === "ko" || uiLanguage.startsWith("ko-");
+function msg(key, substitutions = void 0) {
+  return chrome.i18n.getMessage(key, substitutions) || "";
+}
+function applyI18n(root = document) {
+  root.querySelectorAll("[data-i18n]").forEach((element) => {
+    const key = element.dataset.i18n;
+    const value = key ? msg(key) : "";
+    if (value) {
+      element.textContent = value;
+    }
+  });
+  root.querySelectorAll("[data-i18n-placeholder]").forEach((element) => {
+    const key = element.dataset.i18nPlaceholder;
+    const value = key ? msg(key) : "";
+    if (value) {
+      element.setAttribute("placeholder", value);
+    }
+  });
+  root.querySelectorAll("[data-i18n-aria-label]").forEach((element) => {
+    const key = element.dataset.i18nAriaLabel;
+    const value = key ? msg(key) : "";
+    if (value) {
+      element.setAttribute("aria-label", value);
+    }
+  });
+}
+
+// src/popup/app/i18n/catalog.ts
+var t = {
+  title: msg("ext_name"),
+  desc: msg("ext_description"),
+  tabs: {
+    compose: msg("tab_write"),
+    history: msg("tab_history"),
+    favorites: msg("tab_favorites"),
+    settings: msg("tab_settings")
+  },
+  placeholder: msg("popup_placeholder"),
+  sitesLabel: msg("popup_sites_label"),
+  selectAll: msg("popup_select_all"),
+  deselectAll: msg("popup_deselect_all"),
+  send: msg("popup_send"),
+  saveFavorite: msg("popup_save_favorite"),
+  sending: (count) => msg("status_sending", [String(count)]),
+  sent: (count) => msg("status_success", [String(count)]),
+  warnEmpty: msg("popup_warn_empty"),
+  warnNoSite: msg("popup_warn_no_site"),
+  stopSending: msg("popup_stop_sending") || "Stop",
+  broadcastCancelled: msg("popup_broadcast_cancelled") || "Broadcast cancelled.",
+  error: (message) => msg("status_failed", [String(message ?? "")]),
+  historySearch: msg("popup_history_search"),
+  favoritesSearch: msg("popup_favorites_search"),
+  historyEmpty: msg("history_empty"),
+  favoritesEmpty: msg("favorites_empty"),
+  addFavorite: msg("popup_add_favorite"),
+  delete: msg("popup_delete"),
+  favoriteAdded: msg("popup_favorite_added"),
+  favoriteSaved: msg("popup_favorite_saved"),
+  historyDeleted: msg("popup_history_deleted"),
+  favoriteDeleted: msg("popup_favorite_deleted"),
+  favoriteDuplicated: msg("popup_favorite_duplicated") || "Favorite duplicated.",
+  favoriteDuplicate: msg("popup_favorite_duplicate") || "Duplicate",
+  favoriteDuplicatePrefix: msg("popup_favorite_duplicate_prefix") || "[Copy]",
+  titlePlaceholder: msg("popup_title_placeholder"),
+  titleSaved: msg("popup_title_saved"),
+  settingsTitle: msg("popup_settings_title"),
+  settingsDesc: msg("popup_settings_description"),
+  clearHistory: msg("settings_reset"),
+  openOptions: msg("popup_open_options"),
+  exportJson: msg("settings_export"),
+  importJson: msg("settings_import"),
+  clearHistoryConfirm: msg("popup_clear_history_confirm"),
+  historyCleared: msg("popup_history_cleared"),
+  historyResend: msg("popup_history_resend") || "Resend",
+  importSuccess: msg("popup_import_success"),
+  importFailed: msg("popup_import_failed"),
+  exportSuccess: msg("popup_export_success"),
+  emptyActionCompose: msg("popup_empty_action_compose"),
+  noSearchResults: msg("popup_no_search_results"),
+  importedLoad: msg("popup_imported_load"),
+  menuMore: msg("popup_menu_more"),
+  favoriteStar: msg("popup_favorite_star"),
+  templateSummary: (count) => msg("popup_template_summary", [String(count)]),
+  templateUserKind: msg("popup_template_user_kind"),
+  templateSystemKind: msg("popup_template_system_kind"),
+  templateModalTitle: msg("popup_template_modal_title"),
+  templateModalDesc: msg("popup_template_modal_desc"),
+  templatePreviewLabel: msg("popup_template_preview_label"),
+  templateModalCancel: msg("popup_template_cancel"),
+  templateModalConfirm: msg("popup_template_confirm"),
+  templateSystemNotice: msg("popup_template_system_notice"),
+  templateClipboardNotice: msg("popup_template_clipboard_notice"),
+  templateClipboardError: msg("popup_template_clipboard_error"),
+  templateMissingValues: msg("popup_template_missing_values"),
+  templateFieldLabel: (name) => String(name),
+  templateFieldPlaceholder: (name) => msg("popup_template_field_placeholder", [String(name)]),
+  favoriteModalTitle: msg("popup_favorite_modal_title"),
+  favoriteModalDesc: msg("popup_favorite_modal_desc"),
+  favoriteModalCancel: msg("popup_favorite_modal_cancel"),
+  favoriteModalConfirm: msg("popup_favorite_modal_confirm"),
+  favoriteModalSaveChanges: msg("popup_favorite_modal_save_changes") || "Save changes",
+  favoriteEditTitle: msg("popup_favorite_edit_title") || "Edit favorite",
+  favoriteEditDesc: msg("popup_favorite_edit_desc") || "Update targets, defaults, chain steps, and schedule settings.",
+  favoriteTitleLabel: msg("popup_favorite_title_label"),
+  favoriteModeLabel: msg("popup_favorite_mode_label") || "Favorite type",
+  favoriteModeSingle: msg("popup_favorite_mode_single") || "Single prompt",
+  favoriteModeChain: msg("popup_favorite_mode_chain") || "Chain",
+  favoritePromptLabel: msg("popup_favorite_prompt_label") || "Prompt",
+  favoriteTargetsLabel: msg("popup_favorite_targets_label") || "Default target services",
+  favoriteTagsLabel: msg("popup_favorite_tags_label") || "Tags",
+  favoriteFolderLabel: msg("popup_favorite_folder_label") || "Folder",
+  favoritePinnedLabel: msg("popup_favorite_pinned_label") || "Pin this favorite",
+  favoriteScheduleEnabledLabel: msg("popup_favorite_schedule_enabled_label") || "Enable scheduled run",
+  favoriteScheduledAtLabel: msg("popup_favorite_scheduled_at_label") || "Next run time",
+  favoriteScheduleRepeatLabel: msg("popup_favorite_schedule_repeat_label") || "Repeat",
+  favoriteScheduleRepeatNone: msg("popup_favorite_schedule_repeat_none") || "One time",
+  favoriteScheduleRepeatDaily: msg("popup_favorite_schedule_repeat_daily") || "Daily",
+  favoriteScheduleRepeatWeekday: msg("popup_favorite_schedule_repeat_weekday") || "Weekdays",
+  favoriteScheduleRepeatWeekly: msg("popup_favorite_schedule_repeat_weekly") || "Weekly",
+  favoriteSaveDefaultsLabel: msg("popup_favorite_save_defaults_label"),
+  favoriteDefaultsLabel: msg("popup_favorite_defaults_label"),
+  favoriteChainTitle: msg("popup_favorite_chain_title") || "Chain steps",
+  favoriteChainDesc: msg("popup_favorite_chain_desc") || "Each step runs in order and stops the chain if any step fails.",
+  favoriteChainAddStep: msg("popup_favorite_chain_add_step") || "Add step",
+  favoriteStepLabel: (index) => msg("popup_favorite_step_label", [String(index)]) || `Step ${index}`,
+  favoriteStepMoveUp: msg("popup_favorite_step_move_up") || "Move up",
+  favoriteStepMoveDown: msg("popup_favorite_step_move_down") || "Move down",
+  favoriteStepPromptLabel: msg("popup_favorite_step_prompt_label") || "Prompt",
+  favoriteStepDelayLabel: msg("popup_favorite_step_delay_label") || "Delay after previous step (ms)",
+  favoriteStepTargetsLabel: msg("popup_favorite_step_targets_label") || "Override targets",
+  favoriteStepTargetsHint: msg("popup_favorite_step_targets_hint") || "Leave empty to use the favorite default targets.",
+  favoriteRunNow: msg("popup_favorite_run_now") || "Run now",
+  favoriteRunQueued: msg("popup_favorite_run_queued") || "Favorite run queued.",
+  favoriteRunNeedsEditor: msg("popup_favorite_run_needs_editor") || "This favorite needs more input before it can run.",
+  favoriteScheduleDateRequired: msg("popup_favorite_schedule_date_required") || "Choose the next run time for this schedule.",
+  favoriteChainNeedsStep: msg("popup_favorite_chain_needs_step") || "Add at least one non-empty chain step.",
+  favoriteKindSingle: msg("popup_favorite_kind_single") || "Single",
+  favoriteKindChain: msg("popup_favorite_kind_chain") || "Chain",
+  favoriteScheduledBadge: msg("popup_favorite_scheduled_badge") || "Scheduled",
+  favoriteStepCount: (count) => msg("popup_favorite_step_count", [String(count)]) || `${count} steps`,
+  favoriteEdit: msg("popup_favorite_edit") || "Edit",
+  clearPrompt: msg("popup_clear_prompt") || "Clear",
+  promptCounter: (current) => isKorean ? `${current}자` : `${current} chars`,
+  serviceManagementTitle: msg("popup_service_management_title") || "Service Management",
+  serviceManagementDesc: msg("popup_service_management_desc") || "Add, edit, enable, or disable AI targets without editing code.",
+  addService: msg("popup_service_add") || "Add Service",
+  resetServices: msg("popup_service_reset") || "Reset Services",
+  resetServicesConfirm: msg("popup_service_reset_confirm") || "Reset built-in services and remove all custom services?",
+  serviceBuiltInBadge: msg("popup_service_builtin_badge") || "Built-in",
+  serviceCustomBadge: msg("popup_service_custom_badge") || "Custom",
+  serviceDisabledLabel: msg("popup_service_disabled") || "Disabled",
+  serviceEdit: msg("popup_service_edit") || "Edit",
+  serviceDelete: msg("popup_service_delete") || "Delete",
+  serviceTest: msg("popup_service_test") || "Test in Tab",
+  serviceEditorAddTitle: msg("popup_service_editor_add_title") || "Add Custom Service",
+  serviceEditorEditTitle: msg("popup_service_editor_edit_title") || "Edit Service",
+  serviceEditorDesc: msg("popup_service_editor_desc") || "Configure selector, submit strategy, style, and launch URL.",
+  serviceFieldName: msg("popup_service_field_name") || "Service Name",
+  serviceFieldUrl: msg("popup_service_field_url") || "Service URL",
+  serviceFieldInputSelector: msg("popup_service_field_input_selector") || "Input Selector",
+  serviceFieldInputType: msg("popup_service_field_input_type") || "Input Type",
+  serviceFieldSubmitSelector: msg("popup_service_field_submit_selector") || "Submit Selector",
+  serviceFieldSubmitMethod: msg("popup_service_field_submit_method") || "Submit Method",
+  serviceFieldAdvanced: msg("popup_service_field_advanced") || "Advanced Settings",
+  serviceFieldFallbackSelectors: msg("popup_service_field_fallback_selectors") || "Fallback Selectors",
+  serviceFieldAuthSelectors: msg("popup_service_field_auth_selectors") || "Auth Selectors",
+  serviceFieldHostnameAliases: msg("popup_service_field_hostname_aliases") || "Hostname Aliases",
+  serviceFieldSupportedRoutes: msg("popup_service_field_supported_routes") || "Supported Routes",
+  serviceFieldVerifiedAt: msg("popup_service_field_verified_at") || "Verified Date",
+  serviceFieldVerifiedRoute: msg("popup_service_field_verified_route") || "Verified Route",
+  serviceFieldVerifiedAuthState: msg("popup_service_field_verified_auth_state") || "Verified Auth State",
+  serviceFieldVerifiedLocale: msg("popup_service_field_verified_locale") || "Verified Locale",
+  serviceFieldVerifiedVersion: msg("popup_service_field_verified_version") || "Verified Version",
+  serviceVerifiedAuthStateUnknown: msg("popup_service_verified_auth_state_unknown") || "Unknown",
+  serviceVerifiedAuthStateLoggedIn: msg("popup_service_verified_auth_state_logged_in") || "logged-in",
+  serviceVerifiedAuthStateLoggedOut: msg("popup_service_verified_auth_state_logged_out") || "logged-out",
+  serviceVerifiedAuthStateSoftGated: msg("popup_service_verified_auth_state_soft_gated") || "soft-gated",
+  serviceFieldWait: msg("popup_service_field_wait") || "Wait Time",
+  serviceFieldColor: msg("popup_service_field_color") || "Color",
+  serviceFieldIcon: msg("popup_service_field_icon") || "Icon",
+  serviceFieldEnabled: msg("popup_service_field_enabled") || "Enabled",
+  serviceEditorSave: msg("popup_service_editor_save") || "Save",
+  serviceEditorCancel: msg("popup_service_editor_cancel") || "Cancel",
+  serviceSaved: msg("popup_service_saved") || "Service settings saved.",
+  serviceDeleted: msg("popup_service_deleted") || "Custom service deleted.",
+  serviceResetDone: msg("popup_service_reset_done") || "Service settings were reset.",
+  servicePermissionDenied: msg("popup_service_permission_denied") || "Host permission was not granted for this service URL.",
+  serviceValidationError: msg("popup_service_validation_error") || "Please check the service form fields.",
+  serviceTestNoTab: msg("popup_service_test_no_tab") || "No active tab is available for selector testing.",
+  serviceTestNoSelector: msg("popup_service_test_no_selector") || "Enter a selector first.",
+  serviceTestInvalidTab: msg("popup_service_test_invalid_tab") || "Selector testing only works on http/https tabs.",
+  serviceTestSuccess: (inputType) => msg("popup_service_test_success", [String(inputType)]) || `Element found (${inputType})`,
+  serviceTestFail: msg("popup_service_test_fail") || "Element not found.",
+  serviceTestError: (message) => msg("popup_service_test_error", [String(message)]) || `Selector test failed: ${message}`,
+  serviceEmptyList: msg("popup_service_empty_list") || "No services available.",
+  selectorWarningTooltip: msg("popup_selector_warning_tooltip") || "Selector may have changed. Review the service config.",
+  restoredBroadcastSending: msg("popup_broadcast_restored_sending") || "Previous broadcast is still running.",
+  restoredBroadcastDone: msg("popup_broadcast_restored_done") || "Last broadcast: $1 success, $2 failed",
+  toastConfirm: msg("common_confirm") || "Confirm",
+  toastHistoryDeleted: msg("toast_history_deleted") || "History item deleted.",
+  toastSettingsSaved: msg("toast_settings_saved") || "Settings saved.",
+  toastSendSuccess: (count) => msg("toast_send_success", [String(count)]) || `${count} services queued.`,
+  toastPromptEmpty: msg("toast_prompt_empty") || msg("popup_warn_empty") || "Please enter a prompt.",
+  toastNoService: msg("toast_no_service") || "Please select at least one service.",
+  toastSelectorFailed: (name) => msg("toast_selector_failed", [String(name)]) || `${name} selector was not found.`,
+  historySortLatest: msg("popup_history_sort_latest") || "Latest",
+  historySortOldest: msg("popup_history_sort_oldest") || "Oldest",
+  historySortMostSuccess: msg("popup_history_sort_most_success") || "Most success",
+  historySortMostFailure: msg("popup_history_sort_most_failure") || "Most failure",
+  favoriteSortRecentUsed: msg("popup_favorite_sort_recent_used") || "Recent use",
+  favoriteSortUsageCount: msg("popup_favorite_sort_usage_count") || "Usage count",
+  favoriteSortTitle: msg("popup_favorite_sort_title") || "Title",
+  favoriteSortCreatedAt: msg("popup_favorite_sort_created_at") || "Created date",
+  waitMultiplierLabel: msg("popup_wait_multiplier_label") || "Wait multiplier",
+  waitMultiplierValue: (value) => msg("popup_wait_multiplier_value", [String(Number(value).toFixed(1))]) || `${Number(value).toFixed(1)}x`,
+  resendModalTitle: msg("popup_resend_modal_title") || "Resend History Item",
+  resendModalDesc: msg("popup_resend_modal_desc") || "Choose which services to resend this prompt to.",
+  resendModalCancel: msg("popup_resend_modal_cancel") || "Cancel",
+  resendModalConfirm: msg("popup_resend_modal_confirm") || "Resend",
+  resendSiteUnavailable: msg("popup_resend_site_unavailable") || "Unavailable",
+  importReportTitle: msg("popup_import_report_title") || "Import Details",
+  importReportDesc: msg("popup_import_report_desc") || "Review accepted, rewritten, and rejected items from this import.",
+  importReportClose: msg("popup_import_report_close") || "Close",
+  importReportVersion: msg("popup_import_report_version") || "Version",
+  importReportAccepted: msg("popup_import_report_accepted") || "Accepted services",
+  importReportRewritten: msg("popup_import_report_rewritten") || "Rewritten IDs",
+  importReportBuiltins: msg("popup_import_report_builtins") || "Built-in adjustments",
+  importReportRejected: msg("popup_import_report_rejected") || "Rejected services",
+  importReportRejectedEmpty: msg("popup_import_report_rejected_empty") || "No rejected services.",
+  importRejectReason: (reason) => msg(`popup_import_reject_${reason}`) || reason,
+  ariaSelected: msg("popup_aria_selected") || "selected",
+  ariaNotSelected: msg("popup_aria_not_selected") || "not selected",
+  reuseTabsLabel: msg("popup_reuse_tabs_label") || "Reuse open AI tabs in the current window by default",
+  reuseTabsDescEnabled: msg("popup_reuse_tabs_desc_enabled") || "When no tab is chosen explicitly, the broadcaster reuses a matching open AI tab before opening a new one.",
+  reuseTabsDescDisabled: msg("popup_reuse_tabs_desc_disabled") || "When no tab is chosen explicitly, the broadcaster always opens a fresh tab.",
+  openTabsTitle: (count) => msg("popup_open_tabs_title", [String(count)]) || `${count} open tab${count === 1 ? "" : "s"}`,
+  openTabsUseDefault: msg("popup_open_tabs_use_default") || "Use default behavior",
+  openTabsUseDefaultDetail: (modeLabel) => msg("popup_open_tabs_use_default_detail", [String(modeLabel)]) || `Current setting: ${modeLabel}`,
+  openTabsDefaultReuse: msg("popup_open_tabs_default_reuse") || "reuse a matching tab",
+  openTabsDefaultNew: msg("popup_open_tabs_default_new") || "open a new tab",
+  openTabsAlwaysNew: msg("popup_open_tabs_always_new") || "Always open a new tab",
+  openTabsAlwaysNewDetail: msg("popup_open_tabs_always_new_detail") || "Ignore matching open tabs for this service only.",
+  openTabsActive: msg("popup_open_tabs_active") || "Active",
+  openTabsReady: msg("popup_open_tabs_ready") || "Ready",
+  openTabsLoading: msg("popup_open_tabs_loading") || "Loading",
+  resultCodeLabels: {
+    submitted: msg("result_code_submitted") || "Submitted",
+    selector_timeout: msg("result_code_selector_timeout") || "Selector timeout",
+    auth_required: msg("result_code_auth_required") || "Login required",
+    submit_failed: msg("result_code_submit_failed") || "Submit failed",
+    strategy_exhausted: msg("result_code_strategy_exhausted") || "Injection failed",
+    permission_denied: msg("result_code_permission_denied") || "Permission denied",
+    tab_create_failed: msg("result_code_tab_create_failed") || "Tab open failed",
+    tab_closed: msg("result_code_tab_closed") || "Tab closed",
+    injection_timeout: msg("result_code_injection_timeout") || "Injection timeout",
+    cancelled: msg("result_code_cancelled") || "Cancelled",
+    unexpected_error: msg("result_code_unexpected_error") || "Unexpected error"
+  }
+};
+
+// src/popup/app/i18n/helpers.ts
+function getUnknownErrorText() {
+  return msg("popup_unknown_error");
+}
+function buildImportSummaryText(summary, { short = false } = {}) {
+  const acceptedCount = summary?.customSites?.acceptedIds?.length ?? 0;
+  const rejectedCount = summary?.customSites?.rejected?.length ?? 0;
+  const rewrittenCount = summary?.customSites?.rewrittenIds?.length ?? 0;
+  const deniedCount = (summary?.customSites?.rejected ?? []).filter(
+    (entry) => entry?.reason === "permission_denied"
+  ).length;
+  const overrideAdjustedCount = summary?.builtInSiteOverrides?.adjustedIds?.length ?? 0;
+  const overrideDroppedCount = summary?.builtInSiteOverrides?.droppedIds?.length ?? 0;
+  const stateDroppedCount = summary?.builtInSiteStates?.droppedIds?.length ?? 0;
+  if (isKorean) {
+    const parts2 = [
+      `가져오기 완료: 커스텀 서비스 ${acceptedCount}개 적용`,
+      rejectedCount > 0 ? `건너뜀 ${rejectedCount}개` : "",
+      rewrittenCount > 0 ? `ID 재작성 ${rewrittenCount}개` : "",
+      deniedCount > 0 ? `권한 거부 ${deniedCount}개` : ""
+    ].filter(Boolean);
+    if (!short && overrideAdjustedCount + overrideDroppedCount + stateDroppedCount > 0) {
+      parts2.push(
+        `기본 서비스 보정 ${overrideAdjustedCount + overrideDroppedCount + stateDroppedCount}개`
+      );
+    }
+    return parts2.join(", ");
+  }
+  const parts = [
+    `Import complete: ${acceptedCount} custom service(s) applied`,
+    rejectedCount > 0 ? `${rejectedCount} skipped` : "",
+    rewrittenCount > 0 ? `${rewrittenCount} id rewrite(s)` : "",
+    deniedCount > 0 ? `${deniedCount} permission denial(s)` : ""
+  ].filter(Boolean);
+  if (!short && overrideAdjustedCount + overrideDroppedCount + stateDroppedCount > 0) {
+    parts.push(
+      `${overrideAdjustedCount + overrideDroppedCount + stateDroppedCount} built-in adjustment(s)`
+    );
+  }
+  return parts.join(", ");
+}
+function buildServiceTestResultMessage(response) {
+  if (!response?.ok) {
+    if (response?.reason === "validation_failed") {
+      return {
+        message: response.error || t.serviceValidationError,
+        isError: true
+      };
+    }
+    if (response?.reason === "no_tab") {
+      return {
+        message: t.serviceTestNoTab,
+        isError: true
+      };
+    }
+    if (response?.reason === "invalid_tab") {
+      return {
+        message: t.serviceTestInvalidTab,
+        isError: true
+      };
+    }
+    return {
+      message: t.serviceTestError(response?.error ?? getUnknownErrorText()),
+      isError: true
+    };
+  }
+  if (!response?.input?.found) {
+    return {
+      message: `❌ ${t.serviceTestFail}`,
+      isError: true
+    };
+  }
+  const lines = [];
+  let isError = false;
+  if (response.input.typeMatches === false) {
+    isError = true;
+    lines.push(
+      isKorean ? `⚠ 입력창은 찾았지만 타입이 다릅니다. 실제: ${response.input.actualType}, 기대: ${response.input.expectedType}` : `⚠ Input found but type mismatched. Actual: ${response.input.actualType}, expected: ${response.input.expectedType}`
+    );
+  } else {
+    lines.push(`✅ ${t.serviceTestSuccess(response.input.actualType ?? "")}`);
+  }
+  if (response?.submit?.status === "ok") {
+    lines.push(
+      isKorean ? "✅ 전송 버튼도 확인했습니다." : "✅ Submit target was also found."
+    );
+  } else if (response?.submit?.status === "missing") {
+    isError = true;
+    lines.push(
+      isKorean ? "❌ 임시 probe 입력 후에도 전송 버튼을 찾지 못했습니다." : "❌ Submit selector was not found after the temporary probe."
+    );
+  } else if (response?.submit?.method) {
+    lines.push(
+      isKorean ? `ℹ ${response.submit.method} 전송 방식이라 버튼 검사는 건너뛰었습니다.` : `ℹ Submit-button validation was skipped for ${response.submit.method} submit.`
+    );
+  }
+  return {
+    message: lines.join("\n"),
+    isError
+  };
+}
+
+// src/popup/app/state.ts
+var SITE_EMOJI = {
+  chatgpt: "GPT",
+  gemini: "Gem",
+  claude: "Cl",
+  grok: "Gk"
+};
+var state = {
+  activeTab: "compose",
+  history: [],
+  favorites: [],
+  historySearch: "",
+  favoritesSearch: "",
+  favoritesTagFilter: "",
+  favoritesFolderFilter: "",
+  openMenuKey: null,
+  openModalId: null,
+  lastFocusedElement: null,
+  favoriteSaveTimers: /* @__PURE__ */ new Map(),
+  loadedTemplateDefaults: {},
+  loadedFavoriteTitle: "",
+  loadedFavoriteId: "",
+  templateVariableCache: {},
+  pendingTemplateSend: null,
+  pendingFavoriteSave: null,
+  pendingFavoriteRunReason: "",
+  pendingResendHistory: null,
+  pendingImportSummary: null,
+  runtimeSites: [],
+  serviceEditor: null,
+  failedSelectors: /* @__PURE__ */ new Map(),
+  favoriteJobs: [],
+  lastBroadcast: null,
+  lastBroadcastToastSignature: "",
+  isSending: false,
+  sendSafetyTimer: null,
+  promptDraftSaveTimer: null,
+  settings: { ...DEFAULT_SETTINGS },
+  openSiteTabs: [],
+  siteTargetSelections: {},
+  sitePromptOverrides: {},
+  openTabsWindowId: null,
+  openTabsRefreshTimer: null,
+  listKeyboardFocus: {
+    history: -1,
+    favorites: -1
+  }
+};
+
+// src/popup/compose/send-flow/broadcast-state.ts
+function createPopupBroadcastState(deps, cardState) {
+  function setCardStatesFromBroadcast2(summary) {
+    cardState.clearSiteCardStates();
+    if (!summary?.siteIds?.length) {
+      return;
+    }
+    summary.siteIds.forEach((siteId) => {
+      const status = summary.siteResults?.[siteId];
+      const code = typeof status === "string" ? status : typeof status?.code === "string" ? status.code : "";
+      if (code === "submitted") {
+        cardState.setSiteCardState(siteId, "sent");
+        return;
+      }
+      if (status) {
+        cardState.setSiteCardState(siteId, "failed");
+        return;
+      }
+      if (summary.status === "sending") {
+        cardState.setSiteCardState(siteId, "sending");
+      }
+    });
+  }
+  function getRestoredBroadcastMessage(successCount, failedCount) {
+    return msg("popup_broadcast_restored_done", [
+      String(successCount),
+      String(failedCount)
+    ]) || `Last broadcast: ${successCount} success, ${failedCount} failed`;
+  }
+  function applyLastBroadcastState2(summary, { silentToast = false } = {}) {
+    state.lastBroadcast = summary;
+    if (!summary) {
+      deps.clearSendSafetyTimer();
+      deps.setSendingState(false);
+      deps.setStatus("");
+      return;
+    }
+    setCardStatesFromBroadcast2(summary);
+    if (summary.status === "sending") {
+      deps.setStatus(t.sending(summary.total || summary.siteIds?.length || 0));
+      deps.setSendingState(true);
+      const signature2 = deps.buildBroadcastToastSignature(summary);
+      if (!silentToast && state.lastBroadcastToastSignature !== signature2) {
+        deps.showAppToast(t.restoredBroadcastSending, "info", 2600);
+        state.lastBroadcastToastSignature = signature2;
+      }
+      return;
+    }
+    deps.clearSendSafetyTimer();
+    deps.setSendingState(false);
+    const finishedAtMs = Date.parse(summary.finishedAt || "");
+    const isRecent = Number.isFinite(finishedAtMs) && Date.now() - finishedAtMs <= 5 * 60 * 1e3;
+    const signature = deps.buildBroadcastToastSignature(summary);
+    const successCount = (summary.submittedSiteIds ?? []).length;
+    const failedCount = (summary.failedSiteIds ?? []).length;
+    if (summary.status === "submitted") {
+      deps.setStatus(
+        t.sent(successCount || summary.total || summary.siteIds?.length || 0),
+        "success"
+      );
+    } else {
+      deps.setStatus(
+        getRestoredBroadcastMessage(successCount, failedCount),
+        failedCount > 0 ? "warning" : "success"
+      );
+    }
+    if (!silentToast && isRecent && state.lastBroadcastToastSignature !== signature) {
+      deps.showAppToast({
+        duration: failedCount > 0 ? -1 : 4e3,
+        message: getRestoredBroadcastMessage(successCount, failedCount),
+        type: failedCount > 0 ? "warning" : "info"
+      });
+      state.lastBroadcastToastSignature = signature;
+    }
+  }
+  async function cancelCurrentBroadcast2() {
+    const summary = state.lastBroadcast;
+    if (!summary?.broadcastId || summary.status !== "sending") {
+      deps.setSendingState(false);
+      deps.clearSendSafetyTimer();
+      return;
+    }
+    try {
+      const response = await deps.sendPopupMessage(
+        {
+          action: "cancelBroadcast",
+          broadcastId: summary.broadcastId
+        },
+        5e3
+      );
+      if (response?.ok) {
+        applyLastBroadcastState2(response.summary ?? summary, { silentToast: true });
+        deps.setStatus(t.broadcastCancelled, "warning");
+        deps.showAppToast(t.broadcastCancelled, "warning", 2600);
+        return;
+      }
+      applyLastBroadcastState2(response?.summary ?? summary, { silentToast: true });
+      deps.setStatus(t.error(deps.getUnknownErrorText()), "error");
+    } catch (error) {
+      console.error("[AI Prompt Broadcaster] Failed to cancel broadcast.", error);
+      deps.setStatus(t.error(deps.getErrorMessage(error)), "error");
+    } finally {
+      if (state.lastBroadcast?.status !== "sending") {
+        deps.setSendingState(false);
+      }
+    }
+  }
+  return {
+    applyLastBroadcastState: applyLastBroadcastState2,
+    cancelCurrentBroadcast: cancelCurrentBroadcast2,
+    setCardStatesFromBroadcast: setCardStatesFromBroadcast2
+  };
+}
+
+// src/popup/compose/send-flow/card-state.ts
+function createPopupSendCardState() {
+  function getSiteCardElement(siteId) {
+    return document.querySelector(
+      `.site-card[data-site-id="${CSS.escape(siteId)}"]`
+    );
+  }
+  function setSiteCardState(siteId, cardState) {
+    const card = getSiteCardElement(siteId);
+    if (!card) {
+      return;
+    }
+    card.classList.remove("sending", "sent", "failed");
+    card.classList.add(cardState);
+    card.querySelector(".retry-btn")?.remove();
+  }
+  function clearSiteCardStates() {
+    document.querySelectorAll(".site-card").forEach((card) => {
+      card.classList.remove("sending", "sent", "failed");
+      card.querySelector(".retry-btn")?.remove();
+    });
+  }
+  function triggerRipple2(button, event) {
+    const rect = button.getBoundingClientRect();
+    const size = Math.max(rect.width, rect.height);
+    const x = event.clientX - rect.left - size / 2;
+    const y = event.clientY - rect.top - size / 2;
+    const ripple = document.createElement("span");
+    ripple.className = "ripple";
+    ripple.style.cssText = `width:${size}px;height:${size}px;left:${x}px;top:${y}px;`;
+    button.appendChild(ripple);
+    ripple.addEventListener("animationend", () => ripple.remove(), {
+      once: true
+    });
+  }
+  return {
+    clearSiteCardStates,
+    getSiteCardElement,
+    setSiteCardState,
+    triggerRipple: triggerRipple2
+  };
 }
 
 // src/popup/ui/toast.ts
@@ -2939,415 +3480,563 @@ function clearAllToasts() {
   });
 }
 
-// src/popup/app/i18n.ts
-var uiLanguage = chrome.i18n.getUILanguage().toLowerCase();
-var isKorean = uiLanguage === "ko" || uiLanguage.startsWith("ko-");
-function msg(key, substitutions = void 0) {
-  return chrome.i18n.getMessage(key, substitutions) || "";
+// src/popup/app/helpers.ts
+function escapeAttribute(value) {
+  return String(value ?? "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
-function applyI18n(root = document) {
-  root.querySelectorAll("[data-i18n]").forEach((element) => {
-    const key = element.dataset.i18n;
-    const value = key ? msg(key) : "";
-    if (value) {
-      element.textContent = value;
-    }
-  });
-  root.querySelectorAll("[data-i18n-placeholder]").forEach((element) => {
-    const key = element.dataset.i18nPlaceholder;
-    const value = key ? msg(key) : "";
-    if (value) {
-      element.setAttribute("placeholder", value);
-    }
-  });
-  root.querySelectorAll("[data-i18n-aria-label]").forEach((element) => {
-    const key = element.dataset.i18nAriaLabel;
-    const value = key ? msg(key) : "";
-    if (value) {
-      element.setAttribute("aria-label", value);
-    }
-  });
+function escapeHtml(value) {
+  return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
-var t = {
-  title: msg("ext_name"),
-  desc: msg("ext_description"),
-  tabs: {
-    compose: msg("tab_write"),
-    history: msg("tab_history"),
-    favorites: msg("tab_favorites"),
-    settings: msg("tab_settings")
-  },
-  placeholder: msg("popup_placeholder"),
-  sitesLabel: msg("popup_sites_label"),
-  selectAll: msg("popup_select_all"),
-  deselectAll: msg("popup_deselect_all"),
-  send: msg("popup_send"),
-  saveFavorite: msg("popup_save_favorite"),
-  sending: (count) => msg("status_sending", [String(count)]),
-  sent: (count) => msg("status_success", [String(count)]),
-  warnEmpty: msg("popup_warn_empty"),
-  warnNoSite: msg("popup_warn_no_site"),
-  stopSending: msg("popup_stop_sending") || "Stop",
-  broadcastCancelled: msg("popup_broadcast_cancelled") || "Broadcast cancelled.",
-  error: (message) => msg("status_failed", [String(message ?? "")]),
-  historySearch: msg("popup_history_search"),
-  favoritesSearch: msg("popup_favorites_search"),
-  historyEmpty: msg("history_empty"),
-  favoritesEmpty: msg("favorites_empty"),
-  addFavorite: msg("popup_add_favorite"),
-  delete: msg("popup_delete"),
-  favoriteAdded: msg("popup_favorite_added"),
-  favoriteSaved: msg("popup_favorite_saved"),
-  historyDeleted: msg("popup_history_deleted"),
-  favoriteDeleted: msg("popup_favorite_deleted"),
-  favoriteDuplicated: msg("popup_favorite_duplicated") || "Favorite duplicated.",
-  favoriteDuplicate: msg("popup_favorite_duplicate") || "Duplicate",
-  favoriteDuplicatePrefix: msg("popup_favorite_duplicate_prefix") || "[Copy]",
-  titlePlaceholder: msg("popup_title_placeholder"),
-  titleSaved: msg("popup_title_saved"),
-  settingsTitle: msg("popup_settings_title"),
-  settingsDesc: msg("popup_settings_description"),
-  clearHistory: msg("settings_reset"),
-  openOptions: msg("popup_open_options"),
-  exportJson: msg("settings_export"),
-  importJson: msg("settings_import"),
-  clearHistoryConfirm: msg("popup_clear_history_confirm"),
-  historyCleared: msg("popup_history_cleared"),
-  historyResend: msg("popup_history_resend") || "Resend",
-  importSuccess: msg("popup_import_success"),
-  importFailed: msg("popup_import_failed"),
-  exportSuccess: msg("popup_export_success"),
-  emptyActionCompose: msg("popup_empty_action_compose"),
-  noSearchResults: msg("popup_no_search_results"),
-  importedLoad: msg("popup_imported_load"),
-  menuMore: msg("popup_menu_more"),
-  favoriteStar: msg("popup_favorite_star"),
-  templateSummary: (count) => msg("popup_template_summary", [String(count)]),
-  templateUserKind: msg("popup_template_user_kind"),
-  templateSystemKind: msg("popup_template_system_kind"),
-  templateModalTitle: msg("popup_template_modal_title"),
-  templateModalDesc: msg("popup_template_modal_desc"),
-  templatePreviewLabel: msg("popup_template_preview_label"),
-  templateModalCancel: msg("popup_template_cancel"),
-  templateModalConfirm: msg("popup_template_confirm"),
-  templateSystemNotice: msg("popup_template_system_notice"),
-  templateClipboardNotice: msg("popup_template_clipboard_notice"),
-  templateClipboardError: msg("popup_template_clipboard_error"),
-  templateMissingValues: msg("popup_template_missing_values"),
-  templateFieldLabel: (name) => String(name),
-  templateFieldPlaceholder: (name) => msg("popup_template_field_placeholder", [String(name)]),
-  favoriteModalTitle: msg("popup_favorite_modal_title"),
-  favoriteModalDesc: msg("popup_favorite_modal_desc"),
-  favoriteModalCancel: msg("popup_favorite_modal_cancel"),
-  favoriteModalConfirm: msg("popup_favorite_modal_confirm"),
-  favoriteModalSaveChanges: msg("popup_favorite_modal_save_changes") || "Save changes",
-  favoriteEditTitle: msg("popup_favorite_edit_title") || "Edit favorite",
-  favoriteEditDesc: msg("popup_favorite_edit_desc") || "Update targets, defaults, chain steps, and schedule settings.",
-  favoriteTitleLabel: msg("popup_favorite_title_label"),
-  favoriteModeLabel: msg("popup_favorite_mode_label") || "Favorite type",
-  favoriteModeSingle: msg("popup_favorite_mode_single") || "Single prompt",
-  favoriteModeChain: msg("popup_favorite_mode_chain") || "Chain",
-  favoritePromptLabel: msg("popup_favorite_prompt_label") || "Prompt",
-  favoriteTargetsLabel: msg("popup_favorite_targets_label") || "Default target services",
-  favoriteTagsLabel: msg("popup_favorite_tags_label") || "Tags",
-  favoriteFolderLabel: msg("popup_favorite_folder_label") || "Folder",
-  favoritePinnedLabel: msg("popup_favorite_pinned_label") || "Pin this favorite",
-  favoriteScheduleEnabledLabel: msg("popup_favorite_schedule_enabled_label") || "Enable scheduled run",
-  favoriteScheduledAtLabel: msg("popup_favorite_scheduled_at_label") || "Next run time",
-  favoriteScheduleRepeatLabel: msg("popup_favorite_schedule_repeat_label") || "Repeat",
-  favoriteScheduleRepeatNone: msg("popup_favorite_schedule_repeat_none") || "One time",
-  favoriteScheduleRepeatDaily: msg("popup_favorite_schedule_repeat_daily") || "Daily",
-  favoriteScheduleRepeatWeekday: msg("popup_favorite_schedule_repeat_weekday") || "Weekdays",
-  favoriteScheduleRepeatWeekly: msg("popup_favorite_schedule_repeat_weekly") || "Weekly",
-  favoriteSaveDefaultsLabel: msg("popup_favorite_save_defaults_label"),
-  favoriteDefaultsLabel: msg("popup_favorite_defaults_label"),
-  favoriteChainTitle: msg("popup_favorite_chain_title") || "Chain steps",
-  favoriteChainDesc: msg("popup_favorite_chain_desc") || "Each step runs in order and stops the chain if any step fails.",
-  favoriteChainAddStep: msg("popup_favorite_chain_add_step") || "Add step",
-  favoriteStepLabel: (index) => msg("popup_favorite_step_label", [String(index)]) || `Step ${index}`,
-  favoriteStepMoveUp: msg("popup_favorite_step_move_up") || "Move up",
-  favoriteStepMoveDown: msg("popup_favorite_step_move_down") || "Move down",
-  favoriteStepPromptLabel: msg("popup_favorite_step_prompt_label") || "Prompt",
-  favoriteStepDelayLabel: msg("popup_favorite_step_delay_label") || "Delay after previous step (ms)",
-  favoriteStepTargetsLabel: msg("popup_favorite_step_targets_label") || "Override targets",
-  favoriteStepTargetsHint: msg("popup_favorite_step_targets_hint") || "Leave empty to use the favorite default targets.",
-  favoriteRunNow: msg("popup_favorite_run_now") || "Run now",
-  favoriteRunQueued: msg("popup_favorite_run_queued") || "Favorite run queued.",
-  favoriteRunNeedsEditor: msg("popup_favorite_run_needs_editor") || "This favorite needs more input before it can run.",
-  favoriteScheduleDateRequired: msg("popup_favorite_schedule_date_required") || "Choose the next run time for this schedule.",
-  favoriteChainNeedsStep: msg("popup_favorite_chain_needs_step") || "Add at least one non-empty chain step.",
-  favoriteKindSingle: msg("popup_favorite_kind_single") || "Single",
-  favoriteKindChain: msg("popup_favorite_kind_chain") || "Chain",
-  favoriteScheduledBadge: msg("popup_favorite_scheduled_badge") || "Scheduled",
-  favoriteStepCount: (count) => msg("popup_favorite_step_count", [String(count)]) || `${count} steps`,
-  favoriteEdit: msg("popup_favorite_edit") || "Edit",
-  clearPrompt: msg("popup_clear_prompt") || "Clear",
-  promptCounter: (current) => isKorean ? `${current}자` : `${current} chars`,
-  serviceManagementTitle: msg("popup_service_management_title") || "Service Management",
-  serviceManagementDesc: msg("popup_service_management_desc") || "Add, edit, enable, or disable AI targets without editing code.",
-  addService: msg("popup_service_add") || "Add Service",
-  resetServices: msg("popup_service_reset") || "Reset Services",
-  resetServicesConfirm: msg("popup_service_reset_confirm") || "Reset built-in services and remove all custom services?",
-  serviceBuiltInBadge: msg("popup_service_builtin_badge") || "Built-in",
-  serviceCustomBadge: msg("popup_service_custom_badge") || "Custom",
-  serviceDisabledLabel: msg("popup_service_disabled") || "Disabled",
-  serviceEdit: msg("popup_service_edit") || "Edit",
-  serviceDelete: msg("popup_service_delete") || "Delete",
-  serviceTest: msg("popup_service_test") || "Test in Tab",
-  serviceEditorAddTitle: msg("popup_service_editor_add_title") || "Add Custom Service",
-  serviceEditorEditTitle: msg("popup_service_editor_edit_title") || "Edit Service",
-  serviceEditorDesc: msg("popup_service_editor_desc") || "Configure selector, submit strategy, style, and launch URL.",
-  serviceFieldName: msg("popup_service_field_name") || "Service Name",
-  serviceFieldUrl: msg("popup_service_field_url") || "Service URL",
-  serviceFieldInputSelector: msg("popup_service_field_input_selector") || "Input Selector",
-  serviceFieldInputType: msg("popup_service_field_input_type") || "Input Type",
-  serviceFieldSubmitSelector: msg("popup_service_field_submit_selector") || "Submit Selector",
-  serviceFieldSubmitMethod: msg("popup_service_field_submit_method") || "Submit Method",
-  serviceFieldAdvanced: msg("popup_service_field_advanced") || "Advanced Settings",
-  serviceFieldFallbackSelectors: msg("popup_service_field_fallback_selectors") || "Fallback Selectors",
-  serviceFieldAuthSelectors: msg("popup_service_field_auth_selectors") || "Auth Selectors",
-  serviceFieldHostnameAliases: msg("popup_service_field_hostname_aliases") || "Hostname Aliases",
-  serviceFieldSupportedRoutes: msg("popup_service_field_supported_routes") || "Supported Routes",
-  serviceFieldVerifiedAt: msg("popup_service_field_verified_at") || "Verified Date",
-  serviceFieldVerifiedRoute: msg("popup_service_field_verified_route") || "Verified Route",
-  serviceFieldVerifiedAuthState: msg("popup_service_field_verified_auth_state") || "Verified Auth State",
-  serviceFieldVerifiedLocale: msg("popup_service_field_verified_locale") || "Verified Locale",
-  serviceFieldVerifiedVersion: msg("popup_service_field_verified_version") || "Verified Version",
-  serviceVerifiedAuthStateUnknown: msg("popup_service_verified_auth_state_unknown") || "Unknown",
-  serviceVerifiedAuthStateLoggedIn: msg("popup_service_verified_auth_state_logged_in") || "logged-in",
-  serviceVerifiedAuthStateLoggedOut: msg("popup_service_verified_auth_state_logged_out") || "logged-out",
-  serviceVerifiedAuthStateSoftGated: msg("popup_service_verified_auth_state_soft_gated") || "soft-gated",
-  serviceFieldWait: msg("popup_service_field_wait") || "Wait Time",
-  serviceFieldColor: msg("popup_service_field_color") || "Color",
-  serviceFieldIcon: msg("popup_service_field_icon") || "Icon",
-  serviceFieldEnabled: msg("popup_service_field_enabled") || "Enabled",
-  serviceEditorSave: msg("popup_service_editor_save") || "Save",
-  serviceEditorCancel: msg("popup_service_editor_cancel") || "Cancel",
-  serviceSaved: msg("popup_service_saved") || "Service settings saved.",
-  serviceDeleted: msg("popup_service_deleted") || "Custom service deleted.",
-  serviceResetDone: msg("popup_service_reset_done") || "Service settings were reset.",
-  servicePermissionDenied: msg("popup_service_permission_denied") || "Host permission was not granted for this service URL.",
-  serviceValidationError: msg("popup_service_validation_error") || "Please check the service form fields.",
-  serviceTestNoTab: msg("popup_service_test_no_tab") || "No active tab is available for selector testing.",
-  serviceTestNoSelector: msg("popup_service_test_no_selector") || "Enter a selector first.",
-  serviceTestInvalidTab: msg("popup_service_test_invalid_tab") || "Selector testing only works on http/https tabs.",
-  serviceTestSuccess: (inputType) => msg("popup_service_test_success", [String(inputType)]) || `Element found (${inputType})`,
-  serviceTestFail: msg("popup_service_test_fail") || "Element not found.",
-  serviceTestError: (message) => msg("popup_service_test_error", [String(message)]) || `Selector test failed: ${message}`,
-  serviceEmptyList: msg("popup_service_empty_list") || "No services available.",
-  selectorWarningTooltip: msg("popup_selector_warning_tooltip") || "Selector may have changed. Review the service config.",
-  restoredBroadcastSending: msg("popup_broadcast_restored_sending") || "Previous broadcast is still running.",
-  restoredBroadcastDone: msg("popup_broadcast_restored_done") || "Last broadcast: $1 success, $2 failed",
-  toastConfirm: msg("common_confirm") || "Confirm",
-  toastHistoryDeleted: msg("toast_history_deleted") || "History item deleted.",
-  toastSettingsSaved: msg("toast_settings_saved") || "Settings saved.",
-  toastSendSuccess: (count) => msg("toast_send_success", [String(count)]) || `${count} services queued.`,
-  toastPromptEmpty: msg("toast_prompt_empty") || msg("popup_warn_empty") || "Please enter a prompt.",
-  toastNoService: msg("toast_no_service") || "Please select at least one service.",
-  toastSelectorFailed: (name) => msg("toast_selector_failed", [String(name)]) || `${name} selector was not found.`,
-  historySortLatest: msg("popup_history_sort_latest") || "Latest",
-  historySortOldest: msg("popup_history_sort_oldest") || "Oldest",
-  historySortMostSuccess: msg("popup_history_sort_most_success") || "Most success",
-  historySortMostFailure: msg("popup_history_sort_most_failure") || "Most failure",
-  favoriteSortRecentUsed: msg("popup_favorite_sort_recent_used") || "Recent use",
-  favoriteSortUsageCount: msg("popup_favorite_sort_usage_count") || "Usage count",
-  favoriteSortTitle: msg("popup_favorite_sort_title") || "Title",
-  favoriteSortCreatedAt: msg("popup_favorite_sort_created_at") || "Created date",
-  waitMultiplierLabel: msg("popup_wait_multiplier_label") || "Wait multiplier",
-  waitMultiplierValue: (value) => msg("popup_wait_multiplier_value", [String(Number(value).toFixed(1))]) || `${Number(value).toFixed(1)}x`,
-  resendModalTitle: msg("popup_resend_modal_title") || "Resend History Item",
-  resendModalDesc: msg("popup_resend_modal_desc") || "Choose which services to resend this prompt to.",
-  resendModalCancel: msg("popup_resend_modal_cancel") || "Cancel",
-  resendModalConfirm: msg("popup_resend_modal_confirm") || "Resend",
-  resendSiteUnavailable: msg("popup_resend_site_unavailable") || "Unavailable",
-  importReportTitle: msg("popup_import_report_title") || "Import Details",
-  importReportDesc: msg("popup_import_report_desc") || "Review accepted, rewritten, and rejected items from this import.",
-  importReportClose: msg("popup_import_report_close") || "Close",
-  importReportVersion: msg("popup_import_report_version") || "Version",
-  importReportAccepted: msg("popup_import_report_accepted") || "Accepted services",
-  importReportRewritten: msg("popup_import_report_rewritten") || "Rewritten IDs",
-  importReportBuiltins: msg("popup_import_report_builtins") || "Built-in adjustments",
-  importReportRejected: msg("popup_import_report_rejected") || "Rejected services",
-  importReportRejectedEmpty: msg("popup_import_report_rejected_empty") || "No rejected services.",
-  importRejectReason: (reason) => msg(`popup_import_reject_${reason}`) || reason,
-  ariaSelected: msg("popup_aria_selected") || "selected",
-  ariaNotSelected: msg("popup_aria_not_selected") || "not selected",
-  reuseTabsLabel: msg("popup_reuse_tabs_label") || "Reuse open AI tabs in the current window by default",
-  reuseTabsDescEnabled: msg("popup_reuse_tabs_desc_enabled") || "When no tab is chosen explicitly, the broadcaster reuses a matching open AI tab before opening a new one.",
-  reuseTabsDescDisabled: msg("popup_reuse_tabs_desc_disabled") || "When no tab is chosen explicitly, the broadcaster always opens a fresh tab.",
-  openTabsTitle: (count) => msg("popup_open_tabs_title", [String(count)]) || `${count} open tab${count === 1 ? "" : "s"}`,
-  openTabsUseDefault: msg("popup_open_tabs_use_default") || "Use default behavior",
-  openTabsUseDefaultDetail: (modeLabel) => msg("popup_open_tabs_use_default_detail", [String(modeLabel)]) || `Current setting: ${modeLabel}`,
-  openTabsDefaultReuse: msg("popup_open_tabs_default_reuse") || "reuse a matching tab",
-  openTabsDefaultNew: msg("popup_open_tabs_default_new") || "open a new tab",
-  openTabsAlwaysNew: msg("popup_open_tabs_always_new") || "Always open a new tab",
-  openTabsAlwaysNewDetail: msg("popup_open_tabs_always_new_detail") || "Ignore matching open tabs for this service only.",
-  openTabsActive: msg("popup_open_tabs_active") || "Active",
-  openTabsReady: msg("popup_open_tabs_ready") || "Ready",
-  openTabsLoading: msg("popup_open_tabs_loading") || "Loading",
-  resultCodeLabels: {
-    submitted: msg("result_code_submitted") || "Submitted",
-    selector_timeout: msg("result_code_selector_timeout") || "Selector timeout",
-    auth_required: msg("result_code_auth_required") || "Login required",
-    submit_failed: msg("result_code_submit_failed") || "Submit failed",
-    strategy_exhausted: msg("result_code_strategy_exhausted") || "Injection failed",
-    permission_denied: msg("result_code_permission_denied") || "Permission denied",
-    tab_create_failed: msg("result_code_tab_create_failed") || "Tab open failed",
-    tab_closed: msg("result_code_tab_closed") || "Tab closed",
-    injection_timeout: msg("result_code_injection_timeout") || "Injection timeout",
-    cancelled: msg("result_code_cancelled") || "Cancelled",
-    unexpected_error: msg("result_code_unexpected_error") || "Unexpected error"
+function getSiteIcon(site) {
+  if (site?.icon) {
+    return site.icon;
   }
-};
-function getUnknownErrorText() {
-  return msg("popup_unknown_error");
+  return SITE_EMOJI[site?.id ?? ""] ?? site?.name?.slice(0, 2)?.toUpperCase() ?? "AI";
 }
-function buildImportSummaryText(summary, { short = false } = {}) {
-  const acceptedCount = summary?.customSites?.acceptedIds?.length ?? 0;
-  const rejectedCount = summary?.customSites?.rejected?.length ?? 0;
-  const rewrittenCount = summary?.customSites?.rewrittenIds?.length ?? 0;
-  const deniedCount = (summary?.customSites?.rejected ?? []).filter(
-    (entry) => entry?.reason === "permission_denied"
-  ).length;
-  const overrideAdjustedCount = summary?.builtInSiteOverrides?.adjustedIds?.length ?? 0;
-  const overrideDroppedCount = summary?.builtInSiteOverrides?.droppedIds?.length ?? 0;
-  const stateDroppedCount = summary?.builtInSiteStates?.droppedIds?.length ?? 0;
-  if (isKorean) {
-    const parts2 = [
-      `가져오기 완료: 커스텀 서비스 ${acceptedCount}개 적용`,
-      rejectedCount > 0 ? `건너뜀 ${rejectedCount}개` : "",
-      rewrittenCount > 0 ? `ID 재작성 ${rewrittenCount}개` : "",
-      deniedCount > 0 ? `권한 거부 ${deniedCount}개` : ""
-    ].filter(Boolean);
-    if (!short && overrideAdjustedCount + overrideDroppedCount + stateDroppedCount > 0) {
-      parts2.push(
-        `기본 서비스 보정 ${overrideAdjustedCount + overrideDroppedCount + stateDroppedCount}개`
+function isTextEditingTarget(target) {
+  if (!target || !(target instanceof Element)) {
+    return false;
+  }
+  return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || target instanceof HTMLElement && target.isContentEditable;
+}
+function compareDateValues(leftValue, rightValue) {
+  const leftTime = Date.parse(String(leftValue ?? "")) || 0;
+  const rightTime = Date.parse(String(rightValue ?? "")) || 0;
+  return rightTime - leftTime;
+}
+function previewText(text, maxLength = 50) {
+  const collapsed = String(text ?? "").replace(/\s+/g, " ").trim();
+  if (collapsed.length <= maxLength) {
+    return collapsed || "-";
+  }
+  return `${collapsed.slice(0, maxLength)}...`;
+}
+function formatDate(isoString) {
+  try {
+    return new Intl.DateTimeFormat(isKorean ? "ko-KR" : "en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    }).format(new Date(isoString));
+  } catch (_error) {
+    return isoString;
+  }
+}
+function normalizeSiteIdList2(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return Array.from(
+    new Set(
+      value.filter((entry) => typeof entry === "string" && entry.trim().length > 0).map((entry) => entry.trim())
+    )
+  );
+}
+function joinMultilineValues(values) {
+  return Array.isArray(values) ? values.join("\n") : "";
+}
+function splitMultilineValues(value) {
+  return String(value ?? "").split(/\r?\n/g).map((entry) => entry.trim()).filter(Boolean);
+}
+
+// src/popup/compose/send-flow/types.ts
+function hasTargetId(target) {
+  return typeof target.id === "string" && target.id.trim().length > 0;
+}
+function isLastBroadcastSummary(value) {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const candidate = value;
+  return typeof candidate.broadcastId === "string" && typeof candidate.status === "string" && typeof candidate.prompt === "string" && Array.isArray(candidate.siteIds);
+}
+
+// src/popup/compose/send-flow/send-execution.ts
+function createPopupSendExecution(deps, cardState) {
+  function addRetryButton(target, mainPrompt) {
+    const siteId = target.id;
+    const card = cardState.getSiteCardElement(siteId);
+    if (!card || card.querySelector(".retry-btn")) {
+      return;
+    }
+    const retryBtn = document.createElement("button");
+    retryBtn.type = "button";
+    retryBtn.className = "secondary-btn retry-btn";
+    retryBtn.textContent = "Retry";
+    retryBtn.addEventListener("click", async () => {
+      retryBtn.disabled = true;
+      cardState.setSiteCardState(siteId, "sending");
+      try {
+        await deps.refreshOpenSiteTabs();
+        const response = await deps.sendPopupMessage(
+          {
+            action: "broadcast",
+            prompt: mainPrompt,
+            sites: deps.buildRuntimeBroadcastTargets([target])
+          },
+          1e4
+        );
+        const failedIds = Array.isArray(response?.failedTabSiteIds) ? response.failedTabSiteIds : [];
+        if (response?.ok && !failedIds.includes(siteId)) {
+          cardState.setSiteCardState(siteId, "sent");
+          return;
+        }
+        cardState.setSiteCardState(siteId, "failed");
+        addRetryButton(target, mainPrompt);
+      } catch {
+        cardState.setSiteCardState(siteId, "failed");
+        addRetryButton(target, mainPrompt);
+      }
+    });
+    card.appendChild(retryBtn);
+  }
+  function markTargetsFailed(siteIds, targets, mainPrompt) {
+    siteIds.forEach((siteId) => {
+      cardState.setSiteCardState(siteId, "failed");
+      const failedTarget = targets.find(
+        (target) => hasTargetId(target) && target.id === siteId
       );
+      if (failedTarget) {
+        addRetryButton(failedTarget, mainPrompt);
+      }
+    });
+  }
+  async function sendResolvedPrompt2(mainPrompt, targets) {
+    if (state.isSending) {
+      return;
     }
-    return parts2.join(", ");
-  }
-  const parts = [
-    `Import complete: ${acceptedCount} custom service(s) applied`,
-    rejectedCount > 0 ? `${rejectedCount} skipped` : "",
-    rewrittenCount > 0 ? `${rewrittenCount} id rewrite(s)` : "",
-    deniedCount > 0 ? `${deniedCount} permission denial(s)` : ""
-  ].filter(Boolean);
-  if (!short && overrideAdjustedCount + overrideDroppedCount + stateDroppedCount > 0) {
-    parts.push(
-      `${overrideAdjustedCount + overrideDroppedCount + stateDroppedCount} built-in adjustment(s)`
+    const siteIds = normalizeSiteIdList2(
+      (Array.isArray(targets) ? targets : []).map((target) => target?.id)
     );
-  }
-  return parts.join(", ");
-}
-function buildServiceTestResultMessage(response) {
-  if (!response?.ok) {
-    if (response?.reason === "validation_failed") {
-      return {
-        message: response.error || t.serviceValidationError,
-        isError: true
-      };
+    deps.setSendingState(true);
+    deps.armSendSafetyTimer();
+    siteIds.forEach((siteId) => cardState.setSiteCardState(siteId, "sending"));
+    deps.setStatus(t.sending(siteIds.length));
+    try {
+      await deps.refreshOpenSiteTabs();
+      await deps.setLastSentPrompt(mainPrompt);
+      clearAllToasts();
+      const response = await deps.sendPopupMessage(
+        {
+          action: "broadcast",
+          prompt: mainPrompt,
+          sites: deps.buildRuntimeBroadcastTargets(targets)
+        },
+        1e4
+      );
+      if (response?.ok) {
+        if (Array.isArray(response.failedTabSiteIds)) {
+          markTargetsFailed(response.failedTabSiteIds, targets, mainPrompt);
+        }
+        deps.setStatus(
+          t.sending(response.createdSiteCount ?? siteIds.length),
+          "warning"
+        );
+        deps.showAppToast(
+          t.toastSendSuccess(response.createdSiteCount ?? siteIds.length),
+          "success",
+          2200
+        );
+        if (state.settings.autoClosePopup) {
+          window.close();
+        }
+      } else {
+        markTargetsFailed(siteIds, targets, mainPrompt);
+        deps.setStatus(
+          t.error(response?.error ?? deps.getUnknownErrorText()),
+          "error"
+        );
+      }
+    } catch (error) {
+      console.error("[AI Prompt Broadcaster] Broadcast send failed.", error);
+      markTargetsFailed(siteIds, targets, mainPrompt);
+      deps.setStatus(t.error(deps.getErrorMessage(error)), "error");
+      deps.showAppToast(t.error(deps.getErrorMessage(error)), "error", 4e3);
+      deps.setSendingState(false);
+      deps.clearSendSafetyTimer();
+    } finally {
+      if (state.lastBroadcast?.status !== "sending") {
+        deps.setSendingState(false);
+      }
     }
-    if (response?.reason === "no_tab") {
-      return {
-        message: t.serviceTestNoTab,
-        isError: true
-      };
-    }
-    if (response?.reason === "invalid_tab") {
-      return {
-        message: t.serviceTestInvalidTab,
-        isError: true
-      };
-    }
-    return {
-      message: t.serviceTestError(response?.error ?? getUnknownErrorText()),
-      isError: true
-    };
-  }
-  if (!response?.input?.found) {
-    return {
-      message: `❌ ${t.serviceTestFail}`,
-      isError: true
-    };
-  }
-  const lines = [];
-  let isError = false;
-  if (response.input.typeMatches === false) {
-    isError = true;
-    lines.push(
-      isKorean ? `⚠ 입력창은 찾았지만 타입이 다릅니다. 실제: ${response.input.actualType}, 기대: ${response.input.expectedType}` : `⚠ Input found but type mismatched. Actual: ${response.input.actualType}, expected: ${response.input.expectedType}`
-    );
-  } else {
-    lines.push(`✅ ${t.serviceTestSuccess(response.input.actualType ?? "")}`);
-  }
-  if (response?.submit?.status === "ok") {
-    lines.push(
-      isKorean ? "✅ 전송 버튼도 확인했습니다." : "✅ Submit target was also found."
-    );
-  } else if (response?.submit?.status === "missing") {
-    isError = true;
-    lines.push(
-      isKorean ? "❌ 임시 probe 입력 후에도 전송 버튼을 찾지 못했습니다." : "❌ Submit selector was not found after the temporary probe."
-    );
-  } else if (response?.submit?.method) {
-    lines.push(
-      isKorean ? `ℹ ${response.submit.method} 전송 방식이라 버튼 검사는 건너뛰었습니다.` : `ℹ Submit-button validation was skipped for ${response.submit.method} submit.`
-    );
   }
   return {
-    message: lines.join("\n"),
-    isError
+    sendResolvedPrompt: sendResolvedPrompt2
   };
 }
 
-// src/popup/app/state.ts
-var SITE_EMOJI = {
-  chatgpt: "GPT",
-  gemini: "Gem",
-  claude: "Cl",
-  grok: "Gk"
-};
-var state = {
-  activeTab: "compose",
-  history: [],
-  favorites: [],
-  historySearch: "",
-  favoritesSearch: "",
-  favoritesTagFilter: "",
-  favoritesFolderFilter: "",
-  openMenuKey: null,
-  openModalId: null,
-  lastFocusedElement: null,
-  favoriteSaveTimers: /* @__PURE__ */ new Map(),
-  loadedTemplateDefaults: {},
-  loadedFavoriteTitle: "",
-  loadedFavoriteId: "",
-  templateVariableCache: {},
-  pendingTemplateSend: null,
-  pendingFavoriteSave: null,
-  pendingFavoriteRunReason: "",
-  pendingResendHistory: null,
-  pendingImportSummary: null,
-  runtimeSites: [],
-  serviceEditor: null,
-  failedSelectors: /* @__PURE__ */ new Map(),
-  favoriteJobs: [],
-  lastBroadcast: null,
-  lastBroadcastToastSignature: "",
-  isSending: false,
-  sendSafetyTimer: null,
-  promptDraftSaveTimer: null,
-  settings: { ...DEFAULT_SETTINGS },
-  openSiteTabs: [],
-  siteTargetSelections: {},
-  sitePromptOverrides: {},
-  openTabsWindowId: null,
-  openTabsRefreshTimer: null,
-  listKeyboardFocus: {
-    history: -1,
-    favorites: -1
+// src/popup/compose/send-flow.ts
+function createPopupSendFlow(deps) {
+  const cardState = createPopupSendCardState();
+  const broadcastState = createPopupBroadcastState(deps, cardState);
+  const sendExecution = createPopupSendExecution(deps, cardState);
+  return {
+    applyLastBroadcastState: broadcastState.applyLastBroadcastState,
+    cancelCurrentBroadcast: broadcastState.cancelCurrentBroadcast,
+    sendResolvedPrompt: sendExecution.sendResolvedPrompt,
+    setCardStatesFromBroadcast: broadcastState.setCardStatesFromBroadcast,
+    triggerRipple: cardState.triggerRipple
+  };
+}
+
+// src/shared/template/constants.ts
+var TEMPLATE_VARIABLE_PATTERN = /{{\s*([^{}]+?)\s*}}/g;
+var SYSTEM_TEMPLATE_VARIABLES = Object.freeze({
+  date: "date",
+  time: "time",
+  weekday: "weekday",
+  clipboard: "clipboard",
+  url: "url",
+  title: "title",
+  selection: "selection",
+  counter: "counter",
+  random: "random"
+});
+var SYSTEM_TEMPLATE_DEFINITIONS = Object.freeze({
+  [SYSTEM_TEMPLATE_VARIABLES.date]: {
+    aliases: ["date", "날짜"],
+    labels: { ko: "날짜", en: "date" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.time]: {
+    aliases: ["time", "시간"],
+    labels: { ko: "시간", en: "time" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.weekday]: {
+    aliases: ["weekday", "요일"],
+    labels: { ko: "요일", en: "weekday" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.clipboard]: {
+    aliases: ["clipboard", "클립보드"],
+    labels: { ko: "클립보드", en: "clipboard" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.url]: {
+    aliases: ["url", "주소"],
+    labels: { ko: "현재 탭 URL", en: "current tab URL" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.title]: {
+    aliases: ["title", "제목"],
+    labels: { ko: "현재 탭 제목", en: "current tab title" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.selection]: {
+    aliases: ["selection", "선택"],
+    labels: { ko: "선택한 텍스트", en: "selected text" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.counter]: {
+    aliases: ["counter", "카운터"],
+    labels: { ko: "카운터", en: "counter" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.random]: {
+    aliases: ["random", "랜덤"],
+    labels: { ko: "랜덤 숫자", en: "random number" }
   }
-};
+});
+var SYSTEM_TEMPLATE_ALIAS_MAP = new Map(
+  Object.entries(SYSTEM_TEMPLATE_DEFINITIONS).flatMap(
+    ([canonicalName, definition]) => definition.aliases.map((alias) => [alias.toLowerCase(), canonicalName])
+  )
+);
+var SYSTEM_TEMPLATE_KEYS = new Set(Object.keys(SYSTEM_TEMPLATE_DEFINITIONS));
+var WEEKDAY_LOCALES = Object.freeze({
+  ko: "ko-KR",
+  en: "en-US"
+});
+
+// src/shared/template/normalize.ts
+function pad2(value) {
+  return String(value).padStart(2, "0");
+}
+function normalizeLocale(locale) {
+  return typeof locale === "string" && locale.toLowerCase().startsWith("ko") ? "ko" : "en";
+}
+function normalizeTemplateVariableName(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+function canonicalizeTemplateVariableName(value) {
+  const normalizedValue = normalizeTemplateVariableName(value);
+  if (!normalizedValue) {
+    return "";
+  }
+  return SYSTEM_TEMPLATE_ALIAS_MAP.get(normalizedValue.toLowerCase()) ?? normalizedValue;
+}
+function getTemplateVariableDisplayName(name, locale = "en") {
+  const canonicalName = canonicalizeTemplateVariableName(name);
+  if (!SYSTEM_TEMPLATE_KEYS.has(canonicalName)) {
+    return normalizeTemplateVariableName(name);
+  }
+  const normalizedLocale = normalizeLocale(locale);
+  return SYSTEM_TEMPLATE_DEFINITIONS[canonicalName].labels[normalizedLocale];
+}
+function normalizeTemplateValueRecord(values = {}) {
+  if (!values || typeof values !== "object" || Array.isArray(values)) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(values).map(([key, value]) => [
+      canonicalizeTemplateVariableName(key),
+      value
+    ])
+  );
+}
+
+// src/shared/template/detect.ts
+function detectTemplateVariables(template) {
+  const source = typeof template === "string" ? template : "";
+  const seen = /* @__PURE__ */ new Set();
+  const variables = [];
+  for (const match of source.matchAll(TEMPLATE_VARIABLE_PATTERN)) {
+    const canonicalName = canonicalizeTemplateVariableName(match[1]);
+    if (!canonicalName || seen.has(canonicalName)) {
+      continue;
+    }
+    seen.add(canonicalName);
+    variables.push({
+      name: canonicalName,
+      kind: SYSTEM_TEMPLATE_KEYS.has(canonicalName) ? "system" : "user"
+    });
+  }
+  return variables;
+}
+function getUserTemplateVariables(template) {
+  return detectTemplateVariables(template).filter((variable) => variable.kind === "user");
+}
+
+// src/shared/template/values.ts
+function buildSystemTemplateValues(now = /* @__PURE__ */ new Date(), options = {}) {
+  const date = now instanceof Date ? now : /* @__PURE__ */ new Date();
+  const locale = normalizeLocale(options?.locale);
+  const values = {
+    [SYSTEM_TEMPLATE_VARIABLES.date]: [
+      date.getFullYear(),
+      pad2(date.getMonth() + 1),
+      pad2(date.getDate())
+    ].join("-"),
+    [SYSTEM_TEMPLATE_VARIABLES.time]: `${pad2(date.getHours())}:${pad2(date.getMinutes())}`,
+    [SYSTEM_TEMPLATE_VARIABLES.weekday]: new Intl.DateTimeFormat(WEEKDAY_LOCALES[locale], {
+      weekday: locale === "ko" ? "short" : "long"
+    }).format(date),
+    [SYSTEM_TEMPLATE_VARIABLES.random]: String(Math.floor(Math.random() * 1e3) + 1)
+  };
+  if (options?.extra && typeof options.extra === "object") {
+    if (typeof options.extra.url === "string") {
+      values[SYSTEM_TEMPLATE_VARIABLES.url] = options.extra.url;
+    }
+    if (typeof options.extra.title === "string") {
+      values[SYSTEM_TEMPLATE_VARIABLES.title] = options.extra.title;
+    }
+    if (typeof options.extra.selection === "string") {
+      values[SYSTEM_TEMPLATE_VARIABLES.selection] = options.extra.selection;
+    }
+    if (typeof options.extra.counter === "string" || typeof options.extra.counter === "number") {
+      values[SYSTEM_TEMPLATE_VARIABLES.counter] = String(options.extra.counter);
+    }
+  }
+  return values;
+}
+
+// src/shared/template/render.ts
+function renderTemplatePrompt(template, values = {}) {
+  const source = typeof template === "string" ? template : "";
+  const normalizedValues = normalizeTemplateValueRecord(values);
+  return source.replace(TEMPLATE_VARIABLE_PATTERN, (_match, rawName) => {
+    const normalizedName = normalizeTemplateVariableName(rawName);
+    const canonicalName = canonicalizeTemplateVariableName(rawName);
+    if (!normalizedName) {
+      return "";
+    }
+    if (Object.prototype.hasOwnProperty.call(normalizedValues, canonicalName)) {
+      return String(normalizedValues[canonicalName] ?? "");
+    }
+    if (Object.prototype.hasOwnProperty.call(normalizedValues, normalizedName)) {
+      return String(normalizedValues[normalizedName] ?? "");
+    }
+    return `{{${normalizedName}}}`;
+  });
+}
+function findMissingTemplateValues(template, values = {}) {
+  const normalizedValues = normalizeTemplateValueRecord(values);
+  return getUserTemplateVariables(template).map((variable) => variable.name).filter((name) => !String(normalizedValues[name] ?? "").trim());
+}
+
+// src/shared/broadcast/resolution.ts
+function detectTemplateVariablesForTargets(targets = []) {
+  const seen = /* @__PURE__ */ new Set();
+  const variables = [];
+  targets.forEach((target) => {
+    detectTemplateVariables(target?.promptTemplate ?? "").forEach((variable) => {
+      if (seen.has(variable.name)) {
+        return;
+      }
+      seen.add(variable.name);
+      variables.push(variable);
+    });
+  });
+  return variables;
+}
+function findMissingTemplateValuesForTargets(targets = [], userValues = {}) {
+  return Array.from(
+    new Set(
+      targets.flatMap(
+        (target) => findMissingTemplateValues(target?.promptTemplate ?? "", userValues)
+      )
+    )
+  );
+}
+function resolveBroadcastTargets(targets = [], values = {}) {
+  return targets.map((target) => ({
+    ...target,
+    resolvedPrompt: renderTemplatePrompt(target?.promptTemplate ?? "", values)
+  }));
+}
+
+// src/popup/compose/targets.ts
+function hasTargetId2(target) {
+  return typeof target.id === "string" && target.id.trim().length > 0;
+}
+function normalizeOpenSiteTab(entry) {
+  const source = entry ?? {};
+  const tabId = Number(source.tabId);
+  if (!Number.isFinite(tabId) || typeof source.siteId !== "string" || !source.siteId.trim()) {
+    return null;
+  }
+  return {
+    siteId: source.siteId.trim(),
+    siteName: typeof source.siteName === "string" ? source.siteName : "",
+    tabId,
+    title: typeof source.title === "string" ? source.title : "",
+    url: typeof source.url === "string" ? source.url : "",
+    active: Boolean(source.active),
+    status: typeof source.status === "string" ? source.status : "",
+    windowId: Number.isFinite(Number(source.windowId)) ? Number(source.windowId) : null
+  };
+}
+function createPopupTargetsController(deps) {
+  function getOpenSiteTabs2(siteId) {
+    return state.openSiteTabs.filter((tab) => tab.siteId === siteId);
+  }
+  function getDefaultTargetModeLabel2() {
+    return state.settings.reuseExistingTabs ? t.openTabsDefaultReuse : t.openTabsDefaultNew;
+  }
+  function getDefaultSiteTargetSelection() {
+    return "default";
+  }
+  function syncSiteTargetSelections() {
+    const enabledSiteIds = new Set(deps.getEnabledSites().map((site) => site.id));
+    const nextSelections = {};
+    enabledSiteIds.forEach((siteId) => {
+      const currentSelection = state.siteTargetSelections?.[siteId];
+      const availableTabIds = new Set(getOpenSiteTabs2(siteId).map((tab) => Number(tab.tabId)));
+      if (typeof currentSelection === "number" && availableTabIds.has(currentSelection)) {
+        nextSelections[siteId] = currentSelection;
+        return;
+      }
+      if (currentSelection === "new" || currentSelection === "default") {
+        nextSelections[siteId] = currentSelection;
+        return;
+      }
+      nextSelections[siteId] = getDefaultSiteTargetSelection();
+    });
+    state.siteTargetSelections = nextSelections;
+  }
+  async function refreshOpenSiteTabs2() {
+    try {
+      const response = await deps.sendPopupMessage({ action: "getOpenAiTabs" }, 5e3);
+      const tabs = Array.isArray(response?.tabs) ? response.tabs.map((entry) => normalizeOpenSiteTab(entry)).filter((entry) => Boolean(entry)) : [];
+      state.openTabsWindowId = Number.isFinite(Number(response?.windowId)) ? Number(response?.windowId) : null;
+      state.openSiteTabs = tabs;
+      syncSiteTargetSelections();
+    } catch (error) {
+      console.error("[AI Prompt Broadcaster] Failed to refresh open AI tabs.", error);
+      state.openTabsWindowId = null;
+      state.openSiteTabs = [];
+      syncSiteTargetSelections();
+    }
+  }
+  function scheduleOpenSiteTabsRefresh2(delayMs = 180) {
+    if (state.openTabsRefreshTimer) {
+      window.clearTimeout(state.openTabsRefreshTimer);
+    }
+    state.openTabsRefreshTimer = window.setTimeout(() => {
+      state.openTabsRefreshTimer = null;
+      void refreshOpenSiteTabs2().then(() => deps.renderSiteCheckboxesPanel()).catch((error) => {
+        console.error("[AI Prompt Broadcaster] Scheduled AI tab refresh failed.", error);
+      });
+    }, delayMs);
+  }
+  function buildComposerBroadcastTargets2(siteIds = [], basePrompt = "") {
+    return siteIds.map((siteId) => {
+      const targetSelection = state.siteTargetSelections?.[siteId];
+      const promptOverride = typeof state.sitePromptOverrides?.[siteId] === "string" && state.sitePromptOverrides[siteId].trim() ? state.sitePromptOverrides[siteId] : "";
+      const target = {
+        id: siteId,
+        promptTemplate: promptOverride.trim() ? promptOverride : String(basePrompt ?? "")
+      };
+      if (typeof targetSelection === "number") {
+        return { ...target, tabId: targetSelection };
+      }
+      if (targetSelection === "new") {
+        return { ...target, reuseExistingTab: false, target: "new" };
+      }
+      return target;
+    });
+  }
+  function buildRuntimeBroadcastTargets2(targets = []) {
+    return (Array.isArray(targets) ? targets : []).filter(hasTargetId2).map((target) => {
+      const payload = { id: target.id };
+      if (typeof target.tabId === "number") {
+        payload.tabId = target.tabId;
+        payload.target = "tab";
+      } else if (target.target === "new" || target.reuseExistingTab === false) {
+        payload.reuseExistingTab = false;
+        payload.target = "new";
+      } else if (target.target === "tab") {
+        payload.target = "tab";
+      }
+      if (typeof target.promptOverride === "string" && target.promptOverride.trim()) {
+        payload.promptOverride = target.promptOverride;
+      }
+      if (typeof target.resolvedPrompt === "string") {
+        payload.resolvedPrompt = target.resolvedPrompt;
+      }
+      return payload;
+    });
+  }
+  function detectTemplateVariablesForTargets3(targets = []) {
+    return detectTemplateVariablesForTargets(targets);
+  }
+  function findMissingTemplateValuesForTargets3(targets = [], userValues = {}) {
+    return findMissingTemplateValuesForTargets(targets, userValues);
+  }
+  function buildResolvedBroadcastTargets2(targets = [], values = {}) {
+    return resolveBroadcastTargets(targets, values);
+  }
+  function buildTemplatePreviewText2(targets = [], values = {}) {
+    const resolvedTargets = buildResolvedBroadcastTargets2(targets, values);
+    const uniquePrompts = Array.from(
+      new Set(
+        resolvedTargets.map((target) => target.resolvedPrompt).filter((prompt) => typeof prompt === "string")
+      )
+    );
+    if (uniquePrompts.length <= 1) {
+      return uniquePrompts[0] ?? "";
+    }
+    return resolvedTargets.map((target) => `[${deps.getRuntimeSiteLabel(target.id)}]
+${target.resolvedPrompt}`).join("\n\n---\n\n");
+  }
+  return {
+    getOpenSiteTabs: getOpenSiteTabs2,
+    getDefaultTargetModeLabel: getDefaultTargetModeLabel2,
+    syncSiteTargetSelections,
+    refreshOpenSiteTabs: refreshOpenSiteTabs2,
+    scheduleOpenSiteTabsRefresh: scheduleOpenSiteTabsRefresh2,
+    buildComposerBroadcastTargets: buildComposerBroadcastTargets2,
+    buildRuntimeBroadcastTargets: buildRuntimeBroadcastTargets2,
+    detectTemplateVariablesForTargets: detectTemplateVariablesForTargets3,
+    findMissingTemplateValuesForTargets: findMissingTemplateValuesForTargets3,
+    buildResolvedBroadcastTargets: buildResolvedBroadcastTargets2,
+    buildTemplatePreviewText: buildTemplatePreviewText2
+  };
+}
 
 // src/popup/app/dom.ts
 function requiredElement(id) {
@@ -3535,1098 +4224,469 @@ var popupDom = {
   toastHost: requiredElement("toast-host")
 };
 
-// src/popup/app/helpers.ts
-function escapeAttribute(value) {
-  return String(value ?? "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-function escapeHtml(value) {
-  return String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-}
-function getSiteIcon(site) {
-  if (site?.icon) {
-    return site.icon;
-  }
-  return SITE_EMOJI[site?.id ?? ""] ?? site?.name?.slice(0, 2)?.toUpperCase() ?? "AI";
-}
-function isTextEditingTarget(target) {
-  if (!target || !(target instanceof Element)) {
-    return false;
-  }
-  return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || target instanceof HTMLElement && target.isContentEditable;
-}
-function compareDateValues(leftValue, rightValue) {
-  const leftTime = Date.parse(String(leftValue ?? "")) || 0;
-  const rightTime = Date.parse(String(rightValue ?? "")) || 0;
-  return rightTime - leftTime;
-}
-function previewText(text, maxLength = 50) {
-  const collapsed = String(text ?? "").replace(/\s+/g, " ").trim();
-  if (collapsed.length <= maxLength) {
-    return collapsed || "-";
-  }
-  return `${collapsed.slice(0, maxLength)}...`;
-}
-function formatDate(isoString) {
-  try {
-    return new Intl.DateTimeFormat(isKorean ? "ko-KR" : "en-US", {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit"
-    }).format(new Date(isoString));
-  } catch (_error) {
-    return isoString;
-  }
-}
-function normalizeSiteIdList2(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return Array.from(
-    new Set(
-      value.filter((entry) => typeof entry === "string" && entry.trim().length > 0).map((entry) => entry.trim())
-    )
-  );
-}
-function joinMultilineValues(values) {
-  return Array.isArray(values) ? values.join("\n") : "";
-}
-function splitMultilineValues(value) {
-  return String(value ?? "").split(/\r?\n/g).map((entry) => entry.trim()).filter(Boolean);
-}
-
-// src/popup/app/shell.ts
-var { tabButtons, panels } = popupDom.tabs;
-var {
-  promptInput,
-  promptCounter,
-  sitesContainer,
-  toggleAllBtn,
-  cancelSendBtn,
-  sendBtn,
-  statusMsg
-} = popupDom.compose;
-function createPopupShell(deps) {
-  function setStatus2(text, type = "") {
-    statusMsg.textContent = text;
-    statusMsg.className = type;
-  }
-  function clearStatus2() {
-    setStatus2("");
-  }
-  function showAppToast2(input, type = "info", duration = 3e3) {
-    return showToast(input, type, duration);
-  }
-  function showConfirmToast2(message, onConfirm) {
-    showAppToast2({
-      message,
-      type: "warning",
-      duration: -1,
-      actions: [
-        {
-          label: t.toastConfirm,
-          onClick: () => {
-            void onConfirm();
-          }
-        }
-      ]
-    });
-  }
-  function setSendingState2(isSending) {
-    state.isSending = Boolean(isSending);
-    sendBtn.disabled = state.isSending;
-    sendBtn.classList.toggle("loading", state.isSending);
-    cancelSendBtn.hidden = !state.isSending;
-    cancelSendBtn.disabled = !state.isSending;
-    cancelSendBtn.textContent = t.stopSending;
-  }
-  function clearSendSafetyTimer2() {
-    if (state.sendSafetyTimer) {
-      window.clearTimeout(state.sendSafetyTimer);
-      state.sendSafetyTimer = null;
-    }
-  }
-  function armSendSafetyTimer2() {
-    clearSendSafetyTimer2();
-    state.sendSafetyTimer = window.setTimeout(() => {
-      state.sendSafetyTimer = null;
-      if (state.lastBroadcast?.status !== "sending") {
-        setSendingState2(false);
-      }
-    }, 2e3);
-  }
-  function buildBroadcastToastSignature2(summary) {
-    return [
-      summary?.broadcastId ?? "",
-      summary?.status ?? "",
-      summary?.finishedAt ?? "",
-      (summary?.failedSiteIds ?? []).join(",")
-    ].join("|");
-  }
-  function getEnabledSites2() {
-    return state.runtimeSites.filter((site) => site.enabled);
-  }
-  function getRuntimeSiteLabel2(siteId) {
-    return state.runtimeSites.find((site) => site.id === siteId)?.name ?? siteId;
-  }
-  function getSiteSelectorIssueUrl2(site) {
-    const siteLabel = site?.name ?? site?.id ?? "";
-    return `https://github.com/search?q=repo:twbeatles/prompt-broadcaster+${encodeURIComponent(siteLabel)}+selector&type=issues`;
-  }
-  function getSiteLastVerifiedStatus2(site) {
-    const verifiedAt = site?.verifiedAt ? String(site.verifiedAt).trim() : "";
-    const lastVerified = site?.lastVerified ? String(site.lastVerified).trim() : "";
-    const parsedDate = verifiedAt ? Date.parse(`${verifiedAt}T00:00:00Z`) : lastVerified ? Date.parse(`${lastVerified}-01T00:00:00Z`) : Number.NaN;
-    if (!Number.isFinite(parsedDate)) {
-      return "";
-    }
-    const daysSince = Math.floor((Date.now() - parsedDate) / 864e5);
-    if (daysSince <= 0) {
-      return "";
-    }
-    return (msg("popup_selector_days_since") || `~${daysSince}d since last verified`).replace("$DAYS$", String(daysSince));
-  }
-  function updatePromptCounter2() {
-    promptCounter.textContent = t.promptCounter(promptInput.value.length);
-  }
-  function autoResizePromptInput2() {
-    promptInput.style.height = "auto";
-    const nextHeight = Math.max(100, Math.min(promptInput.scrollHeight, 300));
-    promptInput.style.height = `${nextHeight}px`;
-  }
-  function scheduleComposeDraftSave2(value = promptInput.value) {
-    if (state.promptDraftSaveTimer) {
-      window.clearTimeout(state.promptDraftSaveTimer);
-    }
-    state.promptDraftSaveTimer = window.setTimeout(() => {
-      state.promptDraftSaveTimer = null;
-      void setComposeDraftPrompt(String(value ?? "")).catch((error) => {
-        console.error("[AI Prompt Broadcaster] Failed to persist compose draft.", error);
-      });
-    }, 180);
-  }
-  function applyDynamicPromptPlaceholder2() {
-    const placeholderVariants = deps.isKorean ? [
-      t.placeholder,
-      "{{언어}}로 {{주제}}를 설명해줘",
-      "선택한 텍스트를 여러 AI에 동시에 비교해줘"
-    ] : [
-      t.placeholder,
-      "Write a blog post about {{topic}} in {{language}}.",
-      "Summarize the selected text for all services."
-    ];
-    const nextPlaceholder = placeholderVariants[Math.floor(Math.random() * placeholderVariants.length)] || t.placeholder;
-    promptInput.setAttribute("placeholder", nextPlaceholder);
-  }
-  function allCheckboxes2() {
-    return Array.from(
-      sitesContainer.querySelectorAll("input[type='checkbox']")
-    );
-  }
-  function checkedSiteIds2() {
-    return allCheckboxes2().filter((checkbox) => checkbox.checked).map((checkbox) => checkbox.value);
-  }
-  function syncToggleAllLabel2() {
-    const checkboxes = allCheckboxes2();
-    const allChecked = checkboxes.length > 0 && checkboxes.every((checkbox) => checkbox.checked);
-    toggleAllBtn.textContent = allChecked ? t.deselectAll : t.selectAll;
-  }
-  function applySiteSelection2(sentTo) {
-    const selected = new Set(normalizeSiteIdList2(sentTo));
-    allCheckboxes2().forEach((checkbox) => {
-      const shouldCheck = selected.size === 0 ? checkbox.checked : selected.has(checkbox.value);
-      checkbox.checked = shouldCheck;
-      const card = checkbox.closest(".site-card");
-      card?.classList.toggle("checked", shouldCheck);
-      card?.setAttribute("aria-selected", String(shouldCheck));
-    });
-    syncToggleAllLabel2();
-  }
-  function switchTab2(tabId) {
-    state.activeTab = tabId;
-    tabButtons.forEach((button) => {
-      const active = button.dataset.tab === tabId;
-      button.classList.toggle("active", active);
-      button.setAttribute("aria-selected", String(active));
-      button.tabIndex = active ? 0 : -1;
-    });
-    panels.forEach((panel) => {
-      const active = panel.dataset.panel === tabId;
-      panel.classList.toggle("active", active);
-      panel.hidden = !active;
-    });
-    state.openMenuKey = null;
-    deps.renderLists();
-  }
-  return {
-    setStatus: setStatus2,
-    clearStatus: clearStatus2,
-    showAppToast: showAppToast2,
-    showConfirmToast: showConfirmToast2,
-    setSendingState: setSendingState2,
-    clearSendSafetyTimer: clearSendSafetyTimer2,
-    armSendSafetyTimer: armSendSafetyTimer2,
-    buildBroadcastToastSignature: buildBroadcastToastSignature2,
-    getEnabledSites: getEnabledSites2,
-    getRuntimeSiteLabel: getRuntimeSiteLabel2,
-    getSiteSelectorIssueUrl: getSiteSelectorIssueUrl2,
-    getSiteLastVerifiedStatus: getSiteLastVerifiedStatus2,
-    updatePromptCounter: updatePromptCounter2,
-    autoResizePromptInput: autoResizePromptInput2,
-    scheduleComposeDraftSave: scheduleComposeDraftSave2,
-    applyDynamicPromptPlaceholder: applyDynamicPromptPlaceholder2,
-    allCheckboxes: allCheckboxes2,
-    checkedSiteIds: checkedSiteIds2,
-    syncToggleAllLabel: syncToggleAllLabel2,
-    applySiteSelection: applySiteSelection2,
-    switchTab: switchTab2
-  };
-}
-
-// src/shared/template/constants.ts
-var TEMPLATE_VARIABLE_PATTERN = /{{\s*([^{}]+?)\s*}}/g;
-var SYSTEM_TEMPLATE_VARIABLES = Object.freeze({
-  date: "date",
-  time: "time",
-  weekday: "weekday",
-  clipboard: "clipboard",
-  url: "url",
-  title: "title",
-  selection: "selection",
-  counter: "counter",
-  random: "random"
-});
-var SYSTEM_TEMPLATE_DEFINITIONS = Object.freeze({
-  [SYSTEM_TEMPLATE_VARIABLES.date]: {
-    aliases: ["date", "날짜"],
-    labels: { ko: "날짜", en: "date" }
-  },
-  [SYSTEM_TEMPLATE_VARIABLES.time]: {
-    aliases: ["time", "시간"],
-    labels: { ko: "시간", en: "time" }
-  },
-  [SYSTEM_TEMPLATE_VARIABLES.weekday]: {
-    aliases: ["weekday", "요일"],
-    labels: { ko: "요일", en: "weekday" }
-  },
-  [SYSTEM_TEMPLATE_VARIABLES.clipboard]: {
-    aliases: ["clipboard", "클립보드"],
-    labels: { ko: "클립보드", en: "clipboard" }
-  },
-  [SYSTEM_TEMPLATE_VARIABLES.url]: {
-    aliases: ["url", "주소"],
-    labels: { ko: "현재 탭 URL", en: "current tab URL" }
-  },
-  [SYSTEM_TEMPLATE_VARIABLES.title]: {
-    aliases: ["title", "제목"],
-    labels: { ko: "현재 탭 제목", en: "current tab title" }
-  },
-  [SYSTEM_TEMPLATE_VARIABLES.selection]: {
-    aliases: ["selection", "선택"],
-    labels: { ko: "선택한 텍스트", en: "selected text" }
-  },
-  [SYSTEM_TEMPLATE_VARIABLES.counter]: {
-    aliases: ["counter", "카운터"],
-    labels: { ko: "카운터", en: "counter" }
-  },
-  [SYSTEM_TEMPLATE_VARIABLES.random]: {
-    aliases: ["random", "랜덤"],
-    labels: { ko: "랜덤 숫자", en: "random number" }
-  }
-});
-var SYSTEM_TEMPLATE_ALIAS_MAP = new Map(
-  Object.entries(SYSTEM_TEMPLATE_DEFINITIONS).flatMap(
-    ([canonicalName, definition]) => definition.aliases.map((alias) => [alias.toLowerCase(), canonicalName])
-  )
-);
-var SYSTEM_TEMPLATE_KEYS = new Set(Object.keys(SYSTEM_TEMPLATE_DEFINITIONS));
-var WEEKDAY_LOCALES = Object.freeze({
-  ko: "ko-KR",
-  en: "en-US"
-});
-
-// src/shared/template/normalize.ts
-function pad2(value) {
-  return String(value).padStart(2, "0");
-}
-function normalizeLocale(locale) {
-  return typeof locale === "string" && locale.toLowerCase().startsWith("ko") ? "ko" : "en";
-}
-function normalizeTemplateVariableName(value) {
-  return typeof value === "string" ? value.trim() : "";
-}
-function canonicalizeTemplateVariableName(value) {
-  const normalizedValue = normalizeTemplateVariableName(value);
-  if (!normalizedValue) {
-    return "";
-  }
-  return SYSTEM_TEMPLATE_ALIAS_MAP.get(normalizedValue.toLowerCase()) ?? normalizedValue;
-}
-function getTemplateVariableDisplayName(name, locale = "en") {
-  const canonicalName = canonicalizeTemplateVariableName(name);
-  if (!SYSTEM_TEMPLATE_KEYS.has(canonicalName)) {
-    return normalizeTemplateVariableName(name);
-  }
-  const normalizedLocale = normalizeLocale(locale);
-  return SYSTEM_TEMPLATE_DEFINITIONS[canonicalName].labels[normalizedLocale];
-}
-function normalizeTemplateValueRecord(values = {}) {
-  if (!values || typeof values !== "object" || Array.isArray(values)) {
-    return {};
-  }
-  return Object.fromEntries(
-    Object.entries(values).map(([key, value]) => [
-      canonicalizeTemplateVariableName(key),
-      value
-    ])
-  );
-}
-
-// src/shared/template/detect.ts
-function detectTemplateVariables(template) {
-  const source = typeof template === "string" ? template : "";
-  const seen = /* @__PURE__ */ new Set();
-  const variables = [];
-  for (const match of source.matchAll(TEMPLATE_VARIABLE_PATTERN)) {
-    const canonicalName = canonicalizeTemplateVariableName(match[1]);
-    if (!canonicalName || seen.has(canonicalName)) {
-      continue;
-    }
-    seen.add(canonicalName);
-    variables.push({
-      name: canonicalName,
-      kind: SYSTEM_TEMPLATE_KEYS.has(canonicalName) ? "system" : "user"
-    });
-  }
-  return variables;
-}
-function getUserTemplateVariables(template) {
-  return detectTemplateVariables(template).filter((variable) => variable.kind === "user");
-}
-
-// src/shared/template/values.ts
-function buildSystemTemplateValues(now = /* @__PURE__ */ new Date(), options = {}) {
-  const date = now instanceof Date ? now : /* @__PURE__ */ new Date();
-  const locale = normalizeLocale(options?.locale);
-  const values = {
-    [SYSTEM_TEMPLATE_VARIABLES.date]: [
-      date.getFullYear(),
-      pad2(date.getMonth() + 1),
-      pad2(date.getDate())
-    ].join("-"),
-    [SYSTEM_TEMPLATE_VARIABLES.time]: `${pad2(date.getHours())}:${pad2(date.getMinutes())}`,
-    [SYSTEM_TEMPLATE_VARIABLES.weekday]: new Intl.DateTimeFormat(WEEKDAY_LOCALES[locale], {
-      weekday: locale === "ko" ? "short" : "long"
-    }).format(date),
-    [SYSTEM_TEMPLATE_VARIABLES.random]: String(Math.floor(Math.random() * 1e3) + 1)
-  };
-  if (options?.extra && typeof options.extra === "object") {
-    if (typeof options.extra.url === "string") {
-      values[SYSTEM_TEMPLATE_VARIABLES.url] = options.extra.url;
-    }
-    if (typeof options.extra.title === "string") {
-      values[SYSTEM_TEMPLATE_VARIABLES.title] = options.extra.title;
-    }
-    if (typeof options.extra.selection === "string") {
-      values[SYSTEM_TEMPLATE_VARIABLES.selection] = options.extra.selection;
-    }
-    if (typeof options.extra.counter === "string" || typeof options.extra.counter === "number") {
-      values[SYSTEM_TEMPLATE_VARIABLES.counter] = String(options.extra.counter);
-    }
-  }
-  return values;
-}
-
-// src/shared/template/render.ts
-function renderTemplatePrompt(template, values = {}) {
-  const source = typeof template === "string" ? template : "";
-  const normalizedValues = normalizeTemplateValueRecord(values);
-  return source.replace(TEMPLATE_VARIABLE_PATTERN, (_match, rawName) => {
-    const normalizedName = normalizeTemplateVariableName(rawName);
-    const canonicalName = canonicalizeTemplateVariableName(rawName);
-    if (!normalizedName) {
-      return "";
-    }
-    if (Object.prototype.hasOwnProperty.call(normalizedValues, canonicalName)) {
-      return String(normalizedValues[canonicalName] ?? "");
-    }
-    if (Object.prototype.hasOwnProperty.call(normalizedValues, normalizedName)) {
-      return String(normalizedValues[normalizedName] ?? "");
-    }
-    return `{{${normalizedName}}}`;
-  });
-}
-function findMissingTemplateValues(template, values = {}) {
-  const normalizedValues = normalizeTemplateValueRecord(values);
-  return getUserTemplateVariables(template).map((variable) => variable.name).filter((name) => !String(normalizedValues[name] ?? "").trim());
-}
-
-// src/popup/app/sorting.ts
-function getHistorySortOptions() {
-  return [
-    { value: "latest", label: t.historySortLatest },
-    { value: "oldest", label: t.historySortOldest },
-    { value: "mostSuccess", label: t.historySortMostSuccess },
-    { value: "mostFailure", label: t.historySortMostFailure }
-  ];
-}
-function getFavoriteSortOptions() {
-  return [
-    { value: "recentUsed", label: t.favoriteSortRecentUsed },
-    { value: "usageCount", label: t.favoriteSortUsageCount },
-    { value: "title", label: t.favoriteSortTitle },
-    { value: "createdAt", label: t.favoriteSortCreatedAt }
-  ];
-}
-function compareFavoriteTitle(left, right) {
-  return String(left.title ?? "").localeCompare(
-    String(right.title ?? ""),
-    isKorean ? "ko" : "en",
-    { sensitivity: "base" }
-  );
-}
-function sortHistoryItemsForDisplay(items, historySort = "latest") {
-  const nextItems = [...items];
-  switch (historySort) {
-    case "oldest":
-      return nextItems.sort((left, right) => compareDateValues(right.createdAt, left.createdAt));
-    case "mostSuccess":
-      return nextItems.sort((left, right) => {
-        const leftCount = Array.isArray(left.submittedSiteIds) ? left.submittedSiteIds.length : 0;
-        const rightCount = Array.isArray(right.submittedSiteIds) ? right.submittedSiteIds.length : 0;
-        return rightCount - leftCount || compareDateValues(left.createdAt, right.createdAt);
-      });
-    case "mostFailure":
-      return nextItems.sort((left, right) => {
-        const leftCount = Array.isArray(left.failedSiteIds) ? left.failedSiteIds.length : 0;
-        const rightCount = Array.isArray(right.failedSiteIds) ? right.failedSiteIds.length : 0;
-        return rightCount - leftCount || compareDateValues(left.createdAt, right.createdAt);
-      });
-    case "latest":
-    default:
-      return nextItems.sort((left, right) => compareDateValues(left.createdAt, right.createdAt));
-  }
-}
-function sortFavoriteItemsForDisplay(items, favoriteSort = "recentUsed") {
-  const nextItems = [...items];
-  nextItems.sort((left, right) => {
-    if (left.pinned && !right.pinned) {
-      return -1;
-    }
-    if (!left.pinned && right.pinned) {
-      return 1;
-    }
-    switch (favoriteSort) {
-      case "usageCount":
-        return (Number(right.usageCount) || 0) - (Number(left.usageCount) || 0) || compareDateValues(left.lastUsedAt ?? left.favoritedAt, right.lastUsedAt ?? right.favoritedAt);
-      case "title":
-        return compareFavoriteTitle(left, right) || compareDateValues(left.favoritedAt, right.favoritedAt);
-      case "createdAt":
-        return compareDateValues(left.createdAt, right.createdAt);
-      case "recentUsed":
-      default:
-        return compareDateValues(left.lastUsedAt ?? left.favoritedAt, right.lastUsedAt ?? right.favoritedAt);
-    }
-  });
-  return nextItems;
-}
-
-// src/popup/app/rendering.ts
-var { extTitle, extDesc } = popupDom.header;
-var { tabButtons: tabButtons2 } = popupDom.tabs;
-var {
-  promptInput: promptInput2,
-  promptCounter: promptCounter2,
-  clearPromptBtn,
-  templateSummary,
-  templateSummaryLabel,
-  templateChipList,
-  sitesLabel,
-  sitesContainer: sitesContainer2,
-  saveFavoriteBtn,
-  sendBtn: sendBtn2
-} = popupDom.compose;
-var { historySearchInput, historySortSelect } = popupDom.history;
-var { favoritesSearchInput, favoritesSortSelect } = popupDom.favorites;
-var {
-  settingsTitle,
-  settingsDesc,
-  reuseExistingTabsLabel,
-  reuseExistingTabsDesc,
-  openOptionsBtn,
-  clearHistoryBtn,
-  exportJsonBtn,
-  importJsonBtn,
-  waitMultiplierLabel,
-  waitMultiplierValue
-} = popupDom.settings;
-var {
-  serviceManagementTitle,
-  serviceManagementDesc,
-  addServiceBtn,
-  resetSitesBtn,
-  serviceEditorDesc,
-  serviceNameLabel,
-  serviceUrlLabel,
-  serviceInputSelectorLabel,
-  testSelectorBtn,
-  serviceInputTypeLabel,
-  serviceSubmitSelectorLabel,
-  serviceSubmitMethodLabel,
-  serviceAdvancedTitle,
-  serviceFallbackSelectorsLabel,
-  serviceAuthSelectorsLabel,
-  serviceHostnameAliasesLabel,
-  serviceSupportedRoutesLabel,
-  serviceVerifiedAtLabel,
-  serviceVerifiedRouteLabel,
-  serviceVerifiedAuthStateLabel,
-  serviceVerifiedLocaleLabel,
-  serviceVerifiedVersionLabel,
-  serviceVerifiedAuthStateSelect,
-  serviceWaitLabel,
-  serviceColorLabel,
-  serviceIconLabel,
-  serviceEnabledLabel,
-  serviceEditorCancel,
-  serviceEditorSave
-} = popupDom.serviceManagement;
-var {
-  resendModalTitle,
-  resendModalDesc,
-  resendModalCancel,
-  resendModalConfirm,
-  importReportModalTitle,
-  importReportModalDesc,
-  importReportModalConfirm
-} = popupDom.modals;
-function createPopupRendering(deps) {
-  function renderSortControls() {
-    historySortSelect.innerHTML = getHistorySortOptions().map((option) => `<option value="${escapeAttribute(option.value)}">${escapeHtml(option.label)}</option>`).join("");
-    favoritesSortSelect.innerHTML = getFavoriteSortOptions().map((option) => `<option value="${escapeAttribute(option.value)}">${escapeHtml(option.label)}</option>`).join("");
-    historySortSelect.value = state.settings.historySort;
-    favoritesSortSelect.value = state.settings.favoriteSort;
-  }
-  function getTemplateDisplayName(name) {
-    return getTemplateVariableDisplayName(name, uiLanguage);
-  }
-  function currentPromptVariables() {
-    const checkedTargets = deps.buildComposerBroadcastTargets(
-      deps.checkedSiteIds(),
-      promptInput2.value
-    );
-    if (checkedTargets.length === 0) {
-      return detectTemplateVariables(promptInput2.value);
-    }
-    return deps.detectTemplateVariablesForTargets(checkedTargets);
-  }
-  function renderTemplateSummary2() {
-    const variables = currentPromptVariables();
-    templateSummary.hidden = variables.length === 0;
-    if (variables.length === 0) {
-      templateSummaryLabel.textContent = "";
-      templateChipList.innerHTML = "";
-      return;
-    }
-    templateSummaryLabel.textContent = t.templateSummary(variables.length);
-    templateChipList.innerHTML = variables.map((variable) => {
-      const kindLabel = variable.kind === "system" ? t.templateSystemKind : t.templateUserKind;
-      const variableLabel = variable.kind === "system" ? getTemplateDisplayName(variable.name) : variable.name;
-      return `
-          <span class="template-chip ${variable.kind}">
-            <span>{{${escapeHtml(variableLabel)}}}</span>
-            <span class="template-chip-kind">${escapeHtml(kindLabel)}</span>
-          </span>
-        `;
-    }).join("");
-  }
-  function renderTabLabels2() {
-    extTitle.textContent = t.title;
-    extDesc.textContent = t.desc;
-    clearPromptBtn.textContent = t.clearPrompt;
-    sitesLabel.textContent = t.sitesLabel;
-    saveFavoriteBtn.textContent = t.saveFavorite;
-    sendBtn2.textContent = t.send;
-    historySearchInput.placeholder = t.historySearch;
-    favoritesSearchInput.placeholder = t.favoritesSearch;
-    settingsTitle.textContent = t.settingsTitle;
-    settingsDesc.textContent = t.settingsDesc;
-    reuseExistingTabsLabel.textContent = t.reuseTabsLabel;
-    reuseExistingTabsDesc.textContent = state.settings.reuseExistingTabs ? t.reuseTabsDescEnabled : t.reuseTabsDescDisabled;
-    waitMultiplierLabel.textContent = t.waitMultiplierLabel;
-    waitMultiplierValue.textContent = t.waitMultiplierValue(state.settings.waitMsMultiplier);
-    openOptionsBtn.textContent = t.openOptions;
-    clearHistoryBtn.textContent = t.clearHistory;
-    exportJsonBtn.textContent = t.exportJson;
-    importJsonBtn.textContent = t.importJson;
-    serviceManagementTitle.textContent = t.serviceManagementTitle;
-    serviceManagementDesc.textContent = t.serviceManagementDesc;
-    addServiceBtn.textContent = t.addService;
-    resetSitesBtn.textContent = t.resetServices;
-    serviceEditorDesc.textContent = t.serviceEditorDesc;
-    serviceNameLabel.textContent = t.serviceFieldName;
-    serviceUrlLabel.textContent = t.serviceFieldUrl;
-    serviceInputSelectorLabel.textContent = t.serviceFieldInputSelector;
-    testSelectorBtn.textContent = t.serviceTest;
-    serviceInputTypeLabel.textContent = t.serviceFieldInputType;
-    serviceSubmitSelectorLabel.textContent = t.serviceFieldSubmitSelector;
-    serviceSubmitMethodLabel.textContent = t.serviceFieldSubmitMethod;
-    serviceAdvancedTitle.textContent = t.serviceFieldAdvanced;
-    serviceFallbackSelectorsLabel.textContent = t.serviceFieldFallbackSelectors;
-    serviceAuthSelectorsLabel.textContent = t.serviceFieldAuthSelectors;
-    serviceHostnameAliasesLabel.textContent = t.serviceFieldHostnameAliases;
-    serviceSupportedRoutesLabel.textContent = t.serviceFieldSupportedRoutes;
-    serviceVerifiedAtLabel.textContent = t.serviceFieldVerifiedAt;
-    serviceVerifiedRouteLabel.textContent = t.serviceFieldVerifiedRoute;
-    serviceVerifiedAuthStateLabel.textContent = t.serviceFieldVerifiedAuthState;
-    serviceVerifiedLocaleLabel.textContent = t.serviceFieldVerifiedLocale;
-    serviceVerifiedVersionLabel.textContent = t.serviceFieldVerifiedVersion;
-    const verifiedAuthUnknownOption = serviceVerifiedAuthStateSelect.querySelector("option[value='']");
-    const verifiedAuthLoggedInOption = serviceVerifiedAuthStateSelect.querySelector("option[value='logged-in']");
-    const verifiedAuthLoggedOutOption = serviceVerifiedAuthStateSelect.querySelector("option[value='logged-out']");
-    const verifiedAuthSoftGatedOption = serviceVerifiedAuthStateSelect.querySelector("option[value='soft-gated']");
-    if (verifiedAuthUnknownOption) {
-      verifiedAuthUnknownOption.textContent = t.serviceVerifiedAuthStateUnknown;
-    }
-    if (verifiedAuthLoggedInOption) {
-      verifiedAuthLoggedInOption.textContent = t.serviceVerifiedAuthStateLoggedIn;
-    }
-    if (verifiedAuthLoggedOutOption) {
-      verifiedAuthLoggedOutOption.textContent = t.serviceVerifiedAuthStateLoggedOut;
-    }
-    if (verifiedAuthSoftGatedOption) {
-      verifiedAuthSoftGatedOption.textContent = t.serviceVerifiedAuthStateSoftGated;
-    }
-    serviceWaitLabel.textContent = t.serviceFieldWait;
-    serviceColorLabel.textContent = t.serviceFieldColor;
-    serviceIconLabel.textContent = t.serviceFieldIcon;
-    serviceEnabledLabel.textContent = t.serviceFieldEnabled;
-    serviceEditorCancel.textContent = t.serviceEditorCancel;
-    serviceEditorSave.textContent = t.serviceEditorSave;
-    resendModalTitle.textContent = t.resendModalTitle;
-    resendModalDesc.textContent = t.resendModalDesc;
-    resendModalCancel.textContent = t.resendModalCancel;
-    resendModalConfirm.textContent = t.resendModalConfirm;
-    importReportModalTitle.textContent = t.importReportTitle;
-    importReportModalDesc.textContent = t.importReportDesc;
-    importReportModalConfirm.textContent = t.importReportClose;
-    tabButtons2.forEach((button) => {
-      const tabId = button.dataset.tab;
-      button.textContent = tabId ? t.tabs[tabId] : "";
-    });
-    deps.applyDynamicPromptPlaceholder();
-    deps.updatePromptCounter();
-  }
-  function renderSiteCheckboxesPanel2() {
-    const previousSelection = new Set(deps.checkedSiteIds());
-    sitesContainer2.innerHTML = "";
-    deps.getEnabledSites().forEach((site) => {
-      const card = document.createElement("article");
-      card.className = "site-card checked";
-      card.dataset.siteId = site.id;
-      card.style.setProperty("--site-color", site.color || "#c24f2e");
-      card.setAttribute("role", "option");
-      card.tabIndex = 0;
-      const mainRow = document.createElement("label");
-      mainRow.className = "site-card-main";
-      mainRow.htmlFor = `site-${site.id}`;
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.id = `site-${site.id}`;
-      checkbox.value = site.id;
-      checkbox.checked = previousSelection.size > 0 ? previousSelection.has(site.id) : true;
-      const siteIcon = document.createElement("span");
-      siteIcon.className = "site-icon";
-      siteIcon.textContent = getSiteIcon(site);
-      const siteName = document.createElement("span");
-      siteName.className = "site-name";
-      siteName.textContent = `${deps.getRuntimeSiteLabel(site.id)}`;
-      const selectorWarning = state.failedSelectors.get(site.id);
-      if (selectorWarning) {
-        card.classList.add("selector-warning");
-        card.title = t.selectorWarningTooltip;
-      }
-      checkbox.addEventListener("change", () => {
-        card.classList.toggle("checked", checkbox.checked);
-        card.setAttribute("aria-selected", String(checkbox.checked));
-        card.setAttribute(
-          "aria-label",
-          `${deps.getRuntimeSiteLabel(site.id)} ${checkbox.checked ? t.ariaSelected : t.ariaNotSelected}`
-        );
-        deps.syncToggleAllLabel();
-        renderTemplateSummary2();
-      });
-      card.addEventListener("keydown", (event) => {
-        if (event.key !== " " && event.key !== "Enter") {
-          return;
-        }
-        event.preventDefault();
-        checkbox.checked = !checkbox.checked;
-        checkbox.dispatchEvent(new Event("change", { bubbles: true }));
-      });
-      const siteStatus = document.createElement("span");
-      siteStatus.className = "site-status";
-      siteStatus.setAttribute("aria-hidden", "true");
-      const warningIcon = document.createElement("span");
-      warningIcon.className = "site-warning";
-      warningIcon.setAttribute("aria-hidden", "true");
-      warningIcon.textContent = selectorWarning ? "!" : "";
-      mainRow.append(checkbox, siteIcon, siteName, warningIcon, siteStatus);
-      card.classList.toggle("checked", checkbox.checked);
-      card.setAttribute("aria-selected", String(checkbox.checked));
-      card.setAttribute(
-        "aria-label",
-        `${deps.getRuntimeSiteLabel(site.id)} ${checkbox.checked ? t.ariaSelected : t.ariaNotSelected}`
-      );
-      card.appendChild(mainRow);
-      const openTabs = deps.getOpenSiteTabs(site.id);
-      const selectedTarget = state.siteTargetSelections?.[site.id] ?? "default";
-      if (openTabs.length > 0) {
-        const tabsWrap = document.createElement("div");
-        tabsWrap.className = "site-tabs";
-        const tabsHead = document.createElement("div");
-        tabsHead.className = "site-tabs-head";
-        tabsHead.textContent = t.openTabsTitle(openTabs.length);
-        const tabsList = document.createElement("div");
-        tabsList.className = "site-tabs-list";
-        const radioName = `site-target-${site.id}`;
-        const appendTargetOption = (choiceValue, title, detail, pillText = "") => {
-          const option = document.createElement("label");
-          option.className = "site-tab-option";
-          const radio = document.createElement("input");
-          radio.type = "radio";
-          radio.name = radioName;
-          radio.value = typeof choiceValue === "number" ? `tab:${choiceValue}` : String(choiceValue);
-          radio.checked = choiceValue === selectedTarget;
-          const copy = document.createElement("span");
-          copy.className = "site-tab-copy";
-          const titleNode = document.createElement("span");
-          titleNode.className = "site-tab-title";
-          titleNode.textContent = title;
-          const detailNode = document.createElement("span");
-          detailNode.className = "site-tab-meta";
-          detailNode.textContent = detail;
-          copy.append(titleNode, detailNode);
-          option.append(radio, copy);
-          if (pillText) {
-            const pill = document.createElement("span");
-            pill.className = "site-tab-pill";
-            pill.textContent = pillText;
-            option.appendChild(pill);
-          }
-          radio.addEventListener("change", () => {
-            if (!radio.checked) {
-              return;
-            }
-            state.siteTargetSelections[site.id] = choiceValue;
-            if (!checkbox.checked) {
-              checkbox.checked = true;
-              card.classList.add("checked");
-            }
-            deps.syncToggleAllLabel();
-          });
-          tabsList.appendChild(option);
-        };
-        appendTargetOption(
-          "default",
-          t.openTabsUseDefault,
-          t.openTabsUseDefaultDetail(deps.getDefaultTargetModeLabel())
-        );
-        appendTargetOption(
-          "new",
-          t.openTabsAlwaysNew,
-          t.openTabsAlwaysNewDetail
-        );
-        openTabs.forEach((tab) => {
-          const detailText = previewText(tab.url || tab.title || "", 52);
-          const pillText = tab.active ? t.openTabsActive : tab.status === "loading" ? t.openTabsLoading : t.openTabsReady;
-          appendTargetOption(
-            tab.tabId,
-            previewText(tab.title || tab.url || `${site.name} tab`, 48),
-            detailText,
-            pillText
-          );
-        });
-        tabsWrap.append(tabsHead, tabsList);
-        card.appendChild(tabsWrap);
-      }
-      const overrideToggleRow = document.createElement("div");
-      overrideToggleRow.className = "site-override-toggle-row";
-      const overrideToggle = document.createElement("button");
-      const hasOverride = Boolean(state.sitePromptOverrides?.[site.id]?.trim());
-      overrideToggle.className = `ghost-button small-button site-override-toggle${hasOverride ? " active" : ""}`;
-      overrideToggle.type = "button";
-      overrideToggle.dataset.siteOverrideToggle = site.id;
-      overrideToggle.title = msg("popup_override_prompt_label") || "Custom prompt for this service";
-      overrideToggle.textContent = hasOverride ? `✎ ${msg("popup_override_active") || "Custom"}` : "✎";
-      const overrideWrap = document.createElement("div");
-      overrideWrap.className = "site-override-wrap";
-      overrideWrap.hidden = !hasOverride;
-      const overrideTextarea = document.createElement("textarea");
-      overrideTextarea.className = "site-override-textarea";
-      overrideTextarea.rows = 3;
-      overrideTextarea.placeholder = msg("popup_override_prompt_placeholder") || "Override prompt for this service only…";
-      overrideTextarea.value = state.sitePromptOverrides?.[site.id] ?? "";
-      overrideTextarea.dataset.siteOverrideInput = site.id;
-      overrideTextarea.addEventListener("input", () => {
-        state.sitePromptOverrides[site.id] = overrideTextarea.value;
-        const nowActive = Boolean(overrideTextarea.value.trim());
-        overrideToggle.classList.toggle("active", nowActive);
-        overrideToggle.textContent = nowActive ? `✎ ${msg("popup_override_active") || "Custom"}` : "✎";
-        renderTemplateSummary2();
-      });
-      overrideToggle.addEventListener("click", () => {
-        overrideWrap.hidden = !overrideWrap.hidden;
-        if (!overrideWrap.hidden) {
-          overrideTextarea.focus();
-        }
-      });
-      overrideWrap.appendChild(overrideTextarea);
-      overrideToggleRow.append(overrideToggle);
-      card.append(overrideToggleRow, overrideWrap);
-      sitesContainer2.appendChild(card);
-    });
-    deps.syncToggleAllLabel();
-    deps.setCardStatesFromBroadcast(state.lastBroadcast);
-  }
-  return {
-    renderSortControls,
-    renderTemplateSummary: renderTemplateSummary2,
-    renderTabLabels: renderTabLabels2,
-    renderSiteCheckboxesPanel: renderSiteCheckboxesPanel2
-  };
-}
-
-// src/popup/app/shortcuts.ts
-var { toggleAllBtn: toggleAllBtn2 } = popupDom.compose;
-var { historyList } = popupDom.history;
-var { favoritesList } = popupDom.favorites;
-function createPopupShortcutController(deps) {
-  function getPromptButtonsForActiveTab() {
-    if (state.activeTab === "history") {
-      return Array.from(historyList.querySelectorAll("[data-load-history]"));
-    }
-    if (state.activeTab === "favorites") {
-      return Array.from(
-        favoritesList.querySelectorAll("[data-load-favorite], [data-edit-favorite]")
-      );
-    }
-    return [];
-  }
-  function focusAdjacentPromptButton(direction) {
-    const buttons = getPromptButtonsForActiveTab();
-    if (buttons.length === 0) {
-      return;
-    }
-    const currentIndex = buttons.findIndex((button) => button === document.activeElement);
-    const nextIndex = currentIndex === -1 ? direction > 0 ? 0 : buttons.length - 1 : (currentIndex + direction + buttons.length) % buttons.length;
-    buttons[nextIndex]?.focus?.();
-  }
-  async function handleGlobalShortcut2(event) {
-    if (event.defaultPrevented) {
-      return;
-    }
-    const shortcutKey = event.key.toLowerCase();
-    const hasPrimaryModifier = event.ctrlKey || event.metaKey;
-    if (event.key === "Escape") {
-      if (deps.closeActiveOverlayOrMenu()) {
-        event.preventDefault();
-      }
-      return;
-    }
-    if (deps.getOpenOverlay()) {
-      return;
-    }
-    if (hasPrimaryModifier && event.shiftKey && event.key === "Enter") {
-      event.preventDefault();
-      await deps.cancelCurrentBroadcast();
-      return;
-    }
-    if (hasPrimaryModifier && !event.shiftKey && event.key === "Enter") {
-      event.preventDefault();
-      await deps.handleSend();
-      return;
-    }
-    if (hasPrimaryModifier && !event.shiftKey && ["1", "2", "3", "4"].includes(shortcutKey)) {
-      event.preventDefault();
-      deps.switchTab(["compose", "history", "favorites", "settings"][Number(shortcutKey) - 1]);
-      return;
-    }
-    if (hasPrimaryModifier && !event.shiftKey && shortcutKey === "a" && state.activeTab === "compose" && !isTextEditingTarget(event.target)) {
-      event.preventDefault();
-      toggleAllBtn2.click();
-      return;
-    }
-    if ((event.key === "ArrowDown" || event.key === "ArrowUp") && !isTextEditingTarget(event.target)) {
-      if (state.activeTab === "history" || state.activeTab === "favorites") {
-        event.preventDefault();
-        focusAdjacentPromptButton(event.key === "ArrowDown" ? 1 : -1);
-      }
-    }
-  }
-  return {
-    handleGlobalShortcut: handleGlobalShortcut2
-  };
-}
-
-// src/popup/app/list-markup.ts
-function buildEmptyState(message) {
-  return `
-    <div class="empty-state">
-      <div>${escapeHtml(message)}</div>
-      <button class="empty-action" type="button" data-switch-tab="compose">${escapeHtml(t.emptyActionCompose)}</button>
-    </div>
-  `;
-}
-function getHistorySelectedSiteIds(item) {
-  return normalizeSiteIdList2(getTargetSnapshotSiteIds(item));
-}
-function renderServiceBadges(siteIds = [], runtimeSites = []) {
-  return siteIds.map((siteId) => {
-    const site = runtimeSites.find((entry) => entry.id === siteId);
-    const label = getSiteIcon(site) ?? siteId.slice(0, 2).toUpperCase();
-    return `<span class="service-badge">${escapeHtml(label)}</span>`;
-  }).join("");
-}
-function buildHistoryItemMarkup(item, options = {}) {
-  const {
-    openMenuKey = null,
-    runtimeSites = []
-  } = options;
-  const menuKey = `history:${item.id}`;
-  return `
-    <article class="prompt-item" data-history-id="${item.id}" role="listitem">
-      <button class="prompt-main" type="button" data-load-history="${item.id}">
-        <div class="prompt-preview">${escapeHtml(previewText(item.text))}</div>
-        <div class="prompt-meta">
-          <div class="service-icons">${renderServiceBadges(getHistorySelectedSiteIds(item), runtimeSites)}</div>
-          <span>${escapeHtml(formatDate(item.createdAt))}</span>
-        </div>
-      </button>
-      <div class="prompt-actions">
-        <button class="menu-button" type="button" aria-haspopup="menu" aria-expanded="${openMenuKey === menuKey ? "true" : "false"}" aria-label="${escapeAttribute(t.menuMore)}" data-toggle-menu="${escapeAttribute(menuKey)}">...</button>
-        <div class="item-menu ${openMenuKey === menuKey ? "open" : ""}">
-          <button class="menu-item" type="button" data-action="resend-history" data-history-id="${item.id}">${escapeHtml(t.historyResend)}</button>
-          <button class="menu-item" type="button" data-action="favorite" data-history-id="${item.id}">${escapeHtml(t.addFavorite)}</button>
-          <button class="menu-item danger" type="button" data-action="delete-history" data-history-id="${item.id}">${escapeHtml(t.delete)}</button>
-        </div>
-      </div>
-    </article>
-  `;
-}
-function buildFavoriteTagsMarkup(item) {
-  const tags = Array.isArray(item.tags) ? item.tags : [];
-  const folder = typeof item.folder === "string" && item.folder.trim() ? item.folder.trim() : "";
-  const pinIcon = item.pinned ? `<span class="fav-pin-icon" title="${escapeHtml(msg("popup_favorite_pinned") || "Pinned")}">📌</span>` : "";
-  const folderBadge = folder ? `<span class="fav-folder-badge" data-filter-folder="${escapeAttribute(folder)}">📁 ${escapeHtml(folder)}</span>` : "";
-  const kindBadge = item.mode === "chain" ? `<span class="fav-type-badge chain">${escapeHtml(t.favoriteKindChain)}</span>` : `<span class="fav-type-badge">${escapeHtml(t.favoriteKindSingle)}</span>`;
-  const scheduleBadge = item.scheduleEnabled && item.scheduledAt ? `<span class="fav-schedule-badge">${escapeHtml(t.favoriteScheduledBadge)}</span>` : "";
-  const stepCount = item.mode === "chain" && Array.isArray(item.steps) && item.steps.length > 0 ? `<span class="fav-step-count">${escapeHtml(t.favoriteStepCount(item.steps.length))}</span>` : "";
-  const tagChips = tags.map(
-    (tag) => `<span class="fav-tag-chip" data-filter-tag="${escapeAttribute(tag)}">#${escapeHtml(tag)}</span>`
-  ).join("");
-  if (!pinIcon && !folderBadge && !tagChips && !kindBadge && !scheduleBadge && !stepCount) {
-    return "";
-  }
-  return `<div class="fav-meta-row">${pinIcon}${kindBadge}${scheduleBadge}${stepCount}${folderBadge}${tagChips}</div>`;
-}
-function buildFavoriteJobMarkup(job) {
-  if (!job?.jobId) {
-    return "";
-  }
-  const statusLabel = job.status === "queued" ? msg("favorite_job_status_queued") || "Queued" : job.status === "running" ? msg("favorite_job_status_running") || "Running" : job.status === "completed" ? msg("favorite_job_status_completed") || "Done" : job.status === "failed" ? msg("favorite_job_status_failed") || "Failed" : msg("favorite_job_status_skipped") || "Skipped";
-  const detail = job.stepCount > 1 ? `${Math.min(Number(job.completedSteps ?? 0), Number(job.stepCount ?? 0))}/${Number(job.stepCount ?? 0)}` : "";
-  return `
-    <div class="fav-job-row">
-      <span class="fav-job-badge ${escapeAttribute(job.status)}">${escapeHtml(statusLabel)}</span>
-      ${detail ? `<span class="fav-job-detail">${escapeHtml(detail)}</span>` : ""}
-    </div>
-  `;
-}
-function buildFavoriteItemMarkup(item, options = {}) {
-  const {
-    openMenuKey = null,
-    runtimeSites = [],
-    latestJob = null
-  } = options;
-  const menuKey = `favorite:${item.id}`;
-  const safeFavoriteId = escapeAttribute(item.id);
-  const pinLabel = item.pinned ? msg("popup_favorite_unpin") || "Unpin" : msg("popup_favorite_pin") || "Pin";
-  const primaryAction = item.mode === "chain" ? "edit-favorite" : "load-favorite";
-  return `
-    <article class="prompt-item${item.pinned ? " pinned-item" : ""}" data-favorite-id="${safeFavoriteId}" role="listitem">
-      <div class="favorite-title-row">
-        <span class="favorite-star">${escapeHtml(t.favoriteStar)}</span>
-        <input
-          class="favorite-title-input"
-          type="text"
-          data-favorite-title="${safeFavoriteId}"
-          value="${escapeAttribute(item.title)}"
-          placeholder="${escapeAttribute(t.titlePlaceholder)}"
-        />
-      </div>
-      ${buildFavoriteTagsMarkup(item)}
-      ${buildFavoriteJobMarkup(latestJob)}
-      <button class="prompt-main" type="button" data-${primaryAction}="${safeFavoriteId}">
-        <div class="prompt-preview">${escapeHtml(previewText(item.text))}</div>
-        <div class="prompt-meta">
-          <div class="service-icons">${renderServiceBadges(item.sentTo, runtimeSites)}</div>
-          <span>${escapeHtml(formatDate(item.createdAt))}</span>
-        </div>
-      </button>
-      <div class="prompt-actions">
-        <button class="menu-button" type="button" aria-haspopup="menu" aria-expanded="${openMenuKey === menuKey ? "true" : "false"}" aria-label="${escapeAttribute(t.menuMore)}" data-toggle-menu="${escapeAttribute(menuKey)}">...</button>
-        <div class="item-menu ${openMenuKey === menuKey ? "open" : ""}">
-          <button class="menu-item" type="button" data-action="run-favorite" data-favorite-id="${safeFavoriteId}">${escapeHtml(t.favoriteRunNow)}</button>
-          <button class="menu-item" type="button" data-action="edit-favorite" data-favorite-id="${safeFavoriteId}">${escapeHtml(t.favoriteEdit)}</button>
-          <button class="menu-item" type="button" data-action="duplicate-favorite" data-favorite-id="${safeFavoriteId}">${escapeHtml(t.favoriteDuplicate)}</button>
-          <button class="menu-item" type="button" data-action="toggle-pin-favorite" data-favorite-id="${safeFavoriteId}">${escapeHtml(pinLabel)}</button>
-          <button class="menu-item danger" type="button" data-action="delete-favorite" data-favorite-id="${safeFavoriteId}">${escapeHtml(t.delete)}</button>
-        </div>
-      </div>
-    </article>
-  `;
-}
-function buildImportReportMarkup(summary) {
-  if (!summary) {
-    return "";
-  }
-  const rejectedRows = (summary.customSites?.rejected ?? []).map((entry) => {
-    const origins = Array.isArray(entry.origins) && entry.origins.length > 0 ? `<div class="helper-text">${escapeHtml(entry.origins.join(", "))}</div>` : "";
-    const errors = Array.isArray(entry.errors) && entry.errors.length > 0 ? `<div class="helper-text">${escapeHtml(entry.errors.join(" "))}</div>` : "";
-    return `
-      <div class="import-report-row">
-        <strong>${escapeHtml(entry.name ?? entry.id ?? "-")}</strong>
-        <div>${escapeHtml(t.importRejectReason(entry.reason ?? "unknown"))}</div>
-        ${origins}
-        ${errors}
-      </div>
-    `;
-  }).join("");
-  const rewrittenSummary = (summary.customSites?.rewrittenIds ?? []).map((entry) => `${entry.from} -> ${entry.to}`).join(", ");
-  return `
-    <div class="import-report-grid">
-      <div class="import-report-row"><strong>${escapeHtml(t.importReportVersion)}</strong><div>${escapeHtml(`v${summary.version} (from v${summary.migratedFromVersion})`)}</div></div>
-      <div class="import-report-row"><strong>${escapeHtml(t.importReportAccepted)}</strong><div>${escapeHtml(String(summary.customSites?.acceptedNames?.join(", ") || "-"))}</div></div>
-      <div class="import-report-row"><strong>${escapeHtml(t.importReportRewritten)}</strong><div>${escapeHtml(rewrittenSummary || "-")}</div></div>
-      <div class="import-report-row"><strong>${escapeHtml(t.importReportBuiltins)}</strong><div>${escapeHtml([
-    ...summary.builtInSiteOverrides?.adjustedIds ?? [],
-    ...summary.builtInSiteOverrides?.droppedIds ?? [],
-    ...summary.builtInSiteStates?.droppedIds ?? []
-  ].join(", ") || "-")}</div></div>
-      <div class="import-report-section-title">${escapeHtml(t.importReportRejected)}</div>
-      ${rejectedRows || `<div class="helper-text">${escapeHtml(t.importReportRejectedEmpty)}</div>`}
-    </div>
-  `;
-}
-
-// src/popup/favorites/editor-state.ts
+// src/popup/compose/template-modal/helpers.ts
 function compactVariableValues(values) {
   return Object.fromEntries(
     Object.entries(values ?? {}).map(([name, value]) => [String(name), String(value ?? "")]).filter(([, value]) => value.trim())
   );
 }
 function mergeTemplateSources(...sources) {
+  return Object.assign({}, ...sources.filter(Boolean));
+}
+function getFavoriteTemplateSources(favorite) {
+  if (favorite?.mode === "chain" && Array.isArray(favorite.steps) && favorite.steps.length > 0) {
+    return favorite.steps.map((step) => String(step?.text ?? "")).filter((text) => text.trim());
+  }
+  return [String(favorite?.text ?? "")];
+}
+function detectFavoriteTemplateVariables(favorite) {
+  const seen = /* @__PURE__ */ new Set();
+  return getFavoriteTemplateSources(favorite).flatMap((template) => detectTemplateVariables(template)).filter((variable) => {
+    if (seen.has(variable.name)) {
+      return false;
+    }
+    seen.add(variable.name);
+    return true;
+  });
+}
+
+// src/popup/compose/template-modal/preparation.ts
+function createPopupTemplatePreparation(deps) {
+  async function ensureClipboardReadPermission() {
+    try {
+      if (!chrome.permissions?.contains || !chrome.permissions?.request) {
+        return false;
+      }
+      const permission = {
+        permissions: ["clipboardRead"]
+      };
+      const alreadyGranted = await chrome.permissions.contains(permission);
+      if (alreadyGranted) {
+        return true;
+      }
+      return await chrome.permissions.request(permission);
+    } catch (error) {
+      console.error(
+        "[AI Prompt Broadcaster] Failed to request clipboardRead permission.",
+        error
+      );
+      return false;
+    }
+  }
+  async function resolveAsyncTemplateVariables(variables) {
+    const needsTabContext = variables.some(
+      (variable) => variable.name === SYSTEM_TEMPLATE_VARIABLES.url || variable.name === SYSTEM_TEMPLATE_VARIABLES.title || variable.name === SYSTEM_TEMPLATE_VARIABLES.selection
+    );
+    const needsCounter = variables.some(
+      (variable) => variable.name === SYSTEM_TEMPLATE_VARIABLES.counter
+    );
+    const extra = {};
+    if (needsTabContext) {
+      try {
+        const response = await deps.sendPopupMessage(
+          { action: "getActiveTabContext" },
+          4e3
+        );
+        if (response?.ok) {
+          extra.url = response.url ?? "";
+          extra.title = response.title ?? "";
+          extra.selection = response.selection ?? "";
+        }
+      } catch {
+      }
+    }
+    if (needsCounter) {
+      try {
+        const response = await deps.sendPopupMessage(
+          { action: "getBroadcastCounter" },
+          4e3
+        );
+        extra.counter = response?.counter != null ? String(Number(response.counter) + 1) : "1";
+      } catch {
+        extra.counter = "1";
+      }
+    }
+    return extra;
+  }
+  async function readClipboardTemplateValue() {
+    try {
+      const hasPermission = await ensureClipboardReadPermission();
+      if (!hasPermission) {
+        return {
+          ok: false,
+          text: "",
+          error: "clipboardRead permission was not granted."
+        };
+      }
+      if (!navigator.clipboard?.readText) {
+        return {
+          ok: false,
+          text: "",
+          error: "Clipboard API is not available in this context."
+        };
+      }
+      const text = await navigator.clipboard.readText();
+      return { ok: true, text };
+    } catch (error) {
+      console.error(
+        "[AI Prompt Broadcaster] Failed to read clipboard for template variable.",
+        error
+      );
+      return {
+        ok: false,
+        text: "",
+        error: error instanceof Error ? error.message : deps.getUnknownErrorText()
+      };
+    }
+  }
+  async function buildPreparedFavoriteExecutionContext(favorite) {
+    const variables = detectFavoriteTemplateVariables(favorite);
+    const needsClipboard = variables.some(
+      (variable) => variable.kind === "system" && variable.name === SYSTEM_TEMPLATE_VARIABLES.clipboard
+    );
+    const asyncExtra = await resolveAsyncTemplateVariables(variables);
+    const preparedExecutionContext = {};
+    if (typeof asyncExtra.url === "string") {
+      preparedExecutionContext.url = asyncExtra.url;
+    }
+    if (typeof asyncExtra.title === "string") {
+      preparedExecutionContext.title = asyncExtra.title;
+    }
+    if (typeof asyncExtra.selection === "string") {
+      preparedExecutionContext.selection = asyncExtra.selection;
+    }
+    if (!needsClipboard) {
+      return {
+        ok: true,
+        preparedExecutionContext
+      };
+    }
+    const clipboardResult = await readClipboardTemplateValue();
+    if (!clipboardResult.ok) {
+      return {
+        ok: false,
+        reason: "clipboard_read_failed",
+        error: clipboardResult.error || t.templateClipboardError
+      };
+    }
+    preparedExecutionContext.clipboard = clipboardResult.text ?? "";
+    return {
+      ok: true,
+      preparedExecutionContext
+    };
+  }
+  async function buildPendingTemplateSendState(prompt, targets, templateVariableCache, loadedTemplateDefaults) {
+    const variables = deps.detectTemplateVariablesForTargets(targets);
+    if (variables.length === 0) {
+      return null;
+    }
+    const baseDefaults = mergeTemplateSources(
+      templateVariableCache,
+      loadedTemplateDefaults
+    );
+    const userValues = Object.fromEntries(
+      variables.filter((variable) => variable.kind === "user").map((variable) => [variable.name, baseDefaults[variable.name] ?? ""])
+    );
+    const asyncExtra = await resolveAsyncTemplateVariables(variables);
+    const systemValues = buildSystemTemplateValues(/* @__PURE__ */ new Date(), {
+      locale: uiLanguage === "ko" ? "ko" : "en",
+      extra: asyncExtra
+    });
+    if (variables.some(
+      (variable) => variable.name === SYSTEM_TEMPLATE_VARIABLES.clipboard
+    )) {
+      const clipboardResult = await readClipboardTemplateValue();
+      if (clipboardResult.ok) {
+        systemValues[SYSTEM_TEMPLATE_VARIABLES.clipboard] = clipboardResult.text;
+      }
+    }
+    return {
+      prompt,
+      targets,
+      variables,
+      userValues,
+      systemValues
+    };
+  }
+  return {
+    readClipboardTemplateValue,
+    buildPreparedFavoriteExecutionContext,
+    buildPendingTemplateSendState
+  };
+}
+
+// src/popup/compose/template-modal/rendering.ts
+var {
+  templateModalTitle,
+  templateModalDesc,
+  templateModalSystemInfo,
+  templateFields,
+  templatePreviewLabel,
+  templatePreview,
+  templateModalError,
+  templateModalCancel,
+  templateModalConfirm
+} = popupDom.modals;
+function createPopupTemplateModalRenderer(deps) {
+  function getTemplateDisplayName(name) {
+    return getTemplateVariableDisplayName(name, uiLanguage);
+  }
+  function setTemplateModalError2(message = "") {
+    templateModalError.hidden = !message;
+    templateModalError.textContent = message;
+  }
+  function buildTemplateSendPreviewState() {
+    const modalState = state.pendingTemplateSend;
+    if (!modalState) {
+      return null;
+    }
+    const values = mergeTemplateSources(
+      modalState.systemValues,
+      modalState.userValues
+    );
+    const preview = deps.buildTemplatePreviewText(modalState.targets, values);
+    const missingUserValues = deps.findMissingTemplateValuesForTargets(
+      modalState.targets,
+      modalState.userValues
+    );
+    const clipboardRequired = modalState.variables.some(
+      (variable) => variable.name === SYSTEM_TEMPLATE_VARIABLES.clipboard
+    );
+    const clipboardMissing = clipboardRequired && !String(
+      modalState.systemValues[SYSTEM_TEMPLATE_VARIABLES.clipboard] ?? ""
+    ).length;
+    return {
+      values,
+      preview,
+      missingUserValues,
+      clipboardMissing
+    };
+  }
+  function renderTemplateModal() {
+    const modalState = state.pendingTemplateSend;
+    if (!modalState) {
+      return;
+    }
+    templateModalTitle.textContent = t.templateModalTitle;
+    templateModalDesc.textContent = t.templateModalDesc;
+    templatePreviewLabel.textContent = t.templatePreviewLabel;
+    templateModalCancel.textContent = t.templateModalCancel;
+    templateModalConfirm.textContent = t.templateModalConfirm;
+    const automaticVariables = modalState.variables.filter(
+      (variable) => variable.kind === "system"
+    );
+    if (automaticVariables.length > 0) {
+      const labels = automaticVariables.map((variable) => `{{${getTemplateDisplayName(variable.name)}}}`).join(", ");
+      const notices = [t.templateSystemNotice, labels];
+      if (automaticVariables.some(
+        (variable) => variable.name === SYSTEM_TEMPLATE_VARIABLES.clipboard
+      )) {
+        notices.push(t.templateClipboardNotice);
+      }
+      templateModalSystemInfo.hidden = false;
+      templateModalSystemInfo.textContent = notices.join(" · ");
+    } else {
+      templateModalSystemInfo.hidden = true;
+      templateModalSystemInfo.textContent = "";
+    }
+    const userVariables = modalState.variables.filter(
+      (variable) => variable.kind === "user"
+    );
+    templateFields.innerHTML = userVariables.map((variable) => {
+      const value = modalState.userValues[variable.name] ?? "";
+      return `
+          <label class="field-stack">
+            <span>${escapeHtml(t.templateFieldLabel(variable.name))}</span>
+            <input
+              class="search-input"
+              type="text"
+              data-template-input="${escapeAttribute(variable.name)}"
+              value="${escapeAttribute(value)}"
+              placeholder="${escapeAttribute(t.templateFieldPlaceholder(variable.name))}"
+            />
+          </label>
+        `;
+    }).join("");
+    const previewState = buildTemplateSendPreviewState();
+    const errorMessage = previewState?.clipboardMissing ? t.templateClipboardError : previewState && previewState.missingUserValues.length > 0 ? t.templateMissingValues : "";
+    templatePreview.textContent = previewState?.preview ?? modalState.prompt;
+    setTemplateModalError2(errorMessage);
+    templateModalConfirm.disabled = Boolean(errorMessage);
+  }
+  return {
+    setTemplateModalError: setTemplateModalError2,
+    buildTemplateSendPreviewState,
+    renderTemplateModal
+  };
+}
+
+// src/popup/compose/template-modal.ts
+var {
+  templateModal,
+  templateFields: templateFields2,
+  templateModalClose,
+  templateModalCancel: templateModalCancel2,
+  templateModalConfirm: templateModalConfirm2
+} = popupDom.modals;
+function createPopupTemplateModal(deps) {
+  const templatePreparation = createPopupTemplatePreparation({
+    sendPopupMessage: deps.sendPopupMessage,
+    detectTemplateVariablesForTargets: deps.detectTemplateVariablesForTargets,
+    getUnknownErrorText
+  });
+  const {
+    buildPreparedFavoriteExecutionContext,
+    buildPendingTemplateSendState
+  } = templatePreparation;
+  const templateRenderer = createPopupTemplateModalRenderer({
+    buildTemplatePreviewText: deps.buildTemplatePreviewText,
+    findMissingTemplateValuesForTargets: deps.findMissingTemplateValuesForTargets
+  });
+  const {
+    setTemplateModalError: setTemplateModalError2,
+    buildTemplateSendPreviewState,
+    renderTemplateModal
+  } = templateRenderer;
+  function hideTemplateModal2() {
+    state.pendingTemplateSend = null;
+    deps.closeOverlay(templateModal);
+    setTemplateModalError2("");
+  }
+  async function requestFavoriteRun2(favorite, {
+    trigger = "popup",
+    allowPopupFallback = false
+  } = {}) {
+    if (!favorite?.id) {
+      return {
+        ok: false,
+        error: getUnknownErrorText()
+      };
+    }
+    const prepared = await buildPreparedFavoriteExecutionContext(favorite);
+    if (!prepared?.ok) {
+      return prepared;
+    }
+    return await deps.sendPopupMessage(
+      {
+        action: "favorite:run",
+        favoriteId: favorite.id,
+        trigger,
+        allowPopupFallback,
+        preparedExecutionContext: prepared.preparedExecutionContext
+      },
+      1e4
+    ) ?? {
+      ok: false,
+      error: getUnknownErrorText()
+    };
+  }
+  async function maybeMarkLoadedFavoriteAsUsed() {
+    if (!state.loadedFavoriteId) {
+      return;
+    }
+    try {
+      await markFavoriteUsed(state.loadedFavoriteId);
+      state.favorites = await getPromptFavorites();
+    } catch (error) {
+      console.error(
+        "[AI Prompt Broadcaster] Failed to update favorite usage.",
+        error
+      );
+    }
+  }
+  async function openTemplateModalV22(prompt, targets) {
+    const pendingState = await buildPendingTemplateSendState(
+      prompt,
+      targets ?? [],
+      state.templateVariableCache,
+      state.loadedTemplateDefaults
+    );
+    if (!pendingState) {
+      await maybeMarkLoadedFavoriteAsUsed();
+      await deps.sendResolvedPrompt(
+        prompt,
+        deps.buildResolvedBroadcastTargets(targets)
+      );
+      return;
+    }
+    state.pendingTemplateSend = pendingState;
+    renderTemplateModal();
+    deps.openOverlay(
+      templateModal,
+      templateFields2.querySelector("input") ?? templateModalConfirm2
+    );
+  }
+  async function confirmTemplateModalSend() {
+    const modalState = state.pendingTemplateSend;
+    if (!modalState) {
+      return;
+    }
+    renderTemplateModal();
+    const previewState = buildTemplateSendPreviewState();
+    if (!previewState || previewState.missingUserValues.length > 0 || previewState.clipboardMissing) {
+      return;
+    }
+    const cachedValues = compactVariableValues(modalState.userValues);
+    await updateTemplateVariableCache(cachedValues);
+    state.templateVariableCache = mergeTemplateSources(
+      state.templateVariableCache,
+      cachedValues
+    );
+    const resolvedTargets = deps.buildResolvedBroadcastTargets(
+      modalState.targets,
+      previewState.values
+    );
+    hideTemplateModal2();
+    await maybeMarkLoadedFavoriteAsUsed();
+    await deps.sendResolvedPrompt(modalState.prompt, resolvedTargets);
+  }
+  function bindTemplateModalEvents2(onError) {
+    templateModalClose.addEventListener("click", hideTemplateModal2);
+    templateModalCancel2.addEventListener("click", hideTemplateModal2);
+    templateModal.addEventListener("click", (event) => {
+      if (event.target === templateModal) {
+        hideTemplateModal2();
+      }
+    });
+    templateFields2.addEventListener("input", (event) => {
+      const input = event.target instanceof Element ? event.target.closest("[data-template-input]") : null;
+      const templateInput = input?.dataset.templateInput;
+      if (!input || !templateInput || !state.pendingTemplateSend) {
+        return;
+      }
+      state.pendingTemplateSend.userValues[templateInput] = input.value;
+      renderTemplateModal();
+    });
+    templateModalConfirm2.addEventListener("click", () => {
+      void confirmTemplateModalSend().catch((error) => {
+        console.error(
+          "[AI Prompt Broadcaster] Template modal confirm failed.",
+          error
+        );
+        onError(
+          t.error(
+            error instanceof Error ? error.message : getUnknownErrorText()
+          )
+        );
+      });
+    });
+  }
+  return {
+    hideTemplateModal: hideTemplateModal2,
+    setTemplateModalError: setTemplateModalError2,
+    openTemplateModalV2: openTemplateModalV22,
+    bindTemplateModalEvents: bindTemplateModalEvents2,
+    requestFavoriteRun: requestFavoriteRun2
+  };
+}
+
+// src/popup/favorites/editor-state.ts
+function compactVariableValues2(values) {
+  return Object.fromEntries(
+    Object.entries(values ?? {}).map(([name, value]) => [String(name), String(value ?? "")]).filter(([, value]) => value.trim())
+  );
+}
+function mergeTemplateSources2(...sources) {
   return Object.assign({}, ...sources.filter(Boolean));
 }
 function createFavoriteEditorStep(text = "", targetSiteIds = [], delayMs = 0, preferredId = "") {
@@ -4685,7 +4745,7 @@ function syncFavoriteEditorVariables(modalState) {
   }
 }
 function buildFavoriteEditorStateFromItem(item) {
-  const baseDefaults = mergeTemplateSources(
+  const baseDefaults = mergeTemplateSources2(
     state.templateVariableCache,
     item?.templateDefaults ?? {}
   );
@@ -4718,7 +4778,7 @@ function getFavoriteById(favoriteId) {
 }
 
 // src/popup/favorites/editor-events.ts
-var { promptInput: promptInput3 } = popupDom.compose;
+var { promptInput } = popupDom.compose;
 var {
   favoriteModal,
   favoriteModalClose,
@@ -4777,7 +4837,7 @@ function createFavoriteEditorEvents(deps) {
         return;
       }
       if (nextMode === "chain") {
-        const seedText = favoritePromptInput.value || modalState.prompt || promptInput3.value || "";
+        const seedText = favoritePromptInput.value || modalState.prompt || promptInput.value || "";
         modalState.prompt = seedText;
         if (modalState.steps.length === 0 || !modalState.steps.some((step) => step.text.trim())) {
           modalState.steps = [createFavoriteEditorStep(seedText, [], 0)];
@@ -4975,7 +5035,7 @@ var {
   favoriteTitleInput
 } = popupDom.modals;
 function createFavoriteEditorPersistence(deps) {
-  const { refreshStoredData: refreshStoredData2, setFavoriteModalError: setFavoriteModalError2 } = deps;
+  const { refreshStoredData: refreshStoredData2, setFavoriteModalError } = deps;
   async function persistFavoriteEditorChanges() {
     const modalState = state.pendingFavoriteSave;
     if (!modalState) {
@@ -4995,7 +5055,7 @@ function createFavoriteEditorPersistence(deps) {
     modalState.saveDefaults = favoriteSaveDefaults2.checked;
     syncFavoriteEditorVariables(modalState);
     if (modalState.scheduleEnabled && !modalState.scheduledAt) {
-      setFavoriteModalError2(t.favoriteScheduleDateRequired);
+      setFavoriteModalError(t.favoriteScheduleDateRequired);
       return null;
     }
     if (modalState.mode === "chain") {
@@ -5006,17 +5066,17 @@ function createFavoriteEditorPersistence(deps) {
         step.id
       )).filter((step) => step.text.trim());
       if (modalState.steps.length === 0) {
-        setFavoriteModalError2(t.favoriteChainNeedsStep);
+        setFavoriteModalError(t.favoriteChainNeedsStep);
         return null;
       }
     } else if (!modalState.prompt.trim()) {
-      setFavoriteModalError2(t.warnEmpty);
+      setFavoriteModalError(t.warnEmpty);
       return null;
     }
-    const templateDefaults = modalState.saveDefaults ? compactVariableValues(modalState.defaultValues) : {};
+    const templateDefaults = modalState.saveDefaults ? compactVariableValues2(modalState.defaultValues) : {};
     if (modalState.saveDefaults) {
       await updateTemplateVariableCache(templateDefaults);
-      state.templateVariableCache = mergeTemplateSources(
+      state.templateVariableCache = mergeTemplateSources2(
         state.templateVariableCache,
         templateDefaults
       );
@@ -5100,7 +5160,7 @@ var {
   favoriteModalConfirm: favoriteModalConfirm2
 } = popupDom.modals;
 function createFavoriteEditorRenderer(deps) {
-  function setFavoriteModalError2(message = "") {
+  function setFavoriteModalError(message = "") {
     favoriteModalError.hidden = !message;
     favoriteModalError.textContent = message;
   }
@@ -5263,7 +5323,7 @@ function createFavoriteEditorRenderer(deps) {
     renderFavoriteDefaultFields();
   }
   return {
-    setFavoriteModalError: setFavoriteModalError2,
+    setFavoriteModalError,
     renderFavoriteDefaultFields,
     syncFavoriteVariableUi,
     renderFavoriteTargets,
@@ -5273,7 +5333,7 @@ function createFavoriteEditorRenderer(deps) {
 }
 
 // src/popup/favorites/favorite-editor.ts
-var { promptInput: promptInput4 } = popupDom.compose;
+var { promptInput: promptInput2 } = popupDom.compose;
 var {
   favoriteModal: favoriteModal2,
   favoriteTitleInput: favoriteTitleInput3,
@@ -5298,7 +5358,7 @@ function createFavoriteEditorFeature(deps) {
     closeOverlay: closeOverlay2
   } = deps;
   const {
-    setFavoriteModalError: setFavoriteModalError2,
+    setFavoriteModalError,
     renderFavoriteDefaultFields,
     syncFavoriteVariableUi,
     renderFavoriteModal
@@ -5308,7 +5368,7 @@ function createFavoriteEditorFeature(deps) {
   });
   const { persistFavoriteEditorChanges } = createFavoriteEditorPersistence({
     refreshStoredData: refreshStoredData2,
-    setFavoriteModalError: setFavoriteModalError2
+    setFavoriteModalError
   });
   function clearStatus2() {
     setStatus2("");
@@ -5326,17 +5386,17 @@ function createFavoriteEditorFeature(deps) {
     favoriteDefaultFields3.innerHTML = "";
     favoritePromptInput4.value = "";
   }
-  function dismissFavoriteModal2(event) {
+  function dismissFavoriteModal(event) {
     event?.preventDefault();
     event?.stopPropagation();
     hideFavoriteModal2();
   }
   async function openFavoriteModal2() {
     clearStatus2();
-    const prompt = promptInput4.value.trim();
+    const prompt = promptInput2.value.trim();
     if (!prompt) {
       setStatus2(t.warnEmpty, "error");
-      promptInput4.focus();
+      promptInput2.focus();
       return;
     }
     const loadedFavorite = state.loadedFavoriteId ? getFavoriteById(state.loadedFavoriteId) : null;
@@ -5361,7 +5421,7 @@ function createFavoriteEditorFeature(deps) {
       scheduleRepeat: "none"
     };
     state.pendingFavoriteSave = buildFavoriteEditorStateFromItem(currentItem);
-    setFavoriteModalError2("");
+    setFavoriteModalError("");
     state.pendingFavoriteRunReason = "";
     renderFavoriteModal();
     openOverlay2(favoriteModal2, favoriteTitleInput3);
@@ -5370,7 +5430,7 @@ function createFavoriteEditorFeature(deps) {
   function openFavoriteEditor2(item, options = {}) {
     state.pendingFavoriteSave = buildFavoriteEditorStateFromItem(item);
     state.pendingFavoriteRunReason = options.reason || "";
-    setFavoriteModalError2(options.reason || "");
+    setFavoriteModalError(options.reason || "");
     renderFavoriteModal();
     openOverlay2(favoriteModal2, favoriteTitleInput3);
   }
@@ -5407,7 +5467,7 @@ function createFavoriteEditorFeature(deps) {
     }
     throw new Error(response.error ?? getUnknownErrorText2());
   }
-  async function runFavoriteFromEditor2() {
+  async function runFavoriteFromEditor() {
     const favorite = await persistFavoriteEditorChanges();
     if (!favorite?.id) {
       return;
@@ -5424,1098 +5484,258 @@ function createFavoriteEditorFeature(deps) {
       return;
     }
     if (response.requiresPopupInput) {
-      setFavoriteModalError2(response.error ?? t.favoriteRunNeedsEditor);
+      setFavoriteModalError(response.error ?? t.favoriteRunNeedsEditor);
       return;
     }
-    setFavoriteModalError2(response.error ?? getUnknownErrorText2());
+    setFavoriteModalError(response.error ?? getUnknownErrorText2());
   }
   const { bindFavoriteEditorEvents: bindFavoriteEditorEvents2 } = createFavoriteEditorEvents({
-    dismissFavoriteModal: dismissFavoriteModal2,
+    dismissFavoriteModal,
     renderFavoriteModal,
     renderFavoriteDefaultFields,
     syncFavoriteVariableUi,
     confirmFavoriteSave,
-    runFavoriteFromEditor: runFavoriteFromEditor2,
-    setFavoriteModalError: setFavoriteModalError2,
+    runFavoriteFromEditor,
+    setFavoriteModalError,
     getUnknownErrorText: getUnknownErrorText2
   });
   return {
     getFavoriteById,
-    setFavoriteModalError: setFavoriteModalError2,
+    setFavoriteModalError,
     hideFavoriteModal: hideFavoriteModal2,
-    dismissFavoriteModal: dismissFavoriteModal2,
+    dismissFavoriteModal,
     openFavoriteModal: openFavoriteModal2,
     openFavoriteEditor: openFavoriteEditor2,
     confirmFavoriteSave,
     runFavoriteItem: runFavoriteItem2,
-    runFavoriteFromEditor: runFavoriteFromEditor2,
+    runFavoriteFromEditor,
     bindFavoriteEditorEvents: bindFavoriteEditorEvents2
   };
 }
 
-// src/shared/broadcast/resolution.ts
-function detectTemplateVariablesForTargets(targets = []) {
-  const seen = /* @__PURE__ */ new Set();
-  const variables = [];
-  targets.forEach((target) => {
-    detectTemplateVariables(target?.promptTemplate ?? "").forEach((variable) => {
-      if (seen.has(variable.name)) {
-        return;
-      }
-      seen.add(variable.name);
-      variables.push(variable);
-    });
-  });
-  return variables;
+// src/popup/app/list-markup.ts
+function buildEmptyState(message) {
+  return `
+    <div class="empty-state">
+      <div>${escapeHtml(message)}</div>
+      <button class="empty-action" type="button" data-switch-tab="compose">${escapeHtml(t.emptyActionCompose)}</button>
+    </div>
+  `;
 }
-function findMissingTemplateValuesForTargets(targets = [], userValues = {}) {
-  return Array.from(
-    new Set(
-      targets.flatMap(
-        (target) => findMissingTemplateValues(target?.promptTemplate ?? "", userValues)
-      )
-    )
-  );
+function getHistorySelectedSiteIds(item) {
+  return normalizeSiteIdList2(getTargetSnapshotSiteIds(item));
 }
-function resolveBroadcastTargets(targets = [], values = {}) {
-  return targets.map((target) => ({
-    ...target,
-    resolvedPrompt: renderTemplatePrompt(target?.promptTemplate ?? "", values)
-  }));
+function renderServiceBadges(siteIds = [], runtimeSites = []) {
+  return siteIds.map((siteId) => {
+    const site = runtimeSites.find((entry) => entry.id === siteId);
+    const label = getSiteIcon(site) ?? siteId.slice(0, 2).toUpperCase();
+    return `<span class="service-badge">${escapeHtml(label)}</span>`;
+  }).join("");
 }
-
-// src/popup/compose/targets.ts
-function hasTargetId(target) {
-  return typeof target.id === "string" && target.id.trim().length > 0;
-}
-function normalizeOpenSiteTab(entry) {
-  const source = entry ?? {};
-  const tabId = Number(source.tabId);
-  if (!Number.isFinite(tabId) || typeof source.siteId !== "string" || !source.siteId.trim()) {
-    return null;
-  }
-  return {
-    siteId: source.siteId.trim(),
-    siteName: typeof source.siteName === "string" ? source.siteName : "",
-    tabId,
-    title: typeof source.title === "string" ? source.title : "",
-    url: typeof source.url === "string" ? source.url : "",
-    active: Boolean(source.active),
-    status: typeof source.status === "string" ? source.status : "",
-    windowId: Number.isFinite(Number(source.windowId)) ? Number(source.windowId) : null
-  };
-}
-function createPopupTargetsController(deps) {
-  function getOpenSiteTabs2(siteId) {
-    return state.openSiteTabs.filter((tab) => tab.siteId === siteId);
-  }
-  function getDefaultTargetModeLabel2() {
-    return state.settings.reuseExistingTabs ? t.openTabsDefaultReuse : t.openTabsDefaultNew;
-  }
-  function getDefaultSiteTargetSelection() {
-    return "default";
-  }
-  function syncSiteTargetSelections2() {
-    const enabledSiteIds = new Set(deps.getEnabledSites().map((site) => site.id));
-    const nextSelections = {};
-    enabledSiteIds.forEach((siteId) => {
-      const currentSelection = state.siteTargetSelections?.[siteId];
-      const availableTabIds = new Set(getOpenSiteTabs2(siteId).map((tab) => Number(tab.tabId)));
-      if (typeof currentSelection === "number" && availableTabIds.has(currentSelection)) {
-        nextSelections[siteId] = currentSelection;
-        return;
-      }
-      if (currentSelection === "new" || currentSelection === "default") {
-        nextSelections[siteId] = currentSelection;
-        return;
-      }
-      nextSelections[siteId] = getDefaultSiteTargetSelection();
-    });
-    state.siteTargetSelections = nextSelections;
-  }
-  async function refreshOpenSiteTabs2() {
-    try {
-      const response = await deps.sendPopupMessage({ action: "getOpenAiTabs" }, 5e3);
-      const tabs = Array.isArray(response?.tabs) ? response.tabs.map((entry) => normalizeOpenSiteTab(entry)).filter((entry) => Boolean(entry)) : [];
-      state.openTabsWindowId = Number.isFinite(Number(response?.windowId)) ? Number(response?.windowId) : null;
-      state.openSiteTabs = tabs;
-      syncSiteTargetSelections2();
-    } catch (error) {
-      console.error("[AI Prompt Broadcaster] Failed to refresh open AI tabs.", error);
-      state.openTabsWindowId = null;
-      state.openSiteTabs = [];
-      syncSiteTargetSelections2();
-    }
-  }
-  function scheduleOpenSiteTabsRefresh2(delayMs = 180) {
-    if (state.openTabsRefreshTimer) {
-      window.clearTimeout(state.openTabsRefreshTimer);
-    }
-    state.openTabsRefreshTimer = window.setTimeout(() => {
-      state.openTabsRefreshTimer = null;
-      void refreshOpenSiteTabs2().then(() => deps.renderSiteCheckboxesPanel()).catch((error) => {
-        console.error("[AI Prompt Broadcaster] Scheduled AI tab refresh failed.", error);
-      });
-    }, delayMs);
-  }
-  function buildComposerBroadcastTargets2(siteIds = [], basePrompt = "") {
-    return siteIds.map((siteId) => {
-      const targetSelection = state.siteTargetSelections?.[siteId];
-      const promptOverride = typeof state.sitePromptOverrides?.[siteId] === "string" && state.sitePromptOverrides[siteId].trim() ? state.sitePromptOverrides[siteId] : "";
-      const target = {
-        id: siteId,
-        promptTemplate: promptOverride.trim() ? promptOverride : String(basePrompt ?? "")
-      };
-      if (typeof targetSelection === "number") {
-        return { ...target, tabId: targetSelection };
-      }
-      if (targetSelection === "new") {
-        return { ...target, reuseExistingTab: false, target: "new" };
-      }
-      return target;
-    });
-  }
-  function buildRuntimeBroadcastTargets2(targets = []) {
-    return (Array.isArray(targets) ? targets : []).filter(hasTargetId).map((target) => {
-      const payload = { id: target.id };
-      if (typeof target.tabId === "number") {
-        payload.tabId = target.tabId;
-        payload.target = "tab";
-      } else if (target.target === "new" || target.reuseExistingTab === false) {
-        payload.reuseExistingTab = false;
-        payload.target = "new";
-      } else if (target.target === "tab") {
-        payload.target = "tab";
-      }
-      if (typeof target.promptOverride === "string" && target.promptOverride.trim()) {
-        payload.promptOverride = target.promptOverride;
-      }
-      if (typeof target.resolvedPrompt === "string") {
-        payload.resolvedPrompt = target.resolvedPrompt;
-      }
-      return payload;
-    });
-  }
-  function detectTemplateVariablesForTargets3(targets = []) {
-    return detectTemplateVariablesForTargets(targets);
-  }
-  function findMissingTemplateValuesForTargets3(targets = [], userValues = {}) {
-    return findMissingTemplateValuesForTargets(targets, userValues);
-  }
-  function buildResolvedBroadcastTargets2(targets = [], values = {}) {
-    return resolveBroadcastTargets(targets, values);
-  }
-  function buildTemplatePreviewText2(targets = [], values = {}) {
-    const resolvedTargets = buildResolvedBroadcastTargets2(targets, values);
-    const uniquePrompts = Array.from(
-      new Set(
-        resolvedTargets.map((target) => target.resolvedPrompt).filter((prompt) => typeof prompt === "string")
-      )
-    );
-    if (uniquePrompts.length <= 1) {
-      return uniquePrompts[0] ?? "";
-    }
-    return resolvedTargets.map((target) => `[${deps.getRuntimeSiteLabel(target.id)}]
-${target.resolvedPrompt}`).join("\n\n---\n\n");
-  }
-  return {
-    getOpenSiteTabs: getOpenSiteTabs2,
-    getDefaultTargetModeLabel: getDefaultTargetModeLabel2,
-    syncSiteTargetSelections: syncSiteTargetSelections2,
-    refreshOpenSiteTabs: refreshOpenSiteTabs2,
-    scheduleOpenSiteTabsRefresh: scheduleOpenSiteTabsRefresh2,
-    buildComposerBroadcastTargets: buildComposerBroadcastTargets2,
-    buildRuntimeBroadcastTargets: buildRuntimeBroadcastTargets2,
-    detectTemplateVariablesForTargets: detectTemplateVariablesForTargets3,
-    findMissingTemplateValuesForTargets: findMissingTemplateValuesForTargets3,
-    buildResolvedBroadcastTargets: buildResolvedBroadcastTargets2,
-    buildTemplatePreviewText: buildTemplatePreviewText2
-  };
-}
-
-// src/popup/compose/send-flow.ts
-function hasTargetId2(target) {
-  return typeof target.id === "string" && target.id.trim().length > 0;
-}
-function isLastBroadcastSummary(value) {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-  const candidate = value;
-  return typeof candidate.broadcastId === "string" && typeof candidate.status === "string" && typeof candidate.prompt === "string" && Array.isArray(candidate.siteIds);
-}
-function createPopupSendFlow(deps) {
-  function getSiteCardElement(siteId) {
-    return document.querySelector(`.site-card[data-site-id="${CSS.escape(siteId)}"]`);
-  }
-  function setSiteCardState(siteId, cardState) {
-    const card = getSiteCardElement(siteId);
-    if (!card) {
-      return;
-    }
-    card.classList.remove("sending", "sent", "failed");
-    card.classList.add(cardState);
-    card.querySelector(".retry-btn")?.remove();
-  }
-  function addRetryButton(target, mainPrompt) {
-    const siteId = target.id;
-    const card = getSiteCardElement(siteId);
-    if (!card || card.querySelector(".retry-btn")) {
-      return;
-    }
-    const retryBtn = document.createElement("button");
-    retryBtn.type = "button";
-    retryBtn.className = "secondary-btn retry-btn";
-    retryBtn.textContent = "Retry";
-    retryBtn.addEventListener("click", async () => {
-      retryBtn.disabled = true;
-      setSiteCardState(siteId, "sending");
-      try {
-        await deps.refreshOpenSiteTabs();
-        const response = await deps.sendPopupMessage(
-          {
-            action: "broadcast",
-            prompt: mainPrompt,
-            sites: deps.buildRuntimeBroadcastTargets([target])
-          },
-          1e4
-        );
-        const failedIds = Array.isArray(response?.failedTabSiteIds) ? response.failedTabSiteIds : [];
-        if (response?.ok && !failedIds.includes(siteId)) {
-          setSiteCardState(siteId, "sent");
-        } else {
-          setSiteCardState(siteId, "failed");
-          addRetryButton(target, mainPrompt);
-        }
-      } catch {
-        setSiteCardState(siteId, "failed");
-        addRetryButton(target, mainPrompt);
-      }
-    });
-    card.appendChild(retryBtn);
-  }
-  function triggerRipple2(button, event) {
-    const rect = button.getBoundingClientRect();
-    const size = Math.max(rect.width, rect.height);
-    const x = event.clientX - rect.left - size / 2;
-    const y = event.clientY - rect.top - size / 2;
-    const ripple = document.createElement("span");
-    ripple.className = "ripple";
-    ripple.style.cssText = `width:${size}px;height:${size}px;left:${x}px;top:${y}px;`;
-    button.appendChild(ripple);
-    ripple.addEventListener("animationend", () => ripple.remove(), { once: true });
-  }
-  function setCardStatesFromBroadcast2(summary) {
-    document.querySelectorAll(".site-card.sent, .site-card.failed, .site-card.sending").forEach((card) => {
-      card.classList.remove("sending", "sent", "failed");
-      card.querySelector(".retry-btn")?.remove();
-    });
-    if (!summary?.siteIds?.length) {
-      return;
-    }
-    summary.siteIds.forEach((siteId) => {
-      const status = summary.siteResults?.[siteId];
-      const code = typeof status === "string" ? status : typeof status?.code === "string" ? status.code : "";
-      if (code === "submitted") {
-        setSiteCardState(siteId, "sent");
-        return;
-      }
-      if (status) {
-        setSiteCardState(siteId, "failed");
-        return;
-      }
-      if (summary.status === "sending") {
-        setSiteCardState(siteId, "sending");
-      }
-    });
-  }
-  function applyLastBroadcastState2(summary, { silentToast = false } = {}) {
-    state.lastBroadcast = summary;
-    if (!summary) {
-      deps.clearSendSafetyTimer();
-      deps.setSendingState(false);
-      deps.setStatus("");
-      return;
-    }
-    setCardStatesFromBroadcast2(summary);
-    if (summary.status === "sending") {
-      deps.setStatus(t.sending(summary.total || summary.siteIds?.length || 0));
-      deps.setSendingState(true);
-      const signature2 = deps.buildBroadcastToastSignature(summary);
-      if (!silentToast && state.lastBroadcastToastSignature !== signature2) {
-        deps.showAppToast(t.restoredBroadcastSending, "info", 2600);
-        state.lastBroadcastToastSignature = signature2;
-      }
-      return;
-    }
-    deps.clearSendSafetyTimer();
-    deps.setSendingState(false);
-    const finishedAtMs = Date.parse(summary.finishedAt || "");
-    const isRecent = Number.isFinite(finishedAtMs) && Date.now() - finishedAtMs <= 5 * 60 * 1e3;
-    const signature = deps.buildBroadcastToastSignature(summary);
-    const successCount = (summary.submittedSiteIds ?? []).length;
-    const failedCount = (summary.failedSiteIds ?? []).length;
-    if (summary.status === "submitted") {
-      deps.setStatus(t.sent(successCount || summary.total || summary.siteIds?.length || 0), "success");
-    } else {
-      const doneMessage = msg("popup_broadcast_restored_done", [String(successCount), String(failedCount)]) || `Last broadcast: ${successCount} success, ${failedCount} failed`;
-      deps.setStatus(doneMessage, failedCount > 0 ? "warning" : "success");
-    }
-    if (!silentToast && isRecent && state.lastBroadcastToastSignature !== signature) {
-      const message = msg("popup_broadcast_restored_done", [String(successCount), String(failedCount)]) || `Last broadcast: ${successCount} success, ${failedCount} failed`;
-      deps.showAppToast(
-        {
-          message,
-          type: failedCount > 0 ? "warning" : "info",
-          duration: failedCount > 0 ? -1 : 4e3
-        }
-      );
-      state.lastBroadcastToastSignature = signature;
-    }
-  }
-  async function cancelCurrentBroadcast2() {
-    const summary = state.lastBroadcast;
-    if (!summary?.broadcastId || summary.status !== "sending") {
-      deps.setSendingState(false);
-      deps.clearSendSafetyTimer();
-      return;
-    }
-    try {
-      const response = await deps.sendPopupMessage(
-        {
-          action: "cancelBroadcast",
-          broadcastId: summary.broadcastId
-        },
-        5e3
-      );
-      if (response?.ok) {
-        applyLastBroadcastState2(response.summary ?? summary, { silentToast: true });
-        deps.setStatus(t.broadcastCancelled, "warning");
-        deps.showAppToast(t.broadcastCancelled, "warning", 2600);
-        return;
-      }
-      applyLastBroadcastState2(response?.summary ?? summary, { silentToast: true });
-      deps.setStatus(t.error(deps.getUnknownErrorText()), "error");
-    } catch (error) {
-      console.error("[AI Prompt Broadcaster] Failed to cancel broadcast.", error);
-      deps.setStatus(t.error(deps.getErrorMessage(error)), "error");
-    } finally {
-      if (state.lastBroadcast?.status !== "sending") {
-        deps.setSendingState(false);
-      }
-    }
-  }
-  async function sendResolvedPrompt2(mainPrompt, targets) {
-    if (state.isSending) {
-      return;
-    }
-    const siteIds = normalizeSiteIdList2(
-      (Array.isArray(targets) ? targets : []).map((target) => target?.id)
-    );
-    deps.setSendingState(true);
-    deps.armSendSafetyTimer();
-    siteIds.forEach((siteId) => setSiteCardState(siteId, "sending"));
-    deps.setStatus(t.sending(siteIds.length));
-    try {
-      await deps.refreshOpenSiteTabs();
-      await deps.setLastSentPrompt(mainPrompt);
-      clearAllToasts();
-      const response = await deps.sendPopupMessage(
-        {
-          action: "broadcast",
-          prompt: mainPrompt,
-          sites: deps.buildRuntimeBroadcastTargets(targets)
-        },
-        1e4
-      );
-      if (response?.ok) {
-        if (Array.isArray(response.failedTabSiteIds)) {
-          response.failedTabSiteIds.forEach((siteId) => {
-            setSiteCardState(siteId, "failed");
-            const failedTarget = targets.find(
-              (target) => hasTargetId2(target) && target.id === siteId
-            );
-            if (failedTarget) {
-              addRetryButton(failedTarget, mainPrompt);
-            }
-          });
-        }
-        deps.setStatus(t.sending(response.createdSiteCount ?? siteIds.length), "warning");
-        deps.showAppToast(t.toastSendSuccess(response.createdSiteCount ?? siteIds.length), "success", 2200);
-        if (state.settings.autoClosePopup) {
-          window.close();
-        }
-      } else {
-        siteIds.forEach((siteId) => {
-          setSiteCardState(siteId, "failed");
-          const failedTarget = targets.find(
-            (target) => hasTargetId2(target) && target.id === siteId
-          );
-          if (failedTarget) {
-            addRetryButton(failedTarget, mainPrompt);
-          }
-        });
-        deps.setStatus(t.error(response?.error ?? deps.getUnknownErrorText()), "error");
-      }
-    } catch (error) {
-      console.error("[AI Prompt Broadcaster] Broadcast send failed.", error);
-      siteIds.forEach((siteId) => {
-        setSiteCardState(siteId, "failed");
-        const failedTarget = targets.find(
-          (target) => hasTargetId2(target) && target.id === siteId
-        );
-        if (failedTarget) {
-          addRetryButton(failedTarget, mainPrompt);
-        }
-      });
-      deps.setStatus(t.error(deps.getErrorMessage(error)), "error");
-      deps.showAppToast(t.error(deps.getErrorMessage(error)), "error", 4e3);
-      deps.setSendingState(false);
-      deps.clearSendSafetyTimer();
-    } finally {
-      if (state.lastBroadcast?.status !== "sending") {
-        deps.setSendingState(false);
-      }
-    }
-  }
-  return {
-    applyLastBroadcastState: applyLastBroadcastState2,
-    cancelCurrentBroadcast: cancelCurrentBroadcast2,
-    setCardStatesFromBroadcast: setCardStatesFromBroadcast2,
-    sendResolvedPrompt: sendResolvedPrompt2,
-    triggerRipple: triggerRipple2
-  };
-}
-
-// src/popup/compose/template-modal.ts
-var {
-  templateModal,
-  templateModalTitle,
-  templateModalDesc,
-  templateModalClose,
-  templateModalSystemInfo,
-  templateFields,
-  templatePreviewLabel,
-  templatePreview,
-  templateModalError,
-  templateModalCancel,
-  templateModalConfirm
-} = popupDom.modals;
-function compactVariableValues2(values) {
-  return Object.fromEntries(
-    Object.entries(values ?? {}).map(([name, value]) => [String(name), String(value ?? "")]).filter(([, value]) => value.trim())
-  );
-}
-function mergeTemplateSources2(...sources) {
-  return Object.assign({}, ...sources.filter(Boolean));
-}
-function createPopupTemplateModal(deps) {
-  function getTemplateDisplayName(name) {
-    return getTemplateVariableDisplayName(name, uiLanguage);
-  }
-  function setTemplateModalError2(message = "") {
-    templateModalError.hidden = !message;
-    templateModalError.textContent = message;
-  }
-  function hideTemplateModal2() {
-    state.pendingTemplateSend = null;
-    deps.closeOverlay(templateModal);
-    templateModalError.hidden = true;
-    templateModalError.textContent = "";
-  }
-  async function ensureClipboardReadPermission() {
-    try {
-      if (!chrome.permissions?.contains || !chrome.permissions?.request) {
-        return false;
-      }
-      const permission = {
-        permissions: ["clipboardRead"]
-      };
-      const alreadyGranted = await chrome.permissions.contains(permission);
-      if (alreadyGranted) {
-        return true;
-      }
-      return await chrome.permissions.request(permission);
-    } catch (error) {
-      console.error("[AI Prompt Broadcaster] Failed to request clipboardRead permission.", error);
-      return false;
-    }
-  }
-  async function resolveAsyncTemplateVariables(variables) {
-    const needsTabContext = variables.some(
-      (v) => v.name === SYSTEM_TEMPLATE_VARIABLES.url || v.name === SYSTEM_TEMPLATE_VARIABLES.title || v.name === SYSTEM_TEMPLATE_VARIABLES.selection
-    );
-    const needsCounter = variables.some((v) => v.name === SYSTEM_TEMPLATE_VARIABLES.counter);
-    const extra = {};
-    if (needsTabContext) {
-      try {
-        const response = await deps.sendPopupMessage(
-          { action: "getActiveTabContext" },
-          4e3
-        );
-        if (response?.ok) {
-          extra.url = response.url ?? "";
-          extra.title = response.title ?? "";
-          extra.selection = response.selection ?? "";
-        }
-      } catch {
-      }
-    }
-    if (needsCounter) {
-      try {
-        const response = await deps.sendPopupMessage(
-          { action: "getBroadcastCounter" },
-          4e3
-        );
-        extra.counter = response?.counter != null ? String(Number(response.counter) + 1) : "1";
-      } catch {
-        extra.counter = "1";
-      }
-    }
-    return extra;
-  }
-  async function readClipboardTemplateValue() {
-    try {
-      const hasPermission = await ensureClipboardReadPermission();
-      if (!hasPermission) {
-        return {
-          ok: false,
-          text: "",
-          error: "clipboardRead permission was not granted."
-        };
-      }
-      if (!navigator.clipboard?.readText) {
-        return {
-          ok: false,
-          text: "",
-          error: "Clipboard API is not available in this context."
-        };
-      }
-      const text = await navigator.clipboard.readText();
-      return { ok: true, text };
-    } catch (error) {
-      console.error("[AI Prompt Broadcaster] Failed to read clipboard for template variable.", error);
-      return {
-        ok: false,
-        text: "",
-        error: error instanceof Error ? error.message : getUnknownErrorText()
-      };
-    }
-  }
-  function getFavoriteTemplateSources(favorite) {
-    if (favorite?.mode === "chain" && Array.isArray(favorite.steps) && favorite.steps.length > 0) {
-      return favorite.steps.map((step) => String(step?.text ?? "")).filter((text) => text.trim());
-    }
-    return [String(favorite?.text ?? "")];
-  }
-  function detectFavoriteTemplateVariables(favorite) {
-    const seen = /* @__PURE__ */ new Set();
-    return getFavoriteTemplateSources(favorite).flatMap((template) => detectTemplateVariables(template)).filter((variable) => {
-      if (seen.has(variable.name)) {
-        return false;
-      }
-      seen.add(variable.name);
-      return true;
-    });
-  }
-  async function buildPreparedFavoriteExecutionContext(favorite) {
-    const variables = detectFavoriteTemplateVariables(favorite);
-    const needsClipboard = variables.some(
-      (variable) => variable.kind === "system" && variable.name === SYSTEM_TEMPLATE_VARIABLES.clipboard
-    );
-    const asyncExtra = await resolveAsyncTemplateVariables(variables);
-    const preparedExecutionContext = {};
-    if (typeof asyncExtra.url === "string") {
-      preparedExecutionContext.url = asyncExtra.url;
-    }
-    if (typeof asyncExtra.title === "string") {
-      preparedExecutionContext.title = asyncExtra.title;
-    }
-    if (typeof asyncExtra.selection === "string") {
-      preparedExecutionContext.selection = asyncExtra.selection;
-    }
-    if (!needsClipboard) {
-      return {
-        ok: true,
-        preparedExecutionContext
-      };
-    }
-    const clipboardResult = await readClipboardTemplateValue();
-    if (!clipboardResult.ok) {
-      return {
-        ok: false,
-        reason: "clipboard_read_failed",
-        error: clipboardResult.error || t.templateClipboardError
-      };
-    }
-    preparedExecutionContext.clipboard = clipboardResult.text ?? "";
-    return {
-      ok: true,
-      preparedExecutionContext
-    };
-  }
-  async function requestFavoriteRun2(favorite, {
-    trigger = "popup",
-    allowPopupFallback = false
-  } = {}) {
-    if (!favorite?.id) {
-      return {
-        ok: false,
-        error: getUnknownErrorText()
-      };
-    }
-    const prepared = await buildPreparedFavoriteExecutionContext(favorite);
-    if (!prepared?.ok) {
-      return prepared;
-    }
-    return await deps.sendPopupMessage(
-      {
-        action: "favorite:run",
-        favoriteId: favorite.id,
-        trigger,
-        allowPopupFallback,
-        preparedExecutionContext: prepared.preparedExecutionContext
-      },
-      1e4
-    ) ?? {
-      ok: false,
-      error: getUnknownErrorText()
-    };
-  }
-  async function maybeMarkLoadedFavoriteAsUsed() {
-    if (!state.loadedFavoriteId) {
-      return;
-    }
-    try {
-      await markFavoriteUsed(state.loadedFavoriteId);
-      state.favorites = await getPromptFavorites();
-    } catch (error) {
-      console.error("[AI Prompt Broadcaster] Failed to update favorite usage.", error);
-    }
-  }
-  function buildTemplateSendPreviewStateV2() {
-    const modalState = state.pendingTemplateSend;
-    if (!modalState) {
-      return null;
-    }
-    const values = mergeTemplateSources2(modalState.systemValues, modalState.userValues);
-    const preview = deps.buildTemplatePreviewText(modalState.targets, values);
-    const missingUserValues = deps.findMissingTemplateValuesForTargets(
-      modalState.targets,
-      modalState.userValues
-    );
-    const clipboardRequired = modalState.variables.some(
-      (variable) => variable.name === SYSTEM_TEMPLATE_VARIABLES.clipboard
-    );
-    const clipboardMissing = clipboardRequired && !String(modalState.systemValues[SYSTEM_TEMPLATE_VARIABLES.clipboard] ?? "").length;
-    return {
-      values,
-      preview,
-      missingUserValues,
-      clipboardMissing
-    };
-  }
-  function renderTemplateModalV2() {
-    const modalState = state.pendingTemplateSend;
-    if (!modalState) {
-      return;
-    }
-    templateModalTitle.textContent = t.templateModalTitle;
-    templateModalDesc.textContent = t.templateModalDesc;
-    templatePreviewLabel.textContent = t.templatePreviewLabel;
-    templateModalCancel.textContent = t.templateModalCancel;
-    templateModalConfirm.textContent = t.templateModalConfirm;
-    const automaticVariables = modalState.variables.filter((variable) => variable.kind === "system");
-    if (automaticVariables.length > 0) {
-      const labels = automaticVariables.map((variable) => `{{${getTemplateDisplayName(variable.name)}}}`).join(", ");
-      const notices = [t.templateSystemNotice, labels];
-      if (automaticVariables.some((variable) => variable.name === SYSTEM_TEMPLATE_VARIABLES.clipboard)) {
-        notices.push(t.templateClipboardNotice);
-      }
-      templateModalSystemInfo.hidden = false;
-      templateModalSystemInfo.textContent = notices.join(" · ");
-    } else {
-      templateModalSystemInfo.hidden = true;
-      templateModalSystemInfo.textContent = "";
-    }
-    const userVariables = modalState.variables.filter((variable) => variable.kind === "user");
-    templateFields.innerHTML = userVariables.map((variable) => {
-      const value = modalState.userValues[variable.name] ?? "";
-      return `
-          <label class="field-stack">
-            <span>${escapeHtml(t.templateFieldLabel(variable.name))}</span>
-            <input
-              class="search-input"
-              type="text"
-              data-template-input="${escapeAttribute(variable.name)}"
-              value="${escapeAttribute(value)}"
-              placeholder="${escapeAttribute(t.templateFieldPlaceholder(variable.name))}"
-            />
-          </label>
-        `;
-    }).join("");
-    const previewState = buildTemplateSendPreviewStateV2();
-    const errorMessage = previewState?.clipboardMissing ? t.templateClipboardError : previewState && previewState.missingUserValues.length > 0 ? t.templateMissingValues : "";
-    templatePreview.textContent = previewState?.preview ?? modalState.prompt;
-    setTemplateModalError2(errorMessage);
-    templateModalConfirm.disabled = Boolean(errorMessage);
-  }
-  async function openTemplateModalV22(prompt, targets) {
-    const variables = deps.detectTemplateVariablesForTargets(targets);
-    if (variables.length === 0) {
-      await maybeMarkLoadedFavoriteAsUsed();
-      await deps.sendResolvedPrompt(prompt, deps.buildResolvedBroadcastTargets(targets));
-      return;
-    }
-    const baseDefaults = mergeTemplateSources2(
-      state.templateVariableCache,
-      state.loadedTemplateDefaults
-    );
-    const userValues = Object.fromEntries(
-      variables.filter((variable) => variable.kind === "user").map((variable) => [variable.name, baseDefaults[variable.name] ?? ""])
-    );
-    const asyncExtra = await resolveAsyncTemplateVariables(variables);
-    const systemValues = buildSystemTemplateValues(/* @__PURE__ */ new Date(), {
-      locale: uiLanguage === "ko" ? "ko" : "en",
-      extra: asyncExtra
-    });
-    if (variables.some((variable) => variable.name === SYSTEM_TEMPLATE_VARIABLES.clipboard)) {
-      const clipboardResult = await readClipboardTemplateValue();
-      if (clipboardResult.ok) {
-        systemValues[SYSTEM_TEMPLATE_VARIABLES.clipboard] = clipboardResult.text;
-      }
-    }
-    state.pendingTemplateSend = {
-      prompt,
-      targets,
-      variables,
-      userValues,
-      systemValues
-    };
-    renderTemplateModalV2();
-    deps.openOverlay(templateModal, templateFields.querySelector("input") ?? templateModalConfirm);
-  }
-  async function confirmTemplateModalSend() {
-    const modalState = state.pendingTemplateSend;
-    if (!modalState) {
-      return;
-    }
-    renderTemplateModalV2();
-    const previewState = buildTemplateSendPreviewStateV2();
-    if (!previewState || previewState.missingUserValues.length > 0 || previewState.clipboardMissing) {
-      return;
-    }
-    const cachedValues = compactVariableValues2(modalState.userValues);
-    await updateTemplateVariableCache(cachedValues);
-    state.templateVariableCache = mergeTemplateSources2(state.templateVariableCache, cachedValues);
-    const resolvedTargets = deps.buildResolvedBroadcastTargets(modalState.targets, previewState.values);
-    hideTemplateModal2();
-    await maybeMarkLoadedFavoriteAsUsed();
-    await deps.sendResolvedPrompt(modalState.prompt, resolvedTargets);
-  }
-  function bindTemplateModalEvents2(onError) {
-    templateModalClose.addEventListener("click", hideTemplateModal2);
-    templateModalCancel.addEventListener("click", hideTemplateModal2);
-    templateModal.addEventListener("click", (event) => {
-      if (event.target === templateModal) {
-        hideTemplateModal2();
-      }
-    });
-    templateFields.addEventListener("input", (event) => {
-      const input = event.target instanceof Element ? event.target.closest("[data-template-input]") : null;
-      const templateInput = input?.dataset.templateInput;
-      if (!input || !templateInput || !state.pendingTemplateSend) {
-        return;
-      }
-      state.pendingTemplateSend.userValues[templateInput] = input.value;
-      renderTemplateModalV2();
-    });
-    templateModalConfirm.addEventListener("click", () => {
-      void confirmTemplateModalSend().catch((error) => {
-        console.error("[AI Prompt Broadcaster] Template modal confirm failed.", error);
-        onError(t.error(error instanceof Error ? error.message : getUnknownErrorText()));
-      });
-    });
-  }
-  return {
-    hideTemplateModal: hideTemplateModal2,
-    setTemplateModalError: setTemplateModalError2,
-    openTemplateModalV2: openTemplateModalV22,
-    bindTemplateModalEvents: bindTemplateModalEvents2,
-    requestFavoriteRun: requestFavoriteRun2
-  };
-}
-
-// src/popup/history/controller.ts
-var { historyList: historyList2 } = popupDom.history;
-function filterItems(items, query) {
-  const normalizedQuery = query.trim().toLowerCase();
-  if (!normalizedQuery) {
-    return items;
-  }
-  return items.filter(
-    (item) => String(item.text).toLowerCase().includes(normalizedQuery)
-  );
-}
-function createHistoryController(deps) {
+function buildHistoryItemMarkup(item, options = {}) {
   const {
-    switchTab: switchTab2,
-    loadPromptIntoComposer: loadPromptIntoComposer2,
-    openResendModal: openResendModal2,
-    renderFavoritesList: renderFavoritesList2,
-    setStatus: setStatus2,
-    showAppToast: showAppToast2
-  } = deps;
-  function renderHistoryList2() {
-    const items = sortHistoryItemsForDisplay(
-      filterItems(state.history, state.historySearch),
-      state.settings.historySort
-    );
-    if (items.length === 0) {
-      historyList2.innerHTML = buildEmptyState(
-        state.historySearch ? t.noSearchResults : t.historyEmpty
-      );
-      return;
-    }
-    historyList2.innerHTML = items.map((item) => buildHistoryItemMarkup(item, {
-      openMenuKey: state.openMenuKey,
-      runtimeSites: state.runtimeSites
-    })).join("");
+    openMenuKey = null,
+    runtimeSites = []
+  } = options;
+  const menuKey = `history:${item.id}`;
+  return `
+    <article class="prompt-item" data-history-id="${item.id}" role="listitem">
+      <button class="prompt-main" type="button" data-load-history="${item.id}">
+        <div class="prompt-preview">${escapeHtml(previewText(item.text))}</div>
+        <div class="prompt-meta">
+          <div class="service-icons">${renderServiceBadges(getHistorySelectedSiteIds(item), runtimeSites)}</div>
+          <span>${escapeHtml(formatDate(item.createdAt))}</span>
+        </div>
+      </button>
+      <div class="prompt-actions">
+        <button class="menu-button" type="button" aria-haspopup="menu" aria-expanded="${openMenuKey === menuKey ? "true" : "false"}" aria-label="${escapeAttribute(t.menuMore)}" data-toggle-menu="${escapeAttribute(menuKey)}">...</button>
+        <div class="item-menu ${openMenuKey === menuKey ? "open" : ""}">
+          <button class="menu-item" type="button" data-action="resend-history" data-history-id="${item.id}">${escapeHtml(t.historyResend)}</button>
+          <button class="menu-item" type="button" data-action="favorite" data-history-id="${item.id}">${escapeHtml(t.addFavorite)}</button>
+          <button class="menu-item danger" type="button" data-action="delete-history" data-history-id="${item.id}">${escapeHtml(t.delete)}</button>
+        </div>
+      </div>
+    </article>
+  `;
+}
+function buildFavoriteTagsMarkup(item) {
+  const tags = Array.isArray(item.tags) ? item.tags : [];
+  const folder = typeof item.folder === "string" && item.folder.trim() ? item.folder.trim() : "";
+  const pinIcon = item.pinned ? `<span class="fav-pin-icon" title="${escapeHtml(msg("popup_favorite_pinned") || "Pinned")}">📌</span>` : "";
+  const folderBadge = folder ? `<span class="fav-folder-badge" data-filter-folder="${escapeAttribute(folder)}">📁 ${escapeHtml(folder)}</span>` : "";
+  const kindBadge = item.mode === "chain" ? `<span class="fav-type-badge chain">${escapeHtml(t.favoriteKindChain)}</span>` : `<span class="fav-type-badge">${escapeHtml(t.favoriteKindSingle)}</span>`;
+  const scheduleBadge = item.scheduleEnabled && item.scheduledAt ? `<span class="fav-schedule-badge">${escapeHtml(t.favoriteScheduledBadge)}</span>` : "";
+  const stepCount = item.mode === "chain" && Array.isArray(item.steps) && item.steps.length > 0 ? `<span class="fav-step-count">${escapeHtml(t.favoriteStepCount(item.steps.length))}</span>` : "";
+  const tagChips = tags.map(
+    (tag) => `<span class="fav-tag-chip" data-filter-tag="${escapeAttribute(tag)}">#${escapeHtml(tag)}</span>`
+  ).join("");
+  if (!pinIcon && !folderBadge && !tagChips && !kindBadge && !scheduleBadge && !stepCount) {
+    return "";
   }
-  async function handleHistoryAction(action, historyId) {
-    const item = state.history.find((entry) => Number(entry.id) === Number(historyId));
-    if (!item) {
-      return;
-    }
-    if (action === "favorite") {
-      await addFavoriteFromHistory(item);
-      state.favorites = await getPromptFavorites();
-      state.openMenuKey = null;
-      renderFavoritesList2();
-      renderHistoryList2();
-      setStatus2(t.favoriteAdded, "success");
-      showAppToast2(t.favoriteAdded, "success", 2200);
-      return;
-    }
-    if (action === "resend-history") {
-      state.openMenuKey = null;
-      renderHistoryList2();
-      openResendModal2(item);
-      return;
-    }
-    if (action === "delete-history") {
-      if (!historyId) {
-        return;
-      }
-      await deletePromptHistoryItem(historyId);
-      state.history = await getPromptHistory();
-      state.openMenuKey = null;
-      renderHistoryList2();
-      setStatus2(t.historyDeleted, "success");
-      showAppToast2(t.toastHistoryDeleted, "info", 2200);
-    }
+  return `<div class="fav-meta-row">${pinIcon}${kindBadge}${scheduleBadge}${stepCount}${folderBadge}${tagChips}</div>`;
+}
+function buildFavoriteJobMarkup(job) {
+  if (!job?.jobId) {
+    return "";
   }
-  function handleHistoryListClick(event) {
-    const target = event.target instanceof Element ? event.target : null;
-    const switchButton = target?.closest("[data-switch-tab='compose']");
-    if (switchButton) {
-      switchTab2("compose");
-      return;
-    }
-    const loadButton = target?.closest("[data-load-history]");
-    if (loadButton) {
-      const item = state.history.find(
-        (entry) => Number(entry.id) === Number(loadButton.dataset.loadHistory)
-      );
-      if (item) {
-        loadPromptIntoComposer2({ ...item, templateDefaults: {}, title: "" });
-      }
-      return;
-    }
-    const menuToggle = target?.closest("[data-toggle-menu]");
-    if (menuToggle) {
-      const menuKey = menuToggle.dataset.toggleMenu ?? null;
-      state.openMenuKey = state.openMenuKey === menuKey ? null : menuKey;
-      renderHistoryList2();
-      return;
-    }
-    const actionButton = target?.closest("[data-action][data-history-id]");
-    if (actionButton) {
-      void handleHistoryAction(
-        actionButton.dataset.action,
-        actionButton.dataset.historyId
-      ).catch((error) => {
-        console.error("[AI Prompt Broadcaster] History action failed.", error);
-      });
-    }
+  const statusLabel = job.status === "queued" ? msg("favorite_job_status_queued") || "Queued" : job.status === "running" ? msg("favorite_job_status_running") || "Running" : job.status === "completed" ? msg("favorite_job_status_completed") || "Done" : job.status === "failed" ? msg("favorite_job_status_failed") || "Failed" : msg("favorite_job_status_skipped") || "Skipped";
+  const detail = job.stepCount > 1 ? `${Math.min(Number(job.completedSteps ?? 0), Number(job.stepCount ?? 0))}/${Number(job.stepCount ?? 0)}` : "";
+  return `
+    <div class="fav-job-row">
+      <span class="fav-job-badge ${escapeAttribute(job.status)}">${escapeHtml(statusLabel)}</span>
+      ${detail ? `<span class="fav-job-detail">${escapeHtml(detail)}</span>` : ""}
+    </div>
+  `;
+}
+function buildFavoriteItemMarkup(item, options = {}) {
+  const {
+    openMenuKey = null,
+    runtimeSites = [],
+    latestJob = null
+  } = options;
+  const menuKey = `favorite:${item.id}`;
+  const safeFavoriteId = escapeAttribute(item.id);
+  const pinLabel = item.pinned ? msg("popup_favorite_unpin") || "Unpin" : msg("popup_favorite_pin") || "Pin";
+  const primaryAction = item.mode === "chain" ? "edit-favorite" : "load-favorite";
+  return `
+    <article class="prompt-item${item.pinned ? " pinned-item" : ""}" data-favorite-id="${safeFavoriteId}" role="listitem">
+      <div class="favorite-title-row">
+        <span class="favorite-star">${escapeHtml(t.favoriteStar)}</span>
+        <input
+          class="favorite-title-input"
+          type="text"
+          data-favorite-title="${safeFavoriteId}"
+          value="${escapeAttribute(item.title)}"
+          placeholder="${escapeAttribute(t.titlePlaceholder)}"
+        />
+      </div>
+      ${buildFavoriteTagsMarkup(item)}
+      ${buildFavoriteJobMarkup(latestJob)}
+      <button class="prompt-main" type="button" data-${primaryAction}="${safeFavoriteId}">
+        <div class="prompt-preview">${escapeHtml(previewText(item.text))}</div>
+        <div class="prompt-meta">
+          <div class="service-icons">${renderServiceBadges(item.sentTo, runtimeSites)}</div>
+          <span>${escapeHtml(formatDate(item.createdAt))}</span>
+        </div>
+      </button>
+      <div class="prompt-actions">
+        <button class="menu-button" type="button" aria-haspopup="menu" aria-expanded="${openMenuKey === menuKey ? "true" : "false"}" aria-label="${escapeAttribute(t.menuMore)}" data-toggle-menu="${escapeAttribute(menuKey)}">...</button>
+        <div class="item-menu ${openMenuKey === menuKey ? "open" : ""}">
+          <button class="menu-item" type="button" data-action="run-favorite" data-favorite-id="${safeFavoriteId}">${escapeHtml(t.favoriteRunNow)}</button>
+          <button class="menu-item" type="button" data-action="edit-favorite" data-favorite-id="${safeFavoriteId}">${escapeHtml(t.favoriteEdit)}</button>
+          <button class="menu-item" type="button" data-action="duplicate-favorite" data-favorite-id="${safeFavoriteId}">${escapeHtml(t.favoriteDuplicate)}</button>
+          <button class="menu-item" type="button" data-action="toggle-pin-favorite" data-favorite-id="${safeFavoriteId}">${escapeHtml(pinLabel)}</button>
+          <button class="menu-item danger" type="button" data-action="delete-favorite" data-favorite-id="${safeFavoriteId}">${escapeHtml(t.delete)}</button>
+        </div>
+      </div>
+    </article>
+  `;
+}
+function buildImportReportMarkup(summary) {
+  if (!summary) {
+    return "";
   }
-  function handleHistoryListContextMenu(event) {
-    const target = event.target instanceof Element ? event.target : null;
-    const item = target?.closest("[data-history-id]");
-    if (!item) {
-      return;
-    }
-    event.preventDefault();
-    state.openMenuKey = `history:${item.dataset.historyId}`;
-    renderHistoryList2();
-  }
-  return {
-    renderHistoryList: renderHistoryList2,
-    handleHistoryAction,
-    handleHistoryListClick,
-    handleHistoryListContextMenu
-  };
+  const rejectedRows = (summary.customSites?.rejected ?? []).map((entry) => {
+    const origins = Array.isArray(entry.origins) && entry.origins.length > 0 ? `<div class="helper-text">${escapeHtml(entry.origins.join(", "))}</div>` : "";
+    const errors = Array.isArray(entry.errors) && entry.errors.length > 0 ? `<div class="helper-text">${escapeHtml(entry.errors.join(" "))}</div>` : "";
+    return `
+      <div class="import-report-row">
+        <strong>${escapeHtml(entry.name ?? entry.id ?? "-")}</strong>
+        <div>${escapeHtml(t.importRejectReason(entry.reason ?? "unknown"))}</div>
+        ${origins}
+        ${errors}
+      </div>
+    `;
+  }).join("");
+  const rewrittenSummary = (summary.customSites?.rewrittenIds ?? []).map((entry) => `${entry.from} -> ${entry.to}`).join(", ");
+  return `
+    <div class="import-report-grid">
+      <div class="import-report-row"><strong>${escapeHtml(t.importReportVersion)}</strong><div>${escapeHtml(`v${summary.version} (from v${summary.migratedFromVersion})`)}</div></div>
+      <div class="import-report-row"><strong>${escapeHtml(t.importReportAccepted)}</strong><div>${escapeHtml(String(summary.customSites?.acceptedNames?.join(", ") || "-"))}</div></div>
+      <div class="import-report-row"><strong>${escapeHtml(t.importReportRewritten)}</strong><div>${escapeHtml(rewrittenSummary || "-")}</div></div>
+      <div class="import-report-row"><strong>${escapeHtml(t.importReportBuiltins)}</strong><div>${escapeHtml([
+    ...summary.builtInSiteOverrides?.adjustedIds ?? [],
+    ...summary.builtInSiteOverrides?.droppedIds ?? [],
+    ...summary.builtInSiteStates?.droppedIds ?? []
+  ].join(", ") || "-")}</div></div>
+      <div class="import-report-section-title">${escapeHtml(t.importReportRejected)}</div>
+      ${rejectedRows || `<div class="helper-text">${escapeHtml(t.importReportRejectedEmpty)}</div>`}
+    </div>
+  `;
 }
 
-// src/popup/history/modals.ts
-var {
-  resendModal,
-  resendModalTitle: resendModalTitle2,
-  resendModalDesc: resendModalDesc2,
-  resendModalSites,
-  resendModalClose,
-  resendModalCancel: resendModalCancel2,
-  resendModalConfirm: resendModalConfirm2,
-  importReportModal,
-  importReportModalTitle: importReportModalTitle2,
-  importReportModalDesc: importReportModalDesc2,
-  importReportBody,
-  importReportModalClose,
-  importReportModalConfirm: importReportModalConfirm2
-} = popupDom.modals;
-function createPopupHistoryModals(deps) {
-  function getUnavailableReason(snapshot, site) {
-    if (!site) {
-      return t.resendSiteUnavailable;
-    }
-    if (snapshot.targetMode === "tab") {
-      return msg("popup_resend_selected_tab_unavailable") || "Selected tab unavailable";
-    }
-    return t.resendSiteUnavailable;
-  }
-  function isSnapshotAvailable(snapshot, site, availableSiteIds) {
-    if (!site || !availableSiteIds.has(snapshot.siteId)) {
-      return false;
-    }
-    if (snapshot.targetMode !== "tab") {
-      return true;
-    }
-    if (!snapshot.targetTabId) {
-      return false;
-    }
-    return deps.openSiteTabs().some(
-      (tab) => tab.siteId === snapshot.siteId && Number(tab.tabId) === Number(snapshot.targetTabId)
-    );
-  }
-  function hideResendModal2() {
-    state.pendingResendHistory = null;
-    resendModalConfirm2.disabled = false;
-    deps.closeOverlay(resendModal);
-  }
-  function openResendModal2(historyItem) {
-    state.pendingResendHistory = historyItem;
-    resendModalTitle2.textContent = t.resendModalTitle;
-    resendModalDesc2.textContent = t.resendModalDesc;
-    resendModalCancel2.textContent = t.resendModalCancel;
-    resendModalConfirm2.textContent = t.resendModalConfirm;
-    const snapshots = ensureBroadcastTargetSnapshots(
-      historyItem.targetSnapshots,
-      historyItem.requestedSiteIds,
-      historyItem.text
-    );
-    const requestedSiteIds = getHistorySelectedSiteIds(historyItem);
-    const availableSiteIds = new Set(deps.getEnabledSites().map((site) => site.id));
-    let selectableCount = 0;
-    resendModalSites.innerHTML = requestedSiteIds.map((siteId) => {
-      const site = deps.runtimeSites().find((entry) => entry.id === siteId);
-      const snapshot = snapshots.find((entry) => entry.siteId === siteId) ?? null;
-      const disabled = !snapshot || !isSnapshotAvailable(snapshot, site, availableSiteIds);
-      const reason = snapshot ? getUnavailableReason(snapshot, site) : t.resendSiteUnavailable;
-      if (!disabled) {
-        selectableCount += 1;
-      }
-      return `
-        <label class="checkbox-row">
-          <input type="checkbox" value="${escapeAttribute(siteId)}" data-resend-site="${escapeAttribute(siteId)}" ${disabled ? "disabled" : "checked"} />
-          <span>${escapeHtml(site?.name ?? siteId)}${disabled ? ` (${escapeHtml(reason)})` : ""}</span>
-        </label>
-      `;
-    }).join("");
-    resendModalConfirm2.disabled = selectableCount === 0;
-    resendModalDesc2.textContent = selectableCount === 0 ? `${t.resendModalDesc} ${msg("popup_resend_no_available_targets") || "No previously selected targets are currently available."}` : t.resendModalDesc;
-    deps.openOverlay(
-      resendModal,
-      resendModalSites.querySelector("input:not([disabled])")
-    );
-  }
-  async function confirmResendModal() {
-    const historyItem = state.pendingResendHistory;
-    if (!historyItem) {
-      return;
-    }
-    const selectedSiteIds = Array.from(
-      resendModalSites.querySelectorAll("[data-resend-site]:checked")
-    ).map((checkbox) => checkbox.value).filter(Boolean);
-    if (selectedSiteIds.length === 0) {
-      deps.setStatus(
-        msg("popup_resend_no_available_targets") || "No previously selected targets are currently available.",
-        "error"
-      );
-      return;
-    }
-    const selectedTargets = ensureBroadcastTargetSnapshots(
-      historyItem.targetSnapshots,
-      historyItem.requestedSiteIds,
-      historyItem.text
-    ).filter((snapshot) => selectedSiteIds.includes(snapshot.siteId)).map((snapshot) => buildBroadcastTargetMessageFromSnapshot(snapshot, deps.openSiteTabs())).filter((target) => typeof target.id === "string" && target.id.trim().length > 0);
-    hideResendModal2();
-    await deps.sendResolvedPrompt(historyItem.text, selectedTargets);
-  }
-  function openImportReportModal2(summary) {
-    state.pendingImportSummary = summary;
-    importReportModalTitle2.textContent = t.importReportTitle;
-    importReportModalDesc2.textContent = t.importReportDesc;
-    importReportModalConfirm2.textContent = t.importReportClose;
-    importReportBody.innerHTML = buildImportReportMarkup(summary);
-    deps.openOverlay(importReportModal, importReportModalClose);
-  }
-  function hideImportReportModal2() {
-    state.pendingImportSummary = null;
-    deps.closeOverlay(importReportModal);
-  }
-  function bindHistoryModalEvents2(getErrorMessage2) {
-    resendModalClose.addEventListener("click", hideResendModal2);
-    resendModalCancel2.addEventListener("click", hideResendModal2);
-    resendModal.addEventListener("click", (event) => {
-      if (event.target === resendModal) {
-        hideResendModal2();
-      }
-    });
-    resendModalConfirm2.addEventListener("click", () => {
-      void confirmResendModal().catch((error) => {
-        console.error("[AI Prompt Broadcaster] Resend modal confirm failed.", error);
-        deps.setStatus(t.error(getErrorMessage2(error)), "error");
+// src/popup/app/sorting.ts
+function getHistorySortOptions() {
+  return [
+    { value: "latest", label: t.historySortLatest },
+    { value: "oldest", label: t.historySortOldest },
+    { value: "mostSuccess", label: t.historySortMostSuccess },
+    { value: "mostFailure", label: t.historySortMostFailure }
+  ];
+}
+function getFavoriteSortOptions() {
+  return [
+    { value: "recentUsed", label: t.favoriteSortRecentUsed },
+    { value: "usageCount", label: t.favoriteSortUsageCount },
+    { value: "title", label: t.favoriteSortTitle },
+    { value: "createdAt", label: t.favoriteSortCreatedAt }
+  ];
+}
+function compareFavoriteTitle(left, right) {
+  return String(left.title ?? "").localeCompare(
+    String(right.title ?? ""),
+    isKorean ? "ko" : "en",
+    { sensitivity: "base" }
+  );
+}
+function sortHistoryItemsForDisplay(items, historySort = "latest") {
+  const nextItems = [...items];
+  switch (historySort) {
+    case "oldest":
+      return nextItems.sort((left, right) => compareDateValues(right.createdAt, left.createdAt));
+    case "mostSuccess":
+      return nextItems.sort((left, right) => {
+        const leftCount = Array.isArray(left.submittedSiteIds) ? left.submittedSiteIds.length : 0;
+        const rightCount = Array.isArray(right.submittedSiteIds) ? right.submittedSiteIds.length : 0;
+        return rightCount - leftCount || compareDateValues(left.createdAt, right.createdAt);
       });
-    });
-    importReportModalClose.addEventListener("click", hideImportReportModal2);
-    importReportModalConfirm2.addEventListener("click", hideImportReportModal2);
-    importReportModal.addEventListener("click", (event) => {
-      if (event.target === importReportModal) {
-        hideImportReportModal2();
-      }
-    });
+    case "mostFailure":
+      return nextItems.sort((left, right) => {
+        const leftCount = Array.isArray(left.failedSiteIds) ? left.failedSiteIds.length : 0;
+        const rightCount = Array.isArray(right.failedSiteIds) ? right.failedSiteIds.length : 0;
+        return rightCount - leftCount || compareDateValues(left.createdAt, right.createdAt);
+      });
+    case "latest":
+    default:
+      return nextItems.sort((left, right) => compareDateValues(left.createdAt, right.createdAt));
   }
-  return {
-    hideResendModal: hideResendModal2,
-    openResendModal: openResendModal2,
-    openImportReportModal: openImportReportModal2,
-    hideImportReportModal: hideImportReportModal2,
-    bindHistoryModalEvents: bindHistoryModalEvents2
-  };
+}
+function sortFavoriteItemsForDisplay(items, favoriteSort = "recentUsed") {
+  const nextItems = [...items];
+  nextItems.sort((left, right) => {
+    if (left.pinned && !right.pinned) {
+      return -1;
+    }
+    if (!left.pinned && right.pinned) {
+      return 1;
+    }
+    switch (favoriteSort) {
+      case "usageCount":
+        return (Number(right.usageCount) || 0) - (Number(left.usageCount) || 0) || compareDateValues(left.lastUsedAt ?? left.favoritedAt, right.lastUsedAt ?? right.favoritedAt);
+      case "title":
+        return compareFavoriteTitle(left, right) || compareDateValues(left.favoritedAt, right.favoritedAt);
+      case "createdAt":
+        return compareDateValues(left.createdAt, right.createdAt);
+      case "recentUsed":
+      default:
+        return compareDateValues(left.lastUsedAt ?? left.favoritedAt, right.lastUsedAt ?? right.favoritedAt);
+    }
+  });
+  return nextItems;
 }
 
 // src/popup/favorites/controller.ts
-var { favoritesList: favoritesList2 } = popupDom.favorites;
+var { favoritesList } = popupDom.favorites;
 function getUniqueFavoriteTags() {
   const tagSet = /* @__PURE__ */ new Set();
   state.favorites.forEach((item) => {
@@ -6544,7 +5764,7 @@ function renderFavoritesFilterBar() {
     bar = document.createElement("div");
     bar.id = "favorites-filter-bar";
     bar.className = "favorites-filter-bar";
-    favoritesList2.parentElement?.insertBefore(bar, favoritesList2);
+    favoritesList.parentElement?.insertBefore(bar, favoritesList);
   }
   const allLabel = msg("popup_favorite_filter_all") || "All";
   const activeTag = state.favoritesTagFilter;
@@ -6584,12 +5804,12 @@ function createFavoritesController(deps) {
     renderFavoritesFilterBar();
     const items = filterFavoriteItems(state.favorites);
     if (items.length === 0) {
-      favoritesList2.innerHTML = buildEmptyState(
+      favoritesList.innerHTML = buildEmptyState(
         state.favoritesSearch || state.favoritesTagFilter || state.favoritesFolderFilter ? t.noSearchResults : t.favoritesEmpty
       );
       return;
     }
-    favoritesList2.innerHTML = items.map((item) => buildFavoriteItemMarkup(item, {
+    favoritesList.innerHTML = items.map((item) => buildFavoriteItemMarkup(item, {
       openMenuKey: state.openMenuKey,
       runtimeSites: state.runtimeSites,
       latestJob: getActiveFavoriteRunJobByFavoriteId(state.favoriteJobs, item.id) ?? getLatestFavoriteRunJobByFavoriteId(state.favoriteJobs, item.id)
@@ -6600,7 +5820,7 @@ function createFavoritesController(deps) {
       (item) => String(item.id) === String(favoriteId) ? { ...item, title } : item
     );
   }
-  function scheduleFavoriteTitleSave2(favoriteId, title, immediate = false) {
+  function scheduleFavoriteTitleSave(favoriteId, title, immediate = false) {
     const timer = state.favoriteSaveTimers.get(favoriteId);
     if (timer) {
       window.clearTimeout(timer);
@@ -6756,7 +5976,7 @@ function createFavoritesController(deps) {
     if (!input) {
       return;
     }
-    scheduleFavoriteTitleSave2(input.dataset.favoriteTitle ?? "", input.value, false);
+    scheduleFavoriteTitleSave(input.dataset.favoriteTitle ?? "", input.value, false);
   }
   function handleFavoritesListBlur(event) {
     const target = event.target instanceof Element ? event.target : null;
@@ -6764,18 +5984,286 @@ function createFavoritesController(deps) {
     if (!input) {
       return;
     }
-    scheduleFavoriteTitleSave2(input.dataset.favoriteTitle ?? "", input.value, true);
+    scheduleFavoriteTitleSave(input.dataset.favoriteTitle ?? "", input.value, true);
   }
   return {
     getFavoriteById: getFavoriteById3,
     renderFavoritesList: renderFavoritesList2,
-    scheduleFavoriteTitleSave: scheduleFavoriteTitleSave2,
+    scheduleFavoriteTitleSave,
     handleFavoriteAction,
     handleFavoriteFilterBarClick,
     handleFavoritesListClick,
     handleFavoritesListContextMenu,
     handleFavoritesListInput,
     handleFavoritesListBlur
+  };
+}
+
+// src/popup/history/controller.ts
+var { historyList } = popupDom.history;
+function filterItems(items, query) {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return items;
+  }
+  return items.filter(
+    (item) => String(item.text).toLowerCase().includes(normalizedQuery)
+  );
+}
+function createHistoryController(deps) {
+  const {
+    switchTab: switchTab2,
+    loadPromptIntoComposer: loadPromptIntoComposer2,
+    openResendModal: openResendModal2,
+    renderFavoritesList: renderFavoritesList2,
+    setStatus: setStatus2,
+    showAppToast: showAppToast2
+  } = deps;
+  function renderHistoryList2() {
+    const items = sortHistoryItemsForDisplay(
+      filterItems(state.history, state.historySearch),
+      state.settings.historySort
+    );
+    if (items.length === 0) {
+      historyList.innerHTML = buildEmptyState(
+        state.historySearch ? t.noSearchResults : t.historyEmpty
+      );
+      return;
+    }
+    historyList.innerHTML = items.map((item) => buildHistoryItemMarkup(item, {
+      openMenuKey: state.openMenuKey,
+      runtimeSites: state.runtimeSites
+    })).join("");
+  }
+  async function handleHistoryAction(action, historyId) {
+    const item = state.history.find((entry) => Number(entry.id) === Number(historyId));
+    if (!item) {
+      return;
+    }
+    if (action === "favorite") {
+      await addFavoriteFromHistory(item);
+      state.favorites = await getPromptFavorites();
+      state.openMenuKey = null;
+      renderFavoritesList2();
+      renderHistoryList2();
+      setStatus2(t.favoriteAdded, "success");
+      showAppToast2(t.favoriteAdded, "success", 2200);
+      return;
+    }
+    if (action === "resend-history") {
+      state.openMenuKey = null;
+      renderHistoryList2();
+      openResendModal2(item);
+      return;
+    }
+    if (action === "delete-history") {
+      if (!historyId) {
+        return;
+      }
+      await deletePromptHistoryItem(historyId);
+      state.history = await getPromptHistory();
+      state.openMenuKey = null;
+      renderHistoryList2();
+      setStatus2(t.historyDeleted, "success");
+      showAppToast2(t.toastHistoryDeleted, "info", 2200);
+    }
+  }
+  function handleHistoryListClick(event) {
+    const target = event.target instanceof Element ? event.target : null;
+    const switchButton = target?.closest("[data-switch-tab='compose']");
+    if (switchButton) {
+      switchTab2("compose");
+      return;
+    }
+    const loadButton = target?.closest("[data-load-history]");
+    if (loadButton) {
+      const item = state.history.find(
+        (entry) => Number(entry.id) === Number(loadButton.dataset.loadHistory)
+      );
+      if (item) {
+        loadPromptIntoComposer2({ ...item, templateDefaults: {}, title: "" });
+      }
+      return;
+    }
+    const menuToggle = target?.closest("[data-toggle-menu]");
+    if (menuToggle) {
+      const menuKey = menuToggle.dataset.toggleMenu ?? null;
+      state.openMenuKey = state.openMenuKey === menuKey ? null : menuKey;
+      renderHistoryList2();
+      return;
+    }
+    const actionButton = target?.closest("[data-action][data-history-id]");
+    if (actionButton) {
+      void handleHistoryAction(
+        actionButton.dataset.action,
+        actionButton.dataset.historyId
+      ).catch((error) => {
+        console.error("[AI Prompt Broadcaster] History action failed.", error);
+      });
+    }
+  }
+  function handleHistoryListContextMenu(event) {
+    const target = event.target instanceof Element ? event.target : null;
+    const item = target?.closest("[data-history-id]");
+    if (!item) {
+      return;
+    }
+    event.preventDefault();
+    state.openMenuKey = `history:${item.dataset.historyId}`;
+    renderHistoryList2();
+  }
+  return {
+    renderHistoryList: renderHistoryList2,
+    handleHistoryAction,
+    handleHistoryListClick,
+    handleHistoryListContextMenu
+  };
+}
+
+// src/popup/history/modals.ts
+var {
+  resendModal,
+  resendModalTitle,
+  resendModalDesc,
+  resendModalSites,
+  resendModalClose,
+  resendModalCancel,
+  resendModalConfirm,
+  importReportModal,
+  importReportModalTitle,
+  importReportModalDesc,
+  importReportBody,
+  importReportModalClose,
+  importReportModalConfirm
+} = popupDom.modals;
+function createPopupHistoryModals(deps) {
+  function getUnavailableReason(snapshot, site) {
+    if (!site) {
+      return t.resendSiteUnavailable;
+    }
+    if (snapshot.targetMode === "tab") {
+      return msg("popup_resend_selected_tab_unavailable") || "Selected tab unavailable";
+    }
+    return t.resendSiteUnavailable;
+  }
+  function isSnapshotAvailable(snapshot, site, availableSiteIds) {
+    if (!site || !availableSiteIds.has(snapshot.siteId)) {
+      return false;
+    }
+    if (snapshot.targetMode !== "tab") {
+      return true;
+    }
+    if (!snapshot.targetTabId) {
+      return false;
+    }
+    return deps.openSiteTabs().some(
+      (tab) => tab.siteId === snapshot.siteId && Number(tab.tabId) === Number(snapshot.targetTabId)
+    );
+  }
+  function hideResendModal2() {
+    state.pendingResendHistory = null;
+    resendModalConfirm.disabled = false;
+    deps.closeOverlay(resendModal);
+  }
+  function openResendModal2(historyItem) {
+    state.pendingResendHistory = historyItem;
+    resendModalTitle.textContent = t.resendModalTitle;
+    resendModalDesc.textContent = t.resendModalDesc;
+    resendModalCancel.textContent = t.resendModalCancel;
+    resendModalConfirm.textContent = t.resendModalConfirm;
+    const snapshots = ensureBroadcastTargetSnapshots(
+      historyItem.targetSnapshots,
+      historyItem.requestedSiteIds,
+      historyItem.text
+    );
+    const requestedSiteIds = getHistorySelectedSiteIds(historyItem);
+    const availableSiteIds = new Set(deps.getEnabledSites().map((site) => site.id));
+    let selectableCount = 0;
+    resendModalSites.innerHTML = requestedSiteIds.map((siteId) => {
+      const site = deps.runtimeSites().find((entry) => entry.id === siteId);
+      const snapshot = snapshots.find((entry) => entry.siteId === siteId) ?? null;
+      const disabled = !snapshot || !isSnapshotAvailable(snapshot, site, availableSiteIds);
+      const reason = snapshot ? getUnavailableReason(snapshot, site) : t.resendSiteUnavailable;
+      if (!disabled) {
+        selectableCount += 1;
+      }
+      return `
+        <label class="checkbox-row">
+          <input type="checkbox" value="${escapeAttribute(siteId)}" data-resend-site="${escapeAttribute(siteId)}" ${disabled ? "disabled" : "checked"} />
+          <span>${escapeHtml(site?.name ?? siteId)}${disabled ? ` (${escapeHtml(reason)})` : ""}</span>
+        </label>
+      `;
+    }).join("");
+    resendModalConfirm.disabled = selectableCount === 0;
+    resendModalDesc.textContent = selectableCount === 0 ? `${t.resendModalDesc} ${msg("popup_resend_no_available_targets") || "No previously selected targets are currently available."}` : t.resendModalDesc;
+    deps.openOverlay(
+      resendModal,
+      resendModalSites.querySelector("input:not([disabled])")
+    );
+  }
+  async function confirmResendModal() {
+    const historyItem = state.pendingResendHistory;
+    if (!historyItem) {
+      return;
+    }
+    const selectedSiteIds = Array.from(
+      resendModalSites.querySelectorAll("[data-resend-site]:checked")
+    ).map((checkbox) => checkbox.value).filter(Boolean);
+    if (selectedSiteIds.length === 0) {
+      deps.setStatus(
+        msg("popup_resend_no_available_targets") || "No previously selected targets are currently available.",
+        "error"
+      );
+      return;
+    }
+    const selectedTargets = ensureBroadcastTargetSnapshots(
+      historyItem.targetSnapshots,
+      historyItem.requestedSiteIds,
+      historyItem.text
+    ).filter((snapshot) => selectedSiteIds.includes(snapshot.siteId)).map((snapshot) => buildBroadcastTargetMessageFromSnapshot(snapshot, deps.openSiteTabs())).filter((target) => typeof target.id === "string" && target.id.trim().length > 0);
+    hideResendModal2();
+    await deps.sendResolvedPrompt(historyItem.text, selectedTargets);
+  }
+  function openImportReportModal2(summary) {
+    state.pendingImportSummary = summary;
+    importReportModalTitle.textContent = t.importReportTitle;
+    importReportModalDesc.textContent = t.importReportDesc;
+    importReportModalConfirm.textContent = t.importReportClose;
+    importReportBody.innerHTML = buildImportReportMarkup(summary);
+    deps.openOverlay(importReportModal, importReportModalClose);
+  }
+  function hideImportReportModal2() {
+    state.pendingImportSummary = null;
+    deps.closeOverlay(importReportModal);
+  }
+  function bindHistoryModalEvents2(getErrorMessage3) {
+    resendModalClose.addEventListener("click", hideResendModal2);
+    resendModalCancel.addEventListener("click", hideResendModal2);
+    resendModal.addEventListener("click", (event) => {
+      if (event.target === resendModal) {
+        hideResendModal2();
+      }
+    });
+    resendModalConfirm.addEventListener("click", () => {
+      void confirmResendModal().catch((error) => {
+        console.error("[AI Prompt Broadcaster] Resend modal confirm failed.", error);
+        deps.setStatus(t.error(getErrorMessage3(error)), "error");
+      });
+    });
+    importReportModalClose.addEventListener("click", hideImportReportModal2);
+    importReportModalConfirm.addEventListener("click", hideImportReportModal2);
+    importReportModal.addEventListener("click", (event) => {
+      if (event.target === importReportModal) {
+        hideImportReportModal2();
+      }
+    });
+  }
+  return {
+    hideResendModal: hideResendModal2,
+    openResendModal: openResendModal2,
+    openImportReportModal: openImportReportModal2,
+    hideImportReportModal: hideImportReportModal2,
+    bindHistoryModalEvents: bindHistoryModalEvents2
   };
 }
 
@@ -6876,9 +6364,8 @@ function createOverlayController(options) {
   };
 }
 
-// src/popup/services/controller.ts
+// src/popup/services/controller/editor.ts
 var {
-  managedSitesList,
   serviceEditor,
   serviceEditorTitle,
   serviceNameInput,
@@ -6893,7 +6380,7 @@ var {
   servicePermissionPreview,
   serviceVerifiedAtInput,
   serviceVerifiedRouteInput,
-  serviceVerifiedAuthStateSelect: serviceVerifiedAuthStateSelect2,
+  serviceVerifiedAuthStateSelect,
   serviceVerifiedLocaleInput,
   serviceVerifiedVersionInput,
   serviceWaitRange,
@@ -6904,23 +6391,23 @@ var {
   serviceTestResult,
   serviceEditorError
 } = popupDom.serviceManagement;
-function createPopupServicesController(deps) {
-  function setServiceEditorError2(message = "") {
+function createPopupServiceEditorController(deps) {
+  function setServiceEditorError(message = "") {
     serviceEditorError.hidden = !message;
     serviceEditorError.textContent = message;
   }
-  function setServiceTestResult2(message = "", isError = false) {
+  function setServiceTestResult(message = "", isError = false) {
     serviceTestResult.hidden = !message;
     serviceTestResult.textContent = message;
     serviceTestResult.style.background = isError ? "rgba(181, 59, 59, 0.12)" : "rgba(255, 196, 0, 0.12)";
     serviceTestResult.style.color = isError ? "var(--danger)" : "var(--text)";
   }
-  function setServicePermissionPreview2(message = "", isError = false) {
+  function setServicePermissionPreview(message = "", isError = false) {
     servicePermissionPreview.hidden = !message;
     servicePermissionPreview.textContent = message;
     servicePermissionPreview.style.color = isError ? "var(--danger)" : "var(--text-soft)";
   }
-  function readServiceEditorDraft2() {
+  function readServiceEditorDraft() {
     const selectedInputType = document.querySelector(
       "input[name='service-input-type']:checked"
     );
@@ -6939,7 +6426,7 @@ function createPopupServicesController(deps) {
       supportedRoutes: splitMultilineValues(serviceSupportedRoutesInput.value),
       verifiedAt: serviceVerifiedAtInput.value.trim(),
       verifiedRoute: serviceVerifiedRouteInput.value.trim(),
-      verifiedAuthState: serviceVerifiedAuthStateSelect2.value,
+      verifiedAuthState: serviceVerifiedAuthStateSelect.value,
       verifiedLocale: serviceVerifiedLocaleInput.value.trim(),
       verifiedVersion: serviceVerifiedVersionInput.value.trim(),
       waitMs: Number(serviceWaitRange.value),
@@ -6948,27 +6435,33 @@ function createPopupServicesController(deps) {
       enabled: serviceEnabledInput.checked
     };
   }
-  function renderServicePermissionPreview2(draft = readServiceEditorDraft2(), validation = null) {
+  function renderServicePermissionPreview2(draft = readServiceEditorDraft(), validation = null) {
     const aliasErrors = validation?.fieldErrors?.hostnameAliases ?? [];
     const supportedRouteErrors = validation?.fieldErrors?.supportedRoutes ?? [];
     const aliasValidation = aliasErrors.length > 0 ? { valid: false, errors: aliasErrors } : validateHostnameAliases(draft.hostnameAliases);
     const hasAliasError = aliasValidation.errors.length > 0;
-    serviceHostnameAliasesInput.setAttribute("aria-invalid", String(hasAliasError));
-    serviceSupportedRoutesInput.setAttribute("aria-invalid", String(supportedRouteErrors.length > 0));
+    serviceHostnameAliasesInput.setAttribute(
+      "aria-invalid",
+      String(hasAliasError)
+    );
+    serviceSupportedRoutesInput.setAttribute(
+      "aria-invalid",
+      String(supportedRouteErrors.length > 0)
+    );
     if (hasAliasError) {
-      setServicePermissionPreview2(aliasValidation.errors.join(" "), true);
+      setServicePermissionPreview(aliasValidation.errors.join(" "), true);
       return;
     }
     if (Boolean(state.serviceEditor?.isBuiltIn)) {
-      setServicePermissionPreview2("");
+      setServicePermissionPreview("");
       return;
     }
     const patterns = buildSitePermissionPatterns(draft.url, draft.hostnameAliases);
     if (!draft.url.trim() || patterns.length === 0) {
-      setServicePermissionPreview2("");
+      setServicePermissionPreview("");
       return;
     }
-    setServicePermissionPreview2(
+    setServicePermissionPreview(
       `${msg("popup_service_permission_preview") || "Requested origins"}: ${patterns.join(", ")}`,
       false
     );
@@ -6992,7 +6485,7 @@ function createPopupServicesController(deps) {
     serviceHostnameAliasesInput.disabled = false;
     serviceVerifiedAtInput.value = "";
     serviceVerifiedRouteInput.value = "";
-    serviceVerifiedAuthStateSelect2.value = "";
+    serviceVerifiedAuthStateSelect.value = "";
     serviceVerifiedLocaleInput.value = "";
     serviceVerifiedVersionInput.value = "";
     serviceWaitRange.value = "2000";
@@ -7002,9 +6495,9 @@ function createPopupServicesController(deps) {
     serviceEnabledInput.checked = true;
     serviceUrlInput.disabled = false;
     state.serviceEditor = null;
-    setServiceEditorError2("");
-    setServiceTestResult2("");
-    setServicePermissionPreview2("");
+    setServiceEditorError("");
+    setServiceTestResult("");
+    setServicePermissionPreview("");
   }
   function hideServiceEditor2() {
     serviceEditor.hidden = true;
@@ -7029,14 +6522,20 @@ function createPopupServicesController(deps) {
     }
     serviceSubmitSelectorInput.value = site?.submitSelector ?? "";
     serviceSubmitMethodSelect.value = site?.submitMethod ?? "click";
-    serviceFallbackSelectorsInput.value = joinMultilineValues(site?.fallbackSelectors);
+    serviceFallbackSelectorsInput.value = joinMultilineValues(
+      site?.fallbackSelectors
+    );
     serviceAuthSelectorsInput.value = joinMultilineValues(site?.authSelectors);
-    serviceHostnameAliasesInput.value = joinMultilineValues(site?.hostnameAliases);
-    serviceSupportedRoutesInput.value = joinMultilineValues(site?.supportedRoutes);
+    serviceHostnameAliasesInput.value = joinMultilineValues(
+      site?.hostnameAliases
+    );
+    serviceSupportedRoutesInput.value = joinMultilineValues(
+      site?.supportedRoutes
+    );
     serviceHostnameAliasesInput.disabled = Boolean(site?.isBuiltIn);
     serviceVerifiedAtInput.value = site?.verifiedAt ?? "";
     serviceVerifiedRouteInput.value = site?.verifiedRoute ?? "";
-    serviceVerifiedAuthStateSelect2.value = site?.verifiedAuthState ?? "";
+    serviceVerifiedAuthStateSelect.value = site?.verifiedAuthState ?? "";
     serviceVerifiedLocaleInput.value = site?.verifiedLocale ?? "";
     serviceVerifiedVersionInput.value = site?.verifiedVersion ?? "";
     serviceWaitRange.value = String(site?.waitMs ?? 2e3);
@@ -7045,12 +6544,111 @@ function createPopupServicesController(deps) {
     serviceIconInput.value = site?.icon ?? "AI";
     serviceEnabledInput.checked = site?.enabled ?? true;
     serviceUrlInput.disabled = Boolean(site?.isBuiltIn);
-    setServiceEditorError2("");
-    setServiceTestResult2("");
-    renderServicePermissionPreview2(readServiceEditorDraft2());
+    setServiceEditorError("");
+    setServiceTestResult("");
+    renderServicePermissionPreview2(readServiceEditorDraft());
     serviceEditor.hidden = false;
   }
-  function buildManagedSiteMarkup2(site) {
+  async function ensureSiteOriginPermission(url, hostnameAliases = []) {
+    try {
+      const patterns = buildSitePermissionPatterns(url, hostnameAliases);
+      if (patterns.length === 0) {
+        return false;
+      }
+      const result = await requestOriginPermissions(patterns);
+      return result.granted;
+    } catch (error) {
+      console.error(
+        "[AI Prompt Broadcaster] Failed to request site host permission.",
+        error
+      );
+      return false;
+    }
+  }
+  async function testSelectorOnActiveTab2() {
+    if (!serviceInputSelectorInput.value.trim()) {
+      setServiceTestResult(t.serviceTestNoSelector, true);
+      return;
+    }
+    try {
+      const response = await deps.sendPopupMessage(
+        {
+          action: "service-test:run",
+          draft: readServiceEditorDraft(),
+          isBuiltIn: Boolean(state.serviceEditor?.isBuiltIn)
+        },
+        1e4
+      );
+      const result = deps.buildServiceTestResultMessage(response);
+      setServiceTestResult(result.message, result.isError);
+    } catch (error) {
+      console.error("[AI Prompt Broadcaster] Selector test failed.", error);
+      setServiceTestResult(t.serviceTestError(deps.getErrorMessage(error)), true);
+    }
+  }
+  async function saveServiceEditorDraft2() {
+    const draft = readServiceEditorDraft();
+    const isBuiltIn = Boolean(state.serviceEditor?.isBuiltIn);
+    const validation = validateSiteDraft(draft, { isBuiltIn });
+    renderServicePermissionPreview2(draft, validation);
+    if (!validation.valid) {
+      setServiceEditorError(validation.errors.join(" "));
+      return;
+    }
+    if (!isBuiltIn) {
+      const granted = await ensureSiteOriginPermission(
+        draft.url,
+        draft.hostnameAliases
+      );
+      if (!granted) {
+        setServiceEditorError(t.servicePermissionDenied);
+        return;
+      }
+    }
+    try {
+      if (isBuiltIn) {
+        const currentServiceEditor = state.serviceEditor;
+        if (!currentServiceEditor) {
+          throw new Error(t.serviceValidationError);
+        }
+        await saveBuiltInSiteOverride(currentServiceEditor.siteId, draft);
+        await setRuntimeSiteEnabled(currentServiceEditor.siteId, draft.enabled);
+      } else {
+        await saveCustomSite(draft);
+      }
+      await deps.refreshStoredData();
+      hideServiceEditor2();
+      deps.setStatus(t.serviceSaved, "success");
+      deps.showAppToast(t.serviceSaved, "success", 2200);
+    } catch (error) {
+      console.error(
+        "[AI Prompt Broadcaster] Failed to save service settings.",
+        error
+      );
+      setServiceEditorError(
+        deps.getErrorMessage(error) || t.serviceValidationError
+      );
+    }
+  }
+  return {
+    setServiceEditorError,
+    setServiceTestResult,
+    setServicePermissionPreview,
+    renderServicePermissionPreview: renderServicePermissionPreview2,
+    resetServiceEditorForm: resetServiceEditorForm2,
+    hideServiceEditor: hideServiceEditor2,
+    populateServiceEditor: populateServiceEditor2,
+    readServiceEditorDraft,
+    ensureSiteOriginPermission,
+    testSelectorOnActiveTab: testSelectorOnActiveTab2,
+    saveServiceEditorDraft: saveServiceEditorDraft2
+  };
+}
+
+// src/popup/services/controller/managed-sites.ts
+var { managedSitesList } = popupDom.serviceManagement;
+function createManagedSitesController(deps) {
+  function buildManagedSiteMarkup(site) {
     const chips = [
       `<span class="managed-site-chip">${escapeHtml(site.isBuiltIn ? t.serviceBuiltInBadge : t.serviceCustomBadge)}</span>`,
       `<span class="managed-site-chip">${escapeHtml(site.inputType)}</span>`,
@@ -7071,7 +6669,9 @@ function createPopupServicesController(deps) {
         </div>
       ` : "";
     if (!site.enabled) {
-      chips.push(`<span class="managed-site-chip">${escapeHtml(t.serviceDisabledLabel)}</span>`);
+      chips.push(
+        `<span class="managed-site-chip">${escapeHtml(t.serviceDisabledLabel)}</span>`
+      );
     }
     return `
       <article class="managed-site-card" data-managed-site-id="${escapeAttribute(site.id)}">
@@ -7102,77 +6702,7 @@ function createPopupServicesController(deps) {
       managedSitesList.innerHTML = `<div class="managed-site-empty">${escapeHtml(t.serviceEmptyList)}</div>`;
       return;
     }
-    managedSitesList.innerHTML = state.runtimeSites.map((site) => buildManagedSiteMarkup2(site)).join("");
-  }
-  async function ensureSiteOriginPermission2(url, hostnameAliases = []) {
-    try {
-      const patterns = buildSitePermissionPatterns(url, hostnameAliases);
-      if (patterns.length === 0) {
-        return false;
-      }
-      const result = await requestOriginPermissions(patterns);
-      return result.granted;
-    } catch (error) {
-      console.error("[AI Prompt Broadcaster] Failed to request site host permission.", error);
-      return false;
-    }
-  }
-  async function testSelectorOnActiveTab2() {
-    if (!serviceInputSelectorInput.value.trim()) {
-      setServiceTestResult2(t.serviceTestNoSelector, true);
-      return;
-    }
-    try {
-      const response = await deps.sendPopupMessage(
-        {
-          action: "service-test:run",
-          draft: readServiceEditorDraft2(),
-          isBuiltIn: Boolean(state.serviceEditor?.isBuiltIn)
-        },
-        1e4
-      );
-      const result = deps.buildServiceTestResultMessage(response);
-      setServiceTestResult2(result.message, result.isError);
-    } catch (error) {
-      console.error("[AI Prompt Broadcaster] Selector test failed.", error);
-      setServiceTestResult2(t.serviceTestError(deps.getErrorMessage(error)), true);
-    }
-  }
-  async function saveServiceEditorDraft2() {
-    const draft = readServiceEditorDraft2();
-    const isBuiltIn = Boolean(state.serviceEditor?.isBuiltIn);
-    const validation = validateSiteDraft(draft, { isBuiltIn });
-    renderServicePermissionPreview2(draft, validation);
-    if (!validation.valid) {
-      setServiceEditorError2(validation.errors.join(" "));
-      return;
-    }
-    if (!isBuiltIn) {
-      const granted = await ensureSiteOriginPermission2(draft.url, draft.hostnameAliases);
-      if (!granted) {
-        setServiceEditorError2(t.servicePermissionDenied);
-        return;
-      }
-    }
-    try {
-      if (isBuiltIn) {
-        const currentServiceEditor = state.serviceEditor;
-        if (!currentServiceEditor) {
-          throw new Error(t.serviceValidationError);
-        }
-        await saveBuiltInSiteOverride(currentServiceEditor.siteId, draft);
-        await setRuntimeSiteEnabled(currentServiceEditor.siteId, draft.enabled);
-      } else {
-        await saveCustomSite(draft);
-      }
-      await deps.refreshStoredData();
-      hideServiceEditor2();
-      deps.setStatus(t.serviceSaved, "success");
-      deps.showAppToast(t.serviceSaved, "success", 2200);
-    } catch (error) {
-      console.error("[AI Prompt Broadcaster] Failed to save service settings.", error);
-      setServiceEditorError2(deps.getErrorMessage(error) || t.serviceValidationError);
-    }
+    managedSitesList.innerHTML = state.runtimeSites.map((site) => buildManagedSiteMarkup(site)).join("");
   }
   async function deleteManagedSite2(siteId) {
     try {
@@ -7181,29 +6711,849 @@ function createPopupServicesController(deps) {
       deps.setStatus(t.serviceDeleted, "success");
       deps.showAppToast(t.serviceDeleted, "info", 2200);
     } catch (error) {
-      console.error("[AI Prompt Broadcaster] Failed to delete custom site.", error);
+      console.error(
+        "[AI Prompt Broadcaster] Failed to delete custom site.",
+        error
+      );
       deps.setStatus(t.error(deps.getErrorMessage(error)), "error");
     }
   }
   return {
-    setServiceEditorError: setServiceEditorError2,
-    setServiceTestResult: setServiceTestResult2,
-    setServicePermissionPreview: setServicePermissionPreview2,
-    renderServicePermissionPreview: renderServicePermissionPreview2,
-    resetServiceEditorForm: resetServiceEditorForm2,
-    hideServiceEditor: hideServiceEditor2,
-    populateServiceEditor: populateServiceEditor2,
-    buildManagedSiteMarkup: buildManagedSiteMarkup2,
+    buildManagedSiteMarkup,
     renderManagedSites: renderManagedSites2,
-    readServiceEditorDraft: readServiceEditorDraft2,
-    ensureSiteOriginPermission: ensureSiteOriginPermission2,
-    testSelectorOnActiveTab: testSelectorOnActiveTab2,
-    saveServiceEditorDraft: saveServiceEditorDraft2,
     deleteManagedSite: deleteManagedSite2
   };
 }
 
-// src/popup/app/bootstrap.ts
+// src/popup/services/controller.ts
+function createPopupServicesController(deps) {
+  const serviceEditorController = createPopupServiceEditorController({
+    refreshStoredData: deps.refreshStoredData,
+    getErrorMessage: deps.getErrorMessage,
+    buildServiceTestResultMessage: deps.buildServiceTestResultMessage,
+    sendPopupMessage: deps.sendPopupMessage,
+    setStatus: deps.setStatus,
+    showAppToast: deps.showAppToast
+  });
+  const managedSitesController = createManagedSitesController({
+    refreshStoredData: deps.refreshStoredData,
+    setStatus: deps.setStatus,
+    showAppToast: deps.showAppToast,
+    getErrorMessage: deps.getErrorMessage,
+    getSiteLastVerifiedStatus: deps.getSiteLastVerifiedStatus,
+    getSiteSelectorIssueUrl: deps.getSiteSelectorIssueUrl
+  });
+  return {
+    ...serviceEditorController,
+    ...managedSitesController
+  };
+}
+
+// src/popup/app/rendering/site-panel.ts
+var { sitesContainer } = popupDom.compose;
+function createSitePanelRenderer(deps, renderTemplateSummary2) {
+  function renderSiteCheckboxesPanel2() {
+    const previousSelection = new Set(deps.checkedSiteIds());
+    sitesContainer.innerHTML = "";
+    deps.getEnabledSites().forEach((site) => {
+      const card = document.createElement("article");
+      card.className = "site-card checked";
+      card.dataset.siteId = site.id;
+      card.style.setProperty("--site-color", site.color || "#c24f2e");
+      card.setAttribute("role", "option");
+      card.tabIndex = 0;
+      const mainRow = document.createElement("label");
+      mainRow.className = "site-card-main";
+      mainRow.htmlFor = `site-${site.id}`;
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.id = `site-${site.id}`;
+      checkbox.value = site.id;
+      checkbox.checked = previousSelection.size > 0 ? previousSelection.has(site.id) : true;
+      const siteIcon = document.createElement("span");
+      siteIcon.className = "site-icon";
+      siteIcon.textContent = getSiteIcon(site);
+      const siteName = document.createElement("span");
+      siteName.className = "site-name";
+      siteName.textContent = `${deps.getRuntimeSiteLabel(site.id)}`;
+      const selectorWarning = state.failedSelectors.get(site.id);
+      if (selectorWarning) {
+        card.classList.add("selector-warning");
+        card.title = t.selectorWarningTooltip;
+      }
+      checkbox.addEventListener("change", () => {
+        card.classList.toggle("checked", checkbox.checked);
+        card.setAttribute("aria-selected", String(checkbox.checked));
+        card.setAttribute(
+          "aria-label",
+          `${deps.getRuntimeSiteLabel(site.id)} ${checkbox.checked ? t.ariaSelected : t.ariaNotSelected}`
+        );
+        deps.syncToggleAllLabel();
+        renderTemplateSummary2();
+      });
+      card.addEventListener("keydown", (event) => {
+        if (event.key !== " " && event.key !== "Enter") {
+          return;
+        }
+        event.preventDefault();
+        checkbox.checked = !checkbox.checked;
+        checkbox.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      const siteStatus = document.createElement("span");
+      siteStatus.className = "site-status";
+      siteStatus.setAttribute("aria-hidden", "true");
+      const warningIcon = document.createElement("span");
+      warningIcon.className = "site-warning";
+      warningIcon.setAttribute("aria-hidden", "true");
+      warningIcon.textContent = selectorWarning ? "!" : "";
+      mainRow.append(checkbox, siteIcon, siteName, warningIcon, siteStatus);
+      card.classList.toggle("checked", checkbox.checked);
+      card.setAttribute("aria-selected", String(checkbox.checked));
+      card.setAttribute(
+        "aria-label",
+        `${deps.getRuntimeSiteLabel(site.id)} ${checkbox.checked ? t.ariaSelected : t.ariaNotSelected}`
+      );
+      card.appendChild(mainRow);
+      const openTabs = deps.getOpenSiteTabs(site.id);
+      const selectedTarget = state.siteTargetSelections?.[site.id] ?? "default";
+      if (openTabs.length > 0) {
+        const tabsWrap = document.createElement("div");
+        tabsWrap.className = "site-tabs";
+        const tabsHead = document.createElement("div");
+        tabsHead.className = "site-tabs-head";
+        tabsHead.textContent = t.openTabsTitle(openTabs.length);
+        const tabsList = document.createElement("div");
+        tabsList.className = "site-tabs-list";
+        const radioName = `site-target-${site.id}`;
+        const appendTargetOption = (choiceValue, title, detail, pillText = "") => {
+          const option = document.createElement("label");
+          option.className = "site-tab-option";
+          const radio = document.createElement("input");
+          radio.type = "radio";
+          radio.name = radioName;
+          radio.value = typeof choiceValue === "number" ? `tab:${choiceValue}` : String(choiceValue);
+          radio.checked = choiceValue === selectedTarget;
+          const copy = document.createElement("span");
+          copy.className = "site-tab-copy";
+          const titleNode = document.createElement("span");
+          titleNode.className = "site-tab-title";
+          titleNode.textContent = title;
+          const detailNode = document.createElement("span");
+          detailNode.className = "site-tab-meta";
+          detailNode.textContent = detail;
+          copy.append(titleNode, detailNode);
+          option.append(radio, copy);
+          if (pillText) {
+            const pill = document.createElement("span");
+            pill.className = "site-tab-pill";
+            pill.textContent = pillText;
+            option.appendChild(pill);
+          }
+          radio.addEventListener("change", () => {
+            if (!radio.checked) {
+              return;
+            }
+            state.siteTargetSelections[site.id] = choiceValue;
+            if (!checkbox.checked) {
+              checkbox.checked = true;
+              card.classList.add("checked");
+            }
+            deps.syncToggleAllLabel();
+          });
+          tabsList.appendChild(option);
+        };
+        appendTargetOption(
+          "default",
+          t.openTabsUseDefault,
+          t.openTabsUseDefaultDetail(deps.getDefaultTargetModeLabel())
+        );
+        appendTargetOption("new", t.openTabsAlwaysNew, t.openTabsAlwaysNewDetail);
+        openTabs.forEach((tab) => {
+          const detailText = previewText(tab.url || tab.title || "", 52);
+          const pillText = tab.active ? t.openTabsActive : tab.status === "loading" ? t.openTabsLoading : t.openTabsReady;
+          appendTargetOption(
+            tab.tabId,
+            previewText(tab.title || tab.url || `${site.name} tab`, 48),
+            detailText,
+            pillText
+          );
+        });
+        tabsWrap.append(tabsHead, tabsList);
+        card.appendChild(tabsWrap);
+      }
+      const overrideToggleRow = document.createElement("div");
+      overrideToggleRow.className = "site-override-toggle-row";
+      const overrideToggle = document.createElement("button");
+      const hasOverride = Boolean(state.sitePromptOverrides?.[site.id]?.trim());
+      overrideToggle.className = `ghost-button small-button site-override-toggle${hasOverride ? " active" : ""}`;
+      overrideToggle.type = "button";
+      overrideToggle.dataset.siteOverrideToggle = site.id;
+      overrideToggle.title = msg("popup_override_prompt_label") || "Custom prompt for this service";
+      overrideToggle.textContent = hasOverride ? `✎ ${msg("popup_override_active") || "Custom"}` : "✎";
+      const overrideWrap = document.createElement("div");
+      overrideWrap.className = "site-override-wrap";
+      overrideWrap.hidden = !hasOverride;
+      const overrideTextarea = document.createElement("textarea");
+      overrideTextarea.className = "site-override-textarea";
+      overrideTextarea.rows = 3;
+      overrideTextarea.placeholder = msg("popup_override_prompt_placeholder") || "Override prompt for this service only…";
+      overrideTextarea.value = state.sitePromptOverrides?.[site.id] ?? "";
+      overrideTextarea.dataset.siteOverrideInput = site.id;
+      overrideTextarea.addEventListener("input", () => {
+        state.sitePromptOverrides[site.id] = overrideTextarea.value;
+        const nowActive = Boolean(overrideTextarea.value.trim());
+        overrideToggle.classList.toggle("active", nowActive);
+        overrideToggle.textContent = nowActive ? `✎ ${msg("popup_override_active") || "Custom"}` : "✎";
+        renderTemplateSummary2();
+      });
+      overrideToggle.addEventListener("click", () => {
+        overrideWrap.hidden = !overrideWrap.hidden;
+        if (!overrideWrap.hidden) {
+          overrideTextarea.focus();
+        }
+      });
+      overrideWrap.appendChild(overrideTextarea);
+      overrideToggleRow.append(overrideToggle);
+      card.append(overrideToggleRow, overrideWrap);
+      sitesContainer.appendChild(card);
+    });
+    deps.syncToggleAllLabel();
+    deps.setCardStatesFromBroadcast(state.lastBroadcast);
+  }
+  return {
+    renderSiteCheckboxesPanel: renderSiteCheckboxesPanel2
+  };
+}
+
+// src/popup/app/rendering/sort-controls.ts
+var { historySortSelect } = popupDom.history;
+var { favoritesSortSelect } = popupDom.favorites;
+function renderSortControls() {
+  historySortSelect.innerHTML = getHistorySortOptions().map(
+    (option) => `<option value="${escapeAttribute(option.value)}">${escapeHtml(option.label)}</option>`
+  ).join("");
+  favoritesSortSelect.innerHTML = getFavoriteSortOptions().map(
+    (option) => `<option value="${escapeAttribute(option.value)}">${escapeHtml(option.label)}</option>`
+  ).join("");
+  historySortSelect.value = state.settings.historySort;
+  favoritesSortSelect.value = state.settings.favoriteSort;
+}
+
+// src/popup/app/rendering/tab-labels.ts
+var { extTitle, extDesc } = popupDom.header;
+var { tabButtons } = popupDom.tabs;
+var {
+  clearPromptBtn,
+  sitesLabel,
+  saveFavoriteBtn,
+  sendBtn
+} = popupDom.compose;
+var { historySearchInput } = popupDom.history;
+var { favoritesSearchInput } = popupDom.favorites;
+var {
+  settingsTitle,
+  settingsDesc,
+  reuseExistingTabsLabel,
+  reuseExistingTabsDesc,
+  openOptionsBtn,
+  clearHistoryBtn,
+  exportJsonBtn,
+  importJsonBtn,
+  waitMultiplierLabel,
+  waitMultiplierValue
+} = popupDom.settings;
+var {
+  serviceManagementTitle,
+  serviceManagementDesc,
+  addServiceBtn,
+  resetSitesBtn,
+  serviceEditorDesc,
+  serviceNameLabel,
+  serviceUrlLabel,
+  serviceInputSelectorLabel,
+  testSelectorBtn,
+  serviceInputTypeLabel,
+  serviceSubmitSelectorLabel,
+  serviceSubmitMethodLabel,
+  serviceAdvancedTitle,
+  serviceFallbackSelectorsLabel,
+  serviceAuthSelectorsLabel,
+  serviceHostnameAliasesLabel,
+  serviceSupportedRoutesLabel,
+  serviceVerifiedAtLabel,
+  serviceVerifiedRouteLabel,
+  serviceVerifiedAuthStateLabel,
+  serviceVerifiedLocaleLabel,
+  serviceVerifiedVersionLabel,
+  serviceVerifiedAuthStateSelect: serviceVerifiedAuthStateSelect2,
+  serviceWaitLabel,
+  serviceColorLabel,
+  serviceIconLabel,
+  serviceEnabledLabel,
+  serviceEditorCancel,
+  serviceEditorSave
+} = popupDom.serviceManagement;
+var {
+  resendModalTitle: resendModalTitle2,
+  resendModalDesc: resendModalDesc2,
+  resendModalCancel: resendModalCancel2,
+  resendModalConfirm: resendModalConfirm2,
+  importReportModalTitle: importReportModalTitle2,
+  importReportModalDesc: importReportModalDesc2,
+  importReportModalConfirm: importReportModalConfirm2
+} = popupDom.modals;
+function createTabLabelsRenderer(deps) {
+  function renderTabLabels2() {
+    extTitle.textContent = t.title;
+    extDesc.textContent = t.desc;
+    clearPromptBtn.textContent = t.clearPrompt;
+    sitesLabel.textContent = t.sitesLabel;
+    saveFavoriteBtn.textContent = t.saveFavorite;
+    sendBtn.textContent = t.send;
+    historySearchInput.placeholder = t.historySearch;
+    favoritesSearchInput.placeholder = t.favoritesSearch;
+    settingsTitle.textContent = t.settingsTitle;
+    settingsDesc.textContent = t.settingsDesc;
+    reuseExistingTabsLabel.textContent = t.reuseTabsLabel;
+    reuseExistingTabsDesc.textContent = state.settings.reuseExistingTabs ? t.reuseTabsDescEnabled : t.reuseTabsDescDisabled;
+    waitMultiplierLabel.textContent = t.waitMultiplierLabel;
+    waitMultiplierValue.textContent = t.waitMultiplierValue(
+      state.settings.waitMsMultiplier
+    );
+    openOptionsBtn.textContent = t.openOptions;
+    clearHistoryBtn.textContent = t.clearHistory;
+    exportJsonBtn.textContent = t.exportJson;
+    importJsonBtn.textContent = t.importJson;
+    serviceManagementTitle.textContent = t.serviceManagementTitle;
+    serviceManagementDesc.textContent = t.serviceManagementDesc;
+    addServiceBtn.textContent = t.addService;
+    resetSitesBtn.textContent = t.resetServices;
+    serviceEditorDesc.textContent = t.serviceEditorDesc;
+    serviceNameLabel.textContent = t.serviceFieldName;
+    serviceUrlLabel.textContent = t.serviceFieldUrl;
+    serviceInputSelectorLabel.textContent = t.serviceFieldInputSelector;
+    testSelectorBtn.textContent = t.serviceTest;
+    serviceInputTypeLabel.textContent = t.serviceFieldInputType;
+    serviceSubmitSelectorLabel.textContent = t.serviceFieldSubmitSelector;
+    serviceSubmitMethodLabel.textContent = t.serviceFieldSubmitMethod;
+    serviceAdvancedTitle.textContent = t.serviceFieldAdvanced;
+    serviceFallbackSelectorsLabel.textContent = t.serviceFieldFallbackSelectors;
+    serviceAuthSelectorsLabel.textContent = t.serviceFieldAuthSelectors;
+    serviceHostnameAliasesLabel.textContent = t.serviceFieldHostnameAliases;
+    serviceSupportedRoutesLabel.textContent = t.serviceFieldSupportedRoutes;
+    serviceVerifiedAtLabel.textContent = t.serviceFieldVerifiedAt;
+    serviceVerifiedRouteLabel.textContent = t.serviceFieldVerifiedRoute;
+    serviceVerifiedAuthStateLabel.textContent = t.serviceFieldVerifiedAuthState;
+    serviceVerifiedLocaleLabel.textContent = t.serviceFieldVerifiedLocale;
+    serviceVerifiedVersionLabel.textContent = t.serviceFieldVerifiedVersion;
+    const verifiedAuthUnknownOption = serviceVerifiedAuthStateSelect2.querySelector("option[value='']");
+    const verifiedAuthLoggedInOption = serviceVerifiedAuthStateSelect2.querySelector(
+      "option[value='logged-in']"
+    );
+    const verifiedAuthLoggedOutOption = serviceVerifiedAuthStateSelect2.querySelector(
+      "option[value='logged-out']"
+    );
+    const verifiedAuthSoftGatedOption = serviceVerifiedAuthStateSelect2.querySelector(
+      "option[value='soft-gated']"
+    );
+    if (verifiedAuthUnknownOption) {
+      verifiedAuthUnknownOption.textContent = t.serviceVerifiedAuthStateUnknown;
+    }
+    if (verifiedAuthLoggedInOption) {
+      verifiedAuthLoggedInOption.textContent = t.serviceVerifiedAuthStateLoggedIn;
+    }
+    if (verifiedAuthLoggedOutOption) {
+      verifiedAuthLoggedOutOption.textContent = t.serviceVerifiedAuthStateLoggedOut;
+    }
+    if (verifiedAuthSoftGatedOption) {
+      verifiedAuthSoftGatedOption.textContent = t.serviceVerifiedAuthStateSoftGated;
+    }
+    serviceWaitLabel.textContent = t.serviceFieldWait;
+    serviceColorLabel.textContent = t.serviceFieldColor;
+    serviceIconLabel.textContent = t.serviceFieldIcon;
+    serviceEnabledLabel.textContent = t.serviceFieldEnabled;
+    serviceEditorCancel.textContent = t.serviceEditorCancel;
+    serviceEditorSave.textContent = t.serviceEditorSave;
+    resendModalTitle2.textContent = t.resendModalTitle;
+    resendModalDesc2.textContent = t.resendModalDesc;
+    resendModalCancel2.textContent = t.resendModalCancel;
+    resendModalConfirm2.textContent = t.resendModalConfirm;
+    importReportModalTitle2.textContent = t.importReportTitle;
+    importReportModalDesc2.textContent = t.importReportDesc;
+    importReportModalConfirm2.textContent = t.importReportClose;
+    tabButtons.forEach((button) => {
+      const tabId = button.dataset.tab;
+      button.textContent = tabId ? t.tabs[tabId] : "";
+    });
+    deps.applyDynamicPromptPlaceholder();
+    deps.updatePromptCounter();
+  }
+  return {
+    renderTabLabels: renderTabLabels2
+  };
+}
+
+// src/popup/app/rendering/template-summary.ts
+var { promptInput: promptInput3, templateSummary, templateSummaryLabel, templateChipList } = popupDom.compose;
+function createTemplateSummaryRenderer(deps) {
+  function getTemplateDisplayName(name) {
+    return getTemplateVariableDisplayName(name, uiLanguage);
+  }
+  function currentPromptVariables() {
+    const checkedTargets = deps.buildComposerBroadcastTargets(
+      deps.checkedSiteIds(),
+      promptInput3.value
+    );
+    if (checkedTargets.length === 0) {
+      return detectTemplateVariables(promptInput3.value);
+    }
+    return deps.detectTemplateVariablesForTargets(checkedTargets);
+  }
+  function renderTemplateSummary2() {
+    const variables = currentPromptVariables();
+    templateSummary.hidden = variables.length === 0;
+    if (variables.length === 0) {
+      templateSummaryLabel.textContent = "";
+      templateChipList.innerHTML = "";
+      return;
+    }
+    templateSummaryLabel.textContent = t.templateSummary(variables.length);
+    templateChipList.innerHTML = variables.map((variable) => {
+      const kindLabel = variable.kind === "system" ? t.templateSystemKind : t.templateUserKind;
+      const variableLabel = variable.kind === "system" ? getTemplateDisplayName(variable.name) : variable.name;
+      return `
+          <span class="template-chip ${variable.kind}">
+            <span>{{${escapeHtml(variableLabel)}}}</span>
+            <span class="template-chip-kind">${escapeHtml(kindLabel)}</span>
+          </span>
+        `;
+    }).join("");
+  }
+  return {
+    renderTemplateSummary: renderTemplateSummary2
+  };
+}
+
+// src/popup/app/rendering.ts
+function createPopupRendering(deps) {
+  const templateSummaryRenderer = createTemplateSummaryRenderer(deps);
+  const { renderTemplateSummary: renderTemplateSummary2 } = templateSummaryRenderer;
+  const tabLabelsRenderer = createTabLabelsRenderer(deps);
+  const sitePanelRenderer = createSitePanelRenderer(deps, renderTemplateSummary2);
+  return {
+    renderSortControls,
+    renderTemplateSummary: renderTemplateSummary2,
+    renderTabLabels: tabLabelsRenderer.renderTabLabels,
+    renderSiteCheckboxesPanel: sitePanelRenderer.renderSiteCheckboxesPanel
+  };
+}
+
+// src/popup/app/shell.ts
+var { tabButtons: tabButtons2, panels } = popupDom.tabs;
+var {
+  promptInput: promptInput4,
+  promptCounter,
+  sitesContainer: sitesContainer2,
+  toggleAllBtn,
+  cancelSendBtn,
+  sendBtn: sendBtn2,
+  statusMsg
+} = popupDom.compose;
+function createPopupShell(deps) {
+  function setStatus2(text, type = "") {
+    statusMsg.textContent = text;
+    statusMsg.className = type;
+  }
+  function clearStatus2() {
+    setStatus2("");
+  }
+  function showAppToast2(input, type = "info", duration = 3e3) {
+    return showToast(input, type, duration);
+  }
+  function showConfirmToast2(message, onConfirm) {
+    showAppToast2({
+      message,
+      type: "warning",
+      duration: -1,
+      actions: [
+        {
+          label: t.toastConfirm,
+          onClick: () => {
+            void onConfirm();
+          }
+        }
+      ]
+    });
+  }
+  function setSendingState2(isSending) {
+    state.isSending = Boolean(isSending);
+    sendBtn2.disabled = state.isSending;
+    sendBtn2.classList.toggle("loading", state.isSending);
+    cancelSendBtn.hidden = !state.isSending;
+    cancelSendBtn.disabled = !state.isSending;
+    cancelSendBtn.textContent = t.stopSending;
+  }
+  function clearSendSafetyTimer2() {
+    if (state.sendSafetyTimer) {
+      window.clearTimeout(state.sendSafetyTimer);
+      state.sendSafetyTimer = null;
+    }
+  }
+  function armSendSafetyTimer2() {
+    clearSendSafetyTimer2();
+    state.sendSafetyTimer = window.setTimeout(() => {
+      state.sendSafetyTimer = null;
+      if (state.lastBroadcast?.status !== "sending") {
+        setSendingState2(false);
+      }
+    }, 2e3);
+  }
+  function buildBroadcastToastSignature2(summary) {
+    return [
+      summary?.broadcastId ?? "",
+      summary?.status ?? "",
+      summary?.finishedAt ?? "",
+      (summary?.failedSiteIds ?? []).join(",")
+    ].join("|");
+  }
+  function getEnabledSites2() {
+    return state.runtimeSites.filter((site) => site.enabled);
+  }
+  function getRuntimeSiteLabel2(siteId) {
+    return state.runtimeSites.find((site) => site.id === siteId)?.name ?? siteId;
+  }
+  function getSiteSelectorIssueUrl2(site) {
+    const siteLabel = site?.name ?? site?.id ?? "";
+    return `https://github.com/search?q=repo:twbeatles/prompt-broadcaster+${encodeURIComponent(siteLabel)}+selector&type=issues`;
+  }
+  function getSiteLastVerifiedStatus2(site) {
+    const verifiedAt = site?.verifiedAt ? String(site.verifiedAt).trim() : "";
+    const lastVerified = site?.lastVerified ? String(site.lastVerified).trim() : "";
+    const parsedDate = verifiedAt ? Date.parse(`${verifiedAt}T00:00:00Z`) : lastVerified ? Date.parse(`${lastVerified}-01T00:00:00Z`) : Number.NaN;
+    if (!Number.isFinite(parsedDate)) {
+      return "";
+    }
+    const daysSince = Math.floor((Date.now() - parsedDate) / 864e5);
+    if (daysSince <= 0) {
+      return "";
+    }
+    return (msg("popup_selector_days_since") || `~${daysSince}d since last verified`).replace("$DAYS$", String(daysSince));
+  }
+  function updatePromptCounter2() {
+    promptCounter.textContent = t.promptCounter(promptInput4.value.length);
+  }
+  function autoResizePromptInput2() {
+    promptInput4.style.height = "auto";
+    const nextHeight = Math.max(100, Math.min(promptInput4.scrollHeight, 300));
+    promptInput4.style.height = `${nextHeight}px`;
+  }
+  function scheduleComposeDraftSave2(value = promptInput4.value) {
+    if (state.promptDraftSaveTimer) {
+      window.clearTimeout(state.promptDraftSaveTimer);
+    }
+    state.promptDraftSaveTimer = window.setTimeout(() => {
+      state.promptDraftSaveTimer = null;
+      void setComposeDraftPrompt(String(value ?? "")).catch((error) => {
+        console.error("[AI Prompt Broadcaster] Failed to persist compose draft.", error);
+      });
+    }, 180);
+  }
+  function applyDynamicPromptPlaceholder2() {
+    const placeholderVariants = deps.isKorean ? [
+      t.placeholder,
+      "{{언어}}로 {{주제}}를 설명해줘",
+      "선택한 텍스트를 여러 AI에 동시에 비교해줘"
+    ] : [
+      t.placeholder,
+      "Write a blog post about {{topic}} in {{language}}.",
+      "Summarize the selected text for all services."
+    ];
+    const nextPlaceholder = placeholderVariants[Math.floor(Math.random() * placeholderVariants.length)] || t.placeholder;
+    promptInput4.setAttribute("placeholder", nextPlaceholder);
+  }
+  function allCheckboxes2() {
+    return Array.from(
+      sitesContainer2.querySelectorAll("input[type='checkbox']")
+    );
+  }
+  function checkedSiteIds2() {
+    return allCheckboxes2().filter((checkbox) => checkbox.checked).map((checkbox) => checkbox.value);
+  }
+  function syncToggleAllLabel2() {
+    const checkboxes = allCheckboxes2();
+    const allChecked = checkboxes.length > 0 && checkboxes.every((checkbox) => checkbox.checked);
+    toggleAllBtn.textContent = allChecked ? t.deselectAll : t.selectAll;
+  }
+  function applySiteSelection2(sentTo) {
+    const selected = new Set(normalizeSiteIdList2(sentTo));
+    allCheckboxes2().forEach((checkbox) => {
+      const shouldCheck = selected.size === 0 ? checkbox.checked : selected.has(checkbox.value);
+      checkbox.checked = shouldCheck;
+      const card = checkbox.closest(".site-card");
+      card?.classList.toggle("checked", shouldCheck);
+      card?.setAttribute("aria-selected", String(shouldCheck));
+    });
+    syncToggleAllLabel2();
+  }
+  function switchTab2(tabId) {
+    state.activeTab = tabId;
+    tabButtons2.forEach((button) => {
+      const active = button.dataset.tab === tabId;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-selected", String(active));
+      button.tabIndex = active ? 0 : -1;
+    });
+    panels.forEach((panel) => {
+      const active = panel.dataset.panel === tabId;
+      panel.classList.toggle("active", active);
+      panel.hidden = !active;
+    });
+    state.openMenuKey = null;
+    deps.renderLists();
+  }
+  return {
+    setStatus: setStatus2,
+    clearStatus: clearStatus2,
+    showAppToast: showAppToast2,
+    showConfirmToast: showConfirmToast2,
+    setSendingState: setSendingState2,
+    clearSendSafetyTimer: clearSendSafetyTimer2,
+    armSendSafetyTimer: armSendSafetyTimer2,
+    buildBroadcastToastSignature: buildBroadcastToastSignature2,
+    getEnabledSites: getEnabledSites2,
+    getRuntimeSiteLabel: getRuntimeSiteLabel2,
+    getSiteSelectorIssueUrl: getSiteSelectorIssueUrl2,
+    getSiteLastVerifiedStatus: getSiteLastVerifiedStatus2,
+    updatePromptCounter: updatePromptCounter2,
+    autoResizePromptInput: autoResizePromptInput2,
+    scheduleComposeDraftSave: scheduleComposeDraftSave2,
+    applyDynamicPromptPlaceholder: applyDynamicPromptPlaceholder2,
+    allCheckboxes: allCheckboxes2,
+    checkedSiteIds: checkedSiteIds2,
+    syncToggleAllLabel: syncToggleAllLabel2,
+    applySiteSelection: applySiteSelection2,
+    switchTab: switchTab2
+  };
+}
+
+// src/popup/app/shortcuts.ts
+var { toggleAllBtn: toggleAllBtn2 } = popupDom.compose;
+var { historyList: historyList2 } = popupDom.history;
+var { favoritesList: favoritesList2 } = popupDom.favorites;
+function createPopupShortcutController(deps) {
+  function getPromptButtonsForActiveTab() {
+    if (state.activeTab === "history") {
+      return Array.from(historyList2.querySelectorAll("[data-load-history]"));
+    }
+    if (state.activeTab === "favorites") {
+      return Array.from(
+        favoritesList2.querySelectorAll("[data-load-favorite], [data-edit-favorite]")
+      );
+    }
+    return [];
+  }
+  function focusAdjacentPromptButton(direction) {
+    const buttons = getPromptButtonsForActiveTab();
+    if (buttons.length === 0) {
+      return;
+    }
+    const currentIndex = buttons.findIndex((button) => button === document.activeElement);
+    const nextIndex = currentIndex === -1 ? direction > 0 ? 0 : buttons.length - 1 : (currentIndex + direction + buttons.length) % buttons.length;
+    buttons[nextIndex]?.focus?.();
+  }
+  async function handleGlobalShortcut2(event) {
+    if (event.defaultPrevented) {
+      return;
+    }
+    const shortcutKey = event.key.toLowerCase();
+    const hasPrimaryModifier = event.ctrlKey || event.metaKey;
+    if (event.key === "Escape") {
+      if (deps.closeActiveOverlayOrMenu()) {
+        event.preventDefault();
+      }
+      return;
+    }
+    if (deps.getOpenOverlay()) {
+      return;
+    }
+    if (hasPrimaryModifier && event.shiftKey && event.key === "Enter") {
+      event.preventDefault();
+      await deps.cancelCurrentBroadcast();
+      return;
+    }
+    if (hasPrimaryModifier && !event.shiftKey && event.key === "Enter") {
+      event.preventDefault();
+      await deps.handleSend();
+      return;
+    }
+    if (hasPrimaryModifier && !event.shiftKey && ["1", "2", "3", "4"].includes(shortcutKey)) {
+      event.preventDefault();
+      deps.switchTab(["compose", "history", "favorites", "settings"][Number(shortcutKey) - 1]);
+      return;
+    }
+    if (hasPrimaryModifier && !event.shiftKey && shortcutKey === "a" && state.activeTab === "compose" && !isTextEditingTarget(event.target)) {
+      event.preventDefault();
+      toggleAllBtn2.click();
+      return;
+    }
+    if ((event.key === "ArrowDown" || event.key === "ArrowUp") && !isTextEditingTarget(event.target)) {
+      if (state.activeTab === "history" || state.activeTab === "favorites") {
+        event.preventDefault();
+        focusAdjacentPromptButton(event.key === "ArrowDown" ? 1 : -1);
+      }
+    }
+  }
+  return {
+    handleGlobalShortcut: handleGlobalShortcut2
+  };
+}
+
+// src/popup/app/bootstrap/composer.ts
+var { promptInput: promptInput5 } = popupDom.compose;
+function createPopupComposerController(deps) {
+  function setLoadedTemplateContext(item) {
+    const templateDefaults = item && "templateDefaults" in item && item.templateDefaults && typeof item.templateDefaults === "object" ? item.templateDefaults : {};
+    const favoriteTitle = item && "title" in item && typeof item.title === "string" ? item.title : "";
+    const favoriteId = item && "id" in item && typeof item.id === "string" ? item.id : "";
+    state.loadedTemplateDefaults = templateDefaults && typeof templateDefaults === "object" ? { ...templateDefaults } : {};
+    state.loadedFavoriteTitle = favoriteTitle;
+    state.loadedFavoriteId = favoriteId;
+  }
+  function loadPromptIntoComposer2(item) {
+    promptInput5.value = item.text;
+    deps.scheduleComposeDraftSave(promptInput5.value);
+    deps.applySiteSelection(
+      "requestedSiteIds" in item ? getHistorySelectedSiteIds(item) : item.sentTo
+    );
+    setLoadedTemplateContext(item);
+    deps.renderTemplateSummary();
+    deps.switchTab("compose");
+    promptInput5.focus();
+    deps.setStatus(t.importedLoad, "success");
+    deps.showAppToast(t.importedLoad, "info", 2200);
+  }
+  async function handleSend2() {
+    if (state.isSending) {
+      return;
+    }
+    deps.clearStatus();
+    const prompt = promptInput5.value.trim();
+    if (!prompt) {
+      deps.setStatus(t.warnEmpty, "error");
+      deps.showAppToast(t.toastPromptEmpty, "warning", 2e3);
+      promptInput5.focus();
+      return;
+    }
+    const selectedSiteIds = deps.checkedSiteIds();
+    if (selectedSiteIds.length === 0) {
+      deps.setStatus(t.warnNoSite, "error");
+      deps.showAppToast(t.toastNoService, "warning", 2e3);
+      return;
+    }
+    const composerTargets = deps.buildComposerBroadcastTargets(
+      selectedSiteIds,
+      prompt
+    );
+    const selectedSites = state.runtimeSites.filter(
+      (site) => selectedSiteIds.includes(site.id)
+    );
+    const customSitePermissionPatterns = Array.from(
+      new Set(
+        selectedSites.filter((site) => site.isCustom).flatMap(
+          (site) => Array.isArray(site.permissionPatterns) ? site.permissionPatterns : []
+        ).filter(
+          (pattern) => typeof pattern === "string" && pattern.trim().length > 0
+        )
+      )
+    );
+    if (customSitePermissionPatterns.length > 0) {
+      const permissionResult = await requestOriginPermissions(
+        customSitePermissionPatterns
+      );
+      if (!permissionResult.granted) {
+        deps.setStatus(t.servicePermissionDenied, "error");
+        deps.showAppToast(t.servicePermissionDenied, "error", 4e3);
+        return;
+      }
+    }
+    await deps.openTemplateModalV2(prompt, composerTargets);
+  }
+  return {
+    loadPromptIntoComposer: loadPromptIntoComposer2,
+    handleSend: handleSend2
+  };
+}
+
+// src/popup/app/bootstrap/events/compose.ts
+var {
+  promptInput: promptInput6,
+  clearPromptBtn: clearPromptBtn2,
+  toggleAllBtn: toggleAllBtn3,
+  saveFavoriteBtn: saveFavoriteBtn2,
+  cancelSendBtn: cancelSendBtn2,
+  sendBtn: sendBtn3
+} = popupDom.compose;
+function bindComposeEvents(deps) {
+  const runSend = (logMessage) => {
+    void deps.compose.handleSend().catch((error) => {
+      console.error(logMessage, error);
+      deps.status.setStatus(t.error(deps.status.getErrorMessage(error)), "error");
+    });
+  };
+  clearPromptBtn2.addEventListener("click", () => {
+    promptInput6.value = "";
+    deps.compose.scheduleComposeDraftSave("");
+    state.loadedFavoriteId = "";
+    state.loadedFavoriteTitle = "";
+    state.loadedTemplateDefaults = {};
+    deps.compose.updatePromptCounter();
+    deps.compose.autoResizePromptInput();
+    deps.compose.renderTemplateSummary();
+    deps.status.clearStatus();
+    promptInput6.focus();
+  });
+  toggleAllBtn3.addEventListener("click", () => {
+    const checkboxes = deps.compose.allCheckboxes();
+    const shouldCheckAll = !checkboxes.every((checkbox) => checkbox.checked);
+    checkboxes.forEach((checkbox) => {
+      checkbox.checked = shouldCheckAll;
+      checkbox.closest(".site-card")?.classList.toggle("checked", shouldCheckAll);
+    });
+    deps.compose.syncToggleAllLabel();
+    deps.compose.renderTemplateSummary();
+  });
+  saveFavoriteBtn2.addEventListener("click", () => {
+    void deps.compose.openFavoriteModal().catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to open favorite modal.", error);
+      deps.status.setStatus(t.error(deps.status.getErrorMessage(error)), "error");
+    });
+  });
+  cancelSendBtn2.addEventListener("click", () => {
+    void deps.compose.cancelCurrentBroadcast();
+  });
+  sendBtn3.addEventListener("click", (event) => {
+    deps.compose.triggerRipple(sendBtn3, event);
+    runSend("[AI Prompt Broadcaster] Send flow failed.");
+  });
+  promptInput6.addEventListener("input", () => {
+    deps.compose.scheduleComposeDraftSave(promptInput6.value);
+    deps.compose.updatePromptCounter();
+    deps.compose.autoResizePromptInput();
+    deps.compose.renderTemplateSummary();
+    document.querySelectorAll(".site-card.sent, .site-card.failed, .site-card.sending").forEach((card) => {
+      card.classList.remove("sending", "sent", "failed");
+      card.querySelector(".retry-btn")?.remove();
+    });
+  });
+  promptInput6.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      runSend("[AI Prompt Broadcaster] Keyboard send failed.");
+    }
+  });
+}
+
+// src/popup/app/bootstrap/helpers.ts
 async function sendPopupMessage(message, timeoutMs, fallbackValue) {
   return sendRuntimeMessageWithTimeout(message, timeoutMs, fallbackValue);
 }
@@ -7223,159 +7573,632 @@ function getImportErrorSummary(error) {
   const summary = error.importSummary;
   return summary ?? null;
 }
-var { extTitle: extTitle2, extDesc: extDesc2 } = popupDom.header;
-var { tabButtons: tabButtons3, panels: panels2 } = popupDom.tabs;
-var {
-  promptInput: promptInput5,
-  promptCounter: promptCounter3,
-  clearPromptBtn: clearPromptBtn2,
-  templateSummary: templateSummary2,
-  templateSummaryLabel: templateSummaryLabel2,
-  templateChipList: templateChipList2,
-  sitesLabel: sitesLabel2,
-  sitesContainer: sitesContainer3,
-  toggleAllBtn: toggleAllBtn3,
-  saveFavoriteBtn: saveFavoriteBtn2,
-  cancelSendBtn: cancelSendBtn2,
-  sendBtn: sendBtn3,
-  statusMsg: statusMsg2
-} = popupDom.compose;
+function getErrorMessage(error, getUnknownErrorText2) {
+  return error instanceof Error ? error.message : getUnknownErrorText2();
+}
+
+// src/popup/app/bootstrap/events/lists.ts
 var { historySearchInput: historySearchInput2, historySortSelect: historySortSelect2, historyList: historyList3 } = popupDom.history;
 var { favoritesSearchInput: favoritesSearchInput2, favoritesSortSelect: favoritesSortSelect2, favoritesList: favoritesList3 } = popupDom.favorites;
+function bindListEvents(deps) {
+  historySearchInput2.addEventListener("input", (event) => {
+    const target = getEventInput(event.target);
+    if (!target) {
+      return;
+    }
+    state.historySearch = target.value;
+    deps.lists.renderHistoryList();
+  });
+  historySortSelect2.addEventListener("change", (event) => {
+    const target = getEventSelect(event.target);
+    if (!target) {
+      return;
+    }
+    const nextValue = target.value;
+    state.settings = {
+      ...state.settings,
+      historySort: nextValue
+    };
+    deps.lists.renderHistoryList();
+    void updateAppSettings({ historySort: nextValue }).catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to save history sort.", error);
+      deps.status.setStatus(t.error(deps.status.getErrorMessage(error)), "error");
+    });
+  });
+  favoritesSearchInput2.addEventListener("input", (event) => {
+    const target = getEventInput(event.target);
+    if (!target) {
+      return;
+    }
+    state.favoritesSearch = target.value;
+    deps.lists.renderFavoritesList();
+  });
+  favoritesSortSelect2.addEventListener("change", (event) => {
+    const target = getEventSelect(event.target);
+    if (!target) {
+      return;
+    }
+    const nextValue = target.value;
+    state.settings = {
+      ...state.settings,
+      favoriteSort: nextValue
+    };
+    deps.lists.renderFavoritesList();
+    void updateAppSettings({ favoriteSort: nextValue }).catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to save favorite sort.", error);
+      deps.status.setStatus(t.error(deps.status.getErrorMessage(error)), "error");
+    });
+  });
+  document.querySelector("[data-panel='favorites']")?.addEventListener("click", (event) => {
+    deps.lists.favoritesController.handleFavoriteFilterBarClick(event);
+  });
+  historyList3.addEventListener("click", (event) => {
+    deps.lists.historyController.handleHistoryListClick(event);
+  });
+  historyList3.addEventListener("contextmenu", (event) => {
+    deps.lists.historyController.handleHistoryListContextMenu(event);
+  });
+  favoritesList3.addEventListener("click", (event) => {
+    deps.lists.favoritesController.handleFavoritesListClick(event);
+  });
+  favoritesList3.addEventListener("contextmenu", (event) => {
+    deps.lists.favoritesController.handleFavoritesListContextMenu(event);
+  });
+  favoritesList3.addEventListener("input", (event) => {
+    deps.lists.favoritesController.handleFavoritesListInput(event);
+  });
+  favoritesList3.addEventListener(
+    "blur",
+    (event) => {
+      deps.lists.favoritesController.handleFavoritesListBlur(event);
+    },
+    true
+  );
+  document.addEventListener("click", (event) => {
+    if (!state.openMenuKey) {
+      return;
+    }
+    const insideMenu = getEventElement(event.target)?.closest(".prompt-actions");
+    if (!insideMenu) {
+      state.openMenuKey = null;
+      deps.lists.renderLists();
+    }
+  });
+}
+
+// src/popup/app/bootstrap/events/modals.ts
+function bindModalAndKeyboardEvents(deps) {
+  deps.modals.bindTemplateModalEvents((message) => {
+    deps.modals.setTemplateModalError(message);
+  });
+  deps.modals.bindFavoriteEditorEvents();
+  deps.modals.bindHistoryModalEvents(deps.status.getErrorMessage);
+  document.addEventListener("keydown", (event) => {
+    deps.runtime.trapModalFocus(event);
+    void deps.runtime.handleGlobalShortcut(event).catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to handle popup shortcut.", error);
+    });
+  });
+}
+
+// src/popup/app/bootstrap/events/runtime.ts
+function bindRuntimeEvents(deps) {
+  chrome.tabs.onCreated.addListener(() => {
+    deps.runtime.scheduleOpenSiteTabsRefresh();
+  });
+  chrome.tabs.onRemoved.addListener(() => {
+    deps.runtime.scheduleOpenSiteTabsRefresh();
+  });
+  chrome.tabs.onUpdated.addListener((_tabId, changeInfo) => {
+    if (changeInfo.status || typeof changeInfo.title === "string" || typeof changeInfo.url === "string") {
+      deps.runtime.scheduleOpenSiteTabsRefresh();
+    }
+  });
+  chrome.tabs.onActivated.addListener(() => {
+    deps.runtime.scheduleOpenSiteTabsRefresh();
+  });
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName === "session") {
+      if (changes.lastBroadcast) {
+        const nextLastBroadcast = changes.lastBroadcast.newValue;
+        deps.runtime.applyLastBroadcastState(
+          isLastBroadcastSummary(nextLastBroadcast) ? nextLastBroadcast : null
+        );
+      }
+      if (changes.pendingUiToasts) {
+        void deps.storage.flushPendingSessionToasts();
+      }
+      if (changes.favoriteRunJobs) {
+        void getFavoriteRunJobs().then((favoriteJobs) => {
+          state.favoriteJobs = favoriteJobs;
+          deps.lists.renderFavoritesList();
+        }).catch((error) => {
+          console.error(
+            "[AI Prompt Broadcaster] Failed to refresh favorite jobs.",
+            error
+          );
+        });
+      }
+      return;
+    }
+    if (areaName !== "local") {
+      return;
+    }
+    if (changes.promptHistory || changes.promptFavorites || changes.templateVariableCache || changes.appSettings || changes.customSites || changes.builtInSiteStates || changes.builtInSiteOverrides || changes.failedSelectors) {
+      void deps.storage.loadStoredData().catch((error) => {
+        console.error("[AI Prompt Broadcaster] Storage change refresh failed.", error);
+      });
+    }
+  });
+}
+
+// src/popup/app/bootstrap/events/services.ts
 var {
-  settingsTitle: settingsTitle2,
-  settingsDesc: settingsDesc2,
+  addServiceBtn: addServiceBtn2,
+  resetSitesBtn: resetSitesBtn2,
+  managedSitesList: managedSitesList2,
+  serviceEditor: serviceEditor2,
+  testSelectorBtn: testSelectorBtn2,
+  serviceWaitRange: serviceWaitRange2,
+  serviceWaitValue: serviceWaitValue2,
+  serviceUrlInput: serviceUrlInput2,
+  serviceHostnameAliasesInput: serviceHostnameAliasesInput2,
+  serviceEditorCancel: serviceEditorCancel2,
+  serviceEditorSave: serviceEditorSave2
+} = popupDom.serviceManagement;
+function bindServiceEvents(deps) {
+  addServiceBtn2.addEventListener("click", () => {
+    deps.services.resetServiceEditorForm();
+    deps.services.populateServiceEditor(null);
+  });
+  resetSitesBtn2.addEventListener("click", () => {
+    deps.status.showConfirmToast(t.resetServicesConfirm, async () => {
+      try {
+        await resetSiteSettings();
+        await deps.storage.refreshStoredData();
+        deps.services.hideServiceEditor();
+        deps.status.setStatus(t.serviceResetDone, "success");
+        deps.status.showAppToast(t.serviceResetDone, "success", 2200);
+      } catch (error) {
+        console.error(
+          "[AI Prompt Broadcaster] Failed to reset service settings.",
+          error
+        );
+        const errorMessage = t.error(deps.status.getErrorMessage(error));
+        deps.status.setStatus(errorMessage, "error");
+        deps.status.showAppToast(errorMessage, "error", 4e3);
+      }
+    });
+  });
+  managedSitesList2.addEventListener("click", (event) => {
+    const actionButton = getEventElement(event.target)?.closest(
+      "[data-action][data-site-id]"
+    );
+    if (!actionButton) {
+      return;
+    }
+    const { action, siteId } = actionButton.dataset;
+    if (!siteId) {
+      return;
+    }
+    if (action === "edit-service") {
+      const site = state.runtimeSites.find((entry) => entry.id === siteId) ?? null;
+      if (site) {
+        deps.services.populateServiceEditor(site);
+      }
+      return;
+    }
+    if (action === "delete-service") {
+      void deps.services.deleteManagedSite(siteId);
+    }
+  });
+  managedSitesList2.addEventListener("change", (event) => {
+    const toggle = getEventElement(event.target)?.closest(
+      "[data-action='toggle-service'][data-site-id]"
+    );
+    const siteId = toggle?.dataset.siteId;
+    if (!toggle || !siteId) {
+      return;
+    }
+    void setRuntimeSiteEnabled(siteId, toggle.checked).then(() => deps.storage.refreshStoredData()).catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to toggle site state.", error);
+      deps.status.setStatus(t.error(deps.status.getErrorMessage(error)), "error");
+    });
+  });
+  testSelectorBtn2.addEventListener("click", () => {
+    void deps.services.testSelectorOnActiveTab();
+  });
+  serviceWaitRange2.addEventListener("input", () => {
+    serviceWaitValue2.textContent = `${serviceWaitRange2.value}ms`;
+  });
+  serviceUrlInput2.addEventListener("input", () => {
+    if (!serviceEditor2.hidden) {
+      deps.services.renderServicePermissionPreview();
+    }
+  });
+  serviceHostnameAliasesInput2.addEventListener("input", () => {
+    if (!serviceEditor2.hidden) {
+      deps.services.renderServicePermissionPreview();
+    }
+  });
+  serviceEditorCancel2.addEventListener("click", deps.services.hideServiceEditor);
+  serviceEditorSave2.addEventListener("click", () => {
+    void deps.services.saveServiceEditorDraft();
+  });
+}
+
+// src/popup/app/bootstrap/events/settings.ts
+var {
   reuseExistingTabsToggle,
-  reuseExistingTabsLabel: reuseExistingTabsLabel2,
-  reuseExistingTabsDesc: reuseExistingTabsDesc2,
   openOptionsBtn: openOptionsBtn2,
   clearHistoryBtn: clearHistoryBtn2,
   exportJsonBtn: exportJsonBtn2,
   importJsonBtn: importJsonBtn2,
   importJsonInput,
-  waitMultiplierLabel: waitMultiplierLabel2,
   waitMultiplierRange,
   waitMultiplierValue: waitMultiplierValue2
 } = popupDom.settings;
+function bindSettingsEvents(deps) {
+  clearHistoryBtn2.addEventListener("click", async () => {
+    deps.status.showConfirmToast(t.clearHistoryConfirm, async () => {
+      try {
+        await clearPromptHistory();
+        state.history = [];
+        deps.lists.renderHistoryList();
+        deps.status.setStatus(t.historyCleared, "success");
+        deps.status.showAppToast(t.historyCleared, "info", 2200);
+      } catch (error) {
+        console.error("[AI Prompt Broadcaster] Failed to clear history.", error);
+        const errorMessage = t.error(deps.status.getErrorMessage(error));
+        deps.status.setStatus(errorMessage, "error");
+        deps.status.showAppToast(errorMessage, "error", 4e3);
+      }
+    });
+  });
+  reuseExistingTabsToggle.addEventListener("change", (event) => {
+    const target = getEventInput(event.target);
+    if (!target) {
+      return;
+    }
+    const nextValue = target.checked;
+    state.settings = {
+      ...state.settings,
+      reuseExistingTabs: nextValue
+    };
+    deps.storage.applySettingsToControls();
+    deps.storage.renderSiteCheckboxesPanel();
+    void updateAppSettings({ reuseExistingTabs: nextValue }).catch((error) => {
+      console.error(
+        "[AI Prompt Broadcaster] Failed to save tab reuse setting.",
+        error
+      );
+      const errorMessage = t.error(deps.status.getErrorMessage(error));
+      deps.status.setStatus(errorMessage, "error");
+      deps.status.showAppToast(errorMessage, "error", 3200);
+    });
+  });
+  waitMultiplierRange.addEventListener("input", (event) => {
+    const target = getEventInput(event.target);
+    if (!target) {
+      return;
+    }
+    waitMultiplierValue2.textContent = t.waitMultiplierValue(Number(target.value));
+  });
+  waitMultiplierRange.addEventListener("change", (event) => {
+    const target = getEventInput(event.target);
+    if (!target) {
+      return;
+    }
+    const nextValue = Number(target.value);
+    state.settings = {
+      ...state.settings,
+      waitMsMultiplier: nextValue
+    };
+    deps.storage.applySettingsToControls();
+    void updateAppSettings({ waitMsMultiplier: nextValue }).catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to save wait multiplier.", error);
+      const errorMessage = t.error(deps.status.getErrorMessage(error));
+      deps.status.setStatus(errorMessage, "error");
+      deps.status.showAppToast(errorMessage, "error", 3200);
+    });
+  });
+  openOptionsBtn2.addEventListener("click", () => {
+    void chrome.runtime.openOptionsPage().catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to open options page.", error);
+      deps.status.setStatus(t.error(deps.status.getErrorMessage(error)), "error");
+    });
+  });
+  exportJsonBtn2.addEventListener("click", async () => {
+    try {
+      const payload = await exportPromptData();
+      const blob = new Blob([JSON.stringify(payload, null, 2)], {
+        type: "application/json"
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `ai-prompt-broadcaster-${(/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-")}.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      deps.status.setStatus(t.exportSuccess, "success");
+    } catch (error) {
+      console.error("[AI Prompt Broadcaster] JSON export failed.", error);
+      deps.status.setStatus(t.error(deps.status.getErrorMessage(error)), "error");
+    }
+  });
+  importJsonBtn2.addEventListener("click", () => {
+    importJsonInput.click();
+  });
+  importJsonInput.addEventListener("change", async (event) => {
+    const target = getEventInput(event.target);
+    const file = target?.files?.[0];
+    if (!file) {
+      return;
+    }
+    try {
+      const text = await file.text();
+      const result = await importPromptData(text);
+      await deps.storage.refreshStoredData();
+      deps.status.setStatus(buildImportSummaryText(result.importSummary), "success");
+      deps.status.showAppToast(
+        buildImportSummaryText(result.importSummary, { short: true }),
+        "success",
+        2600
+      );
+      deps.modals.openImportReportModal(result.importSummary);
+    } catch (error) {
+      const importSummary = getImportErrorSummary(error);
+      if (importSummary) {
+        deps.modals.openImportReportModal(importSummary);
+      }
+      deps.status.setStatus(t.importFailed, "error");
+      deps.status.showAppToast(t.importFailed, "error", 4e3);
+      console.error("[AI Prompt Broadcaster] JSON import failed.", error);
+    } finally {
+      importJsonInput.value = "";
+    }
+  });
+}
+
+// src/popup/app/bootstrap/events/tabs.ts
+var { tabButtons: tabButtons3 } = popupDom.tabs;
+function bindTabEvents(switchTab2) {
+  tabButtons3.forEach((button) => {
+    button.addEventListener("click", () => {
+      const nextTab = button.dataset.tab;
+      if (nextTab) {
+        switchTab2(nextTab);
+      }
+    });
+  });
+}
+
+// src/popup/app/bootstrap/events.ts
+function bindPopupEvents(deps) {
+  bindTabEvents(deps.compose.switchTab);
+  bindComposeEvents(deps);
+  bindListEvents(deps);
+  bindSettingsEvents(deps);
+  bindServiceEvents(deps);
+  bindModalAndKeyboardEvents(deps);
+  bindRuntimeEvents(deps);
+}
+
+// src/popup/app/bootstrap/favorite-intent.ts
+function createPopupFavoriteIntentHandler(deps) {
+  async function maybeHandlePopupFavoriteIntent2() {
+    const intent = await consumePopupFavoriteIntent().catch(() => null);
+    if (!intent?.favoriteId) {
+      return;
+    }
+    const favorite = deps.getFavoriteById(intent.favoriteId);
+    if (!favorite) {
+      return;
+    }
+    let runReason = intent.reason || t.favoriteRunNeedsEditor;
+    if (intent.type === "run") {
+      const response = await deps.requestFavoriteRun(favorite, {
+        trigger: intent.source === "options-edit" ? "popup" : intent.source ?? "popup",
+        allowPopupFallback: false
+      });
+      if (response?.ok) {
+        const message = response?.message ?? t.favoriteRunQueued;
+        deps.setStatus(message, "success");
+        deps.showAppToast(message, "success", 2200);
+        return;
+      }
+      if (!response?.requiresPopupInput) {
+        const errorMessage = response?.error ?? deps.getUnknownErrorText();
+        deps.setStatus(t.error(errorMessage), "error");
+        deps.showAppToast(t.error(errorMessage), "error", 3200);
+        return;
+      }
+      runReason = response?.error || runReason;
+    }
+    deps.openFavoriteEditor(favorite, {
+      reason: intent.type === "run" ? runReason : ""
+    });
+  }
+  return {
+    maybeHandlePopupFavoriteIntent: maybeHandlePopupFavoriteIntent2
+  };
+}
+
+// src/shared/sites/order.ts
+function normalizeSiteOrder(siteOrder) {
+  if (!Array.isArray(siteOrder)) {
+    return [];
+  }
+  return Array.from(
+    new Set(
+      siteOrder.filter((entry) => typeof entry === "string" && entry.trim()).map((entry) => entry.trim())
+    )
+  );
+}
+function sortSitesByOrder(sites = [], siteOrder) {
+  const normalizedOrder = normalizeSiteOrder(siteOrder);
+  if (normalizedOrder.length === 0) {
+    return [...Array.isArray(sites) ? sites : []];
+  }
+  const siteMap = /* @__PURE__ */ new Map();
+  const unorderedSites = [];
+  (Array.isArray(sites) ? sites : []).forEach((site) => {
+    const siteId = typeof site?.id === "string" ? site.id.trim() : "";
+    if (!siteId) {
+      unorderedSites.push(site);
+      return;
+    }
+    siteMap.set(siteId, site);
+  });
+  const orderedSites = normalizedOrder.map((siteId) => siteMap.get(siteId)).filter((site) => Boolean(site));
+  const orderedIds = new Set(orderedSites.map((site) => String(site.id).trim()));
+  return [
+    ...orderedSites,
+    ...(Array.isArray(sites) ? sites : []).filter((site) => {
+      const siteId = typeof site?.id === "string" ? site.id.trim() : "";
+      return !siteId || !orderedIds.has(siteId);
+    })
+  ];
+}
+
+// src/popup/app/bootstrap/storage.ts
+var { promptInput: promptInput7 } = popupDom.compose;
 var {
-  serviceManagementTitle: serviceManagementTitle2,
-  serviceManagementDesc: serviceManagementDesc2,
-  addServiceBtn: addServiceBtn2,
-  resetSitesBtn: resetSitesBtn2,
-  managedSitesList: managedSitesList2,
-  serviceEditor: serviceEditor2,
-  serviceEditorTitle: serviceEditorTitle2,
-  serviceEditorDesc: serviceEditorDesc2,
-  serviceNameLabel: serviceNameLabel2,
-  serviceNameInput: serviceNameInput2,
-  serviceUrlLabel: serviceUrlLabel2,
-  serviceUrlInput: serviceUrlInput2,
-  serviceInputSelectorLabel: serviceInputSelectorLabel2,
-  serviceInputSelectorInput: serviceInputSelectorInput2,
-  testSelectorBtn: testSelectorBtn2,
-  serviceInputTypeLabel: serviceInputTypeLabel2,
-  serviceSubmitSelectorLabel: serviceSubmitSelectorLabel2,
-  serviceSubmitSelectorInput: serviceSubmitSelectorInput2,
-  serviceSubmitMethodLabel: serviceSubmitMethodLabel2,
-  serviceSubmitMethodSelect: serviceSubmitMethodSelect2,
-  serviceAdvancedTitle: serviceAdvancedTitle2,
-  serviceFallbackSelectorsLabel: serviceFallbackSelectorsLabel2,
-  serviceFallbackSelectorsInput: serviceFallbackSelectorsInput2,
-  serviceAuthSelectorsLabel: serviceAuthSelectorsLabel2,
-  serviceAuthSelectorsInput: serviceAuthSelectorsInput2,
-  serviceHostnameAliasesLabel: serviceHostnameAliasesLabel2,
-  serviceHostnameAliasesInput: serviceHostnameAliasesInput2,
-  serviceSupportedRoutesLabel: serviceSupportedRoutesLabel2,
-  serviceSupportedRoutesInput: serviceSupportedRoutesInput2,
-  servicePermissionPreview: servicePermissionPreview2,
-  serviceVerifiedAtLabel: serviceVerifiedAtLabel2,
-  serviceVerifiedAtInput: serviceVerifiedAtInput2,
-  serviceVerifiedRouteLabel: serviceVerifiedRouteLabel2,
-  serviceVerifiedRouteInput: serviceVerifiedRouteInput2,
-  serviceVerifiedAuthStateLabel: serviceVerifiedAuthStateLabel2,
-  serviceVerifiedAuthStateSelect: serviceVerifiedAuthStateSelect3,
-  serviceVerifiedLocaleLabel: serviceVerifiedLocaleLabel2,
-  serviceVerifiedLocaleInput: serviceVerifiedLocaleInput2,
-  serviceVerifiedVersionLabel: serviceVerifiedVersionLabel2,
-  serviceVerifiedVersionInput: serviceVerifiedVersionInput2,
-  serviceWaitLabel: serviceWaitLabel2,
-  serviceWaitRange: serviceWaitRange2,
-  serviceWaitValue: serviceWaitValue2,
-  serviceColorLabel: serviceColorLabel2,
-  serviceColorInput: serviceColorInput2,
-  serviceIconLabel: serviceIconLabel2,
-  serviceIconInput: serviceIconInput2,
-  serviceEnabledLabel: serviceEnabledLabel2,
-  serviceEnabledInput: serviceEnabledInput2,
-  serviceTestResult: serviceTestResult2,
-  serviceEditorError: serviceEditorError2,
-  serviceEditorCancel: serviceEditorCancel2,
-  serviceEditorSave: serviceEditorSave2
-} = popupDom.serviceManagement;
+  reuseExistingTabsToggle: reuseExistingTabsToggle2,
+  reuseExistingTabsLabel: reuseExistingTabsLabel2,
+  reuseExistingTabsDesc: reuseExistingTabsDesc2,
+  waitMultiplierLabel: waitMultiplierLabel2,
+  waitMultiplierRange: waitMultiplierRange2,
+  waitMultiplierValue: waitMultiplierValue3
+} = popupDom.settings;
+function createPopupStorageController(deps) {
+  let hasRestoredStoredPrompt = false;
+  function applySettingsToControls2() {
+    reuseExistingTabsToggle2.checked = Boolean(state.settings.reuseExistingTabs);
+    reuseExistingTabsLabel2.textContent = t.reuseTabsLabel;
+    reuseExistingTabsDesc2.textContent = state.settings.reuseExistingTabs ? t.reuseTabsDescEnabled : t.reuseTabsDescDisabled;
+    waitMultiplierLabel2.textContent = t.waitMultiplierLabel;
+    waitMultiplierRange2.value = String(state.settings.waitMsMultiplier);
+    waitMultiplierValue3.textContent = t.waitMultiplierValue(
+      state.settings.waitMsMultiplier
+    );
+    deps.renderSortControls();
+  }
+  async function loadStoredData2() {
+    try {
+      const [
+        history,
+        favorites,
+        variableCache,
+        runtimeSites,
+        promptIntent,
+        composeDraftPrompt,
+        lastSentPrompt,
+        failedSelectors,
+        favoriteJobs,
+        settings
+      ] = await Promise.all([
+        getPromptHistory(),
+        getPromptFavorites(),
+        getTemplateVariableCache(),
+        getRuntimeSites(),
+        consumePopupPromptIntent(),
+        getComposeDraftPrompt(),
+        getLastSentPrompt(),
+        getFailedSelectors(),
+        getFavoriteRunJobs(),
+        getAppSettings()
+      ]);
+      state.history = history;
+      state.favorites = favorites;
+      state.templateVariableCache = variableCache;
+      state.runtimeSites = sortSitesByOrder(runtimeSites, settings.siteOrder);
+      state.failedSelectors = new Map(
+        failedSelectors.map((entry) => [entry.serviceId, entry])
+      );
+      state.favoriteJobs = favoriteJobs;
+      state.settings = settings;
+      await deps.refreshOpenSiteTabs();
+      if (!hasRestoredStoredPrompt) {
+        promptInput7.value = pickRestoredComposePrompt({
+          currentPrompt: promptInput7.value,
+          popupPromptIntent: promptIntent,
+          composeDraftPrompt,
+          lastSentPrompt
+        });
+        hasRestoredStoredPrompt = true;
+      }
+      applySettingsToControls2();
+      deps.renderSiteCheckboxesPanel();
+      deps.renderManagedSites();
+      deps.updatePromptCounter();
+      deps.autoResizePromptInput();
+      deps.renderTemplateSummary();
+      deps.renderLists();
+    } catch (error) {
+      console.error("[AI Prompt Broadcaster] Failed to load stored data.", error);
+      throw error;
+    }
+  }
+  async function refreshStoredData2() {
+    try {
+      const [
+        history,
+        favorites,
+        variableCache,
+        runtimeSites,
+        failedSelectors,
+        favoriteJobs,
+        settings
+      ] = await Promise.all([
+        getPromptHistory(),
+        getPromptFavorites(),
+        getTemplateVariableCache(),
+        getRuntimeSites(),
+        getFailedSelectors(),
+        getFavoriteRunJobs(),
+        getAppSettings()
+      ]);
+      state.history = history;
+      state.favorites = favorites;
+      state.templateVariableCache = variableCache;
+      state.runtimeSites = sortSitesByOrder(runtimeSites, settings.siteOrder);
+      state.failedSelectors = new Map(
+        failedSelectors.map((entry) => [entry.serviceId, entry])
+      );
+      state.favoriteJobs = favoriteJobs;
+      state.settings = settings;
+      await deps.refreshOpenSiteTabs();
+      applySettingsToControls2();
+      deps.renderSiteCheckboxesPanel();
+      deps.renderManagedSites();
+      deps.renderLists();
+    } catch (error) {
+      console.error("[AI Prompt Broadcaster] Failed to refresh stored data.", error);
+      throw error;
+    }
+  }
+  async function flushPendingSessionToasts2() {
+    const pendingToasts = await drainPendingUiToasts();
+    pendingToasts.forEach((toast) => {
+      deps.showAppToast(toast);
+    });
+  }
+  return {
+    applySettingsToControls: applySettingsToControls2,
+    loadStoredData: loadStoredData2,
+    refreshStoredData: refreshStoredData2,
+    flushPendingSessionToasts: flushPendingSessionToasts2
+  };
+}
+
+// src/popup/app/bootstrap.ts
+var { promptInput: promptInput8 } = popupDom.compose;
 var {
   templateModal: templateModal2,
-  templateModalTitle: templateModalTitle2,
-  templateModalDesc: templateModalDesc2,
-  templateModalClose: templateModalClose2,
-  templateModalSystemInfo: templateModalSystemInfo2,
-  templateFields: templateFields2,
-  templatePreviewLabel: templatePreviewLabel2,
-  templatePreview: templatePreview2,
-  templateModalError: templateModalError2,
-  templateModalCancel: templateModalCancel2,
-  templateModalConfirm: templateModalConfirm2,
   favoriteModal: favoriteModal3,
-  favoriteModalTitle: favoriteModalTitle2,
-  favoriteModalDesc: favoriteModalDesc2,
-  favoriteModalClose: favoriteModalClose2,
-  favoriteTitleLabel: favoriteTitleLabel2,
-  favoriteTitleInput: favoriteTitleInput4,
-  favoriteModeLabel: favoriteModeLabel2,
-  favoriteModeSelect: favoriteModeSelect4,
-  favoriteTargetsLabel: favoriteTargetsLabel2,
-  favoriteTargetsList: favoriteTargetsList3,
-  favoriteTagsLabel: favoriteTagsLabel2,
-  favoriteTagsInput: favoriteTagsInput3,
-  favoriteFolderLabel: favoriteFolderLabel2,
-  favoriteFolderInput: favoriteFolderInput3,
-  favoritePinnedInput: favoritePinnedInput3,
-  favoritePinnedLabel: favoritePinnedLabel2,
-  favoriteScheduleEnabledRow,
-  favoriteScheduleEnabled: favoriteScheduleEnabled4,
-  favoriteScheduleEnabledLabel: favoriteScheduleEnabledLabel2,
-  favoriteScheduleFields: favoriteScheduleFields3,
-  favoriteScheduledAtLabel: favoriteScheduledAtLabel2,
-  favoriteScheduledAtInput: favoriteScheduledAtInput4,
-  favoriteScheduleRepeatLabel: favoriteScheduleRepeatLabel2,
-  favoriteScheduleRepeatSelect: favoriteScheduleRepeatSelect4,
-  favoriteSaveDefaultsRow: favoriteSaveDefaultsRow3,
-  favoriteSaveDefaults: favoriteSaveDefaults5,
-  favoriteSaveDefaultsLabel: favoriteSaveDefaultsLabel2,
-  favoriteDefaultFieldsWrap: favoriteDefaultFieldsWrap3,
-  favoriteDefaultFieldsLabel: favoriteDefaultFieldsLabel2,
-  favoriteDefaultFields: favoriteDefaultFields4,
-  favoriteChainWrap: favoriteChainWrap2,
-  favoriteChainTitle: favoriteChainTitle2,
-  favoriteChainDesc: favoriteChainDesc2,
-  favoriteChainList: favoriteChainList3,
-  favoriteChainAddStep: favoriteChainAddStep3,
-  favoriteModalError: favoriteModalError3,
-  favoriteModalCancel: favoriteModalCancel2,
-  favoriteModalRun: favoriteModalRun3,
-  favoriteModalConfirm: favoriteModalConfirm3,
   resendModal: resendModal2,
-  resendModalTitle: resendModalTitle3,
-  resendModalDesc: resendModalDesc3,
-  resendModalSites: resendModalSites2,
-  resendModalClose: resendModalClose2,
-  resendModalCancel: resendModalCancel3,
-  resendModalConfirm: resendModalConfirm3,
-  importReportModal: importReportModal2,
-  importReportModalTitle: importReportModalTitle3,
-  importReportModalDesc: importReportModalDesc3,
-  importReportBody: importReportBody2,
-  importReportModalClose: importReportModalClose2,
-  importReportModalConfirm: importReportModalConfirm3
+  importReportModal: importReportModal2
 } = popupDom.modals;
 var { toastHost } = popupDom;
 var popupShell = createPopupShell({
@@ -7409,28 +8232,9 @@ var renderTemplateSummary = () => void 0;
 var renderSiteCheckboxesPanel = () => void 0;
 var renderTabLabels = () => void 0;
 var setCardStatesFromBroadcast = (_summary) => void 0;
-var popupTargetsController = createPopupTargetsController({
-  getEnabledSites,
-  getRuntimeSiteLabel,
-  sendPopupMessage: (message, timeoutMs) => sendPopupMessage(message, timeoutMs),
-  renderSiteCheckboxesPanel: () => renderSiteCheckboxesPanel()
-});
-var {
-  getOpenSiteTabs,
-  getDefaultTargetModeLabel,
-  syncSiteTargetSelections,
-  refreshOpenSiteTabs,
-  scheduleOpenSiteTabsRefresh,
-  buildComposerBroadcastTargets,
-  buildRuntimeBroadcastTargets,
-  detectTemplateVariablesForTargets: detectTemplateVariablesForTargets2,
-  findMissingTemplateValuesForTargets: findMissingTemplateValuesForTargets2,
-  buildResolvedBroadcastTargets,
-  buildTemplatePreviewText
-} = popupTargetsController;
+var renderManagedSites = () => void 0;
 var renderHistoryList = () => void 0;
 var renderFavoritesList = () => void 0;
-var scheduleFavoriteTitleSave = () => void 0;
 function renderLists() {
   renderHistoryList();
   renderFavoritesList();
@@ -7454,7 +8258,25 @@ var triggerRipple = (_button, _event) => void 0;
 var bindHistoryModalEvents = (_getErrorMessage) => void 0;
 var bindTemplateModalEvents = (_onError) => void 0;
 var handleGlobalShortcut = async (_event) => void 0;
-var hasRestoredStoredPrompt = false;
+var getErrorMessage2 = (error) => getErrorMessage(error, getUnknownErrorText);
+var popupTargetsController = createPopupTargetsController({
+  getEnabledSites,
+  getRuntimeSiteLabel,
+  sendPopupMessage: (message, timeoutMs) => sendPopupMessage(message, timeoutMs),
+  renderSiteCheckboxesPanel: () => renderSiteCheckboxesPanel()
+});
+var {
+  getOpenSiteTabs,
+  getDefaultTargetModeLabel,
+  refreshOpenSiteTabs,
+  scheduleOpenSiteTabsRefresh,
+  buildComposerBroadcastTargets,
+  buildRuntimeBroadcastTargets,
+  detectTemplateVariablesForTargets: detectTemplateVariablesForTargets2,
+  findMissingTemplateValuesForTargets: findMissingTemplateValuesForTargets2,
+  buildResolvedBroadcastTargets,
+  buildTemplatePreviewText
+} = popupTargetsController;
 var overlayController = createOverlayController({
   overlays: [importReportModal2, resendModal2, favoriteModal3, templateModal2],
   closeFavoriteModal: () => hideFavoriteModal(),
@@ -7486,103 +8308,29 @@ var popupRendering = createPopupRendering({
 renderTemplateSummary = popupRendering.renderTemplateSummary;
 renderSiteCheckboxesPanel = popupRendering.renderSiteCheckboxesPanel;
 renderTabLabels = popupRendering.renderTabLabels;
-function applySettingsToControls() {
-  reuseExistingTabsToggle.checked = Boolean(state.settings.reuseExistingTabs);
-  reuseExistingTabsLabel2.textContent = t.reuseTabsLabel;
-  reuseExistingTabsDesc2.textContent = state.settings.reuseExistingTabs ? t.reuseTabsDescEnabled : t.reuseTabsDescDisabled;
-  waitMultiplierLabel2.textContent = t.waitMultiplierLabel;
-  waitMultiplierRange.value = String(state.settings.waitMsMultiplier);
-  waitMultiplierValue2.textContent = t.waitMultiplierValue(state.settings.waitMsMultiplier);
-  popupRendering.renderSortControls();
-}
-async function loadStoredData() {
-  try {
-    const [
-      history,
-      favorites,
-      variableCache,
-      runtimeSites,
-      promptIntent,
-      composeDraftPrompt,
-      lastSentPrompt,
-      failedSelectors,
-      favoriteJobs,
-      settings
-    ] = await Promise.all([
-      getPromptHistory(),
-      getPromptFavorites(),
-      getTemplateVariableCache(),
-      getRuntimeSites(),
-      consumePopupPromptIntent(),
-      getComposeDraftPrompt(),
-      getLastSentPrompt(),
-      getFailedSelectors(),
-      getFavoriteRunJobs(),
-      getAppSettings()
-    ]);
-    state.history = history;
-    state.favorites = favorites;
-    state.templateVariableCache = variableCache;
-    state.runtimeSites = sortSitesByOrder(runtimeSites, settings.siteOrder);
-    state.failedSelectors = new Map(failedSelectors.map((entry) => [entry.serviceId, entry]));
-    state.favoriteJobs = favoriteJobs;
-    state.settings = settings;
-    await refreshOpenSiteTabs();
-    if (!hasRestoredStoredPrompt) {
-      promptInput5.value = pickRestoredComposePrompt({
-        currentPrompt: promptInput5.value,
-        popupPromptIntent: promptIntent,
-        composeDraftPrompt,
-        lastSentPrompt
-      });
-      hasRestoredStoredPrompt = true;
-    }
-    applySettingsToControls();
-    renderSiteCheckboxesPanel();
-    renderManagedSites();
-    updatePromptCounter();
-    autoResizePromptInput();
-    renderTemplateSummary();
-    renderLists();
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to load stored data.", error);
-    throw error;
-  }
-}
-async function refreshStoredData() {
-  try {
-    const [history, favorites, variableCache, runtimeSites, failedSelectors, favoriteJobs, settings] = await Promise.all([
-      getPromptHistory(),
-      getPromptFavorites(),
-      getTemplateVariableCache(),
-      getRuntimeSites(),
-      getFailedSelectors(),
-      getFavoriteRunJobs(),
-      getAppSettings()
-    ]);
-    state.history = history;
-    state.favorites = favorites;
-    state.templateVariableCache = variableCache;
-    state.runtimeSites = sortSitesByOrder(runtimeSites, settings.siteOrder);
-    state.failedSelectors = new Map(failedSelectors.map((entry) => [entry.serviceId, entry]));
-    state.favoriteJobs = favoriteJobs;
-    state.settings = settings;
-    await refreshOpenSiteTabs();
-    applySettingsToControls();
-    renderSiteCheckboxesPanel();
-    renderManagedSites();
-    renderLists();
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to refresh stored data.", error);
-    throw error;
-  }
-}
+var popupStorageController = createPopupStorageController({
+  refreshOpenSiteTabs,
+  renderSiteCheckboxesPanel: () => renderSiteCheckboxesPanel(),
+  renderManagedSites: () => renderManagedSites(),
+  updatePromptCounter,
+  autoResizePromptInput,
+  renderTemplateSummary: () => renderTemplateSummary(),
+  renderLists,
+  renderSortControls: () => popupRendering.renderSortControls(),
+  showAppToast
+});
+var {
+  applySettingsToControls,
+  loadStoredData,
+  refreshStoredData,
+  flushPendingSessionToasts
+} = popupStorageController;
 var popupSendFlow = createPopupSendFlow({
   refreshOpenSiteTabs,
   sendPopupMessage: async (message, timeoutMs, fallbackValue) => await sendRuntimeMessageWithTimeout(
     message,
     timeoutMs,
-    fallbackValue
+    fallbackValue ?? null
   ),
   buildRuntimeBroadcastTargets,
   setStatus,
@@ -7592,7 +8340,7 @@ var popupSendFlow = createPopupSendFlow({
   clearSendSafetyTimer,
   buildBroadcastToastSignature,
   getUnknownErrorText,
-  getErrorMessage,
+  getErrorMessage: getErrorMessage2,
   setLastSentPrompt
 });
 applyLastBroadcastState = popupSendFlow.applyLastBroadcastState;
@@ -7618,6 +8366,19 @@ openTemplateModalV2 = popupTemplateModal.openTemplateModalV2;
 setTemplateModalError = popupTemplateModal.setTemplateModalError;
 requestFavoriteRun = popupTemplateModal.requestFavoriteRun;
 bindTemplateModalEvents = popupTemplateModal.bindTemplateModalEvents;
+var popupComposerController = createPopupComposerController({
+  clearStatus,
+  scheduleComposeDraftSave,
+  applySiteSelection,
+  renderTemplateSummary: () => renderTemplateSummary(),
+  switchTab,
+  setStatus,
+  showAppToast,
+  checkedSiteIds,
+  buildComposerBroadcastTargets,
+  openTemplateModalV2: (prompt, targets) => openTemplateModalV2(prompt, targets)
+});
+var { loadPromptIntoComposer, handleSend } = popupComposerController;
 var popupHistoryModals = createPopupHistoryModals({
   getEnabledSites,
   runtimeSites: () => state.runtimeSites,
@@ -7654,78 +8415,21 @@ var favoriteEditorFeature = createFavoriteEditorFeature({
 });
 var {
   getFavoriteById: getFavoriteById2,
-  setFavoriteModalError,
-  dismissFavoriteModal,
   openFavoriteModal,
   openFavoriteEditor,
   runFavoriteItem,
-  runFavoriteFromEditor,
   bindFavoriteEditorEvents
 } = favoriteEditorFeature;
 hideFavoriteModal = favoriteEditorFeature.hideFavoriteModal;
-async function maybeHandlePopupFavoriteIntent() {
-  const intent = await consumePopupFavoriteIntent().catch(() => null);
-  if (!intent?.favoriteId) {
-    return;
-  }
-  const favorite = getFavoriteById2(intent.favoriteId);
-  if (!favorite) {
-    return;
-  }
-  let runReason = intent.reason || t.favoriteRunNeedsEditor;
-  if (intent.type === "run") {
-    const response = await requestFavoriteRun(favorite, {
-      trigger: intent.source === "options-edit" ? "popup" : intent.source ?? "popup",
-      allowPopupFallback: false
-    });
-    if (response?.ok) {
-      const message = response?.message ?? t.favoriteRunQueued;
-      setStatus(message, "success");
-      showAppToast(message, "success", 2200);
-      return;
-    }
-    if (!response?.requiresPopupInput) {
-      const errorMessage = response?.error ?? getUnknownErrorText();
-      setStatus(t.error(errorMessage), "error");
-      showAppToast(t.error(errorMessage), "error", 3200);
-      return;
-    }
-    runReason = response?.error || runReason;
-  }
-  openFavoriteEditor(favorite, {
-    reason: intent.type === "run" ? runReason : ""
-  });
-}
-function setLoadedTemplateContext(item) {
-  const templateDefaults = item && "templateDefaults" in item && item.templateDefaults && typeof item.templateDefaults === "object" ? item.templateDefaults : {};
-  const favoriteTitle = item && "title" in item && typeof item.title === "string" ? item.title : "";
-  const favoriteId = item && "id" in item && typeof item.id === "string" ? item.id : "";
-  state.loadedTemplateDefaults = templateDefaults && typeof templateDefaults === "object" ? { ...templateDefaults } : {};
-  state.loadedFavoriteTitle = favoriteTitle;
-  state.loadedFavoriteId = favoriteId;
-}
-function loadPromptIntoComposer(item) {
-  promptInput5.value = item.text;
-  scheduleComposeDraftSave(promptInput5.value);
-  applySiteSelection(
-    "requestedSiteIds" in item ? getHistorySelectedSiteIds(item) : item.sentTo
-  );
-  setLoadedTemplateContext(item);
-  renderTemplateSummary();
-  switchTab("compose");
-  promptInput5.focus();
-  setStatus(t.importedLoad, "success");
-  showAppToast(t.importedLoad, "info", 2200);
-}
-function getErrorMessage(error) {
-  return error instanceof Error ? error.message : getUnknownErrorText();
-}
-async function flushPendingSessionToasts() {
-  const pendingToasts = await drainPendingUiToasts();
-  pendingToasts.forEach((toast) => {
-    showAppToast(toast);
-  });
-}
+var popupFavoriteIntentHandler = createPopupFavoriteIntentHandler({
+  getFavoriteById: (favoriteId) => getFavoriteById2(favoriteId) ?? void 0,
+  requestFavoriteRun,
+  openFavoriteEditor,
+  setStatus,
+  showAppToast,
+  getUnknownErrorText
+});
+var { maybeHandlePopupFavoriteIntent } = popupFavoriteIntentHandler;
 var favoritesController = createFavoritesController({
   switchTab,
   loadPromptIntoComposer,
@@ -7736,7 +8440,6 @@ var favoritesController = createFavoritesController({
   getUnknownErrorText
 });
 renderFavoritesList = favoritesController.renderFavoritesList;
-scheduleFavoriteTitleSave = favoritesController.scheduleFavoriteTitleSave;
 var historyController = createHistoryController({
   switchTab,
   loadPromptIntoComposer,
@@ -7746,450 +8449,32 @@ var historyController = createHistoryController({
   showAppToast
 });
 renderHistoryList = historyController.renderHistoryList;
-function resetTransientModals() {
-  hideTemplateModal();
-  hideFavoriteModal();
-  hideResendModal();
-  hideImportReportModal();
-}
 var popupServicesController = createPopupServicesController({
   refreshStoredData,
   setStatus,
   showAppToast,
-  getErrorMessage,
+  getErrorMessage: getErrorMessage2,
   buildServiceTestResultMessage,
   sendPopupMessage: (message, timeoutMs) => sendPopupMessage(message, timeoutMs),
   getSiteLastVerifiedStatus,
   getSiteSelectorIssueUrl
 });
 var {
-  setServiceEditorError,
-  setServiceTestResult,
-  setServicePermissionPreview,
-  renderServicePermissionPreview,
   resetServiceEditorForm,
   hideServiceEditor,
   populateServiceEditor,
-  buildManagedSiteMarkup,
-  renderManagedSites,
-  readServiceEditorDraft,
-  ensureSiteOriginPermission,
+  renderServicePermissionPreview,
+  renderManagedSites: renderManagedSitesImpl,
   testSelectorOnActiveTab,
   saveServiceEditorDraft,
   deleteManagedSite
 } = popupServicesController;
-async function handleSend() {
-  if (state.isSending) {
-    return;
-  }
-  clearStatus();
-  const prompt = promptInput5.value.trim();
-  if (!prompt) {
-    setStatus(t.warnEmpty, "error");
-    showAppToast(t.toastPromptEmpty, "warning", 2e3);
-    promptInput5.focus();
-    return;
-  }
-  const selectedSiteIds = checkedSiteIds();
-  if (selectedSiteIds.length === 0) {
-    setStatus(t.warnNoSite, "error");
-    showAppToast(t.toastNoService, "warning", 2e3);
-    return;
-  }
-  const composerTargets = buildComposerBroadcastTargets(selectedSiteIds, prompt);
-  const selectedSites = state.runtimeSites.filter((site) => selectedSiteIds.includes(site.id));
-  const customSitePermissionPatterns = Array.from(
-    new Set(
-      selectedSites.filter((site) => site.isCustom).flatMap((site) => Array.isArray(site.permissionPatterns) ? site.permissionPatterns : []).filter((pattern) => typeof pattern === "string" && pattern.trim().length > 0)
-    )
-  );
-  if (customSitePermissionPatterns.length > 0) {
-    const permissionResult = await requestOriginPermissions(customSitePermissionPatterns);
-    if (!permissionResult.granted) {
-      setStatus(t.servicePermissionDenied, "error");
-      showAppToast(t.servicePermissionDenied, "error", 4e3);
-      return;
-    }
-  }
-  await openTemplateModalV2(prompt, composerTargets);
-}
-function bindGlobalEvents() {
-  tabButtons3.forEach((button) => {
-    button.addEventListener("click", () => {
-      const nextTab = button.dataset.tab;
-      if (nextTab) {
-        switchTab(nextTab);
-      }
-    });
-  });
-  clearPromptBtn2.addEventListener("click", () => {
-    promptInput5.value = "";
-    scheduleComposeDraftSave("");
-    state.loadedFavoriteId = "";
-    state.loadedFavoriteTitle = "";
-    state.loadedTemplateDefaults = {};
-    updatePromptCounter();
-    autoResizePromptInput();
-    renderTemplateSummary();
-    clearStatus();
-    promptInput5.focus();
-  });
-  toggleAllBtn3.addEventListener("click", () => {
-    const checkboxes = allCheckboxes();
-    const shouldCheckAll = !checkboxes.every((checkbox) => checkbox.checked);
-    checkboxes.forEach((checkbox) => {
-      checkbox.checked = shouldCheckAll;
-      checkbox.closest(".site-card")?.classList.toggle("checked", shouldCheckAll);
-    });
-    syncToggleAllLabel();
-    renderTemplateSummary();
-  });
-  saveFavoriteBtn2.addEventListener("click", () => {
-    void openFavoriteModal().catch((error) => {
-      console.error("[AI Prompt Broadcaster] Failed to open favorite modal.", error);
-      setStatus(t.error(getErrorMessage(error)), "error");
-    });
-  });
-  cancelSendBtn2.addEventListener("click", () => {
-    void cancelCurrentBroadcast();
-  });
-  sendBtn3.addEventListener("click", (event) => {
-    triggerRipple(sendBtn3, event);
-    void handleSend().catch((error) => {
-      console.error("[AI Prompt Broadcaster] Send flow failed.", error);
-      setStatus(t.error(getErrorMessage(error)), "error");
-    });
-  });
-  promptInput5.addEventListener("input", () => {
-    scheduleComposeDraftSave(promptInput5.value);
-    updatePromptCounter();
-    autoResizePromptInput();
-    renderTemplateSummary();
-    document.querySelectorAll(".site-card.sent, .site-card.failed, .site-card.sending").forEach((card) => {
-      card.classList.remove("sending", "sent", "failed");
-      card.querySelector(".retry-btn")?.remove();
-    });
-  });
-  promptInput5.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
-      event.preventDefault();
-      void handleSend().catch((error) => {
-        console.error("[AI Prompt Broadcaster] Keyboard send failed.", error);
-        setStatus(t.error(getErrorMessage(error)), "error");
-      });
-    }
-  });
-  historySearchInput2.addEventListener("input", (event) => {
-    const target = getEventInput(event.target);
-    if (!target) {
-      return;
-    }
-    state.historySearch = target.value;
-    renderHistoryList();
-  });
-  historySortSelect2.addEventListener("change", (event) => {
-    const target = getEventSelect(event.target);
-    if (!target) {
-      return;
-    }
-    const nextValue = target.value;
-    state.settings = {
-      ...state.settings,
-      historySort: nextValue
-    };
-    renderHistoryList();
-    void updateAppSettings({ historySort: nextValue }).catch((error) => {
-      console.error("[AI Prompt Broadcaster] Failed to save history sort.", error);
-      setStatus(t.error(getErrorMessage(error)), "error");
-    });
-  });
-  favoritesSearchInput2.addEventListener("input", (event) => {
-    const target = getEventInput(event.target);
-    if (!target) {
-      return;
-    }
-    state.favoritesSearch = target.value;
-    renderFavoritesList();
-  });
-  favoritesSortSelect2.addEventListener("change", (event) => {
-    const target = getEventSelect(event.target);
-    if (!target) {
-      return;
-    }
-    const nextValue = target.value;
-    state.settings = {
-      ...state.settings,
-      favoriteSort: nextValue
-    };
-    renderFavoritesList();
-    void updateAppSettings({ favoriteSort: nextValue }).catch((error) => {
-      console.error("[AI Prompt Broadcaster] Failed to save favorite sort.", error);
-      setStatus(t.error(getErrorMessage(error)), "error");
-    });
-  });
-  document.querySelector("[data-panel='favorites']")?.addEventListener("click", (event) => {
-    favoritesController.handleFavoriteFilterBarClick(event);
-  });
-  historyList3.addEventListener("click", (event) => {
-    historyController.handleHistoryListClick(event);
-  });
-  historyList3.addEventListener("contextmenu", (event) => {
-    historyController.handleHistoryListContextMenu(event);
-  });
-  favoritesList3.addEventListener("click", (event) => {
-    favoritesController.handleFavoritesListClick(event);
-  });
-  favoritesList3.addEventListener("contextmenu", (event) => {
-    favoritesController.handleFavoritesListContextMenu(event);
-  });
-  favoritesList3.addEventListener("input", (event) => {
-    favoritesController.handleFavoritesListInput(event);
-  });
-  favoritesList3.addEventListener("blur", (event) => {
-    favoritesController.handleFavoritesListBlur(event);
-  }, true);
-  document.addEventListener("click", (event) => {
-    if (!state.openMenuKey) {
-      return;
-    }
-    const insideMenu = getEventElement(event.target)?.closest(".prompt-actions");
-    if (!insideMenu) {
-      state.openMenuKey = null;
-      renderLists();
-    }
-  });
-  clearHistoryBtn2.addEventListener("click", async () => {
-    showConfirmToast(t.clearHistoryConfirm, async () => {
-      try {
-        await clearPromptHistory();
-        state.history = [];
-        renderHistoryList();
-        setStatus(t.historyCleared, "success");
-        showAppToast(t.historyCleared, "info", 2200);
-      } catch (error) {
-        console.error("[AI Prompt Broadcaster] Failed to clear history.", error);
-        setStatus(t.error(getErrorMessage(error)), "error");
-        showAppToast(t.error(getErrorMessage(error)), "error", 4e3);
-      }
-    });
-  });
-  reuseExistingTabsToggle.addEventListener("change", (event) => {
-    const target = getEventInput(event.target);
-    if (!target) {
-      return;
-    }
-    const nextValue = target.checked;
-    state.settings = {
-      ...state.settings,
-      reuseExistingTabs: nextValue
-    };
-    applySettingsToControls();
-    renderSiteCheckboxesPanel();
-    void updateAppSettings({ reuseExistingTabs: nextValue }).catch((error) => {
-      console.error("[AI Prompt Broadcaster] Failed to save tab reuse setting.", error);
-      setStatus(t.error(getErrorMessage(error)), "error");
-      showAppToast(t.error(getErrorMessage(error)), "error", 3200);
-    });
-  });
-  waitMultiplierRange.addEventListener("input", (event) => {
-    const target = getEventInput(event.target);
-    if (!target) {
-      return;
-    }
-    waitMultiplierValue2.textContent = t.waitMultiplierValue(Number(target.value));
-  });
-  waitMultiplierRange.addEventListener("change", (event) => {
-    const target = getEventInput(event.target);
-    if (!target) {
-      return;
-    }
-    const nextValue = Number(target.value);
-    state.settings = {
-      ...state.settings,
-      waitMsMultiplier: nextValue
-    };
-    applySettingsToControls();
-    void updateAppSettings({ waitMsMultiplier: nextValue }).catch((error) => {
-      console.error("[AI Prompt Broadcaster] Failed to save wait multiplier.", error);
-      setStatus(t.error(getErrorMessage(error)), "error");
-      showAppToast(t.error(getErrorMessage(error)), "error", 3200);
-    });
-  });
-  openOptionsBtn2.addEventListener("click", () => {
-    void chrome.runtime.openOptionsPage().catch((error) => {
-      console.error("[AI Prompt Broadcaster] Failed to open options page.", error);
-      setStatus(t.error(getErrorMessage(error)), "error");
-    });
-  });
-  exportJsonBtn2.addEventListener("click", async () => {
-    try {
-      const payload = await exportPromptData();
-      const blob = new Blob([JSON.stringify(payload, null, 2)], {
-        type: "application/json"
-      });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = `ai-prompt-broadcaster-${(/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-")}.json`;
-      anchor.click();
-      URL.revokeObjectURL(url);
-      setStatus(t.exportSuccess, "success");
-    } catch (error) {
-      console.error("[AI Prompt Broadcaster] JSON export failed.", error);
-      setStatus(t.error(getErrorMessage(error)), "error");
-    }
-  });
-  importJsonBtn2.addEventListener("click", () => {
-    importJsonInput.click();
-  });
-  importJsonInput.addEventListener("change", async (event) => {
-    const target = getEventInput(event.target);
-    const file = target?.files?.[0];
-    if (!file) {
-      return;
-    }
-    try {
-      const text = await file.text();
-      const result = await importPromptData(text);
-      await refreshStoredData();
-      setStatus(buildImportSummaryText(result.importSummary), "success");
-      showAppToast(buildImportSummaryText(result.importSummary, { short: true }), "success", 2600);
-      openImportReportModal(result.importSummary);
-    } catch (error) {
-      const importSummary = getImportErrorSummary(error);
-      if (importSummary) {
-        openImportReportModal(importSummary);
-      }
-      setStatus(t.importFailed, "error");
-      showAppToast(t.importFailed, "error", 4e3);
-      console.error("[AI Prompt Broadcaster] JSON import failed.", error);
-    } finally {
-      importJsonInput.value = "";
-    }
-  });
-  addServiceBtn2.addEventListener("click", () => {
-    resetServiceEditorForm();
-    populateServiceEditor(null);
-  });
-  resetSitesBtn2.addEventListener("click", () => {
-    showConfirmToast(t.resetServicesConfirm, async () => {
-      try {
-        await resetSiteSettings();
-        await refreshStoredData();
-        hideServiceEditor();
-        setStatus(t.serviceResetDone, "success");
-        showAppToast(t.serviceResetDone, "success", 2200);
-      } catch (error) {
-        console.error("[AI Prompt Broadcaster] Failed to reset service settings.", error);
-        setStatus(t.error(getErrorMessage(error)), "error");
-        showAppToast(t.error(getErrorMessage(error)), "error", 4e3);
-      }
-    });
-  });
-  managedSitesList2.addEventListener("click", (event) => {
-    const actionButton = getEventElement(event.target)?.closest("[data-action][data-site-id]");
-    if (!actionButton) {
-      return;
-    }
-    const { action, siteId } = actionButton.dataset;
-    if (!siteId) {
-      return;
-    }
-    if (action === "edit-service") {
-      const site = state.runtimeSites.find((entry) => entry.id === siteId);
-      if (site) {
-        populateServiceEditor(site);
-      }
-      return;
-    }
-    if (action === "delete-service") {
-      void deleteManagedSite(siteId);
-    }
-  });
-  managedSitesList2.addEventListener("change", (event) => {
-    const toggle = getEventElement(event.target)?.closest("[data-action='toggle-service'][data-site-id]");
-    const siteId = toggle?.dataset.siteId;
-    if (!toggle || !siteId) {
-      return;
-    }
-    void setRuntimeSiteEnabled(siteId, toggle.checked).then(() => refreshStoredData()).catch((error) => {
-      console.error("[AI Prompt Broadcaster] Failed to toggle site state.", error);
-      setStatus(t.error(getErrorMessage(error)), "error");
-    });
-  });
-  testSelectorBtn2.addEventListener("click", () => {
-    void testSelectorOnActiveTab();
-  });
-  serviceWaitRange2.addEventListener("input", () => {
-    serviceWaitValue2.textContent = `${serviceWaitRange2.value}ms`;
-  });
-  serviceUrlInput2.addEventListener("input", () => {
-    if (!serviceEditor2.hidden) {
-      renderServicePermissionPreview();
-    }
-  });
-  serviceHostnameAliasesInput2.addEventListener("input", () => {
-    if (!serviceEditor2.hidden) {
-      renderServicePermissionPreview();
-    }
-  });
-  serviceEditorCancel2.addEventListener("click", hideServiceEditor);
-  serviceEditorSave2.addEventListener("click", () => {
-    void saveServiceEditorDraft();
-  });
-  bindTemplateModalEvents((message) => {
-    setTemplateModalError(message);
-  });
-  bindFavoriteEditorEvents();
-  bindHistoryModalEvents(getErrorMessage);
-  document.addEventListener("keydown", (event) => {
-    trapModalFocus(event);
-    void handleGlobalShortcut(event).catch((error) => {
-      console.error("[AI Prompt Broadcaster] Failed to handle popup shortcut.", error);
-    });
-  });
-  chrome.tabs.onCreated.addListener(() => {
-    scheduleOpenSiteTabsRefresh();
-  });
-  chrome.tabs.onRemoved.addListener(() => {
-    scheduleOpenSiteTabsRefresh();
-  });
-  chrome.tabs.onUpdated.addListener((_tabId, changeInfo) => {
-    if (changeInfo.status || typeof changeInfo.title === "string" || typeof changeInfo.url === "string") {
-      scheduleOpenSiteTabsRefresh();
-    }
-  });
-  chrome.tabs.onActivated.addListener(() => {
-    scheduleOpenSiteTabsRefresh();
-  });
-  chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName === "session") {
-      if (changes.lastBroadcast) {
-        const nextLastBroadcast = changes.lastBroadcast.newValue;
-        applyLastBroadcastState(isLastBroadcastSummary(nextLastBroadcast) ? nextLastBroadcast : null);
-      }
-      if (changes.pendingUiToasts) {
-        void flushPendingSessionToasts();
-      }
-      if (changes.favoriteRunJobs) {
-        void getFavoriteRunJobs().then((favoriteJobs) => {
-          state.favoriteJobs = favoriteJobs;
-          renderFavoritesList();
-        }).catch((error) => {
-          console.error("[AI Prompt Broadcaster] Failed to refresh favorite jobs.", error);
-        });
-      }
-      return;
-    }
-    if (areaName !== "local") {
-      return;
-    }
-    if (changes.promptHistory || changes.promptFavorites || changes.templateVariableCache || changes.appSettings || changes.customSites || changes.builtInSiteStates || changes.builtInSiteOverrides || changes.failedSelectors) {
-      void loadStoredData().catch((error) => {
-        console.error("[AI Prompt Broadcaster] Storage change refresh failed.", error);
-      });
-    }
-  });
+renderManagedSites = renderManagedSitesImpl;
+function resetTransientModals() {
+  hideTemplateModal();
+  hideFavoriteModal();
+  hideResendModal();
+  hideImportReportModal();
 }
 async function init() {
   try {
@@ -8198,7 +8483,64 @@ async function init() {
     resetTransientModals();
     initToastRoot(toastHost);
     renderTabLabels();
-    bindGlobalEvents();
+    bindPopupEvents({
+      status: {
+        setStatus,
+        clearStatus,
+        showAppToast,
+        showConfirmToast,
+        getErrorMessage: getErrorMessage2
+      },
+      compose: {
+        switchTab,
+        scheduleComposeDraftSave,
+        updatePromptCounter,
+        autoResizePromptInput,
+        renderTemplateSummary: () => renderTemplateSummary(),
+        allCheckboxes,
+        syncToggleAllLabel,
+        openFavoriteModal,
+        cancelCurrentBroadcast: () => cancelCurrentBroadcast(),
+        triggerRipple,
+        handleSend
+      },
+      lists: {
+        renderHistoryList: () => renderHistoryList(),
+        renderFavoritesList: () => renderFavoritesList(),
+        renderLists,
+        historyController,
+        favoritesController
+      },
+      storage: {
+        applySettingsToControls,
+        renderSiteCheckboxesPanel: () => renderSiteCheckboxesPanel(),
+        refreshStoredData,
+        loadStoredData,
+        flushPendingSessionToasts
+      },
+      services: {
+        resetServiceEditorForm,
+        populateServiceEditor,
+        hideServiceEditor,
+        deleteManagedSite,
+        testSelectorOnActiveTab,
+        renderServicePermissionPreview,
+        saveServiceEditorDraft
+      },
+      modals: {
+        setTemplateModalError,
+        bindTemplateModalEvents,
+        bindFavoriteEditorEvents,
+        bindHistoryModalEvents,
+        openImportReportModal
+      },
+      runtime: {
+        trapModalFocus,
+        handleGlobalShortcut,
+        scheduleOpenSiteTabsRefresh,
+        applyLastBroadcastState
+      }
+    });
     const hashTabMap = {
       "#compose": "compose",
       "#history": "history",
@@ -8217,18 +8559,23 @@ async function init() {
     applyLastBroadcastState(await getLastBroadcast(), { silentToast: false });
     await flushPendingSessionToasts();
     if (!getOpenOverlay()) {
-      promptInput5.focus();
+      promptInput8.focus();
     }
   } catch (error) {
     console.error("[AI Prompt Broadcaster] Failed to initialize popup.", error);
-    setStatus(t.error(getErrorMessage(error)), "error");
-    showAppToast(t.error(getErrorMessage(error)), "error", 4e3);
+    const errorMessage = t.error(getErrorMessage2(error));
+    setStatus(errorMessage, "error");
+    showAppToast(errorMessage, "error", 4e3);
   }
 }
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", () => {
-    void init();
-  }, { once: true });
+  document.addEventListener(
+    "DOMContentLoaded",
+    () => {
+      void init();
+    },
+    { once: true }
+  );
 } else {
   void init();
 }
