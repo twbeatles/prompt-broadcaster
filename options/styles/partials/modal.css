@@ -85,6 +85,26 @@
   gap: 8px;
 }
 
+.compare-workspace {
+  display: grid;
+  gap: 10px;
+}
+
+.compare-note {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.28);
+}
+
+@media (prefers-color-scheme: dark) {
+  .compare-note {
+    background: rgba(255, 255, 255, 0.04);
+  }
+}
+
 .result-comparison-title {
   margin: 0 0 2px;
   font-size: 13px;

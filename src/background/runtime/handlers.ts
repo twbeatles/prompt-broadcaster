@@ -6,6 +6,21 @@ import type {
   BroadcastResponse,
   CancelBroadcastMessage,
   CancelBroadcastResponse,
+  ComparisonCaptureStartMessage,
+  ComparisonCaptureStartResponse,
+  ComparisonCaptureStopMessage,
+  ComparisonNoteDeleteMessage,
+  ComparisonNoteDeleteResponse,
+  ComparisonNoteListMessage,
+  ComparisonNoteListResponse,
+  ComparisonNoteSaveMessage,
+  ComparisonNoteSaveResponse,
+  ExperimentDeleteMessage,
+  ExperimentDeleteResponse,
+  ExperimentRunMessage,
+  ExperimentRunResponse,
+  ExperimentSaveMessage,
+  ExperimentSaveResponse,
   FavoriteOpenEditorMessage,
   FavoriteOpenEditorResponse,
   FavoriteRunMessage,
@@ -21,8 +36,14 @@ import type {
   SelectorCheckReportMessage,
   SelectorCheckReportResponse,
   SelectionUpdateMessage,
+  ServiceGroupsUpdateMessage,
+  ServiceGroupsUpdateResponse,
+  ServiceHealthGetResponse,
   ServiceTestRunMessage,
   ServiceTestRunResponse,
+  TemplatePackExportMessage,
+  TemplatePackImportMessage,
+  TemplatePackTransferResponse,
 } from "../../shared/types/messages";
 
 interface BackgroundRuntimeHandlerDeps {
@@ -54,6 +75,18 @@ interface BackgroundRuntimeHandlerDeps {
     message: QuickPaletteExecuteMessage,
     sender: chrome.runtime.MessageSender,
   ) => Promise<FavoriteRunResponse>;
+  handleServiceHealthGet: () => Promise<ServiceHealthGetResponse>;
+  handleComparisonNoteList: (message: ComparisonNoteListMessage) => Promise<ComparisonNoteListResponse>;
+  handleComparisonNoteSave: (message: ComparisonNoteSaveMessage) => Promise<ComparisonNoteSaveResponse>;
+  handleComparisonNoteDelete: (message: ComparisonNoteDeleteMessage) => Promise<ComparisonNoteDeleteResponse>;
+  handleComparisonCaptureStart: (message: ComparisonCaptureStartMessage) => Promise<ComparisonCaptureStartResponse>;
+  handleComparisonCaptureStop: (message: ComparisonCaptureStopMessage) => Promise<GenericOkResponse>;
+  handleExperimentSave: (message: ExperimentSaveMessage) => Promise<ExperimentSaveResponse>;
+  handleExperimentDelete: (message: ExperimentDeleteMessage) => Promise<ExperimentDeleteResponse>;
+  handleExperimentRun: (message: ExperimentRunMessage) => Promise<ExperimentRunResponse>;
+  handleTemplatePackExport: (message: TemplatePackExportMessage) => Promise<TemplatePackTransferResponse>;
+  handleTemplatePackImport: (message: TemplatePackImportMessage) => Promise<TemplatePackTransferResponse>;
+  handleServiceGroupsUpdate: (message: ServiceGroupsUpdateMessage) => Promise<ServiceGroupsUpdateResponse>;
 }
 
 export function buildRuntimeHandlers(
@@ -136,6 +169,45 @@ export function buildRuntimeHandlers(
     "quickPalette:close": {
       sync: true,
       run: () => ({ ok: true }),
+    },
+    "service-health:get": {
+      run: () => deps.handleServiceHealthGet(),
+      errorLabel: "[AI Prompt Broadcaster] Service health retrieval failed.",
+    },
+    "comparison-note:list": {
+      run: (message) => deps.handleComparisonNoteList(message),
+    },
+    "comparison-note:save": {
+      run: (message) => deps.handleComparisonNoteSave(message),
+    },
+    "comparison-note:delete": {
+      run: (message) => deps.handleComparisonNoteDelete(message),
+    },
+    "comparison-capture:start": {
+      run: (message) => deps.handleComparisonCaptureStart(message),
+      errorLabel: "[AI Prompt Broadcaster] Comparison capture failed.",
+    },
+    "comparison-capture:stop": {
+      run: (message) => deps.handleComparisonCaptureStop(message),
+    },
+    "experiment:save": {
+      run: (message) => deps.handleExperimentSave(message),
+    },
+    "experiment:delete": {
+      run: (message) => deps.handleExperimentDelete(message),
+    },
+    "experiment:run": {
+      run: (message) => deps.handleExperimentRun(message),
+      errorLabel: "[AI Prompt Broadcaster] Prompt experiment run failed.",
+    },
+    "template-pack:export": {
+      run: (message) => deps.handleTemplatePackExport(message),
+    },
+    "template-pack:import": {
+      run: (message) => deps.handleTemplatePackImport(message),
+    },
+    "service-groups:update": {
+      run: (message) => deps.handleServiceGroupsUpdate(message),
     },
   };
 }

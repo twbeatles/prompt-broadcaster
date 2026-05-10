@@ -19,6 +19,12 @@ import {
   getPromptFavorites,
 } from "./favorites-store";
 import {
+  getComparisonNotes,
+  getPromptExperiments,
+  getServiceGroups,
+  getTemplatePacks,
+} from "./advanced-store";
+import {
   buildHistoryEntry,
   getStoredPromptHistory,
 } from "./history-store";
@@ -26,7 +32,11 @@ import {
   ensureUniqueNumericId,
   ensureUniqueStringId,
   normalizeBroadcastCounter,
+  normalizeComparisonNote,
+  normalizePromptExperiment,
+  normalizeServiceGroup,
   normalizeSettings,
+  normalizeTemplatePack,
   normalizeTemplateDefaults,
   safeArray,
   safeObject,
@@ -47,7 +57,7 @@ import type {
   PromptHistoryItem,
 } from "../types/models";
 
-const CURRENT_EXPORT_VERSION = 8;
+const CURRENT_EXPORT_VERSION = 9;
 type AcceptedCustomSite = Record<string, unknown> & {
   id: string;
   name: string;
@@ -236,6 +246,25 @@ function migrateV7ToV8(payload: Record<string, unknown>) {
   };
 }
 
+function migrateV8ToV9(payload: Record<string, unknown>) {
+  return {
+    ...payload,
+    version: 9,
+    comparisonNotes: safeArray(payload.comparisonNotes).map((entry, index) =>
+      normalizeComparisonNote(entry, {}, index),
+    ),
+    promptExperiments: safeArray(payload.promptExperiments).map((entry, index) =>
+      normalizePromptExperiment(entry, {}, index),
+    ),
+    templatePacks: safeArray(payload.templatePacks).map((entry, index) =>
+      normalizeTemplatePack(entry, {}, index),
+    ),
+    serviceGroups: safeArray(payload.serviceGroups).map((entry, index) =>
+      normalizeServiceGroup(entry, {}, index),
+    ),
+  };
+}
+
 function migrateImportData(rawValue: unknown) {
   let payload = asImportPayload(rawValue);
   const sourceVersion = normalizeImportVersion(payload.version);
@@ -276,6 +305,11 @@ function migrateImportData(rawValue: unknown) {
     workingVersion = 8;
   }
 
+  if (workingVersion < 9) {
+    payload = migrateV8ToV9(payload);
+    workingVersion = 9;
+  }
+
   return {
     migrated: payload,
     sourceVersion,
@@ -293,6 +327,10 @@ export async function exportPromptData() {
     customSites,
     builtInSiteStates,
     builtInSiteOverrides,
+    comparisonNotes,
+    promptExperiments,
+    templatePacks,
+    serviceGroups,
   ] = await Promise.all([
     getBroadcastCounter(),
     getStoredPromptHistory(),
@@ -302,6 +340,10 @@ export async function exportPromptData() {
     getCustomSites(),
     getBuiltInSiteStates(),
     getBuiltInSiteOverrides(),
+    getComparisonNotes(),
+    getPromptExperiments(),
+    getTemplatePacks(),
+    getServiceGroups(),
   ]);
 
   return {
@@ -315,6 +357,10 @@ export async function exportPromptData() {
     customSites,
     builtInSiteStates,
     builtInSiteOverrides,
+    comparisonNotes,
+    promptExperiments,
+    templatePacks,
+    serviceGroups,
   };
 }
 
@@ -332,6 +378,18 @@ export async function importPromptData(jsonString: string) {
   const importedCustomSites = safeArray(migrated?.customSites);
   const importedBuiltInSiteStates = safeObject(migrated?.builtInSiteStates);
   const importedBuiltInSiteOverrides = safeObject(migrated?.builtInSiteOverrides);
+  const importedComparisonNotes = safeArray(migrated?.comparisonNotes).map((entry, index) =>
+    normalizeComparisonNote(entry, {}, index),
+  );
+  const importedPromptExperiments = safeArray(migrated?.promptExperiments).map((entry, index) =>
+    normalizePromptExperiment(entry, {}, index),
+  );
+  const importedTemplatePacks = safeArray(migrated?.templatePacks).map((entry, index) =>
+    normalizeTemplatePack(entry, {}, index),
+  );
+  const importedServiceGroups = safeArray(migrated?.serviceGroups).map((entry, index) =>
+    normalizeServiceGroup(entry, {}, index),
+  );
   const normalizedHistory: PromptHistoryItem[] = [];
   for (const item of sortByDateDesc(history)) {
     normalizedHistory.push({
@@ -380,6 +438,10 @@ export async function importPromptData(jsonString: string) {
     [SITE_STORAGE_KEYS.customSites]: customSiteImport.acceptedSites,
     [SITE_STORAGE_KEYS.builtInSiteStates]: builtInStateImport.normalized,
     [SITE_STORAGE_KEYS.builtInSiteOverrides]: builtInOverrideImport.normalized,
+    [LOCAL_STORAGE_KEYS.comparisonNotes]: importedComparisonNotes,
+    [LOCAL_STORAGE_KEYS.promptExperiments]: importedPromptExperiments,
+    [LOCAL_STORAGE_KEYS.templatePacks]: importedTemplatePacks,
+    [LOCAL_STORAGE_KEYS.serviceGroups]: importedServiceGroups,
   });
   try {
     await cleanupUnusedCustomSitePermissions(previousCustomSites, customSiteImport.acceptedSites);
@@ -396,6 +458,10 @@ export async function importPromptData(jsonString: string) {
     customSites: customSiteImport.acceptedSites,
     builtInSiteStates: builtInStateImport.normalized,
     builtInSiteOverrides: builtInOverrideImport.normalized,
+    comparisonNotes: importedComparisonNotes,
+    promptExperiments: importedPromptExperiments,
+    templatePacks: importedTemplatePacks,
+    serviceGroups: importedServiceGroups,
     importSummary,
   };
 }

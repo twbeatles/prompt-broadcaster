@@ -7,6 +7,7 @@ import {
   normalizeIsoDate,
   normalizeNullableIsoDate,
   normalizeScheduleRepeat,
+  normalizeScheduleContextSnapshot,
   normalizeSentTo,
   normalizeTags,
   normalizeTemplateDefaults,
@@ -75,6 +76,7 @@ export function buildFavoriteEntry(entry: unknown): FavoritePrompt {
     scheduleEnabled: normalizeBoolean(source?.scheduleEnabled, false),
     scheduledAt: normalizeNullableIsoDate(source?.scheduledAt),
     scheduleRepeat: normalizeScheduleRepeat(source?.scheduleRepeat),
+    scheduleContextSnapshot: normalizeScheduleContextSnapshot(source?.scheduleContextSnapshot),
   };
 }
 
@@ -222,6 +224,7 @@ export async function createFavoritePrompt(
     scheduleEnabled: entry?.scheduleEnabled,
     scheduledAt: entry?.scheduledAt,
     scheduleRepeat: entry?.scheduleRepeat,
+    scheduleContextSnapshot: entry?.scheduleContextSnapshot,
   });
 
   await setPromptFavorites([favorite, ...favorites]);

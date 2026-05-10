@@ -55,6 +55,18 @@ function normalizeExecutionContext(value: unknown): FavoriteRunExecutionContextS
   };
 }
 
+function normalizeRetryCounts(value: unknown): Record<string, number> {
+  const source = safeObject(value);
+  return Object.fromEntries(
+    Object.entries(source)
+      .map(([key, entryValue]) => [
+        safeText(key).trim(),
+        Math.max(0, Math.round(Number(entryValue) || 0)),
+      ] as const)
+      .filter(([key]) => key),
+  );
+}
+
 export function normalizeFavoriteRunJobRecord(value: unknown): FavoriteRunJobRecord | null {
   const source = safeObject(value);
   const jobId = safeText(source.jobId).trim();
@@ -93,6 +105,7 @@ export function normalizeFavoriteRunJobRecord(value: unknown): FavoriteRunJobRec
           )
         : {},
     executionContext: normalizeExecutionContext(source.executionContext),
+    stepRetryCounts: normalizeRetryCounts(source.stepRetryCounts),
   };
 }
 

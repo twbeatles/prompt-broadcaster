@@ -1,6 +1,7 @@
 import {
   CONTEXT_MENU_ALL_ID,
   CONTEXT_MENU_ROOT_ID,
+  CONTEXT_MENU_SAVE_COMPARISON_ID,
   CONTEXT_MENU_SITE_PREFIX,
 } from "../app/constants";
 import type { BroadcastMessage } from "../../shared/types/messages";
@@ -121,6 +122,15 @@ export function createContextMenuController(deps: ContextMenuControllerDeps) {
       id: CONTEXT_MENU_ALL_ID,
       parentId: CONTEXT_MENU_ROOT_ID,
       title: getI18nMessage("context_menu_send_all"),
+      contexts: ["selection"],
+    });
+
+    await createContextMenuItem({
+      id: CONTEXT_MENU_SAVE_COMPARISON_ID,
+      parentId: CONTEXT_MENU_ROOT_ID,
+      title:
+        getI18nMessage("context_menu_save_comparison") ||
+        "Save selection as comparison note",
       contexts: ["selection"],
     });
 

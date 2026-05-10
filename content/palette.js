@@ -64,7 +64,11 @@ var AIPromptBroadcasterQuickPaletteBundle = (() => {
     favorites: "promptFavorites",
     templateVariableCache: "templateVariableCache",
     settings: "appSettings",
-    broadcastCounter: "broadcastCounter"
+    broadcastCounter: "broadcastCounter",
+    comparisonNotes: "comparisonNotes",
+    promptExperiments: "promptExperiments",
+    templatePacks: "templatePacks",
+    serviceGroups: "serviceGroups"
   });
   var DEFAULT_HISTORY_LIMIT = 50;
   var DEFAULT_WAIT_MS_MULTIPLIER = 1;

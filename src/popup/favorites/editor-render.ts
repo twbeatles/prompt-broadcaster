@@ -171,6 +171,21 @@ export function createFavoriteEditorRenderer(
             <span>${escapeHtml(t.favoriteStepDelayLabel)}</span>
             <input class="search-input" type="number" min="0" step="100" data-favorite-step-delay="${escapeAttribute(step.id)}" value="${escapeAttribute(String(step.delayMs))}" />
           </label>
+          <label class="field-stack">
+            <span>Failure policy</span>
+            <select class="search-input" data-favorite-step-failure-policy="${escapeAttribute(step.id)}">
+              <option value="stop" ${step.failurePolicy !== "continue" && step.failurePolicy !== "retry-once" ? "selected" : ""}>Stop chain</option>
+              <option value="continue" ${step.failurePolicy === "continue" ? "selected" : ""}>Continue chain</option>
+              <option value="retry-once" ${step.failurePolicy === "retry-once" ? "selected" : ""}>Retry once</option>
+            </select>
+          </label>
+          <label class="field-stack">
+            <span>Target mode</span>
+            <select class="search-input" data-favorite-step-target-mode="${escapeAttribute(step.id)}">
+              <option value="default" ${!step.targetMode || step.targetMode === "default" ? "selected" : ""}>Default tab behavior</option>
+              <option value="new" ${step.targetMode === "new" ? "selected" : ""}>Always new tab</option>
+            </select>
+          </label>
           <div class="modal-section">
             <div class="section-row section-row-start">
               <strong>${escapeHtml(t.favoriteStepTargetsLabel)}</strong>

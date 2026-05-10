@@ -18,6 +18,7 @@ const {
   dailyBarChart,
   dashboardCards,
   failureReasons,
+  onboardingChecklist,
   serviceDonut,
   serviceTrend,
   strategySummary,
@@ -85,6 +86,42 @@ function buildStrategySummaryMarkup(items) {
   `;
 }
 
+function renderOnboardingChecklist() {
+  if (!onboardingChecklist) {
+    return;
+  }
+
+  const checks = [
+    {
+      label: "Send your first broadcast",
+      done: state.history.length > 0,
+    },
+    {
+      label: "Save a reusable favorite",
+      done: state.favorites.length > 0,
+    },
+    {
+      label: "Review selector health",
+      done: state.serviceHealthSnapshots.some((item) => item.lastSuccessAt || item.selectorWarning),
+    },
+    {
+      label: "Create a service group",
+      done: state.serviceGroups.length > 0,
+    },
+    {
+      label: "Save a comparison note",
+      done: state.comparisonNotes.length > 0,
+    },
+  ];
+
+  onboardingChecklist.innerHTML = checks.map((check) => `
+    <label class="checkbox-inline">
+      <input type="checkbox" ${check.done ? "checked" : ""} disabled />
+      <span>${escapeHTML(check.label)}</span>
+    </label>
+  `).join("");
+}
+
 export function renderDashboard() {
   const metrics = buildDashboardMetrics(
     state.history,
@@ -96,6 +133,8 @@ export function renderDashboard() {
     { label: t.cards.mostUsedService, value: metrics.mostUsedService },
     { label: t.cards.weekCount, value: metrics.weekCount },
     { label: t.cards.averagePromptLength, value: `${metrics.averagePromptLength} ${t.cards.charSuffix}` },
+    { label: "Comparison notes", value: state.comparisonNotes.length },
+    { label: "Prompt experiments", value: state.promptExperiments.length },
   ];
 
   dashboardCards.innerHTML = cards
@@ -108,6 +147,7 @@ export function renderDashboard() {
       `,
     )
     .join("");
+  renderOnboardingChecklist();
 
   serviceDonut.innerHTML = buildDonutMarkup(metrics.donutItems, {
     noUsage: t.charts.noUsage,

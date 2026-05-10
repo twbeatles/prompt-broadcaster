@@ -21,6 +21,7 @@
         <button class="nav-button active" type="button" role="tab" aria-selected="true" aria-controls="section-dashboard" data-section="dashboard" data-i18n="options_nav_dashboard">Dashboard</button>
         <button class="nav-button" type="button" role="tab" aria-selected="false" aria-controls="section-history" data-section="history" data-i18n="options_nav_history">History</button>
         <button class="nav-button" type="button" role="tab" aria-selected="false" aria-controls="section-schedules" data-section="schedules" data-i18n="options_nav_schedules">Schedules</button>
+        <button class="nav-button" type="button" role="tab" aria-selected="false" aria-controls="section-experiments" data-section="experiments">Experiments</button>
         <button class="nav-button" type="button" role="tab" aria-selected="false" aria-controls="section-services" data-section="services" data-i18n="options_nav_services">Services</button>
         <button class="nav-button" type="button" role="tab" aria-selected="false" aria-controls="section-settings" data-section="settings" data-i18n="options_nav_settings">Settings</button>
       </nav>
@@ -36,6 +37,12 @@
           <p data-i18n="options_dashboard_desc">Review high-level usage metrics and recent prompt activity.</p>
         </div>
         <div id="dashboard-cards" class="cards-grid"></div>
+        <div class="panel">
+          <div class="section-head">
+            <h2>Onboarding checklist</h2>
+          </div>
+          <div id="onboarding-checklist" class="settings-stack"></div>
+        </div>
         <div class="charts-grid">
           <div class="panel chart-box">
             <div class="section-head">
@@ -130,7 +137,51 @@
           </div>
           <button id="services-open-manager" class="btn" type="button" data-i18n="options_services_open_popup">Open popup manager</button>
         </div>
+        <div class="panel">
+          <div class="section-head-row">
+            <div class="section-head">
+              <h2>Selector Health Center</h2>
+              <p>Track recent selector failures, auth gates, strategy hints, and verification metadata.</p>
+            </div>
+            <button id="services-refresh-health" class="btn" type="button">Refresh health</button>
+          </div>
+          <div id="services-health-center" class="settings-stack"></div>
+        </div>
+        <div class="panel">
+          <div class="section-head">
+            <h2>Service Groups</h2>
+            <p>Create reusable target groups for popup favorites and experiment runs.</p>
+          </div>
+          <div class="filter-row">
+            <input id="service-group-title" type="text" placeholder="Group name" />
+            <button id="service-group-save" class="btn" type="button">Save group from checked services</button>
+          </div>
+          <div id="service-groups-list" class="settings-stack"></div>
+        </div>
         <div id="services-grid" class="services-grid"></div>
+      </section>
+
+      <section id="section-experiments" class="page-section" role="tabpanel" tabindex="0">
+        <div class="section-head">
+          <h2>Prompt Experiments</h2>
+          <p>Preview and run variant x service x variable-set experiments through the normal broadcast history flow.</p>
+        </div>
+        <div class="panel settings-stack">
+          <div class="settings-control">
+            <strong>Experiment draft</strong>
+            <input id="experiment-title" type="text" placeholder="Experiment title" />
+            <textarea id="experiment-variants" rows="8" placeholder="One variant per block. Separate variants with a line containing ---"></textarea>
+            <textarea id="experiment-variables" rows="4" placeholder='Variable sets as JSON array, e.g. [{"topic":"selectors"}]'></textarea>
+          </div>
+          <div id="experiment-targets" class="service-badges"></div>
+          <div class="settings-actions">
+            <button id="experiment-preview" class="btn" type="button">Preview</button>
+            <button id="experiment-save" class="btn" type="button">Save</button>
+            <button id="experiment-run" class="btn primary" type="button">Run saved experiment</button>
+          </div>
+          <div id="experiment-preview-output" class="settings-stack"></div>
+        </div>
+        <div id="experiment-list" class="settings-stack"></div>
       </section>
 
       <section id="section-settings" class="page-section" role="tabpanel" tabindex="0">
@@ -186,6 +237,20 @@
               <button id="settings-import-json" class="btn" type="button" data-i18n="settings_import">Import JSON</button>
             </div>
             <input id="settings-import-json-input" type="file" accept="application/json" hidden />
+          </div>
+          <div class="settings-control">
+            <strong>Template packs</strong>
+            <div class="helper">Export/import favorites as reusable local packs. Sensitive template defaults are included unless unchecked.</div>
+            <label class="checkbox-inline">
+              <input id="template-pack-sensitive" type="checkbox" checked />
+              <span>Include template defaults</span>
+            </label>
+            <div class="settings-actions">
+              <button id="template-pack-export" class="btn" type="button">Export current favorites as pack</button>
+              <button id="template-pack-import" class="btn" type="button">Import pack JSON</button>
+            </div>
+            <input id="template-pack-import-input" type="file" accept="application/json" hidden />
+            <div id="template-pack-list" class="settings-stack"></div>
           </div>
         </div>
       </section>

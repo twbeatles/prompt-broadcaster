@@ -383,13 +383,15 @@ var AIPromptBroadcasterInjectorBundle = (() => {
       url: "https://chatgpt.com/",
       hostname: "chatgpt.com",
       supportedRoutes: [],
-      inputSelector: "#prompt-textarea, div#prompt-textarea[contenteditable='true'], textarea[aria-label*='chatgpt' i], textarea[aria-label*='채팅' i]",
+      inputSelector: "#prompt-textarea, div#prompt-textarea[contenteditable='true'], textarea[aria-label*='chatgpt' i], textarea[aria-label*='채팅' i], textarea[placeholder*='ask' i]",
       fallbackSelectors: [
         "#prompt-textarea",
         "div#prompt-textarea[contenteditable='true']",
         "textarea[aria-label*='chatgpt' i]",
         "textarea[aria-label*='채팅' i]",
+        "textarea[placeholder*='ask' i]",
         "textarea.wcDTda_fallbackTextarea",
+        "div.ProseMirror[contenteditable='true']",
         "div[contenteditable='true'][data-id='root']",
         "main div[contenteditable='true']"
       ],
@@ -399,16 +401,22 @@ var AIPromptBroadcasterInjectorBundle = (() => {
       selectorCheckMode: "input-and-conditional-submit",
       waitMs: 2e3,
       fallback: true,
-      lastVerified: "2026-04",
-      verifiedAt: "2026-04-10",
+      lastVerified: "2026-05",
+      verifiedAt: "2026-05-10",
       verifiedRoute: "/",
       verifiedAuthState: "logged-out",
       verifiedLocale: "ko",
-      verifiedVersion: "chatgpt-web-apr-2026",
+      verifiedVersion: "chatgpt-web-may-2026",
       authSelectors: [
         "form[action*='/auth']",
         "input[name='email']",
-        "input[name='username']"
+        "input[name='username']",
+        "a[href*='cloudflare.com']",
+        "#challenge-running",
+        ".cf-browser-verification",
+        ".cf-challenge",
+        ".cf-turnstile",
+        "iframe[src*='challenges.cloudflare.com']"
       ]
     },
     {
@@ -417,26 +425,30 @@ var AIPromptBroadcasterInjectorBundle = (() => {
       url: "https://gemini.google.com/app",
       hostname: "gemini.google.com",
       supportedRoutes: ["/app"],
-      inputSelector: "div[contenteditable='true'][role='textbox'], div.ql-editor.textarea.new-input-ui[contenteditable='true'], div.ql-editor[contenteditable='true'][role='textbox']",
+      inputSelector: "div[contenteditable='true'][role='textbox'], div[aria-label*='Gemini' i][contenteditable='true'][role='textbox'], div.ql-editor.textarea.new-input-ui[contenteditable='true'], div.ql-editor[contenteditable='true'][role='textbox']",
       fallbackSelectors: [
         "div[contenteditable='true'][role='textbox']",
+        "div[aria-label*='Gemini' i][contenteditable='true'][role='textbox']",
         "div.ql-editor.textarea.new-input-ui[contenteditable='true']",
         "div.ql-editor[contenteditable='true'][role='textbox']",
         "textarea, div[contenteditable='true']"
       ],
       inputType: "contenteditable",
-      submitSelector: "button.send-button, button[aria-label*='send' i], button[aria-label*='보내기' i]",
+      submitSelector: "button.send-button, button[aria-label*='send' i], button[aria-label*='보내기' i], button[aria-label*='메시지 보내기' i], button[type='submit']",
       submitMethod: "click",
-      selectorCheckMode: "input-and-submit",
+      selectorCheckMode: "input-and-conditional-submit",
       waitMs: 2500,
       fallback: true,
-      lastVerified: "2026-04",
-      verifiedAt: "2026-04-10",
+      lastVerified: "2026-05",
+      verifiedAt: "2026-05-10",
       verifiedRoute: "/app",
       verifiedAuthState: "logged-out",
-      verifiedLocale: "en-US",
-      verifiedVersion: "gemini-app-apr-2026",
+      verifiedLocale: "ko",
+      verifiedVersion: "gemini-app-may-2026",
       authSelectors: [
+        "a[href*='accounts.google.com/ServiceLogin']",
+        "a[aria-label*='로그인']",
+        "a[aria-label*='sign in' i]",
         "input[type='email']",
         "input[type='password']"
       ]
@@ -458,20 +470,26 @@ var AIPromptBroadcasterInjectorBundle = (() => {
       inputType: "contenteditable",
       submitSelector: "button[aria-label='Send message'], button[aria-label*='send' i], button[aria-label*='submit' i], button[aria-label*='보내' i], button[aria-label*='전송' i]",
       submitMethod: "click",
-      selectorCheckMode: "input-and-submit",
+      selectorCheckMode: "input-and-conditional-submit",
       waitMs: 1500,
       fallback: true,
-      lastVerified: "2026-04",
-      verifiedAt: "2026-04-10",
+      lastVerified: "2026-05",
+      verifiedAt: "2026-05-10",
       verifiedRoute: "/new",
       verifiedAuthState: "logged-out",
       verifiedLocale: "en-US",
-      verifiedVersion: "claude-web-apr-2026",
+      verifiedVersion: "claude-web-may-2026",
       authSelectors: [
         "input#email",
         "input[type='email']",
         "input[type='password']",
-        "form[action*='login']"
+        "form[action*='login']",
+        "a[href*='cloudflare.com']",
+        "#challenge-running",
+        ".cf-browser-verification",
+        ".cf-challenge",
+        ".cf-turnstile",
+        "iframe[src*='challenges.cloudflare.com']"
       ]
     },
     {
@@ -480,27 +498,28 @@ var AIPromptBroadcasterInjectorBundle = (() => {
       url: "https://grok.com/",
       hostname: "grok.com",
       supportedRoutes: [],
-      inputSelector: "textarea[aria-label*='grok' i], textarea[placeholder*='help' i], textarea",
+      inputSelector: "textarea[aria-label*='grok' i], textarea[placeholder*='help' i], textarea[placeholder*='무엇' i], textarea",
       fallbackSelectors: [
         "textarea[aria-label*='grok' i]",
         "textarea[placeholder*='help' i]",
+        "textarea[placeholder*='무엇' i]",
         "textarea",
         "div.tiptap.ProseMirror[contenteditable='true']",
         "div.ProseMirror[contenteditable='true'][translate='no']",
         "div.ProseMirror[contenteditable='true']"
       ],
       inputType: "textarea",
-      submitSelector: "button[aria-label*='submit' i], button[aria-label*='제출' i]",
+      submitSelector: "button[data-testid='chat-submit'], button[type='submit'][aria-label*='submit' i], button[type='submit'][aria-label*='제출' i], button[aria-label*='submit' i], button[aria-label*='제출' i]",
       submitMethod: "click",
       selectorCheckMode: "input-and-conditional-submit",
-      waitMs: 2e3,
+      waitMs: 3e3,
       fallback: true,
-      lastVerified: "2026-04",
-      verifiedAt: "2026-04-10",
+      lastVerified: "2026-05",
+      verifiedAt: "2026-05-10",
       verifiedRoute: "/",
       verifiedAuthState: "logged-out",
       verifiedLocale: "ko",
-      verifiedVersion: "grok-web-apr-2026",
+      verifiedVersion: "grok-web-may-2026",
       authSelectors: [
         "input[autocomplete='username']",
         "input[type='password']",
@@ -521,6 +540,7 @@ var AIPromptBroadcasterInjectorBundle = (() => {
         "div#ask-input[contenteditable='true'][role='textbox']",
         "#ask-input[contenteditable='true']",
         "div[contenteditable='true'][role='textbox']",
+        "textarea[aria-label*='Ask' i]",
         "textarea[placeholder*='Ask'][data-testid='search-input']",
         "textarea[placeholder*='Ask']",
         "textarea[placeholder*='질문']",
@@ -532,16 +552,22 @@ var AIPromptBroadcasterInjectorBundle = (() => {
       selectorCheckMode: "input-and-conditional-submit",
       waitMs: 2e3,
       fallback: true,
-      lastVerified: "2026-04",
-      verifiedAt: "2026-04-10",
+      lastVerified: "2026-05",
+      verifiedAt: "2026-05-10",
       verifiedRoute: "/",
       verifiedAuthState: "soft-gated",
       verifiedLocale: "en-US",
-      verifiedVersion: "perplexity-web-apr-2026",
+      verifiedVersion: "perplexity-web-may-2026",
       authSelectors: [
         "input[type='email']",
         "input[type='password']",
-        "button[data-testid='login-button']"
+        "button[data-testid='login-button']",
+        "a[href*='cloudflare.com']",
+        "#challenge-running",
+        ".cf-browser-verification",
+        ".cf-challenge",
+        ".cf-turnstile",
+        "iframe[src*='challenges.cloudflare.com']"
       ]
     }
   ]);
@@ -655,6 +681,30 @@ var AIPromptBroadcasterInjectorBundle = (() => {
   }
 
   // src/content/injector/selectors.ts
+  var ACCESS_CHALLENGE_SELECTORS = [
+    "a[href*='cloudflare.com']",
+    "#challenge-running",
+    ".cf-browser-verification",
+    ".cf-challenge",
+    ".cf-turnstile",
+    "iframe[src*='challenges.cloudflare.com']"
+  ];
+  function normalizePageText(value) {
+    return String(value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+  }
+  function isLikelyAccessChallengePage() {
+    try {
+      const title = normalizePageText(document.title);
+      const bodyText = normalizePageText(document.body?.innerText ?? "");
+      const hasChallengeSelector = ACCESS_CHALLENGE_SELECTORS.some(
+        (selector) => Boolean(findElementDeep(selector, document, { visibleOnly: true }))
+      );
+      return hasChallengeSelector || title.includes("just a moment") || title.includes("잠시만 기다리십시오") || bodyText.includes("security check") || bodyText.includes("checking your browser") || bodyText.includes("checking if the site connection is secure") || bodyText.includes("verify you are human") || bodyText.includes("보안 확인 수행 중") || bodyText.includes("사용자가 봇이 아님");
+    } catch (error) {
+      logError("Access challenge detection failed", error);
+      return false;
+    }
+  }
   function normalizeSelectors(config) {
     return normalizeSelectorEntries([
       config?.inputSelector,
@@ -672,6 +722,9 @@ var AIPromptBroadcasterInjectorBundle = (() => {
       );
       if (hasPromptSurface) {
         return false;
+      }
+      if (isLikelyAccessChallengePage()) {
+        return true;
       }
       return Array.isArray(config?.authSelectors) ? config.authSelectors.some(
         (selector) => Boolean(findElementDeep(selector, document, { visibleOnly: true }))

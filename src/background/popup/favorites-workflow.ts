@@ -35,7 +35,7 @@ interface FavoriteWorkflowDeps {
   buildChainRunId: () => string;
   queueBroadcastRequest: (
     prompt: string,
-    siteRefs: Array<{ id: string }>,
+    siteRefs: Array<{ id: string; target?: "new" | "tab" }>,
     metadata?: Record<string, unknown>,
   ) => Promise<{
     ok?: boolean;

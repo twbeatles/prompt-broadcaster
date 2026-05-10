@@ -18,7 +18,11 @@ var LOCAL_STORAGE_KEYS = Object.freeze({
   favorites: "promptFavorites",
   templateVariableCache: "templateVariableCache",
   settings: "appSettings",
-  broadcastCounter: "broadcastCounter"
+  broadcastCounter: "broadcastCounter",
+  comparisonNotes: "comparisonNotes",
+  promptExperiments: "promptExperiments",
+  templatePacks: "templatePacks",
+  serviceGroups: "serviceGroups"
 });
 var DEFAULT_HISTORY_LIMIT = 50;
 var MIN_HISTORY_LIMIT = 10;
@@ -53,6 +57,21 @@ var VALID_FAVORITE_SORTS = /* @__PURE__ */ new Set([
   "createdAt"
 ]);
 var VALID_FAVORITE_MODES = /* @__PURE__ */ new Set(["single", "chain"]);
+var VALID_CAPTURE_MODES = /* @__PURE__ */ new Set([
+  "manual",
+  "selection",
+  "auto"
+]);
+var VALID_CHAIN_FAILURE_POLICIES = /* @__PURE__ */ new Set([
+  "stop",
+  "continue",
+  "retry-once"
+]);
+var VALID_BROADCAST_TARGET_MODES = /* @__PURE__ */ new Set([
+  "default",
+  "new",
+  "tab"
+]);
 var VALID_SCHEDULE_REPEATS = /* @__PURE__ */ new Set([
   "none",
   "daily",
@@ -160,6 +179,15 @@ function normalizeFavoriteSort(value) {
 }
 function normalizeFavoriteMode(value) {
   return VALID_FAVORITE_MODES.has(value) ? value : "single";
+}
+function normalizeComparisonCaptureMode(value) {
+  return VALID_CAPTURE_MODES.has(value) ? value : "manual";
+}
+function normalizeChainFailurePolicy(value) {
+  return VALID_CHAIN_FAILURE_POLICIES.has(value) ? value : "stop";
+}
+function normalizeBroadcastTargetMode(value) {
+  return VALID_BROADCAST_TARGET_MODES.has(value) ? value : void 0;
 }
 function normalizeScheduleRepeat(value) {
   return VALID_SCHEDULE_REPEATS.has(value) ? value : "none";
@@ -307,6 +335,130 @@ function normalizeTags(value) {
     )
   ).slice(0, 10);
 }
+function createStorageItemId(prefix, preferredId, fallbackIndex = 0) {
+  const trimmedId = safeText(preferredId).trim();
+  if (trimmedId) {
+    return trimmedId;
+  }
+  const safePrefix = safeText(prefix).trim() || "item";
+  return `${safePrefix}-${Date.now()}-${fallbackIndex}`;
+}
+function normalizeComparisonNote(value, fallback = {}, index = 0) {
+  const source = safeObject(value);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const createdAt = normalizeIsoDate(source.createdAt ?? fallback.createdAt, now);
+  const ratingValue = Number(source.rating ?? fallback.rating);
+  const rating = Number.isFinite(ratingValue) ? Math.min(5, Math.max(1, Math.round(ratingValue))) : null;
+  return {
+    id: createStorageItemId("note", source.id ?? fallback.id, index),
+    historyId: Number.isFinite(Number(source.historyId ?? fallback.historyId)) ? Math.max(0, Math.round(Number(source.historyId ?? fallback.historyId))) : 0,
+    serviceId: safeText(source.serviceId ?? fallback.serviceId).trim(),
+    responseText: safeText(source.responseText ?? fallback.responseText),
+    captureMode: normalizeComparisonCaptureMode(
+      source.captureMode ?? fallback.captureMode
+    ),
+    rating,
+    tags: normalizeTags(source.tags ?? fallback.tags),
+    createdAt,
+    updatedAt: normalizeIsoDate(source.updatedAt ?? fallback.updatedAt, createdAt)
+  };
+}
+function normalizePromptExperimentVariant(value, fallback = {}, index = 0) {
+  const source = safeObject(value);
+  return {
+    id: createStorageItemId("variant", source.id ?? fallback.id, index),
+    title: safeText(source.title ?? fallback.title).trim() || `Variant ${index + 1}`,
+    text: safeText(source.text ?? fallback.text)
+  };
+}
+function normalizePromptExperimentVariableSet(value, fallback = {}, index = 0) {
+  const source = safeObject(value);
+  return {
+    id: createStorageItemId("vars", source.id ?? fallback.id, index),
+    title: safeText(source.title ?? fallback.title).trim() || `Variables ${index + 1}`,
+    values: normalizeTemplateDefaults(source.values ?? fallback.values)
+  };
+}
+function normalizePromptExperimentRunRecord(value, fallback = {}, index = 0) {
+  const source = safeObject(value);
+  return {
+    id: createStorageItemId("run", source.id ?? fallback.id, index),
+    createdAt: normalizeIsoDate(source.createdAt ?? fallback.createdAt),
+    variantId: safeText(source.variantId ?? fallback.variantId).trim(),
+    variableSetId: safeText(source.variableSetId ?? fallback.variableSetId).trim(),
+    targetSiteIds: normalizeSiteIdList(source.targetSiteIds ?? fallback.targetSiteIds),
+    broadcastIds: normalizeSiteIdList(source.broadcastIds ?? fallback.broadcastIds)
+  };
+}
+function normalizePromptExperiment(value, fallback = {}, index = 0) {
+  const source = safeObject(value);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const createdAt = normalizeIsoDate(source.createdAt ?? fallback.createdAt, now);
+  const variants = safeArray(source.variants ?? fallback.variants).map((entry, variantIndex) => normalizePromptExperimentVariant(entry, {}, variantIndex)).filter((variant) => variant.text.trim());
+  const variableSets = safeArray(source.variableSets ?? fallback.variableSets).map((entry, setIndex) => normalizePromptExperimentVariableSet(entry, {}, setIndex));
+  const normalizedVariableSets = variableSets.length > 0 ? variableSets : [normalizePromptExperimentVariableSet({ title: "Default", values: {} }, {}, 0)];
+  return {
+    id: createStorageItemId("experiment", source.id ?? fallback.id, index),
+    title: safeText(source.title ?? fallback.title).trim() || `Experiment ${index + 1}`,
+    description: safeText(source.description ?? fallback.description),
+    variants,
+    targetSiteIds: normalizeSiteIdList(source.targetSiteIds ?? fallback.targetSiteIds),
+    variableSets: normalizedVariableSets,
+    runs: safeArray(source.runs ?? fallback.runs).map(
+      (entry, runIndex) => normalizePromptExperimentRunRecord(entry, {}, runIndex)
+    ),
+    createdAt,
+    updatedAt: normalizeIsoDate(source.updatedAt ?? fallback.updatedAt, createdAt)
+  };
+}
+function normalizeTemplatePack(value, fallback = {}, index = 0) {
+  const source = safeObject(value);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const createdAt = normalizeIsoDate(source.createdAt ?? fallback.createdAt, now);
+  return {
+    id: createStorageItemId("pack", source.id ?? fallback.id, index),
+    title: safeText(source.title ?? fallback.title).trim() || `Template Pack ${index + 1}`,
+    description: safeText(source.description ?? fallback.description),
+    favoriteIds: normalizeSiteIdList(source.favoriteIds ?? fallback.favoriteIds),
+    templates: safeArray(source.templates ?? fallback.templates),
+    includeSensitiveDefaults: normalizeBoolean(
+      source.includeSensitiveDefaults ?? fallback.includeSensitiveDefaults,
+      true
+    ),
+    createdAt,
+    updatedAt: normalizeIsoDate(source.updatedAt ?? fallback.updatedAt, createdAt)
+  };
+}
+function normalizeServiceGroup(value, fallback = {}, index = 0) {
+  const source = safeObject(value);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const createdAt = normalizeIsoDate(source.createdAt ?? fallback.createdAt, now);
+  const sortOrder = Number(source.sortOrder ?? fallback.sortOrder ?? index);
+  return {
+    id: createStorageItemId("group", source.id ?? fallback.id, index),
+    title: safeText(source.title ?? fallback.title).trim() || `Group ${index + 1}`,
+    serviceIds: normalizeSiteIdList(source.serviceIds ?? fallback.serviceIds),
+    sortOrder: Number.isFinite(sortOrder) ? Math.max(0, Math.round(sortOrder)) : index,
+    createdAt,
+    updatedAt: normalizeIsoDate(source.updatedAt ?? fallback.updatedAt, createdAt)
+  };
+}
+function normalizeScheduleContextSnapshot(value) {
+  const source = safeObject(value);
+  const hasMeaningfulValue = Boolean(
+    source.enabled || safeText(source.url).trim() || safeText(source.title).trim() || safeText(source.selection).trim() || safeText(source.capturedAt).trim()
+  );
+  if (!hasMeaningfulValue) {
+    return null;
+  }
+  return {
+    enabled: normalizeBoolean(source.enabled, false),
+    url: safeText(source.url),
+    title: safeText(source.title),
+    selection: safeText(source.selection),
+    capturedAt: normalizeNullableIsoDate(source.capturedAt)
+  };
+}
 function createChainStepId(preferredId, fallbackIndex = 0) {
   const trimmedId = safeText(preferredId).trim();
   return trimmedId || `step-${Date.now()}-${fallbackIndex}`;
@@ -327,6 +479,13 @@ function normalizeChainStep(value, fallback = {}, index = 0) {
     delayMs: normalizeDelayMs(source.delayMs ?? fallback.delayMs),
     targetSiteIds: normalizeSiteIdList(
       Array.isArray(source.targetSiteIds) ? source.targetSiteIds : fallbackTargets
+    ),
+    failurePolicy: normalizeChainFailurePolicy(
+      source.failurePolicy ?? fallback.failurePolicy
+    ),
+    targetMode: normalizeBroadcastTargetMode(source.targetMode ?? fallback.targetMode),
+    templateDefaults: normalizeTemplateDefaults(
+      source.templateDefaults ?? fallback.templateDefaults
     )
   };
 }
@@ -490,7 +649,8 @@ function buildFavoriteEntry(entry) {
     steps,
     scheduleEnabled: normalizeBoolean(source?.scheduleEnabled, false),
     scheduledAt: normalizeNullableIsoDate(source?.scheduledAt),
-    scheduleRepeat: normalizeScheduleRepeat(source?.scheduleRepeat)
+    scheduleRepeat: normalizeScheduleRepeat(source?.scheduleRepeat),
+    scheduleContextSnapshot: normalizeScheduleContextSnapshot(source?.scheduleContextSnapshot)
   };
 }
 async function getPromptFavorites() {
@@ -602,7 +762,8 @@ async function createFavoritePrompt(entry) {
     steps: entry?.steps,
     scheduleEnabled: entry?.scheduleEnabled,
     scheduledAt: entry?.scheduledAt,
-    scheduleRepeat: entry?.scheduleRepeat
+    scheduleRepeat: entry?.scheduleRepeat,
+    scheduleContextSnapshot: entry?.scheduleContextSnapshot
   });
   await setPromptFavorites([favorite, ...favorites]);
   return favorite;
@@ -635,6 +796,58 @@ async function deleteFavoriteItem(favoriteId) {
   );
   await setPromptFavorites(nextFavorites);
   return nextFavorites;
+}
+
+// src/shared/prompts/advanced-store.ts
+function normalizeTemplatePackEntry(value, fallback = {}, index = 0) {
+  const pack = normalizeTemplatePack(value, fallback, index);
+  return {
+    ...pack,
+    templates: safeArray(pack.templates).map((entry) => buildFavoriteEntry(entry))
+  };
+}
+async function getComparisonNotes() {
+  const rawValue = await readLocal(
+    LOCAL_STORAGE_KEYS.comparisonNotes,
+    []
+  );
+  return sortByDateDesc(
+    safeArray(rawValue).map(
+      (entry, index) => normalizeComparisonNote(entry, {}, index)
+    ),
+    "updatedAt"
+  ).filter((entry) => entry.historyId > 0 && entry.serviceId && entry.responseText.trim());
+}
+async function getPromptExperiments() {
+  const rawValue = await readLocal(
+    LOCAL_STORAGE_KEYS.promptExperiments,
+    []
+  );
+  return sortByDateDesc(
+    safeArray(rawValue).map(
+      (entry, index) => normalizePromptExperiment(entry, {}, index)
+    ),
+    "updatedAt"
+  );
+}
+async function getTemplatePacks() {
+  const rawValue = await readLocal(
+    LOCAL_STORAGE_KEYS.templatePacks,
+    []
+  );
+  return sortByDateDesc(
+    safeArray(rawValue).map(
+      (entry, index) => normalizeTemplatePackEntry(entry, {}, index)
+    ),
+    "updatedAt"
+  );
+}
+async function getServiceGroups() {
+  const rawValue = await readLocal(
+    LOCAL_STORAGE_KEYS.serviceGroups,
+    []
+  );
+  return safeArray(rawValue).map((entry, index) => normalizeServiceGroup(entry, {}, index)).sort((left, right) => left.sortOrder - right.sortOrder || left.title.localeCompare(right.title));
 }
 
 // src/shared/prompts/settings-store.ts
@@ -700,6 +913,7 @@ function buildHistoryEntry(entry) {
     chainRunId: source.chainRunId === null || source.chainRunId === void 0 ? null : safeText(source.chainRunId).trim() || null,
     chainStepIndex: source.chainStepIndex === null || source.chainStepIndex === void 0 ? null : Number.isFinite(Number(source.chainStepIndex)) ? Math.max(0, Math.round(Number(source.chainStepIndex))) : null,
     chainStepCount: source.chainStepCount === null || source.chainStepCount === void 0 ? null : Number.isFinite(Number(source.chainStepCount)) ? Math.max(0, Math.round(Number(source.chainStepCount))) : null,
+    experimentRunId: source.experimentRunId === null || source.experimentRunId === void 0 ? null : safeText(source.experimentRunId).trim() || null,
     trigger: normalizeExecutionTrigger(source.trigger)
   };
 }
@@ -743,13 +957,15 @@ var AI_SITES = Object.freeze([
     url: "https://chatgpt.com/",
     hostname: "chatgpt.com",
     supportedRoutes: [],
-    inputSelector: "#prompt-textarea, div#prompt-textarea[contenteditable='true'], textarea[aria-label*='chatgpt' i], textarea[aria-label*='채팅' i]",
+    inputSelector: "#prompt-textarea, div#prompt-textarea[contenteditable='true'], textarea[aria-label*='chatgpt' i], textarea[aria-label*='채팅' i], textarea[placeholder*='ask' i]",
     fallbackSelectors: [
       "#prompt-textarea",
       "div#prompt-textarea[contenteditable='true']",
       "textarea[aria-label*='chatgpt' i]",
       "textarea[aria-label*='채팅' i]",
+      "textarea[placeholder*='ask' i]",
       "textarea.wcDTda_fallbackTextarea",
+      "div.ProseMirror[contenteditable='true']",
       "div[contenteditable='true'][data-id='root']",
       "main div[contenteditable='true']"
     ],
@@ -759,16 +975,22 @@ var AI_SITES = Object.freeze([
     selectorCheckMode: "input-and-conditional-submit",
     waitMs: 2e3,
     fallback: true,
-    lastVerified: "2026-04",
-    verifiedAt: "2026-04-10",
+    lastVerified: "2026-05",
+    verifiedAt: "2026-05-10",
     verifiedRoute: "/",
     verifiedAuthState: "logged-out",
     verifiedLocale: "ko",
-    verifiedVersion: "chatgpt-web-apr-2026",
+    verifiedVersion: "chatgpt-web-may-2026",
     authSelectors: [
       "form[action*='/auth']",
       "input[name='email']",
-      "input[name='username']"
+      "input[name='username']",
+      "a[href*='cloudflare.com']",
+      "#challenge-running",
+      ".cf-browser-verification",
+      ".cf-challenge",
+      ".cf-turnstile",
+      "iframe[src*='challenges.cloudflare.com']"
     ]
   },
   {
@@ -777,26 +999,30 @@ var AI_SITES = Object.freeze([
     url: "https://gemini.google.com/app",
     hostname: "gemini.google.com",
     supportedRoutes: ["/app"],
-    inputSelector: "div[contenteditable='true'][role='textbox'], div.ql-editor.textarea.new-input-ui[contenteditable='true'], div.ql-editor[contenteditable='true'][role='textbox']",
+    inputSelector: "div[contenteditable='true'][role='textbox'], div[aria-label*='Gemini' i][contenteditable='true'][role='textbox'], div.ql-editor.textarea.new-input-ui[contenteditable='true'], div.ql-editor[contenteditable='true'][role='textbox']",
     fallbackSelectors: [
       "div[contenteditable='true'][role='textbox']",
+      "div[aria-label*='Gemini' i][contenteditable='true'][role='textbox']",
       "div.ql-editor.textarea.new-input-ui[contenteditable='true']",
       "div.ql-editor[contenteditable='true'][role='textbox']",
       "textarea, div[contenteditable='true']"
     ],
     inputType: "contenteditable",
-    submitSelector: "button.send-button, button[aria-label*='send' i], button[aria-label*='보내기' i]",
+    submitSelector: "button.send-button, button[aria-label*='send' i], button[aria-label*='보내기' i], button[aria-label*='메시지 보내기' i], button[type='submit']",
     submitMethod: "click",
-    selectorCheckMode: "input-and-submit",
+    selectorCheckMode: "input-and-conditional-submit",
     waitMs: 2500,
     fallback: true,
-    lastVerified: "2026-04",
-    verifiedAt: "2026-04-10",
+    lastVerified: "2026-05",
+    verifiedAt: "2026-05-10",
     verifiedRoute: "/app",
     verifiedAuthState: "logged-out",
-    verifiedLocale: "en-US",
-    verifiedVersion: "gemini-app-apr-2026",
+    verifiedLocale: "ko",
+    verifiedVersion: "gemini-app-may-2026",
     authSelectors: [
+      "a[href*='accounts.google.com/ServiceLogin']",
+      "a[aria-label*='로그인']",
+      "a[aria-label*='sign in' i]",
       "input[type='email']",
       "input[type='password']"
     ]
@@ -818,20 +1044,26 @@ var AI_SITES = Object.freeze([
     inputType: "contenteditable",
     submitSelector: "button[aria-label='Send message'], button[aria-label*='send' i], button[aria-label*='submit' i], button[aria-label*='보내' i], button[aria-label*='전송' i]",
     submitMethod: "click",
-    selectorCheckMode: "input-and-submit",
+    selectorCheckMode: "input-and-conditional-submit",
     waitMs: 1500,
     fallback: true,
-    lastVerified: "2026-04",
-    verifiedAt: "2026-04-10",
+    lastVerified: "2026-05",
+    verifiedAt: "2026-05-10",
     verifiedRoute: "/new",
     verifiedAuthState: "logged-out",
     verifiedLocale: "en-US",
-    verifiedVersion: "claude-web-apr-2026",
+    verifiedVersion: "claude-web-may-2026",
     authSelectors: [
       "input#email",
       "input[type='email']",
       "input[type='password']",
-      "form[action*='login']"
+      "form[action*='login']",
+      "a[href*='cloudflare.com']",
+      "#challenge-running",
+      ".cf-browser-verification",
+      ".cf-challenge",
+      ".cf-turnstile",
+      "iframe[src*='challenges.cloudflare.com']"
     ]
   },
   {
@@ -840,27 +1072,28 @@ var AI_SITES = Object.freeze([
     url: "https://grok.com/",
     hostname: "grok.com",
     supportedRoutes: [],
-    inputSelector: "textarea[aria-label*='grok' i], textarea[placeholder*='help' i], textarea",
+    inputSelector: "textarea[aria-label*='grok' i], textarea[placeholder*='help' i], textarea[placeholder*='무엇' i], textarea",
     fallbackSelectors: [
       "textarea[aria-label*='grok' i]",
       "textarea[placeholder*='help' i]",
+      "textarea[placeholder*='무엇' i]",
       "textarea",
       "div.tiptap.ProseMirror[contenteditable='true']",
       "div.ProseMirror[contenteditable='true'][translate='no']",
       "div.ProseMirror[contenteditable='true']"
     ],
     inputType: "textarea",
-    submitSelector: "button[aria-label*='submit' i], button[aria-label*='제출' i]",
+    submitSelector: "button[data-testid='chat-submit'], button[type='submit'][aria-label*='submit' i], button[type='submit'][aria-label*='제출' i], button[aria-label*='submit' i], button[aria-label*='제출' i]",
     submitMethod: "click",
     selectorCheckMode: "input-and-conditional-submit",
-    waitMs: 2e3,
+    waitMs: 3e3,
     fallback: true,
-    lastVerified: "2026-04",
-    verifiedAt: "2026-04-10",
+    lastVerified: "2026-05",
+    verifiedAt: "2026-05-10",
     verifiedRoute: "/",
     verifiedAuthState: "logged-out",
     verifiedLocale: "ko",
-    verifiedVersion: "grok-web-apr-2026",
+    verifiedVersion: "grok-web-may-2026",
     authSelectors: [
       "input[autocomplete='username']",
       "input[type='password']",
@@ -881,6 +1114,7 @@ var AI_SITES = Object.freeze([
       "div#ask-input[contenteditable='true'][role='textbox']",
       "#ask-input[contenteditable='true']",
       "div[contenteditable='true'][role='textbox']",
+      "textarea[aria-label*='Ask' i]",
       "textarea[placeholder*='Ask'][data-testid='search-input']",
       "textarea[placeholder*='Ask']",
       "textarea[placeholder*='질문']",
@@ -892,16 +1126,22 @@ var AI_SITES = Object.freeze([
     selectorCheckMode: "input-and-conditional-submit",
     waitMs: 2e3,
     fallback: true,
-    lastVerified: "2026-04",
-    verifiedAt: "2026-04-10",
+    lastVerified: "2026-05",
+    verifiedAt: "2026-05-10",
     verifiedRoute: "/",
     verifiedAuthState: "soft-gated",
     verifiedLocale: "en-US",
-    verifiedVersion: "perplexity-web-apr-2026",
+    verifiedVersion: "perplexity-web-may-2026",
     authSelectors: [
       "input[type='email']",
       "input[type='password']",
-      "button[data-testid='login-button']"
+      "button[data-testid='login-button']",
+      "a[href*='cloudflare.com']",
+      "#challenge-running",
+      ".cf-browser-verification",
+      ".cf-challenge",
+      ".cf-turnstile",
+      "iframe[src*='challenges.cloudflare.com']"
     ]
   }
 ]);
@@ -1954,7 +2194,7 @@ async function updateTemplateVariableCache(partialCache) {
 }
 
 // src/shared/prompts/import-export.ts
-var CURRENT_EXPORT_VERSION = 8;
+var CURRENT_EXPORT_VERSION = 9;
 function asImportPayload(value) {
   return safeObject(value);
 }
@@ -2091,6 +2331,24 @@ function migrateV7ToV8(payload) {
     favorites: safeArray(payload.favorites).map((entry) => buildFavoriteEntry(entry))
   };
 }
+function migrateV8ToV9(payload) {
+  return {
+    ...payload,
+    version: 9,
+    comparisonNotes: safeArray(payload.comparisonNotes).map(
+      (entry, index) => normalizeComparisonNote(entry, {}, index)
+    ),
+    promptExperiments: safeArray(payload.promptExperiments).map(
+      (entry, index) => normalizePromptExperiment(entry, {}, index)
+    ),
+    templatePacks: safeArray(payload.templatePacks).map(
+      (entry, index) => normalizeTemplatePack(entry, {}, index)
+    ),
+    serviceGroups: safeArray(payload.serviceGroups).map(
+      (entry, index) => normalizeServiceGroup(entry, {}, index)
+    )
+  };
+}
 function migrateImportData(rawValue) {
   let payload = asImportPayload(rawValue);
   const sourceVersion = normalizeImportVersion(payload.version);
@@ -2123,6 +2381,10 @@ function migrateImportData(rawValue) {
     payload = migrateV7ToV8(payload);
     workingVersion = 8;
   }
+  if (workingVersion < 9) {
+    payload = migrateV8ToV9(payload);
+    workingVersion = 9;
+  }
   return {
     migrated: payload,
     sourceVersion,
@@ -2138,7 +2400,11 @@ async function exportPromptData() {
     settings,
     customSites,
     builtInSiteStates,
-    builtInSiteOverrides
+    builtInSiteOverrides,
+    comparisonNotes,
+    promptExperiments,
+    templatePacks,
+    serviceGroups
   ] = await Promise.all([
     getBroadcastCounter(),
     getStoredPromptHistory(),
@@ -2147,7 +2413,11 @@ async function exportPromptData() {
     getAppSettings(),
     getCustomSites(),
     getBuiltInSiteStates(),
-    getBuiltInSiteOverrides()
+    getBuiltInSiteOverrides(),
+    getComparisonNotes(),
+    getPromptExperiments(),
+    getTemplatePacks(),
+    getServiceGroups()
   ]);
   return {
     exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
@@ -2159,7 +2429,11 @@ async function exportPromptData() {
     settings,
     customSites,
     builtInSiteStates,
-    builtInSiteOverrides
+    builtInSiteOverrides,
+    comparisonNotes,
+    promptExperiments,
+    templatePacks,
+    serviceGroups
   };
 }
 async function importPromptData(jsonString) {
@@ -2176,6 +2450,18 @@ async function importPromptData(jsonString) {
   const importedCustomSites = safeArray(migrated?.customSites);
   const importedBuiltInSiteStates = safeObject(migrated?.builtInSiteStates);
   const importedBuiltInSiteOverrides = safeObject(migrated?.builtInSiteOverrides);
+  const importedComparisonNotes = safeArray(migrated?.comparisonNotes).map(
+    (entry, index) => normalizeComparisonNote(entry, {}, index)
+  );
+  const importedPromptExperiments = safeArray(migrated?.promptExperiments).map(
+    (entry, index) => normalizePromptExperiment(entry, {}, index)
+  );
+  const importedTemplatePacks = safeArray(migrated?.templatePacks).map(
+    (entry, index) => normalizeTemplatePack(entry, {}, index)
+  );
+  const importedServiceGroups = safeArray(migrated?.serviceGroups).map(
+    (entry, index) => normalizeServiceGroup(entry, {}, index)
+  );
   const normalizedHistory = [];
   for (const item of sortByDateDesc(history)) {
     normalizedHistory.push({
@@ -2219,7 +2505,11 @@ async function importPromptData(jsonString) {
     [LOCAL_STORAGE_KEYS.history]: normalizedHistory,
     [SITE_STORAGE_KEYS.customSites]: customSiteImport.acceptedSites,
     [SITE_STORAGE_KEYS.builtInSiteStates]: builtInStateImport.normalized,
-    [SITE_STORAGE_KEYS.builtInSiteOverrides]: builtInOverrideImport.normalized
+    [SITE_STORAGE_KEYS.builtInSiteOverrides]: builtInOverrideImport.normalized,
+    [LOCAL_STORAGE_KEYS.comparisonNotes]: importedComparisonNotes,
+    [LOCAL_STORAGE_KEYS.promptExperiments]: importedPromptExperiments,
+    [LOCAL_STORAGE_KEYS.templatePacks]: importedTemplatePacks,
+    [LOCAL_STORAGE_KEYS.serviceGroups]: importedServiceGroups
   });
   try {
     await cleanupUnusedCustomSitePermissions(previousCustomSites, customSiteImport.acceptedSites);
@@ -2235,6 +2525,10 @@ async function importPromptData(jsonString) {
     customSites: customSiteImport.acceptedSites,
     builtInSiteStates: builtInStateImport.normalized,
     builtInSiteOverrides: builtInOverrideImport.normalized,
+    comparisonNotes: importedComparisonNotes,
+    promptExperiments: importedPromptExperiments,
+    templatePacks: importedTemplatePacks,
+    serviceGroups: importedServiceGroups,
     importSummary
   };
 }
@@ -2426,6 +2720,15 @@ function normalizeExecutionContext(value) {
     clipboard: safeText(source.clipboard)
   };
 }
+function normalizeRetryCounts(value) {
+  const source = safeObject(value);
+  return Object.fromEntries(
+    Object.entries(source).map(([key, entryValue]) => [
+      safeText(key).trim(),
+      Math.max(0, Math.round(Number(entryValue) || 0))
+    ]).filter(([key]) => key)
+  );
+}
 function normalizeFavoriteRunJobRecord(value) {
   const source = safeObject(value);
   const jobId = safeText(source.jobId).trim();
@@ -2455,7 +2758,8 @@ function normalizeFavoriteRunJobRecord(value) {
     templateDefaults: source.templateDefaults && typeof source.templateDefaults === "object" && !Array.isArray(source.templateDefaults) ? Object.fromEntries(
       Object.entries(source.templateDefaults).map(([key, entryValue]) => [safeText(key).trim(), safeText(entryValue)]).filter(([key]) => Boolean(key))
     ) : {},
-    executionContext: normalizeExecutionContext(source.executionContext)
+    executionContext: normalizeExecutionContext(source.executionContext),
+    stepRetryCounts: normalizeRetryCounts(source.stepRetryCounts)
   };
 }
 function pruneFavoriteRunJobs(jobs, nowMs = Date.now()) {
@@ -3194,11 +3498,17 @@ function createPopupSendCardState() {
     card.classList.remove("sending", "sent", "failed");
     card.classList.add(cardState);
     card.querySelector(".retry-btn")?.remove();
+    card.querySelector(".login-retry-btn")?.remove();
+    card.querySelector(".selector-check-btn")?.remove();
+    card.querySelector(".new-tab-retry-btn")?.remove();
   }
   function clearSiteCardStates() {
     document.querySelectorAll(".site-card").forEach((card) => {
       card.classList.remove("sending", "sent", "failed");
       card.querySelector(".retry-btn")?.remove();
+      card.querySelector(".login-retry-btn")?.remove();
+      card.querySelector(".selector-check-btn")?.remove();
+      card.querySelector(".new-tab-retry-btn")?.remove();
     });
   }
   function triggerRipple2(button, event) {
@@ -3554,18 +3864,28 @@ function isLastBroadcastSummary(value) {
 
 // src/popup/compose/send-flow/send-execution.ts
 function createPopupSendExecution(deps, cardState) {
+  function addRecoveryButton(card, className, label, onClick) {
+    if (card.querySelector(`.${className}`)) {
+      return;
+    }
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `secondary-btn ${className}`;
+    button.textContent = label;
+    button.addEventListener("click", onClick);
+    card.appendChild(button);
+  }
   function addRetryButton(target, mainPrompt) {
     const siteId = target.id;
     const card = cardState.getSiteCardElement(siteId);
-    if (!card || card.querySelector(".retry-btn")) {
+    if (!card) {
       return;
     }
-    const retryBtn = document.createElement("button");
-    retryBtn.type = "button";
-    retryBtn.className = "secondary-btn retry-btn";
-    retryBtn.textContent = "Retry";
-    retryBtn.addEventListener("click", async () => {
-      retryBtn.disabled = true;
+    addRecoveryButton(card, "retry-btn", "Retry failed", async () => {
+      const retryBtn = card.querySelector(".retry-btn");
+      if (retryBtn) {
+        retryBtn.disabled = true;
+      }
       cardState.setSiteCardState(siteId, "sending");
       try {
         await deps.refreshOpenSiteTabs();
@@ -3589,7 +3909,33 @@ function createPopupSendExecution(deps, cardState) {
         addRetryButton(target, mainPrompt);
       }
     });
-    card.appendChild(retryBtn);
+    const site = state.runtimeSites.find((entry) => entry.id === siteId);
+    if (!site?.url) {
+      return;
+    }
+    addRecoveryButton(card, "login-retry-btn", "Login", () => {
+      void chrome.tabs.create({ url: site.url, active: true });
+    });
+    addRecoveryButton(card, "selector-check-btn", "Selector check", () => {
+      void chrome.tabs.create({ url: site.url, active: true });
+      deps.showAppToast("After login, open Settings > Services to run selector checks.", "info", 3500);
+    });
+    addRecoveryButton(card, "new-tab-retry-btn", "New tab", async () => {
+      cardState.setSiteCardState(siteId, "sending");
+      const response = await deps.sendPopupMessage(
+        {
+          action: "broadcast",
+          prompt: mainPrompt,
+          sites: [{ id: siteId, target: "new" }]
+        },
+        1e4
+      );
+      if (response?.ok) {
+        cardState.setSiteCardState(siteId, "sent");
+      } else {
+        cardState.setSiteCardState(siteId, "failed");
+      }
+    });
   }
   function markTargetsFailed(siteIds, targets, mainPrompt) {
     siteIds.forEach((siteId) => {
@@ -4689,12 +5035,15 @@ function compactVariableValues2(values) {
 function mergeTemplateSources2(...sources) {
   return Object.assign({}, ...sources.filter(Boolean));
 }
-function createFavoriteEditorStep(text = "", targetSiteIds = [], delayMs = 0, preferredId = "") {
+function createFavoriteEditorStep(text = "", targetSiteIds = [], delayMs = 0, preferredId = "", failurePolicy = "stop", targetMode = "default", templateDefaults = {}) {
   return {
     id: typeof preferredId === "string" && preferredId.trim() ? preferredId.trim() : `step-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     text: String(text ?? ""),
     delayMs: Math.max(0, Math.round(Number(delayMs) || 0)),
-    targetSiteIds: normalizeSiteIdList2(targetSiteIds)
+    targetSiteIds: normalizeSiteIdList2(targetSiteIds),
+    failurePolicy,
+    targetMode,
+    templateDefaults: { ...templateDefaults ?? {} }
   };
 }
 function toLocalDateTimeInputValue(isoString = "") {
@@ -4750,7 +5099,15 @@ function buildFavoriteEditorStateFromItem(item) {
     item?.templateDefaults ?? {}
   );
   const mode = item?.mode === "chain" ? "chain" : "single";
-  const steps = mode === "chain" && Array.isArray(item?.steps) && item.steps.length > 0 ? item.steps.map((step) => createFavoriteEditorStep(step.text, step.targetSiteIds, step.delayMs, step.id)) : mode === "chain" ? [createFavoriteEditorStep(item?.text ?? "", [], 0)] : [];
+  const steps = mode === "chain" && Array.isArray(item?.steps) && item.steps.length > 0 ? item.steps.map((step) => createFavoriteEditorStep(
+    step.text,
+    step.targetSiteIds,
+    step.delayMs,
+    step.id,
+    step.failurePolicy,
+    step.targetMode,
+    step.templateDefaults
+  )) : mode === "chain" ? [createFavoriteEditorStep(item?.text ?? "", [], 0)] : [];
   const draftState = {
     favoriteId: item?.id ?? null,
     prompt: item?.text ?? "",
@@ -4949,6 +5306,26 @@ function createFavoriteEditorEvents(deps) {
         return;
       }
       const target = event.target instanceof Element ? event.target : null;
+      const failurePolicySelect = target?.closest("[data-favorite-step-failure-policy]");
+      if (failurePolicySelect) {
+        const step2 = modalState.steps.find(
+          (entry) => entry.id === failurePolicySelect.dataset.favoriteStepFailurePolicy
+        );
+        if (step2) {
+          step2.failurePolicy = failurePolicySelect.value;
+        }
+        return;
+      }
+      const targetModeSelect = target?.closest("[data-favorite-step-target-mode]");
+      if (targetModeSelect) {
+        const step2 = modalState.steps.find(
+          (entry) => entry.id === targetModeSelect.dataset.favoriteStepTargetMode
+        );
+        if (step2) {
+          step2.targetMode = targetModeSelect.value;
+        }
+        return;
+      }
       const input = target?.closest("[data-favorite-step-target][data-site-id]");
       const stepId = input?.dataset.favoriteStepTarget;
       const siteId = input?.dataset.siteId;
@@ -5063,7 +5440,10 @@ function createFavoriteEditorPersistence(deps) {
         step.text,
         step.targetSiteIds,
         step.delayMs,
-        step.id
+        step.id,
+        step.failurePolicy,
+        step.targetMode,
+        step.templateDefaults
       )).filter((step) => step.text.trim());
       if (modalState.steps.length === 0) {
         setFavoriteModalError(t.favoriteChainNeedsStep);
@@ -5255,6 +5635,21 @@ function createFavoriteEditorRenderer(deps) {
           <label class="field-stack">
             <span>${escapeHtml(t.favoriteStepDelayLabel)}</span>
             <input class="search-input" type="number" min="0" step="100" data-favorite-step-delay="${escapeAttribute(step.id)}" value="${escapeAttribute(String(step.delayMs))}" />
+          </label>
+          <label class="field-stack">
+            <span>Failure policy</span>
+            <select class="search-input" data-favorite-step-failure-policy="${escapeAttribute(step.id)}">
+              <option value="stop" ${step.failurePolicy !== "continue" && step.failurePolicy !== "retry-once" ? "selected" : ""}>Stop chain</option>
+              <option value="continue" ${step.failurePolicy === "continue" ? "selected" : ""}>Continue chain</option>
+              <option value="retry-once" ${step.failurePolicy === "retry-once" ? "selected" : ""}>Retry once</option>
+            </select>
+          </label>
+          <label class="field-stack">
+            <span>Target mode</span>
+            <select class="search-input" data-favorite-step-target-mode="${escapeAttribute(step.id)}">
+              <option value="default" ${!step.targetMode || step.targetMode === "default" ? "selected" : ""}>Default tab behavior</option>
+              <option value="new" ${step.targetMode === "new" ? "selected" : ""}>Always new tab</option>
+            </select>
           </label>
           <div class="modal-section">
             <div class="section-row section-row-start">

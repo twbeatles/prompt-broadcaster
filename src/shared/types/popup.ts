@@ -53,6 +53,9 @@ export interface PopupFavoriteEditorStepDraft {
   text: string;
   delayMs: number;
   targetSiteIds: string[];
+  failurePolicy: "stop" | "continue" | "retry-once";
+  targetMode?: "default" | "new" | "tab";
+  templateDefaults?: Record<string, string>;
 }
 
 export interface PopupFavoriteEditorState {

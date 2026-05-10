@@ -6,6 +6,10 @@ export const LOCAL_STORAGE_KEYS = Object.freeze({
   templateVariableCache: "templateVariableCache",
   settings: "appSettings",
   broadcastCounter: "broadcastCounter",
+  comparisonNotes: "comparisonNotes",
+  promptExperiments: "promptExperiments",
+  templatePacks: "templatePacks",
+  serviceGroups: "serviceGroups",
 });
 
 export const DEFAULT_HISTORY_LIMIT = 50;

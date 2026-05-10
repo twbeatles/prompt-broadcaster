@@ -9,11 +9,24 @@ import {
 } from "../../shared/broadcast/state";
 import {
   appendPromptHistory,
+  appendPromptExperimentRun,
+  buildFavoriteEntry,
+  deleteComparisonNote,
+  deletePromptExperiment,
+  ensureUniqueStringId,
   getAppSettings,
   getBroadcastCounter,
+  getComparisonNotes,
   getPromptFavorites,
+  getPromptExperiments,
+  getStoredPromptHistory,
   getTemplateVariableCache,
   markFavoriteUsed,
+  saveComparisonNote,
+  savePromptExperiment,
+  saveTemplatePack,
+  setPromptFavorites,
+  setServiceGroups,
   normalizeSiteIdList,
   normalizeResultCode,
   setBroadcastCounter,
@@ -28,6 +41,7 @@ import {
 import {
   clearFailedSelector,
   enqueueUiToast,
+  getFailedSelectors,
   getLastBroadcast,
   markFailedSelector,
   recordStrategyAttempts,
@@ -103,6 +117,21 @@ import type {
   BroadcastSiteTargetMessage,
   CancelBroadcastMessage,
   CancelBroadcastResponse,
+  ComparisonCaptureStartMessage,
+  ComparisonCaptureStartResponse,
+  ComparisonCaptureStopMessage,
+  ComparisonNoteDeleteMessage,
+  ComparisonNoteDeleteResponse,
+  ComparisonNoteListMessage,
+  ComparisonNoteListResponse,
+  ComparisonNoteSaveMessage,
+  ComparisonNoteSaveResponse,
+  ExperimentDeleteMessage,
+  ExperimentDeleteResponse,
+  ExperimentRunMessage,
+  ExperimentRunResponse,
+  ExperimentSaveMessage,
+  ExperimentSaveResponse,
   GenericOkResponse,
   GetOpenAiTabsMessage,
   GetOpenAiTabsResponse,
@@ -110,16 +139,24 @@ import type {
   SelectorCheckInitResponse,
   SelectorCheckReportMessage,
   SelectorCheckReportResponse,
+  ServiceGroupsUpdateMessage,
+  ServiceGroupsUpdateResponse,
+  ServiceHealthGetResponse,
   ServiceTestRunMessage,
   ServiceTestRunResponse,
+  TemplatePackExportMessage,
+  TemplatePackImportMessage,
+  TemplatePackTransferResponse,
 } from "../../shared/types/messages";
 import type {
   FavoriteExecutionTrigger,
+  FavoritePrompt,
   LastBroadcastSummary,
   PendingBroadcastRecord,
   PendingInjectionRecord,
   RuntimeInjectionSiteConfig,
   RuntimeSite,
+  ServiceHealthSnapshot,
   SiteInjectionResult,
 } from "../../shared/types/models";
 import type { BackgroundBroadcastWaiter } from "../../shared/types/background";
@@ -188,6 +225,7 @@ const queuedInjectionTabIds = new Set<number>();
 const broadcastCompletionWaiters = new Map<string, BackgroundBroadcastWaiter<LastBroadcastSummary>>();
 const selectionCache = new Map<number, string>();
 const suppressedCompletedBroadcastIds = new Set<string>();
+const activeComparisonCaptures = new Map<string, { historyId: number; serviceId: string; startedAt: string }>();
 let contextMenuRefreshChain: Promise<void> = Promise.resolve();
 let injectionProcessChain: Promise<void> = Promise.resolve();
 
@@ -825,6 +863,10 @@ async function createPendingBroadcast(
     chainStepCount: Number.isFinite(Number(metadata.chainStepCount))
       ? Math.max(0, Math.round(Number(metadata.chainStepCount)))
       : null,
+    experimentRunId:
+      typeof metadata.experimentRunId === "string" && metadata.experimentRunId.trim()
+        ? metadata.experimentRunId.trim()
+        : null,
     trigger: getBroadcastTriggerLabel(metadata.trigger),
   };
 
@@ -872,10 +914,10 @@ async function maybeCreateSelectorNotification(
       iconUrl: chrome.runtime.getURL(NOTIFICATION_ICON_PATH),
       title:
         getI18nMessage("notification_selector_title", [report.siteName]) ||
-        `${report.siteName} selector update required`,
+        `${report.siteName} input check needed`,
       message:
         getI18nMessage("notification_selector_message", [report.siteName]) ||
-        `${report.siteName} selector changed. Update config/sites.js to restore automatic injection.`,
+        `${report.siteName} input box was not found. Complete login or security checks, then try again.`,
     });
   } catch (error) {
     console.error("[AI Prompt Broadcaster] Failed to create selector notification.", {
@@ -1028,6 +1070,7 @@ async function recordBroadcastSiteResult(
           chainRunId: completedRecord.chainRunId ?? null,
           chainStepIndex: completedRecord.chainStepIndex ?? null,
           chainStepCount: completedRecord.chainStepCount ?? null,
+          experimentRunId: completedRecord.experimentRunId ?? null,
           trigger: completedRecord.trigger ?? "popup",
         });
       });
@@ -1848,6 +1891,491 @@ async function handleBroadcastMessage(message: BroadcastMessage): Promise<Broadc
   });
 }
 
+function buildComparisonCaptureKey(historyId: number, serviceId: string) {
+  return `${historyId}:${serviceId}`;
+}
+
+async function handleServiceHealthGet(): Promise<ServiceHealthGetResponse> {
+  const [sites, history, failedSelectors, strategyStats] = await Promise.all([
+    getRuntimeSites(),
+    getStoredPromptHistory(),
+    getFailedSelectors(),
+    getStrategyStats(),
+  ]);
+  const failedSelectorBySite = new Map(
+    failedSelectors.map((entry) => [entry.serviceId, entry]),
+  );
+
+  const snapshots: ServiceHealthSnapshot[] = sites.map((site) => {
+    let lastSuccessAt: string | null = null;
+    let lastFailureAt: string | null = null;
+    let lastFailureCode: ServiceHealthSnapshot["lastFailureCode"] = null;
+    let successCount = 0;
+    let failureCount = 0;
+
+    for (const item of history) {
+      const result = item.siteResults?.[site.id];
+      if (!result && !item.requestedSiteIds?.includes(site.id)) {
+        continue;
+      }
+
+      if (result?.code === "submitted" || item.submittedSiteIds?.includes(site.id)) {
+        successCount += 1;
+        if (!lastSuccessAt) {
+          lastSuccessAt = item.createdAt;
+        }
+        continue;
+      }
+
+      failureCount += 1;
+      if (!lastFailureAt) {
+        lastFailureAt = item.createdAt;
+        lastFailureCode = result?.code ?? "unexpected_error";
+      }
+    }
+
+    const siteStrategyStats = strategyStats[site.id] ?? {};
+    const preferredStrategy =
+      Object.entries(siteStrategyStats)
+        .sort(([, left], [, right]) =>
+          (right.success - right.fail) - (left.success - left.fail),
+        )[0]?.[0] ?? null;
+
+    return {
+      serviceId: site.id,
+      serviceName: site.name,
+      enabled: site.enabled,
+      lastSuccessAt,
+      lastFailureAt,
+      lastFailureCode,
+      selectorWarning: failedSelectorBySite.get(site.id) ?? null,
+      preferredStrategy,
+      successCount,
+      failureCount,
+      verification: {
+        lastVerified: site.lastVerified,
+        verifiedAt: site.verifiedAt,
+        verifiedRoute: site.verifiedRoute,
+        verifiedAuthState: site.verifiedAuthState,
+        verifiedLocale: site.verifiedLocale,
+        verifiedVersion: site.verifiedVersion,
+      },
+    };
+  });
+
+  return {
+    ok: true,
+    snapshots,
+  };
+}
+
+async function handleComparisonNoteList(
+  message: ComparisonNoteListMessage,
+): Promise<ComparisonNoteListResponse> {
+  const historyId = Number(message?.historyId);
+  const notes = await getComparisonNotes();
+  return {
+    ok: true,
+    notes: Number.isFinite(historyId)
+      ? notes.filter((entry) => Number(entry.historyId) === historyId)
+      : notes,
+  };
+}
+
+async function handleComparisonNoteSave(
+  message: ComparisonNoteSaveMessage,
+): Promise<ComparisonNoteSaveResponse> {
+  const note = await saveComparisonNote(message?.note ?? {});
+  return {
+    ok: true,
+    note,
+  };
+}
+
+async function handleComparisonNoteDelete(
+  message: ComparisonNoteDeleteMessage,
+): Promise<ComparisonNoteDeleteResponse> {
+  const notes = await deleteComparisonNote(message?.noteId ?? "");
+  return {
+    ok: true,
+    notes,
+  };
+}
+
+async function handleContextMenuComparisonNote(
+  selectedText: string,
+  tab: chrome.tabs.Tab | undefined,
+): Promise<void> {
+  const responseText = (selectedText || (tab?.id ? selectionCache.get(tab.id) : "") || "").trim();
+  if (!responseText) {
+    return;
+  }
+
+  const [history, site] = await Promise.all([
+    getStoredPromptHistory(),
+    getSiteForUrl(tab?.url ?? ""),
+  ]);
+  const latestHistory = history[0];
+  if (!latestHistory || !site?.id) {
+    await enqueueUiToast({
+      message: "Open a supported service tab and keep at least one history item before saving a comparison note.",
+      type: "warning",
+      duration: 5000,
+    });
+    return;
+  }
+
+  await saveComparisonNote({
+    historyId: latestHistory.id,
+    serviceId: site.id,
+    responseText,
+    captureMode: "selection",
+    tags: ["selection"],
+  });
+  await enqueueUiToast({
+    message: `${site.name} response saved to the latest comparison note.`,
+    type: "success",
+    duration: 3500,
+  });
+}
+
+async function findComparisonCaptureTab(
+  serviceId: string,
+  explicitTabId?: number | null,
+): Promise<chrome.tabs.Tab | null> {
+  if (Number.isFinite(Number(explicitTabId))) {
+    try {
+      return await chrome.tabs.get(Number(explicitTabId));
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  const activeTabs = await chrome.tabs.query({
+    active: true,
+    lastFocusedWindow: true,
+  }).catch(() => []);
+  for (const tab of activeTabs) {
+    const site = await getSiteForUrl(tab.url ?? "");
+    if (site?.id === serviceId) {
+      return tab;
+    }
+  }
+
+  const allTabs = await chrome.tabs.query({}).catch(() => []);
+  for (const tab of allTabs) {
+    const site = await getSiteForUrl(tab.url ?? "");
+    if (site?.id === serviceId) {
+      return tab;
+    }
+  }
+
+  return null;
+}
+
+async function captureVisibleAssistantResponse(tabId: number): Promise<string> {
+  const [result] = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => {
+      const selectors = [
+        '[data-message-author-role="assistant"]',
+        '[data-testid*="assistant" i]',
+        '[data-testid*="bot" i]',
+        '[class*="assistant" i]',
+        '[class*="response" i]',
+        '[class*="message" i]',
+        "article",
+      ];
+      const isVisible = (element: Element) => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+      };
+      const getText = (element: Element) => (element.textContent || "")
+        .replace(/\s+/g, " ")
+        .trim();
+      const candidates = selectors
+        .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
+        .filter(isVisible)
+        .map((element) => ({
+          text: getText(element),
+          top: element.getBoundingClientRect().top,
+        }))
+        .filter((entry) => entry.text.length >= 20)
+        .sort((left, right) => right.top - left.top);
+
+      return candidates[0]?.text ?? "";
+    },
+  });
+
+  return typeof result?.result === "string" ? result.result : "";
+}
+
+async function handleComparisonCaptureStart(
+  message: ComparisonCaptureStartMessage,
+): Promise<ComparisonCaptureStartResponse> {
+  const historyId = Math.max(0, Math.round(Number(message?.historyId)));
+  const serviceId = typeof message?.serviceId === "string" ? message.serviceId.trim() : "";
+  if (!historyId || !serviceId) {
+    return {
+      ok: false,
+      captured: false,
+      error: "historyId and serviceId are required.",
+    };
+  }
+
+  activeComparisonCaptures.set(buildComparisonCaptureKey(historyId, serviceId), {
+    historyId,
+    serviceId,
+    startedAt: nowIso(),
+  });
+
+  const tab = await findComparisonCaptureTab(serviceId, message?.tabId ?? null);
+  if (!tab?.id) {
+    return {
+      ok: true,
+      captured: false,
+      message: "Capture armed. Open the service tab and retry capture when the response is visible.",
+    };
+  }
+
+  const responseText = await captureVisibleAssistantResponse(tab.id).catch(() => "");
+  if (!responseText.trim()) {
+    return {
+      ok: true,
+      captured: false,
+      message: "Capture armed, but no visible assistant response was found yet.",
+    };
+  }
+
+  const note = await saveComparisonNote({
+    historyId,
+    serviceId,
+    responseText,
+    captureMode: "auto",
+    tags: ["auto"],
+  });
+  return {
+    ok: true,
+    note,
+    captured: true,
+  };
+}
+
+async function handleComparisonCaptureStop(
+  message: ComparisonCaptureStopMessage,
+): Promise<GenericOkResponse> {
+  const historyId = Number(message?.historyId);
+  const serviceId = typeof message?.serviceId === "string" ? message.serviceId.trim() : "";
+  if (Number.isFinite(historyId) && serviceId) {
+    activeComparisonCaptures.delete(buildComparisonCaptureKey(historyId, serviceId));
+  } else {
+    activeComparisonCaptures.clear();
+  }
+
+  return { ok: true };
+}
+
+function buildExperimentRunId() {
+  return typeof crypto?.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `experiment-run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+async function handleExperimentSave(
+  message: ExperimentSaveMessage,
+): Promise<ExperimentSaveResponse> {
+  const experiment = await savePromptExperiment(message?.experiment ?? {});
+  return {
+    ok: true,
+    experiment,
+  };
+}
+
+async function handleExperimentDelete(
+  message: ExperimentDeleteMessage,
+): Promise<ExperimentDeleteResponse> {
+  const experiments = await deletePromptExperiment(message?.experimentId ?? "");
+  return {
+    ok: true,
+    experiments,
+  };
+}
+
+async function handleExperimentRun(
+  message: ExperimentRunMessage,
+): Promise<ExperimentRunResponse> {
+  const experiments = await getPromptExperiments();
+  const experiment = experiments.find((entry) => entry.id === message?.experimentId);
+  if (!experiment) {
+    return {
+      ok: false,
+      experiment: null,
+      queuedCount: 0,
+      broadcastIds: [],
+      preview: [],
+      error: "Experiment not found.",
+    };
+  }
+
+  const targetSiteIds = normalizeSiteIdList(experiment.targetSiteIds);
+  const variants = experiment.variants.filter((variant) => variant.text.trim());
+  const variableSets = experiment.variableSets.length > 0
+    ? experiment.variableSets
+    : [{ id: "default", title: "Default", values: {} }];
+  const preview = variants.flatMap((variant) =>
+    variableSets.map((variableSet) => ({
+      variantId: variant.id,
+      variableSetId: variableSet.id,
+      targetSiteIds,
+      prompt: renderTemplatePrompt(variant.text, variableSet.values ?? {}),
+    })),
+  );
+
+  if (targetSiteIds.length === 0 || preview.length === 0) {
+    return {
+      ok: false,
+      experiment,
+      queuedCount: 0,
+      broadcastIds: [],
+      preview,
+      error: "Experiment requires at least one variant and one target service.",
+    };
+  }
+
+  const runId = buildExperimentRunId();
+  const broadcastIds: string[] = [];
+  for (const item of preview) {
+    const response = await queueBroadcastRequest(
+      item.prompt,
+      item.targetSiteIds.map((siteId) => ({ id: siteId })),
+      {
+        trigger: "options",
+        experimentRunId: runId,
+      },
+    );
+    if (response?.broadcastId) {
+      broadcastIds.push(response.broadcastId);
+    }
+  }
+
+  const updatedExperiment = await appendPromptExperimentRun(experiment.id, {
+    id: runId,
+    variantId: preview.length === 1 ? preview[0].variantId : "mixed",
+    variableSetId: preview.length === 1 ? preview[0].variableSetId : "mixed",
+    targetSiteIds,
+    broadcastIds,
+    createdAt: nowIso(),
+  });
+
+  return {
+    ok: broadcastIds.length > 0,
+    experiment: updatedExperiment ?? experiment,
+    runId,
+    queuedCount: broadcastIds.length,
+    broadcastIds,
+    preview,
+    error: broadcastIds.length > 0 ? undefined : "No experiment broadcasts were queued.",
+  };
+}
+
+function stripFavoriteSensitiveDefaults(
+  favorite: FavoritePrompt,
+  includeSensitiveDefaults: boolean,
+): FavoritePrompt {
+  if (includeSensitiveDefaults) {
+    return favorite;
+  }
+
+  return {
+    ...favorite,
+    templateDefaults: {},
+    steps: favorite.steps.map((step) => ({
+      ...step,
+      templateDefaults: {},
+    })),
+  };
+}
+
+async function handleTemplatePackExport(
+  message: TemplatePackExportMessage,
+): Promise<TemplatePackTransferResponse> {
+  const favorites = await getPromptFavorites();
+  const selectedIds = normalizeSiteIdList(message?.favoriteIds);
+  const includeSensitiveDefaults = message?.includeSensitiveDefaults !== false;
+  const selectedFavorites = (selectedIds.length > 0
+    ? favorites.filter((favorite) => selectedIds.includes(favorite.id))
+    : favorites
+  ).map((favorite) => stripFavoriteSensitiveDefaults(favorite, includeSensitiveDefaults));
+
+  const pack = await saveTemplatePack({
+    title: message?.title || `Template Pack ${new Date().toLocaleDateString()}`,
+    description: "",
+    favoriteIds: selectedFavorites.map((favorite) => favorite.id),
+    templates: selectedFavorites,
+    includeSensitiveDefaults,
+  });
+
+  return {
+    ok: true,
+    pack,
+  };
+}
+
+async function handleTemplatePackImport(
+  message: TemplatePackImportMessage,
+): Promise<TemplatePackTransferResponse> {
+  const pack = await saveTemplatePack(message?.pack ?? {});
+  const currentFavorites = await getPromptFavorites();
+  const importedFavoriteIds: string[] = [];
+  const skippedFavoriteIds: string[] = [];
+  const nextFavorites = [...currentFavorites];
+
+  for (const template of pack.templates) {
+    const normalizedTemplate = buildFavoriteEntry(template);
+    const exactDuplicate = nextFavorites.find((favorite) =>
+      favorite.title === normalizedTemplate.title &&
+      favorite.text === normalizedTemplate.text,
+    );
+    if (exactDuplicate) {
+      skippedFavoriteIds.push(normalizedTemplate.id);
+      continue;
+    }
+
+    const importedFavorite = {
+      ...normalizedTemplate,
+      id: ensureUniqueStringId(nextFavorites, normalizedTemplate.id),
+      favoritedAt: nowIso(),
+      createdAt: normalizedTemplate.createdAt || nowIso(),
+      usageCount: 0,
+      lastUsedAt: null,
+    };
+    nextFavorites.unshift(importedFavorite);
+    importedFavoriteIds.push(importedFavorite.id);
+  }
+
+  if (importedFavoriteIds.length > 0) {
+    await setPromptFavorites(nextFavorites);
+  }
+
+  return {
+    ok: true,
+    pack,
+    importedFavoriteIds,
+    skippedFavoriteIds,
+  };
+}
+
+async function handleServiceGroupsUpdate(
+  message: ServiceGroupsUpdateMessage,
+): Promise<ServiceGroupsUpdateResponse> {
+  const groups = await setServiceGroups(message?.groups ?? []);
+  return {
+    ok: true,
+    groups,
+  };
+}
+
 async function handleSelectorCheckInit(
   message: SelectorCheckInitMessage,
 ): Promise<SelectorCheckInitResponse> {
@@ -1872,9 +2400,7 @@ async function handleSelectorCheckReport(
     message?.siteId
   ) {
     await clearPendingSelectorChecksForSiteId(message.siteId);
-    if (message.status === "ok") {
-      await clearFailedSelector(message.siteId);
-    }
+    await clearFailedSelector(message.siteId);
     return { ok: true };
   }
 
@@ -2196,6 +2722,18 @@ registerRuntimeMessageRouter(buildRuntimeHandlers({
     };
   },
   handleQuickPaletteExecuteMessage,
+  handleServiceHealthGet,
+  handleComparisonNoteList,
+  handleComparisonNoteSave,
+  handleComparisonNoteDelete,
+  handleComparisonCaptureStart,
+  handleComparisonCaptureStop,
+  handleExperimentSave,
+  handleExperimentDelete,
+  handleExperimentRun,
+  handleTemplatePackExport,
+  handleTemplatePackImport,
+  handleServiceGroupsUpdate,
 }));
 registerBackgroundChromeEvents({
   createContextMenus,
@@ -2206,6 +2744,7 @@ registerBackgroundChromeEvents({
   handleQuickPaletteCommand,
   getContextMenuTargetSiteIds,
   handleContextMenuBroadcast,
+  handleContextMenuComparisonNote,
   selectionCache,
   maybeInjectDynamicSelectorChecker,
   queuePendingInjection,

@@ -321,10 +321,43 @@ async function probeSite(page, site) {
         return null;
       }
 
+      function normalizePageText(value) {
+        return String(value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+      }
+
+      function isLikelyAccessChallengePage() {
+        const title = normalizePageText(document.title);
+        const bodyText = normalizePageText(document.body?.innerText ?? "");
+        const challengeSelectors = [
+          "a[href*='cloudflare.com']",
+          "#challenge-running",
+          ".cf-browser-verification",
+          ".cf-challenge",
+          ".cf-turnstile",
+          "iframe[src*='challenges.cloudflare.com']",
+        ];
+        const hasChallengeSelector = challengeSelectors.some((selector) =>
+          Boolean(findFirstMatch([selector]))
+        );
+
+        return (
+          hasChallengeSelector ||
+          title.includes("just a moment") ||
+          title.includes("잠시만 기다리십시오") ||
+          bodyText.includes("security check") ||
+          bodyText.includes("checking your browser") ||
+          bodyText.includes("checking if the site connection is secure") ||
+          bodyText.includes("verify you are human") ||
+          bodyText.includes("보안 확인 수행 중") ||
+          bodyText.includes("사용자가 봇이 아님")
+        );
+      }
+
       const primaryInput = findFirstMatch(nextInputSelectors, { editableOnly: true });
       const fallbackInput = findFirstMatch(nextFallbackSelectors, { editableOnly: true });
       const submitMatch = findFirstMatch(nextSubmitSelectors);
       const authMatch = findFirstMatch(nextAuthSelectors);
+      const hasAccessChallenge = isLikelyAccessChallengePage();
 
       return {
         title: document.title,
@@ -334,8 +367,9 @@ async function probeSite(page, site) {
         fallbackInput,
         submitMatch,
         authMatch,
+        hasAccessChallenge,
         hasPromptSurface: Boolean(primaryInput || fallbackInput),
-        hasAuthSurface: Boolean(authMatch),
+        hasAuthSurface: Boolean(authMatch) || hasAccessChallenge,
         hasSubmitSurface: Boolean(submitMatch),
       };
     },
@@ -361,12 +395,14 @@ function renderSiteSection(result) {
     `## ${result.siteName}`,
     "",
     `- URL: \`${result.url}\``,
+    `- Title: \`${formatValue(result.title)}\``,
     `- Route: \`${formatValue(result.pathname)}\``,
     `- Locale: \`${formatValue(result.locale)}\``,
     `- Auth State: \`${formatValue(result.authState)}\``,
     `- Submit Requirement: \`${formatValue(result.submitRequirement)}\``,
     `- Prompt Surface: \`${formatBoolean(result.hasPromptSurface)}\``,
     `- Auth Surface: \`${formatBoolean(result.hasAuthSurface)}\``,
+    `- Access Challenge: \`${formatBoolean(result.hasAccessChallenge)}\``,
     `- Submit Surface: \`${formatBoolean(result.hasSubmitSurface)}\``,
   ];
 

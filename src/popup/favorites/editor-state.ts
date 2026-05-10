@@ -30,6 +30,9 @@ export function createFavoriteEditorStep(
   targetSiteIds: string[] = [],
   delayMs = 0,
   preferredId = "",
+  failurePolicy: PopupFavoriteEditorStepDraft["failurePolicy"] = "stop",
+  targetMode: PopupFavoriteEditorStepDraft["targetMode"] = "default",
+  templateDefaults: Record<string, string> = {},
 ): PopupFavoriteEditorStepDraft {
   return {
     id:
@@ -39,6 +42,9 @@ export function createFavoriteEditorStep(
     text: String(text ?? ""),
     delayMs: Math.max(0, Math.round(Number(delayMs) || 0)),
     targetSiteIds: normalizeSiteIdList(targetSiteIds),
+    failurePolicy,
+    targetMode,
+    templateDefaults: { ...(templateDefaults ?? {}) },
   };
 }
 
@@ -119,7 +125,15 @@ export function buildFavoriteEditorStateFromItem(
   const mode = item?.mode === "chain" ? "chain" : "single";
   const steps = mode === "chain" && Array.isArray(item?.steps) && item.steps.length > 0
     ? item.steps.map((step) =>
-      createFavoriteEditorStep(step.text, step.targetSiteIds, step.delayMs, step.id))
+      createFavoriteEditorStep(
+        step.text,
+        step.targetSiteIds,
+        step.delayMs,
+        step.id,
+        step.failurePolicy,
+        step.targetMode,
+        step.templateDefaults,
+      ))
     : mode === "chain"
       ? [createFavoriteEditorStep(item?.text ?? "", [], 0)]
       : [];

@@ -98,6 +98,9 @@
   "context_menu_send_all": {
     "message": "Send to all services"
   },
+  "context_menu_save_comparison": {
+    "message": "Save selection as comparison note"
+  },
   "context_menu_send_to": {
     "message": "Send to $SERVICE$ only",
     "placeholders": {
@@ -716,7 +719,7 @@
     "message": "No services available."
   },
   "notification_selector_title": {
-    "message": "$SERVICE$ selector update required",
+    "message": "$SERVICE$ input check needed",
     "placeholders": {
       "service": {
         "content": "$1"
@@ -724,7 +727,7 @@
     }
   },
   "notification_selector_message": {
-    "message": "$SERVICE$ selector changed. Update config/sites.js to restore automatic injection.",
+    "message": "$SERVICE$ input box was not found. If this is a login or security check page, complete it and try again.",
     "placeholders": {
       "service": {
         "content": "$1"

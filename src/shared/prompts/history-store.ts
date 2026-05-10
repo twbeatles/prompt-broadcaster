@@ -86,6 +86,10 @@ export function buildHistoryEntry(entry: unknown): PromptHistoryItem {
         : Number.isFinite(Number(source.chainStepCount))
       ? Math.max(0, Math.round(Number(source.chainStepCount)))
       : null,
+    experimentRunId:
+      source.experimentRunId === null || source.experimentRunId === undefined
+        ? null
+        : safeText(source.experimentRunId).trim() || null,
     trigger: normalizeExecutionTrigger(source.trigger),
   };
 }

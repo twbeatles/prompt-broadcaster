@@ -13,6 +13,47 @@ export interface ElementMatch {
   elapsedMs: number;
 }
 
+const ACCESS_CHALLENGE_SELECTORS = [
+  "a[href*='cloudflare.com']",
+  "#challenge-running",
+  ".cf-browser-verification",
+  ".cf-challenge",
+  ".cf-turnstile",
+  "iframe[src*='challenges.cloudflare.com']",
+];
+
+function normalizePageText(value: unknown): string {
+  return String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+export function isLikelyAccessChallengePage(): boolean {
+  try {
+    const title = normalizePageText(document.title);
+    const bodyText = normalizePageText(document.body?.innerText ?? "");
+    const hasChallengeSelector = ACCESS_CHALLENGE_SELECTORS.some((selector) =>
+      Boolean(findElementDeep(selector, document, { visibleOnly: true }))
+    );
+
+    return (
+      hasChallengeSelector ||
+      title.includes("just a moment") ||
+      title.includes("잠시만 기다리십시오") ||
+      bodyText.includes("security check") ||
+      bodyText.includes("checking your browser") ||
+      bodyText.includes("checking if the site connection is secure") ||
+      bodyText.includes("verify you are human") ||
+      bodyText.includes("보안 확인 수행 중") ||
+      bodyText.includes("사용자가 봇이 아님")
+    );
+  } catch (error) {
+    logError("Access challenge detection failed", error);
+    return false;
+  }
+}
+
 export function normalizeSelectors(config: SelectorConfigLike | null | undefined): string[] {
   return normalizeSelectorEntries([
     config?.inputSelector,
@@ -33,6 +74,10 @@ export function isLikelyAuthPage(config: SelectorConfigLike | null | undefined):
 
     if (hasPromptSurface) {
       return false;
+    }
+
+    if (isLikelyAccessChallengePage()) {
+      return true;
     }
 
     return Array.isArray(config?.authSelectors)

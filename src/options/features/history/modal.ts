@@ -1,5 +1,6 @@
 // @ts-nocheck
-import { normalizeResultCode } from "../../../shared/prompts";
+import { getComparisonNotes, normalizeResultCode } from "../../../shared/prompts";
+import { sendRuntimeMessageWithTimeout } from "../../../shared/chrome/messaging";
 import { escapeHTML } from "../../../shared/security";
 import { optionsDom } from "../../app/dom";
 import { msg, t } from "../../app/i18n";
@@ -11,6 +12,7 @@ import {
   getStatusInfo,
 } from "../../app/helpers";
 import { closeModal, openModal } from "../../core/modal";
+import { showAppToast } from "../../core/status";
 
 const {
   historyModal,
@@ -67,6 +69,135 @@ export function buildResultComparisonMarkup(entry) {
   `;
 }
 
+function buildCompareWorkspaceMarkup(entry) {
+  const requested = getRequestedServices(entry);
+  const notes = state.comparisonNotes.filter((note) => Number(note.historyId) === Number(entry.id));
+  const serviceOptions = requested.map((siteId) => {
+    const site = state.runtimeSites.find((siteEntry) => siteEntry.id === siteId);
+    return `<option value="${escapeHTML(siteId)}">${escapeHTML(site?.name || siteId)}</option>`;
+  }).join("");
+  const notesMarkup = notes.length
+    ? notes.map((note) => {
+      const site = state.runtimeSites.find((siteEntry) => siteEntry.id === note.serviceId);
+      return `
+        <article class="compare-note">
+          <div class="section-head-row">
+            <div>
+              <strong>${escapeHTML(site?.name || note.serviceId)}</strong>
+              <div class="helper">${escapeHTML(note.captureMode)} · ${escapeHTML(formatDateTime(note.updatedAt))}${note.rating ? ` · ${note.rating}/5` : ""}</div>
+            </div>
+            <button class="btn danger ghost" type="button" data-comparison-delete="${escapeHTML(note.id)}">Delete</button>
+          </div>
+          <pre class="modal-prompt">${escapeHTML(note.responseText)}</pre>
+        </article>
+      `;
+    }).join("")
+    : `<div class="empty-state">No saved comparison notes yet.</div>`;
+
+  return `
+    <div class="compare-workspace" data-compare-history-id="${escapeHTML(String(entry.id))}">
+      <h3 class="result-comparison-title">Compare</h3>
+      <div class="filter-row">
+        <select data-comparison-service>${serviceOptions}</select>
+        <input data-comparison-rating type="number" min="1" max="5" placeholder="Rating" />
+      </div>
+      <textarea data-comparison-text rows="5" placeholder="Paste an AI response here, or select response text on a service tab and use the context menu."></textarea>
+      <div class="settings-actions">
+        <button class="btn" type="button" data-comparison-save>Save note</button>
+        <button class="btn ghost" type="button" data-comparison-capture-start>Capture start</button>
+        <button class="btn ghost" type="button" data-comparison-capture-stop>Stop capture</button>
+      </div>
+      <div class="settings-stack">${notesMarkup}</div>
+    </div>
+  `;
+}
+
+async function refreshComparisonNotes(historyId) {
+  state.comparisonNotes = await getComparisonNotes();
+  const entry = state.history.find((item) => Number(item.id) === Number(historyId));
+  const comparisonEl = document.getElementById("history-modal-comparison");
+  if (entry && comparisonEl) {
+    comparisonEl.innerHTML = `${buildResultComparisonMarkup(entry)}${buildCompareWorkspaceMarkup(entry)}`;
+    bindCompareWorkspaceEvents(comparisonEl, entry);
+  }
+}
+
+function bindCompareWorkspaceEvents(comparisonEl, entry) {
+  comparisonEl.onclick = (event) => {
+    const workspace = event.target.closest("[data-compare-history-id]");
+    if (!workspace) {
+      return;
+    }
+
+    const serviceId = workspace.querySelector("[data-comparison-service]")?.value || entry.requestedSiteIds?.[0] || "";
+    const responseText = workspace.querySelector("[data-comparison-text]")?.value || "";
+    const ratingValue = Number(workspace.querySelector("[data-comparison-rating]")?.value);
+
+    if (event.target.closest("[data-comparison-save]")) {
+      void sendRuntimeMessageWithTimeout({
+        action: "comparison-note:save",
+        note: {
+          historyId: entry.id,
+          serviceId,
+          responseText,
+          captureMode: "manual",
+          rating: Number.isFinite(ratingValue) ? ratingValue : null,
+          tags: [],
+        },
+      }, 8000).then(async (response) => {
+        if (!response?.ok) {
+          throw new Error(response?.error || "Comparison note save failed.");
+        }
+        showAppToast("Comparison note saved.", "success", 1600);
+        await refreshComparisonNotes(entry.id);
+      }).catch((error) => {
+        console.error("[AI Prompt Broadcaster] Failed to save comparison note.", error);
+        showAppToast(error?.message || "Comparison note save failed.", "error", 3000);
+      });
+      return;
+    }
+
+    if (event.target.closest("[data-comparison-capture-start]")) {
+      void sendRuntimeMessageWithTimeout({
+        action: "comparison-capture:start",
+        historyId: entry.id,
+        serviceId,
+      }, 10000).then(async (response) => {
+        if (!response?.ok) {
+          throw new Error(response?.error || "Capture start failed.");
+        }
+        showAppToast(response.captured ? "Response captured." : (response.message || "Capture armed."), response.captured ? "success" : "info", 2600);
+        await refreshComparisonNotes(entry.id);
+      }).catch((error) => {
+        console.error("[AI Prompt Broadcaster] Failed to start comparison capture.", error);
+        showAppToast(error?.message || "Capture failed.", "error", 3000);
+      });
+      return;
+    }
+
+    if (event.target.closest("[data-comparison-capture-stop]")) {
+      void sendRuntimeMessageWithTimeout({
+        action: "comparison-capture:stop",
+        historyId: entry.id,
+        serviceId,
+      }, 5000).then(() => showAppToast("Capture stopped.", "success", 1200));
+      return;
+    }
+
+    const deleteButton = event.target.closest("[data-comparison-delete]");
+    if (deleteButton) {
+      void sendRuntimeMessageWithTimeout({
+        action: "comparison-note:delete",
+        noteId: deleteButton.dataset.comparisonDelete,
+      }, 8000).then(async (response) => {
+        state.comparisonNotes = response?.notes ?? state.comparisonNotes;
+        showAppToast("Comparison note deleted.", "success", 1400);
+        await refreshComparisonNotes(entry.id);
+      });
+    }
+  };
+}
+
 export function openHistoryModal(historyId) {
   const entry = state.history.find((item) => Number(item.id) === Number(historyId));
   if (!entry) {
@@ -86,7 +217,8 @@ export function openHistoryModal(historyId) {
     comparisonEl.id = "history-modal-comparison";
     historyModalText.parentElement?.appendChild(comparisonEl);
   }
-  comparisonEl.innerHTML = buildResultComparisonMarkup(entry);
+  comparisonEl.innerHTML = `${buildResultComparisonMarkup(entry)}${buildCompareWorkspaceMarkup(entry)}`;
+  bindCompareWorkspaceEvents(comparisonEl, entry);
 
   openModal(historyModal, historyModalClose);
 }

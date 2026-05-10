@@ -13,6 +13,8 @@ export type FavoriteMode = "single" | "chain";
 export type ScheduleRepeat = "none" | "daily" | "weekday" | "weekly";
 export type FavoriteExecutionTrigger = "popup" | "scheduled" | "palette" | "options";
 export type BroadcastTargetMode = "default" | "new" | "tab";
+export type ComparisonCaptureMode = "manual" | "selection" | "auto";
+export type ChainFailurePolicy = "stop" | "continue" | "retry-once";
 export type FavoriteRunJobStatus = "queued" | "running" | "completed" | "failed" | "skipped";
 export type InjectionResultCode =
   | "submitted"
@@ -104,6 +106,82 @@ export interface ChainStep {
   text: string;
   delayMs: number;
   targetSiteIds: string[];
+  failurePolicy: ChainFailurePolicy;
+  targetMode?: BroadcastTargetMode;
+  templateDefaults?: Record<string, string>;
+}
+
+export interface BroadcastComparisonNote {
+  id: string;
+  historyId: number;
+  serviceId: string;
+  responseText: string;
+  captureMode: ComparisonCaptureMode;
+  rating: number | null;
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PromptExperimentVariant {
+  id: string;
+  title: string;
+  text: string;
+}
+
+export interface PromptExperimentVariableSet {
+  id: string;
+  title: string;
+  values: Record<string, string>;
+}
+
+export interface PromptExperimentRunRecord {
+  id: string;
+  createdAt: string;
+  variantId: string;
+  variableSetId: string;
+  targetSiteIds: string[];
+  broadcastIds: string[];
+}
+
+export interface PromptExperiment {
+  id: string;
+  title: string;
+  description: string;
+  variants: PromptExperimentVariant[];
+  targetSiteIds: string[];
+  variableSets: PromptExperimentVariableSet[];
+  runs: PromptExperimentRunRecord[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TemplatePack {
+  id: string;
+  title: string;
+  description: string;
+  favoriteIds: string[];
+  templates: FavoritePrompt[];
+  includeSensitiveDefaults: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ServiceGroup {
+  id: string;
+  title: string;
+  serviceIds: string[];
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ScheduleContextSnapshot {
+  enabled: boolean;
+  url: string;
+  title: string;
+  selection: string;
+  capturedAt: string | null;
 }
 
 export interface SiteConfig {
@@ -194,6 +272,7 @@ export interface PromptHistoryItem {
   chainRunId?: string | null;
   chainStepIndex?: number | null;
   chainStepCount?: number | null;
+  experimentRunId?: string | null;
   trigger?: FavoriteExecutionTrigger;
 }
 
@@ -216,6 +295,7 @@ export interface FavoritePrompt {
   scheduleEnabled: boolean;
   scheduledAt: string | null;
   scheduleRepeat: ScheduleRepeat;
+  scheduleContextSnapshot?: ScheduleContextSnapshot | null;
 }
 
 export interface FailedSelectorRecord {
@@ -296,7 +376,29 @@ export interface PendingBroadcastRecord {
   chainRunId?: string | null;
   chainStepIndex?: number | null;
   chainStepCount?: number | null;
+  experimentRunId?: string | null;
   trigger?: FavoriteExecutionTrigger;
+}
+
+export interface ServiceHealthSnapshot {
+  serviceId: string;
+  serviceName: string;
+  enabled: boolean;
+  lastSuccessAt: string | null;
+  lastFailureAt: string | null;
+  lastFailureCode: InjectionResultCode | null;
+  selectorWarning: FailedSelectorRecord | null;
+  preferredStrategy: string | null;
+  successCount: number;
+  failureCount: number;
+  verification: {
+    lastVerified?: string;
+    verifiedAt?: string;
+    verifiedRoute?: string;
+    verifiedAuthState?: VerifiedAuthState;
+    verifiedLocale?: string;
+    verifiedVersion?: string;
+  };
 }
 
 export interface PopupFavoriteIntent {
@@ -342,6 +444,7 @@ export interface FavoriteRunJobRecord extends FavoriteRunJobSummary {
   steps: ChainStep[];
   templateDefaults: Record<string, string>;
   executionContext: FavoriteRunExecutionContextSnapshot;
+  stepRetryCounts?: Record<string, number>;
 }
 
 export interface ReusableTabSurfaceSnapshot {

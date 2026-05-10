@@ -36,7 +36,7 @@ interface FavoriteWorkflowRunJobDeps {
   ) => Promise<string>;
   queueBroadcastRequest: (
     prompt: string,
-    siteRefs: Array<{ id: string }>,
+    siteRefs: Array<{ id: string; target?: "new" | "tab" }>,
     metadata?: Record<string, unknown>,
   ) => Promise<{
     ok?: boolean;
@@ -126,6 +126,7 @@ export function createFavoriteRunJobHandlers(
         steps,
         templateDefaults: { ...(defaults ?? {}) },
         executionContext: { ...executionContext },
+        stepRetryCounts: {},
       };
 
       return replaceFavoriteRunJob(jobs, queueState.queuedJob);
@@ -158,6 +159,7 @@ export function createFavoriteRunJobHandlers(
           steps,
           templateDefaults: { ...(defaults ?? {}) },
           executionContext: { ...executionContext },
+          stepRetryCounts: {},
         };
 
         await updateFavoriteRunJobs((jobs) =>
@@ -232,6 +234,49 @@ export function createFavoriteRunJobHandlers(
     const completedSteps = Math.min(job.stepCount, stepIndex + 1);
 
     if (summary?.status !== "submitted") {
+      const currentStep = job.steps[stepIndex];
+      const failurePolicy = currentStep?.failurePolicy ?? "stop";
+      const retryKey = currentStep?.id || String(stepIndex);
+      const retryCounts = job.stepRetryCounts ?? {};
+      const retryCount = retryCounts[retryKey] ?? 0;
+
+      if (failurePolicy === "retry-once" && retryCount < 1) {
+        await mutateFavoriteRunJob(job.jobId, (current) => ({
+          ...current,
+          status: "running",
+          currentBroadcastId: null,
+          currentStepIndex: stepIndex,
+          message: deps.getQueuedStepMessage(stepIndex, current.stepCount),
+          stepRetryCounts: {
+            ...(current.stepRetryCounts ?? {}),
+            [retryKey]: retryCount + 1,
+          },
+          updatedAt: deps.nowIso(),
+        }));
+        await scheduleFavoriteJobAlarm(job.jobId);
+        return;
+      }
+
+      if (failurePolicy === "continue" && job.mode === "chain" && completedSteps < job.stepCount) {
+        const nextStepIndex = completedSteps;
+        const nextStep = job.steps[nextStepIndex];
+        const nextDelayMs = Math.max(0, Math.round(Number(nextStep?.delayMs) || 0));
+        await mutateFavoriteRunJob(job.jobId, (current) => ({
+          ...current,
+          status: "running",
+          completedSteps,
+          currentBroadcastId: null,
+          currentStepIndex: nextStepIndex,
+          message:
+            nextDelayMs > 0
+              ? deps.getWaitingStepMessage(nextStepIndex, current.stepCount)
+              : deps.getQueuedStepMessage(nextStepIndex, current.stepCount),
+          updatedAt: deps.nowIso(),
+        }));
+        await scheduleFavoriteJobAlarm(job.jobId, nextDelayMs);
+        return;
+      }
+
       await mutateFavoriteRunJob(job.jobId, (current) => ({
         ...current,
         status: "failed",
@@ -313,7 +358,13 @@ export function createFavoriteRunJobHandlers(
 
         return deps.queueBroadcastRequest(
           prompt,
-          targetSiteIds.map((siteId) => ({ id: siteId })),
+          targetSiteIds.map((siteId) => {
+            const targetRef: { id: string; target?: "new" | "tab" } = { id: siteId };
+            if (step.targetMode === "new" || step.targetMode === "tab") {
+              targetRef.target = step.targetMode;
+            }
+            return targetRef;
+          }),
           {
             originFavoriteId: job.favoriteId,
             chainRunId: job.chainRunId,

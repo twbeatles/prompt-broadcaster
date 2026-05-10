@@ -11,14 +11,25 @@ import {
 } from "./constants";
 import type {
   AppSettings,
+  BroadcastComparisonNote,
+  BroadcastTargetMode,
+  ChainFailurePolicy,
   ChainStep,
+  ComparisonCaptureMode,
   FavoriteExecutionTrigger,
   FavoriteMode,
   FavoriteSort,
   HistorySort,
   InjectionResultCode,
+  PromptExperiment,
+  PromptExperimentRunRecord,
+  PromptExperimentVariableSet,
+  PromptExperimentVariant,
   ScheduleRepeat,
+  ScheduleContextSnapshot,
+  ServiceGroup,
   SiteInjectionResult,
+  TemplatePack,
 } from "../types/models";
 
 const VALID_HISTORY_SORTS = new Set<HistorySort>([
@@ -36,6 +47,21 @@ const VALID_FAVORITE_SORTS = new Set<FavoriteSort>([
 ]);
 
 const VALID_FAVORITE_MODES = new Set<FavoriteMode>(["single", "chain"]);
+const VALID_CAPTURE_MODES = new Set<ComparisonCaptureMode>([
+  "manual",
+  "selection",
+  "auto",
+]);
+const VALID_CHAIN_FAILURE_POLICIES = new Set<ChainFailurePolicy>([
+  "stop",
+  "continue",
+  "retry-once",
+]);
+const VALID_BROADCAST_TARGET_MODES = new Set<BroadcastTargetMode>([
+  "default",
+  "new",
+  "tab",
+]);
 const VALID_SCHEDULE_REPEATS = new Set<ScheduleRepeat>([
   "none",
   "daily",
@@ -176,6 +202,26 @@ export function normalizeFavoriteMode(value: unknown): FavoriteMode {
   return VALID_FAVORITE_MODES.has(value as FavoriteMode)
     ? (value as FavoriteMode)
     : "single";
+}
+
+export function normalizeComparisonCaptureMode(value: unknown): ComparisonCaptureMode {
+  return VALID_CAPTURE_MODES.has(value as ComparisonCaptureMode)
+    ? (value as ComparisonCaptureMode)
+    : "manual";
+}
+
+export function normalizeChainFailurePolicy(value: unknown): ChainFailurePolicy {
+  return VALID_CHAIN_FAILURE_POLICIES.has(value as ChainFailurePolicy)
+    ? (value as ChainFailurePolicy)
+    : "stop";
+}
+
+export function normalizeBroadcastTargetMode(
+  value: unknown,
+): BroadcastTargetMode | undefined {
+  return VALID_BROADCAST_TARGET_MODES.has(value as BroadcastTargetMode)
+    ? (value as BroadcastTargetMode)
+    : undefined;
 }
 
 export function normalizeScheduleRepeat(value: unknown): ScheduleRepeat {
@@ -380,6 +426,202 @@ export function normalizeTags(value: unknown) {
   ).slice(0, 10);
 }
 
+export function createStorageItemId(
+  prefix: string,
+  preferredId: unknown,
+  fallbackIndex = 0,
+) {
+  const trimmedId = safeText(preferredId).trim();
+  if (trimmedId) {
+    return trimmedId;
+  }
+
+  const safePrefix = safeText(prefix).trim() || "item";
+  return `${safePrefix}-${Date.now()}-${fallbackIndex}`;
+}
+
+export function normalizeComparisonNote(
+  value: unknown,
+  fallback: Partial<BroadcastComparisonNote> = {},
+  index = 0,
+): BroadcastComparisonNote {
+  const source = safeObject(value);
+  const now = new Date().toISOString();
+  const createdAt = normalizeIsoDate(source.createdAt ?? fallback.createdAt, now);
+  const ratingValue = Number(source.rating ?? fallback.rating);
+  const rating = Number.isFinite(ratingValue)
+    ? Math.min(5, Math.max(1, Math.round(ratingValue)))
+    : null;
+
+  return {
+    id: createStorageItemId("note", source.id ?? fallback.id, index),
+    historyId: Number.isFinite(Number(source.historyId ?? fallback.historyId))
+      ? Math.max(0, Math.round(Number(source.historyId ?? fallback.historyId)))
+      : 0,
+    serviceId: safeText(source.serviceId ?? fallback.serviceId).trim(),
+    responseText: safeText(source.responseText ?? fallback.responseText),
+    captureMode: normalizeComparisonCaptureMode(
+      source.captureMode ?? fallback.captureMode,
+    ),
+    rating,
+    tags: normalizeTags(source.tags ?? fallback.tags),
+    createdAt,
+    updatedAt: normalizeIsoDate(source.updatedAt ?? fallback.updatedAt, createdAt),
+  };
+}
+
+export function normalizePromptExperimentVariant(
+  value: unknown,
+  fallback: Partial<PromptExperimentVariant> = {},
+  index = 0,
+): PromptExperimentVariant {
+  const source = safeObject(value);
+  return {
+    id: createStorageItemId("variant", source.id ?? fallback.id, index),
+    title:
+      safeText(source.title ?? fallback.title).trim() ||
+      `Variant ${index + 1}`,
+    text: safeText(source.text ?? fallback.text),
+  };
+}
+
+export function normalizePromptExperimentVariableSet(
+  value: unknown,
+  fallback: Partial<PromptExperimentVariableSet> = {},
+  index = 0,
+): PromptExperimentVariableSet {
+  const source = safeObject(value);
+  return {
+    id: createStorageItemId("vars", source.id ?? fallback.id, index),
+    title:
+      safeText(source.title ?? fallback.title).trim() ||
+      `Variables ${index + 1}`,
+    values: normalizeTemplateDefaults(source.values ?? fallback.values),
+  };
+}
+
+export function normalizePromptExperimentRunRecord(
+  value: unknown,
+  fallback: Partial<PromptExperimentRunRecord> = {},
+  index = 0,
+): PromptExperimentRunRecord {
+  const source = safeObject(value);
+  return {
+    id: createStorageItemId("run", source.id ?? fallback.id, index),
+    createdAt: normalizeIsoDate(source.createdAt ?? fallback.createdAt),
+    variantId: safeText(source.variantId ?? fallback.variantId).trim(),
+    variableSetId: safeText(source.variableSetId ?? fallback.variableSetId).trim(),
+    targetSiteIds: normalizeSiteIdList(source.targetSiteIds ?? fallback.targetSiteIds),
+    broadcastIds: normalizeSiteIdList(source.broadcastIds ?? fallback.broadcastIds),
+  };
+}
+
+export function normalizePromptExperiment(
+  value: unknown,
+  fallback: Partial<PromptExperiment> = {},
+  index = 0,
+): PromptExperiment {
+  const source = safeObject(value);
+  const now = new Date().toISOString();
+  const createdAt = normalizeIsoDate(source.createdAt ?? fallback.createdAt, now);
+  const variants = safeArray(source.variants ?? fallback.variants)
+    .map((entry, variantIndex) => normalizePromptExperimentVariant(entry, {}, variantIndex))
+    .filter((variant) => variant.text.trim());
+  const variableSets = safeArray(source.variableSets ?? fallback.variableSets)
+    .map((entry, setIndex) => normalizePromptExperimentVariableSet(entry, {}, setIndex));
+  const normalizedVariableSets =
+    variableSets.length > 0
+      ? variableSets
+      : [normalizePromptExperimentVariableSet({ title: "Default", values: {} }, {}, 0)];
+
+  return {
+    id: createStorageItemId("experiment", source.id ?? fallback.id, index),
+    title:
+      safeText(source.title ?? fallback.title).trim() ||
+      `Experiment ${index + 1}`,
+    description: safeText(source.description ?? fallback.description),
+    variants,
+    targetSiteIds: normalizeSiteIdList(source.targetSiteIds ?? fallback.targetSiteIds),
+    variableSets: normalizedVariableSets,
+    runs: safeArray(source.runs ?? fallback.runs).map((entry, runIndex) =>
+      normalizePromptExperimentRunRecord(entry, {}, runIndex),
+    ),
+    createdAt,
+    updatedAt: normalizeIsoDate(source.updatedAt ?? fallback.updatedAt, createdAt),
+  };
+}
+
+export function normalizeTemplatePack(
+  value: unknown,
+  fallback: Partial<TemplatePack> = {},
+  index = 0,
+): TemplatePack {
+  const source = safeObject(value);
+  const now = new Date().toISOString();
+  const createdAt = normalizeIsoDate(source.createdAt ?? fallback.createdAt, now);
+  return {
+    id: createStorageItemId("pack", source.id ?? fallback.id, index),
+    title:
+      safeText(source.title ?? fallback.title).trim() ||
+      `Template Pack ${index + 1}`,
+    description: safeText(source.description ?? fallback.description),
+    favoriteIds: normalizeSiteIdList(source.favoriteIds ?? fallback.favoriteIds),
+    templates: safeArray(source.templates ?? fallback.templates) as TemplatePack["templates"],
+    includeSensitiveDefaults: normalizeBoolean(
+      source.includeSensitiveDefaults ?? fallback.includeSensitiveDefaults,
+      true,
+    ),
+    createdAt,
+    updatedAt: normalizeIsoDate(source.updatedAt ?? fallback.updatedAt, createdAt),
+  };
+}
+
+export function normalizeServiceGroup(
+  value: unknown,
+  fallback: Partial<ServiceGroup> = {},
+  index = 0,
+): ServiceGroup {
+  const source = safeObject(value);
+  const now = new Date().toISOString();
+  const createdAt = normalizeIsoDate(source.createdAt ?? fallback.createdAt, now);
+  const sortOrder = Number(source.sortOrder ?? fallback.sortOrder ?? index);
+  return {
+    id: createStorageItemId("group", source.id ?? fallback.id, index),
+    title:
+      safeText(source.title ?? fallback.title).trim() ||
+      `Group ${index + 1}`,
+    serviceIds: normalizeSiteIdList(source.serviceIds ?? fallback.serviceIds),
+    sortOrder: Number.isFinite(sortOrder) ? Math.max(0, Math.round(sortOrder)) : index,
+    createdAt,
+    updatedAt: normalizeIsoDate(source.updatedAt ?? fallback.updatedAt, createdAt),
+  };
+}
+
+export function normalizeScheduleContextSnapshot(
+  value: unknown,
+): ScheduleContextSnapshot | null {
+  const source = safeObject(value);
+  const hasMeaningfulValue = Boolean(
+    source.enabled ||
+      safeText(source.url).trim() ||
+      safeText(source.title).trim() ||
+      safeText(source.selection).trim() ||
+      safeText(source.capturedAt).trim(),
+  );
+
+  if (!hasMeaningfulValue) {
+    return null;
+  }
+
+  return {
+    enabled: normalizeBoolean(source.enabled, false),
+    url: safeText(source.url),
+    title: safeText(source.title),
+    selection: safeText(source.selection),
+    capturedAt: normalizeNullableIsoDate(source.capturedAt),
+  };
+}
+
 export function createChainStepId(preferredId: unknown, fallbackIndex = 0) {
   const trimmedId = safeText(preferredId).trim();
   return trimmedId || `step-${Date.now()}-${fallbackIndex}`;
@@ -408,6 +650,13 @@ export function normalizeChainStep(
     delayMs: normalizeDelayMs(source.delayMs ?? fallback.delayMs),
     targetSiteIds: normalizeSiteIdList(
       Array.isArray(source.targetSiteIds) ? source.targetSiteIds : fallbackTargets
+    ),
+    failurePolicy: normalizeChainFailurePolicy(
+      source.failurePolicy ?? fallback.failurePolicy,
+    ),
+    targetMode: normalizeBroadcastTargetMode(source.targetMode ?? fallback.targetMode),
+    templateDefaults: normalizeTemplateDefaults(
+      source.templateDefaults ?? fallback.templateDefaults,
     ),
   };
 }

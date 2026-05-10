@@ -2,8 +2,12 @@ import {
   DEFAULT_SETTINGS,
   setAppSettings,
   setBroadcastCounter,
+  setComparisonNotes,
+  setPromptExperiments,
   setPromptFavorites,
   setPromptHistory,
+  setServiceGroups,
+  setTemplatePacks,
   setTemplateVariableCache,
 } from "../prompts";
 import { LOCAL_PROMPT_STATE_KEYS, SESSION_PROMPT_STATE_KEYS } from "../prompt-state";
@@ -55,6 +59,10 @@ export async function resetPersistedExtensionState(
     setBroadcastCounter(0),
     setPromptHistory([]),
     setPromptFavorites([]),
+    setComparisonNotes([]),
+    setPromptExperiments([]),
+    setTemplatePacks([]),
+    setServiceGroups([]),
     setTemplateVariableCache({}),
     setFailedSelectors([]),
     setUiToasts([]),

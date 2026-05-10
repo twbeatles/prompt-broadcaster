@@ -1,9 +1,14 @@
 import type {
+  BroadcastComparisonNote,
   FavoriteExecutionTrigger,
   FavoriteRunExecutionContextSnapshot,
   LastBroadcastSummary,
   OpenSiteTab,
+  PromptExperiment,
   RuntimeInjectionSiteConfig,
+  ServiceGroup,
+  ServiceHealthSnapshot,
+  TemplatePack,
 } from "./models";
 
 export interface BroadcastSiteTargetMessage {
@@ -123,6 +128,70 @@ export interface QuickPaletteExecuteMessage {
 
 export interface QuickPaletteCloseMessage {
   action: "quickPalette:close";
+}
+
+export interface ServiceHealthGetMessage {
+  action: "service-health:get";
+}
+
+export interface ComparisonNoteListMessage {
+  action: "comparison-note:list";
+  historyId?: number | string | null;
+}
+
+export interface ComparisonNoteSaveMessage {
+  action: "comparison-note:save";
+  note: Partial<BroadcastComparisonNote>;
+}
+
+export interface ComparisonNoteDeleteMessage {
+  action: "comparison-note:delete";
+  noteId: string;
+}
+
+export interface ComparisonCaptureStartMessage {
+  action: "comparison-capture:start";
+  historyId: number | string;
+  serviceId: string;
+  tabId?: number | null;
+}
+
+export interface ComparisonCaptureStopMessage {
+  action: "comparison-capture:stop";
+  historyId?: number | string | null;
+  serviceId?: string | null;
+}
+
+export interface ExperimentSaveMessage {
+  action: "experiment:save";
+  experiment: Partial<PromptExperiment>;
+}
+
+export interface ExperimentDeleteMessage {
+  action: "experiment:delete";
+  experimentId: string;
+}
+
+export interface ExperimentRunMessage {
+  action: "experiment:run";
+  experimentId: string;
+}
+
+export interface TemplatePackExportMessage {
+  action: "template-pack:export";
+  title?: string;
+  favoriteIds?: string[];
+  includeSensitiveDefaults?: boolean;
+}
+
+export interface TemplatePackImportMessage {
+  action: "template-pack:import";
+  pack: Partial<TemplatePack>;
+}
+
+export interface ServiceGroupsUpdateMessage {
+  action: "service-groups:update";
+  groups: ServiceGroup[];
 }
 
 export interface BroadcastResponse {
@@ -247,6 +316,79 @@ export interface QuickPaletteGetStateResponse {
   favorites: QuickPaletteFavoriteSummary[];
 }
 
+export interface ServiceHealthGetResponse {
+  ok: boolean;
+  snapshots: ServiceHealthSnapshot[];
+  error?: string;
+}
+
+export interface ComparisonNoteListResponse {
+  ok: boolean;
+  notes: BroadcastComparisonNote[];
+  error?: string;
+}
+
+export interface ComparisonNoteSaveResponse {
+  ok: boolean;
+  note: BroadcastComparisonNote | null;
+  error?: string;
+}
+
+export interface ComparisonNoteDeleteResponse {
+  ok: boolean;
+  notes: BroadcastComparisonNote[];
+  error?: string;
+}
+
+export interface ComparisonCaptureStartResponse {
+  ok: boolean;
+  note?: BroadcastComparisonNote | null;
+  captured?: boolean;
+  message?: string;
+  error?: string;
+}
+
+export interface ExperimentSaveResponse {
+  ok: boolean;
+  experiment: PromptExperiment | null;
+  error?: string;
+}
+
+export interface ExperimentDeleteResponse {
+  ok: boolean;
+  experiments: PromptExperiment[];
+  error?: string;
+}
+
+export interface ExperimentRunResponse {
+  ok: boolean;
+  experiment: PromptExperiment | null;
+  runId?: string;
+  queuedCount: number;
+  broadcastIds: string[];
+  preview: Array<{
+    variantId: string;
+    variableSetId: string;
+    targetSiteIds: string[];
+    prompt: string;
+  }>;
+  error?: string;
+}
+
+export interface TemplatePackTransferResponse {
+  ok: boolean;
+  pack: TemplatePack | null;
+  importedFavoriteIds?: string[];
+  skippedFavoriteIds?: string[];
+  error?: string;
+}
+
+export interface ServiceGroupsUpdateResponse {
+  ok: boolean;
+  groups: ServiceGroup[];
+  error?: string;
+}
+
 export interface RuntimeRequestMap {
   broadcast: BroadcastMessage;
   "selector-check:init": SelectorCheckInitMessage;
@@ -268,6 +410,18 @@ export interface RuntimeRequestMap {
   "quickPalette:getState": QuickPaletteGetStateMessage;
   "quickPalette:execute": QuickPaletteExecuteMessage;
   "quickPalette:close": QuickPaletteCloseMessage;
+  "service-health:get": ServiceHealthGetMessage;
+  "comparison-note:list": ComparisonNoteListMessage;
+  "comparison-note:save": ComparisonNoteSaveMessage;
+  "comparison-note:delete": ComparisonNoteDeleteMessage;
+  "comparison-capture:start": ComparisonCaptureStartMessage;
+  "comparison-capture:stop": ComparisonCaptureStopMessage;
+  "experiment:save": ExperimentSaveMessage;
+  "experiment:delete": ExperimentDeleteMessage;
+  "experiment:run": ExperimentRunMessage;
+  "template-pack:export": TemplatePackExportMessage;
+  "template-pack:import": TemplatePackImportMessage;
+  "service-groups:update": ServiceGroupsUpdateMessage;
 }
 
 export interface RuntimeResponseMap {
@@ -291,6 +445,18 @@ export interface RuntimeResponseMap {
   "quickPalette:getState": QuickPaletteGetStateResponse;
   "quickPalette:execute": FavoriteRunResponse;
   "quickPalette:close": GenericOkResponse;
+  "service-health:get": ServiceHealthGetResponse;
+  "comparison-note:list": ComparisonNoteListResponse;
+  "comparison-note:save": ComparisonNoteSaveResponse;
+  "comparison-note:delete": ComparisonNoteDeleteResponse;
+  "comparison-capture:start": ComparisonCaptureStartResponse;
+  "comparison-capture:stop": GenericOkResponse;
+  "experiment:save": ExperimentSaveResponse;
+  "experiment:delete": ExperimentDeleteResponse;
+  "experiment:run": ExperimentRunResponse;
+  "template-pack:export": TemplatePackTransferResponse;
+  "template-pack:import": TemplatePackTransferResponse;
+  "service-groups:update": ServiceGroupsUpdateResponse;
 }
 
 export type RuntimeAction = keyof RuntimeRequestMap;

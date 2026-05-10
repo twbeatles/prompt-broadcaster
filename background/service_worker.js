@@ -178,7 +178,11 @@ var LOCAL_STORAGE_KEYS = Object.freeze({
   favorites: "promptFavorites",
   templateVariableCache: "templateVariableCache",
   settings: "appSettings",
-  broadcastCounter: "broadcastCounter"
+  broadcastCounter: "broadcastCounter",
+  comparisonNotes: "comparisonNotes",
+  promptExperiments: "promptExperiments",
+  templatePacks: "templatePacks",
+  serviceGroups: "serviceGroups"
 });
 var DEFAULT_HISTORY_LIMIT = 50;
 var MIN_HISTORY_LIMIT = 10;
@@ -213,6 +217,21 @@ var VALID_FAVORITE_SORTS = /* @__PURE__ */ new Set([
   "createdAt"
 ]);
 var VALID_FAVORITE_MODES = /* @__PURE__ */ new Set(["single", "chain"]);
+var VALID_CAPTURE_MODES = /* @__PURE__ */ new Set([
+  "manual",
+  "selection",
+  "auto"
+]);
+var VALID_CHAIN_FAILURE_POLICIES = /* @__PURE__ */ new Set([
+  "stop",
+  "continue",
+  "retry-once"
+]);
+var VALID_BROADCAST_TARGET_MODES = /* @__PURE__ */ new Set([
+  "default",
+  "new",
+  "tab"
+]);
 var VALID_SCHEDULE_REPEATS = /* @__PURE__ */ new Set([
   "none",
   "daily",
@@ -320,6 +339,15 @@ function normalizeFavoriteSort(value) {
 }
 function normalizeFavoriteMode(value) {
   return VALID_FAVORITE_MODES.has(value) ? value : "single";
+}
+function normalizeComparisonCaptureMode(value) {
+  return VALID_CAPTURE_MODES.has(value) ? value : "manual";
+}
+function normalizeChainFailurePolicy(value) {
+  return VALID_CHAIN_FAILURE_POLICIES.has(value) ? value : "stop";
+}
+function normalizeBroadcastTargetMode(value) {
+  return VALID_BROADCAST_TARGET_MODES.has(value) ? value : void 0;
 }
 function normalizeScheduleRepeat(value) {
   return VALID_SCHEDULE_REPEATS.has(value) ? value : "none";
@@ -449,6 +477,14 @@ function ensureUniqueNumericId(items, preferredId) {
   }
   return candidate;
 }
+function ensureUniqueStringId(items, preferredId) {
+  let candidate = typeof preferredId === "string" && preferredId.trim() ? preferredId.trim() : `fav-${Date.now()}`;
+  const usedIds = new Set(items.map((item) => String(item.id)));
+  while (usedIds.has(candidate)) {
+    candidate = `${candidate}-1`;
+  }
+  return candidate;
+}
 function normalizeTags(value) {
   if (!Array.isArray(value)) {
     return [];
@@ -458,6 +494,130 @@ function normalizeTags(value) {
       value.map((tag) => safeText(tag).trim()).filter((tag) => tag.length > 0 && tag.length <= 30)
     )
   ).slice(0, 10);
+}
+function createStorageItemId(prefix, preferredId, fallbackIndex = 0) {
+  const trimmedId = safeText(preferredId).trim();
+  if (trimmedId) {
+    return trimmedId;
+  }
+  const safePrefix = safeText(prefix).trim() || "item";
+  return `${safePrefix}-${Date.now()}-${fallbackIndex}`;
+}
+function normalizeComparisonNote(value, fallback = {}, index = 0) {
+  const source = safeObject(value);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const createdAt = normalizeIsoDate(source.createdAt ?? fallback.createdAt, now);
+  const ratingValue = Number(source.rating ?? fallback.rating);
+  const rating = Number.isFinite(ratingValue) ? Math.min(5, Math.max(1, Math.round(ratingValue))) : null;
+  return {
+    id: createStorageItemId("note", source.id ?? fallback.id, index),
+    historyId: Number.isFinite(Number(source.historyId ?? fallback.historyId)) ? Math.max(0, Math.round(Number(source.historyId ?? fallback.historyId))) : 0,
+    serviceId: safeText(source.serviceId ?? fallback.serviceId).trim(),
+    responseText: safeText(source.responseText ?? fallback.responseText),
+    captureMode: normalizeComparisonCaptureMode(
+      source.captureMode ?? fallback.captureMode
+    ),
+    rating,
+    tags: normalizeTags(source.tags ?? fallback.tags),
+    createdAt,
+    updatedAt: normalizeIsoDate(source.updatedAt ?? fallback.updatedAt, createdAt)
+  };
+}
+function normalizePromptExperimentVariant(value, fallback = {}, index = 0) {
+  const source = safeObject(value);
+  return {
+    id: createStorageItemId("variant", source.id ?? fallback.id, index),
+    title: safeText(source.title ?? fallback.title).trim() || `Variant ${index + 1}`,
+    text: safeText(source.text ?? fallback.text)
+  };
+}
+function normalizePromptExperimentVariableSet(value, fallback = {}, index = 0) {
+  const source = safeObject(value);
+  return {
+    id: createStorageItemId("vars", source.id ?? fallback.id, index),
+    title: safeText(source.title ?? fallback.title).trim() || `Variables ${index + 1}`,
+    values: normalizeTemplateDefaults(source.values ?? fallback.values)
+  };
+}
+function normalizePromptExperimentRunRecord(value, fallback = {}, index = 0) {
+  const source = safeObject(value);
+  return {
+    id: createStorageItemId("run", source.id ?? fallback.id, index),
+    createdAt: normalizeIsoDate(source.createdAt ?? fallback.createdAt),
+    variantId: safeText(source.variantId ?? fallback.variantId).trim(),
+    variableSetId: safeText(source.variableSetId ?? fallback.variableSetId).trim(),
+    targetSiteIds: normalizeSiteIdList(source.targetSiteIds ?? fallback.targetSiteIds),
+    broadcastIds: normalizeSiteIdList(source.broadcastIds ?? fallback.broadcastIds)
+  };
+}
+function normalizePromptExperiment(value, fallback = {}, index = 0) {
+  const source = safeObject(value);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const createdAt = normalizeIsoDate(source.createdAt ?? fallback.createdAt, now);
+  const variants = safeArray(source.variants ?? fallback.variants).map((entry, variantIndex) => normalizePromptExperimentVariant(entry, {}, variantIndex)).filter((variant) => variant.text.trim());
+  const variableSets = safeArray(source.variableSets ?? fallback.variableSets).map((entry, setIndex) => normalizePromptExperimentVariableSet(entry, {}, setIndex));
+  const normalizedVariableSets = variableSets.length > 0 ? variableSets : [normalizePromptExperimentVariableSet({ title: "Default", values: {} }, {}, 0)];
+  return {
+    id: createStorageItemId("experiment", source.id ?? fallback.id, index),
+    title: safeText(source.title ?? fallback.title).trim() || `Experiment ${index + 1}`,
+    description: safeText(source.description ?? fallback.description),
+    variants,
+    targetSiteIds: normalizeSiteIdList(source.targetSiteIds ?? fallback.targetSiteIds),
+    variableSets: normalizedVariableSets,
+    runs: safeArray(source.runs ?? fallback.runs).map(
+      (entry, runIndex) => normalizePromptExperimentRunRecord(entry, {}, runIndex)
+    ),
+    createdAt,
+    updatedAt: normalizeIsoDate(source.updatedAt ?? fallback.updatedAt, createdAt)
+  };
+}
+function normalizeTemplatePack(value, fallback = {}, index = 0) {
+  const source = safeObject(value);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const createdAt = normalizeIsoDate(source.createdAt ?? fallback.createdAt, now);
+  return {
+    id: createStorageItemId("pack", source.id ?? fallback.id, index),
+    title: safeText(source.title ?? fallback.title).trim() || `Template Pack ${index + 1}`,
+    description: safeText(source.description ?? fallback.description),
+    favoriteIds: normalizeSiteIdList(source.favoriteIds ?? fallback.favoriteIds),
+    templates: safeArray(source.templates ?? fallback.templates),
+    includeSensitiveDefaults: normalizeBoolean(
+      source.includeSensitiveDefaults ?? fallback.includeSensitiveDefaults,
+      true
+    ),
+    createdAt,
+    updatedAt: normalizeIsoDate(source.updatedAt ?? fallback.updatedAt, createdAt)
+  };
+}
+function normalizeServiceGroup(value, fallback = {}, index = 0) {
+  const source = safeObject(value);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const createdAt = normalizeIsoDate(source.createdAt ?? fallback.createdAt, now);
+  const sortOrder = Number(source.sortOrder ?? fallback.sortOrder ?? index);
+  return {
+    id: createStorageItemId("group", source.id ?? fallback.id, index),
+    title: safeText(source.title ?? fallback.title).trim() || `Group ${index + 1}`,
+    serviceIds: normalizeSiteIdList(source.serviceIds ?? fallback.serviceIds),
+    sortOrder: Number.isFinite(sortOrder) ? Math.max(0, Math.round(sortOrder)) : index,
+    createdAt,
+    updatedAt: normalizeIsoDate(source.updatedAt ?? fallback.updatedAt, createdAt)
+  };
+}
+function normalizeScheduleContextSnapshot(value) {
+  const source = safeObject(value);
+  const hasMeaningfulValue = Boolean(
+    source.enabled || safeText(source.url).trim() || safeText(source.title).trim() || safeText(source.selection).trim() || safeText(source.capturedAt).trim()
+  );
+  if (!hasMeaningfulValue) {
+    return null;
+  }
+  return {
+    enabled: normalizeBoolean(source.enabled, false),
+    url: safeText(source.url),
+    title: safeText(source.title),
+    selection: safeText(source.selection),
+    capturedAt: normalizeNullableIsoDate(source.capturedAt)
+  };
 }
 function createChainStepId(preferredId, fallbackIndex = 0) {
   const trimmedId = safeText(preferredId).trim();
@@ -479,6 +639,13 @@ function normalizeChainStep(value, fallback = {}, index = 0) {
     delayMs: normalizeDelayMs(source.delayMs ?? fallback.delayMs),
     targetSiteIds: normalizeSiteIdList(
       Array.isArray(source.targetSiteIds) ? source.targetSiteIds : fallbackTargets
+    ),
+    failurePolicy: normalizeChainFailurePolicy(
+      source.failurePolicy ?? fallback.failurePolicy
+    ),
+    targetMode: normalizeBroadcastTargetMode(source.targetMode ?? fallback.targetMode),
+    templateDefaults: normalizeTemplateDefaults(
+      source.templateDefaults ?? fallback.templateDefaults
     )
   };
 }
@@ -630,7 +797,8 @@ function buildFavoriteEntry(entry) {
     steps,
     scheduleEnabled: normalizeBoolean(source?.scheduleEnabled, false),
     scheduledAt: normalizeNullableIsoDate(source?.scheduledAt),
-    scheduleRepeat: normalizeScheduleRepeat(source?.scheduleRepeat)
+    scheduleRepeat: normalizeScheduleRepeat(source?.scheduleRepeat),
+    scheduleContextSnapshot: normalizeScheduleContextSnapshot(source?.scheduleContextSnapshot)
   };
 }
 async function getPromptFavorites() {
@@ -679,6 +847,186 @@ async function markFavoriteUsed(favoriteId) {
   );
   await setPromptFavorites(nextFavorites);
   return nextFavorites.find((item) => String(item.id) === String(favoriteId)) ?? null;
+}
+
+// src/shared/prompts/advanced-store.ts
+function normalizeTemplatePackEntry(value, fallback = {}, index = 0) {
+  const pack = normalizeTemplatePack(value, fallback, index);
+  return {
+    ...pack,
+    templates: safeArray(pack.templates).map((entry) => buildFavoriteEntry(entry))
+  };
+}
+async function getComparisonNotes() {
+  const rawValue = await readLocal(
+    LOCAL_STORAGE_KEYS.comparisonNotes,
+    []
+  );
+  return sortByDateDesc(
+    safeArray(rawValue).map(
+      (entry, index) => normalizeComparisonNote(entry, {}, index)
+    ),
+    "updatedAt"
+  ).filter((entry) => entry.historyId > 0 && entry.serviceId && entry.responseText.trim());
+}
+async function setComparisonNotes(value) {
+  const normalized = sortByDateDesc(
+    safeArray(value).map(
+      (entry, index) => normalizeComparisonNote(entry, {}, index)
+    ),
+    "updatedAt"
+  ).filter((entry) => entry.historyId > 0 && entry.serviceId && entry.responseText.trim());
+  await writeLocal(LOCAL_STORAGE_KEYS.comparisonNotes, normalized);
+  return normalized;
+}
+async function saveComparisonNote(value) {
+  const current = await getComparisonNotes();
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const preferredId = typeof value.id === "string" && value.id.trim() ? value.id.trim() : `note-${Date.now()}`;
+  const existing = current.find((entry) => entry.id === preferredId);
+  const note = normalizeComparisonNote(
+    {
+      ...existing ?? {},
+      ...value ?? {},
+      id: existing?.id ?? ensureUniqueStringId(current, preferredId),
+      createdAt: existing?.createdAt ?? value.createdAt ?? now,
+      updatedAt: now
+    },
+    {},
+    0
+  );
+  const next = [note, ...current.filter((entry) => entry.id !== note.id)];
+  await setComparisonNotes(next);
+  return note;
+}
+async function deleteComparisonNote(noteId) {
+  const normalizedId = typeof noteId === "string" ? noteId.trim() : "";
+  const current = await getComparisonNotes();
+  const next = current.filter((entry) => entry.id !== normalizedId);
+  await setComparisonNotes(next);
+  return next;
+}
+async function getPromptExperiments() {
+  const rawValue = await readLocal(
+    LOCAL_STORAGE_KEYS.promptExperiments,
+    []
+  );
+  return sortByDateDesc(
+    safeArray(rawValue).map(
+      (entry, index) => normalizePromptExperiment(entry, {}, index)
+    ),
+    "updatedAt"
+  );
+}
+async function setPromptExperiments(value) {
+  const normalized = sortByDateDesc(
+    safeArray(value).map(
+      (entry, index) => normalizePromptExperiment(entry, {}, index)
+    ),
+    "updatedAt"
+  );
+  await writeLocal(LOCAL_STORAGE_KEYS.promptExperiments, normalized);
+  return normalized;
+}
+async function savePromptExperiment(value) {
+  const current = await getPromptExperiments();
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const preferredId = typeof value.id === "string" && value.id.trim() ? value.id.trim() : `experiment-${Date.now()}`;
+  const existing = current.find((entry) => entry.id === preferredId);
+  const experiment = normalizePromptExperiment(
+    {
+      ...existing ?? {},
+      ...value ?? {},
+      id: existing?.id ?? ensureUniqueStringId(current, preferredId),
+      createdAt: existing?.createdAt ?? value.createdAt ?? now,
+      updatedAt: now
+    },
+    {},
+    0
+  );
+  const next = [experiment, ...current.filter((entry) => entry.id !== experiment.id)];
+  await setPromptExperiments(next);
+  return experiment;
+}
+async function deletePromptExperiment(experimentId) {
+  const normalizedId = typeof experimentId === "string" ? experimentId.trim() : "";
+  const current = await getPromptExperiments();
+  const next = current.filter((entry) => entry.id !== normalizedId);
+  await setPromptExperiments(next);
+  return next;
+}
+async function appendPromptExperimentRun(experimentId, run) {
+  const current = await getPromptExperiments();
+  const experiment = current.find((entry) => entry.id === experimentId);
+  if (!experiment) {
+    return null;
+  }
+  const normalizedRun = normalizePromptExperimentRunRecord(
+    {
+      ...run,
+      id: run.id ?? `run-${Date.now()}`,
+      createdAt: run.createdAt ?? (/* @__PURE__ */ new Date()).toISOString()
+    },
+    {},
+    experiment.runs.length
+  );
+  const updatedExperiment = {
+    ...experiment,
+    runs: [normalizedRun, ...experiment.runs],
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  await setPromptExperiments([
+    updatedExperiment,
+    ...current.filter((entry) => entry.id !== experiment.id)
+  ]);
+  return updatedExperiment;
+}
+async function getTemplatePacks() {
+  const rawValue = await readLocal(
+    LOCAL_STORAGE_KEYS.templatePacks,
+    []
+  );
+  return sortByDateDesc(
+    safeArray(rawValue).map(
+      (entry, index) => normalizeTemplatePackEntry(entry, {}, index)
+    ),
+    "updatedAt"
+  );
+}
+async function setTemplatePacks(value) {
+  const normalized = sortByDateDesc(
+    safeArray(value).map(
+      (entry, index) => normalizeTemplatePackEntry(entry, {}, index)
+    ),
+    "updatedAt"
+  );
+  await writeLocal(LOCAL_STORAGE_KEYS.templatePacks, normalized);
+  return normalized;
+}
+async function saveTemplatePack(value) {
+  const current = await getTemplatePacks();
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const preferredId = typeof value.id === "string" && value.id.trim() ? value.id.trim() : `pack-${Date.now()}`;
+  const existing = current.find((entry) => entry.id === preferredId);
+  const pack = normalizeTemplatePackEntry(
+    {
+      ...existing ?? {},
+      ...value ?? {},
+      id: existing?.id ?? ensureUniqueStringId(current, preferredId),
+      createdAt: existing?.createdAt ?? value.createdAt ?? now,
+      updatedAt: now
+    },
+    {},
+    0
+  );
+  const next = [pack, ...current.filter((entry) => entry.id !== pack.id)];
+  await setTemplatePacks(next);
+  return pack;
+}
+async function setServiceGroups(value) {
+  const normalized = safeArray(value).map((entry, index) => normalizeServiceGroup(entry, {}, index)).sort((left, right) => left.sortOrder - right.sortOrder || left.title.localeCompare(right.title));
+  await writeLocal(LOCAL_STORAGE_KEYS.serviceGroups, normalized);
+  return normalized;
 }
 
 // src/shared/prompts/settings-store.ts
@@ -733,6 +1081,7 @@ function buildHistoryEntry(entry) {
     chainRunId: source.chainRunId === null || source.chainRunId === void 0 ? null : safeText(source.chainRunId).trim() || null,
     chainStepIndex: source.chainStepIndex === null || source.chainStepIndex === void 0 ? null : Number.isFinite(Number(source.chainStepIndex)) ? Math.max(0, Math.round(Number(source.chainStepIndex))) : null,
     chainStepCount: source.chainStepCount === null || source.chainStepCount === void 0 ? null : Number.isFinite(Number(source.chainStepCount)) ? Math.max(0, Math.round(Number(source.chainStepCount))) : null,
+    experimentRunId: source.experimentRunId === null || source.experimentRunId === void 0 ? null : safeText(source.experimentRunId).trim() || null,
     trigger: normalizeExecutionTrigger(source.trigger)
   };
 }
@@ -766,13 +1115,15 @@ var AI_SITES = Object.freeze([
     url: "https://chatgpt.com/",
     hostname: "chatgpt.com",
     supportedRoutes: [],
-    inputSelector: "#prompt-textarea, div#prompt-textarea[contenteditable='true'], textarea[aria-label*='chatgpt' i], textarea[aria-label*='채팅' i]",
+    inputSelector: "#prompt-textarea, div#prompt-textarea[contenteditable='true'], textarea[aria-label*='chatgpt' i], textarea[aria-label*='채팅' i], textarea[placeholder*='ask' i]",
     fallbackSelectors: [
       "#prompt-textarea",
       "div#prompt-textarea[contenteditable='true']",
       "textarea[aria-label*='chatgpt' i]",
       "textarea[aria-label*='채팅' i]",
+      "textarea[placeholder*='ask' i]",
       "textarea.wcDTda_fallbackTextarea",
+      "div.ProseMirror[contenteditable='true']",
       "div[contenteditable='true'][data-id='root']",
       "main div[contenteditable='true']"
     ],
@@ -782,16 +1133,22 @@ var AI_SITES = Object.freeze([
     selectorCheckMode: "input-and-conditional-submit",
     waitMs: 2e3,
     fallback: true,
-    lastVerified: "2026-04",
-    verifiedAt: "2026-04-10",
+    lastVerified: "2026-05",
+    verifiedAt: "2026-05-10",
     verifiedRoute: "/",
     verifiedAuthState: "logged-out",
     verifiedLocale: "ko",
-    verifiedVersion: "chatgpt-web-apr-2026",
+    verifiedVersion: "chatgpt-web-may-2026",
     authSelectors: [
       "form[action*='/auth']",
       "input[name='email']",
-      "input[name='username']"
+      "input[name='username']",
+      "a[href*='cloudflare.com']",
+      "#challenge-running",
+      ".cf-browser-verification",
+      ".cf-challenge",
+      ".cf-turnstile",
+      "iframe[src*='challenges.cloudflare.com']"
     ]
   },
   {
@@ -800,26 +1157,30 @@ var AI_SITES = Object.freeze([
     url: "https://gemini.google.com/app",
     hostname: "gemini.google.com",
     supportedRoutes: ["/app"],
-    inputSelector: "div[contenteditable='true'][role='textbox'], div.ql-editor.textarea.new-input-ui[contenteditable='true'], div.ql-editor[contenteditable='true'][role='textbox']",
+    inputSelector: "div[contenteditable='true'][role='textbox'], div[aria-label*='Gemini' i][contenteditable='true'][role='textbox'], div.ql-editor.textarea.new-input-ui[contenteditable='true'], div.ql-editor[contenteditable='true'][role='textbox']",
     fallbackSelectors: [
       "div[contenteditable='true'][role='textbox']",
+      "div[aria-label*='Gemini' i][contenteditable='true'][role='textbox']",
       "div.ql-editor.textarea.new-input-ui[contenteditable='true']",
       "div.ql-editor[contenteditable='true'][role='textbox']",
       "textarea, div[contenteditable='true']"
     ],
     inputType: "contenteditable",
-    submitSelector: "button.send-button, button[aria-label*='send' i], button[aria-label*='보내기' i]",
+    submitSelector: "button.send-button, button[aria-label*='send' i], button[aria-label*='보내기' i], button[aria-label*='메시지 보내기' i], button[type='submit']",
     submitMethod: "click",
-    selectorCheckMode: "input-and-submit",
+    selectorCheckMode: "input-and-conditional-submit",
     waitMs: 2500,
     fallback: true,
-    lastVerified: "2026-04",
-    verifiedAt: "2026-04-10",
+    lastVerified: "2026-05",
+    verifiedAt: "2026-05-10",
     verifiedRoute: "/app",
     verifiedAuthState: "logged-out",
-    verifiedLocale: "en-US",
-    verifiedVersion: "gemini-app-apr-2026",
+    verifiedLocale: "ko",
+    verifiedVersion: "gemini-app-may-2026",
     authSelectors: [
+      "a[href*='accounts.google.com/ServiceLogin']",
+      "a[aria-label*='로그인']",
+      "a[aria-label*='sign in' i]",
       "input[type='email']",
       "input[type='password']"
     ]
@@ -841,20 +1202,26 @@ var AI_SITES = Object.freeze([
     inputType: "contenteditable",
     submitSelector: "button[aria-label='Send message'], button[aria-label*='send' i], button[aria-label*='submit' i], button[aria-label*='보내' i], button[aria-label*='전송' i]",
     submitMethod: "click",
-    selectorCheckMode: "input-and-submit",
+    selectorCheckMode: "input-and-conditional-submit",
     waitMs: 1500,
     fallback: true,
-    lastVerified: "2026-04",
-    verifiedAt: "2026-04-10",
+    lastVerified: "2026-05",
+    verifiedAt: "2026-05-10",
     verifiedRoute: "/new",
     verifiedAuthState: "logged-out",
     verifiedLocale: "en-US",
-    verifiedVersion: "claude-web-apr-2026",
+    verifiedVersion: "claude-web-may-2026",
     authSelectors: [
       "input#email",
       "input[type='email']",
       "input[type='password']",
-      "form[action*='login']"
+      "form[action*='login']",
+      "a[href*='cloudflare.com']",
+      "#challenge-running",
+      ".cf-browser-verification",
+      ".cf-challenge",
+      ".cf-turnstile",
+      "iframe[src*='challenges.cloudflare.com']"
     ]
   },
   {
@@ -863,27 +1230,28 @@ var AI_SITES = Object.freeze([
     url: "https://grok.com/",
     hostname: "grok.com",
     supportedRoutes: [],
-    inputSelector: "textarea[aria-label*='grok' i], textarea[placeholder*='help' i], textarea",
+    inputSelector: "textarea[aria-label*='grok' i], textarea[placeholder*='help' i], textarea[placeholder*='무엇' i], textarea",
     fallbackSelectors: [
       "textarea[aria-label*='grok' i]",
       "textarea[placeholder*='help' i]",
+      "textarea[placeholder*='무엇' i]",
       "textarea",
       "div.tiptap.ProseMirror[contenteditable='true']",
       "div.ProseMirror[contenteditable='true'][translate='no']",
       "div.ProseMirror[contenteditable='true']"
     ],
     inputType: "textarea",
-    submitSelector: "button[aria-label*='submit' i], button[aria-label*='제출' i]",
+    submitSelector: "button[data-testid='chat-submit'], button[type='submit'][aria-label*='submit' i], button[type='submit'][aria-label*='제출' i], button[aria-label*='submit' i], button[aria-label*='제출' i]",
     submitMethod: "click",
     selectorCheckMode: "input-and-conditional-submit",
-    waitMs: 2e3,
+    waitMs: 3e3,
     fallback: true,
-    lastVerified: "2026-04",
-    verifiedAt: "2026-04-10",
+    lastVerified: "2026-05",
+    verifiedAt: "2026-05-10",
     verifiedRoute: "/",
     verifiedAuthState: "logged-out",
     verifiedLocale: "ko",
-    verifiedVersion: "grok-web-apr-2026",
+    verifiedVersion: "grok-web-may-2026",
     authSelectors: [
       "input[autocomplete='username']",
       "input[type='password']",
@@ -904,6 +1272,7 @@ var AI_SITES = Object.freeze([
       "div#ask-input[contenteditable='true'][role='textbox']",
       "#ask-input[contenteditable='true']",
       "div[contenteditable='true'][role='textbox']",
+      "textarea[aria-label*='Ask' i]",
       "textarea[placeholder*='Ask'][data-testid='search-input']",
       "textarea[placeholder*='Ask']",
       "textarea[placeholder*='질문']",
@@ -915,16 +1284,22 @@ var AI_SITES = Object.freeze([
     selectorCheckMode: "input-and-conditional-submit",
     waitMs: 2e3,
     fallback: true,
-    lastVerified: "2026-04",
-    verifiedAt: "2026-04-10",
+    lastVerified: "2026-05",
+    verifiedAt: "2026-05-10",
     verifiedRoute: "/",
     verifiedAuthState: "soft-gated",
     verifiedLocale: "en-US",
-    verifiedVersion: "perplexity-web-apr-2026",
+    verifiedVersion: "perplexity-web-may-2026",
     authSelectors: [
       "input[type='email']",
       "input[type='password']",
-      "button[data-testid='login-button']"
+      "button[data-testid='login-button']",
+      "a[href*='cloudflare.com']",
+      "#challenge-running",
+      ".cf-browser-verification",
+      ".cf-challenge",
+      ".cf-turnstile",
+      "iframe[src*='challenges.cloudflare.com']"
     ]
   }
 ]);
@@ -2191,6 +2566,15 @@ function normalizeExecutionContext(value) {
     clipboard: safeText(source.clipboard)
   };
 }
+function normalizeRetryCounts(value) {
+  const source = safeObject(value);
+  return Object.fromEntries(
+    Object.entries(source).map(([key, entryValue]) => [
+      safeText(key).trim(),
+      Math.max(0, Math.round(Number(entryValue) || 0))
+    ]).filter(([key]) => key)
+  );
+}
 function normalizeFavoriteRunJobRecord(value) {
   const source = safeObject(value);
   const jobId = safeText(source.jobId).trim();
@@ -2220,7 +2604,8 @@ function normalizeFavoriteRunJobRecord(value) {
     templateDefaults: source.templateDefaults && typeof source.templateDefaults === "object" && !Array.isArray(source.templateDefaults) ? Object.fromEntries(
       Object.entries(source.templateDefaults).map(([key, entryValue]) => [safeText(key).trim(), safeText(entryValue)]).filter(([key]) => Boolean(key))
     ) : {},
-    executionContext: normalizeExecutionContext(source.executionContext)
+    executionContext: normalizeExecutionContext(source.executionContext),
+    stepRetryCounts: normalizeRetryCounts(source.stepRetryCounts)
   };
 }
 function pruneFavoriteRunJobs(jobs, nowMs = Date.now()) {
@@ -2437,6 +2822,10 @@ async function resetPersistedExtensionState(options = {}) {
     setBroadcastCounter(0),
     setPromptHistory([]),
     setPromptFavorites([]),
+    setComparisonNotes([]),
+    setPromptExperiments([]),
+    setTemplatePacks([]),
+    setServiceGroups([]),
     setTemplateVariableCache({}),
     setFailedSelectors([]),
     setPendingUiToasts([]),
@@ -2472,6 +2861,7 @@ var NOTIFICATION_ICON_PATH = "icons/icon-128.png";
 var CONTEXT_MENU_ROOT_ID = "apb-root";
 var CONTEXT_MENU_ALL_ID = "apb-send-all";
 var CONTEXT_MENU_SITE_PREFIX = "apb-send-site:";
+var CONTEXT_MENU_SAVE_COMPARISON_ID = "apb-save-comparison-note";
 var CAPTURE_SELECTION_COMMAND = "capture-selected-text";
 var QUICK_PALETTE_COMMAND = "quick-palette";
 var RECONCILE_ALARM = "apb-reconcile";
@@ -3036,10 +3426,14 @@ function registerBackgroundChromeEvents(deps) {
     void (async () => {
       try {
         const siteIds = await deps.getContextMenuTargetSiteIds(info.menuItemId);
+        const selectedText = typeof info.selectionText === "string" ? info.selectionText.trim() : "";
+        if (info.menuItemId === CONTEXT_MENU_SAVE_COMPARISON_ID) {
+          await deps.handleContextMenuComparisonNote(selectedText, tab);
+          return;
+        }
         if (siteIds.length === 0) {
           return;
         }
-        const selectedText = typeof info.selectionText === "string" ? info.selectionText.trim() : "";
         if (!selectedText && typeof tab?.id === "number") {
           const cachedText = deps.selectionCache.get(tab.id) ?? "";
           if (cachedText.trim()) {
@@ -3471,6 +3865,12 @@ function createContextMenuController(deps) {
       title: getI18nMessage2("context_menu_send_all"),
       contexts: ["selection"]
     });
+    await createContextMenuItem({
+      id: CONTEXT_MENU_SAVE_COMPARISON_ID,
+      parentId: CONTEXT_MENU_ROOT_ID,
+      title: getI18nMessage2("context_menu_save_comparison") || "Save selection as comparison note",
+      contexts: ["selection"]
+    });
     for (const site of menuSites) {
       await createContextMenuItem({
         id: `${CONTEXT_MENU_SITE_PREFIX}${site.id}`,
@@ -3666,6 +4066,9 @@ function createFavoriteTemplateResolutionTools(deps) {
         id: typeof step.id === "string" && step.id.trim() ? step.id.trim() : `step-${index + 1}`,
         text: step.text,
         delayMs: Math.max(0, Math.round(Number(step.delayMs) || 0)),
+        failurePolicy: step.failurePolicy ?? "stop",
+        targetMode: step.targetMode,
+        templateDefaults: step.templateDefaults ?? {},
         targetSiteIds: (() => {
           const stepTargets = normalizeSiteIdList(step.targetSiteIds);
           return stepTargets.length > 0 ? stepTargets : favoriteTargetSiteIds;
@@ -3677,7 +4080,9 @@ function createFavoriteTemplateResolutionTools(deps) {
       id: `${favorite?.id ?? "favorite"}-single`,
       text,
       delayMs: 0,
-      targetSiteIds: favoriteTargetSiteIds
+      targetSiteIds: favoriteTargetSiteIds,
+      failurePolicy: "stop",
+      templateDefaults: {}
     }];
   }
   function getFavoriteTargetSiteIds(step) {
@@ -3796,6 +4201,7 @@ function createFavoriteTemplateResolutionTools(deps) {
     const counter = await getBroadcastCounter().catch(() => 0);
     const values = {
       ...templateDefaults ?? {},
+      ...step.templateDefaults ?? {},
       ...buildSystemTemplateValues(/* @__PURE__ */ new Date(), {
         extra: {
           url: executionContext.url ?? "",
@@ -4245,7 +4651,8 @@ function createFavoriteRunJobHandlers(deps) {
         favoriteTitle: favorite.title || deps.previewFavoriteText(favorite),
         steps,
         templateDefaults: { ...defaults ?? {} },
-        executionContext: { ...executionContext }
+        executionContext: { ...executionContext },
+        stepRetryCounts: {}
       };
       return replaceFavoriteRunJob(jobs, queueState.queuedJob);
     });
@@ -4273,7 +4680,8 @@ function createFavoriteRunJobHandlers(deps) {
           favoriteTitle: favorite.title || deps.previewFavoriteText(favorite),
           steps,
           templateDefaults: { ...defaults ?? {} },
-          executionContext: { ...executionContext }
+          executionContext: { ...executionContext },
+          stepRetryCounts: {}
         };
         await updateFavoriteRunJobs(
           (jobs) => replaceFavoriteRunJob(jobs, skippedJob)
@@ -4332,6 +4740,43 @@ function createFavoriteRunJobHandlers(deps) {
     const stepIndex = job.currentStepIndex ?? 0;
     const completedSteps = Math.min(job.stepCount, stepIndex + 1);
     if (summary?.status !== "submitted") {
+      const currentStep = job.steps[stepIndex];
+      const failurePolicy = currentStep?.failurePolicy ?? "stop";
+      const retryKey = currentStep?.id || String(stepIndex);
+      const retryCounts = job.stepRetryCounts ?? {};
+      const retryCount = retryCounts[retryKey] ?? 0;
+      if (failurePolicy === "retry-once" && retryCount < 1) {
+        await mutateFavoriteRunJob(job.jobId, (current) => ({
+          ...current,
+          status: "running",
+          currentBroadcastId: null,
+          currentStepIndex: stepIndex,
+          message: deps.getQueuedStepMessage(stepIndex, current.stepCount),
+          stepRetryCounts: {
+            ...current.stepRetryCounts ?? {},
+            [retryKey]: retryCount + 1
+          },
+          updatedAt: deps.nowIso()
+        }));
+        await scheduleFavoriteJobAlarm(job.jobId);
+        return;
+      }
+      if (failurePolicy === "continue" && job.mode === "chain" && completedSteps < job.stepCount) {
+        const nextStepIndex2 = completedSteps;
+        const nextStep2 = job.steps[nextStepIndex2];
+        const nextDelayMs2 = Math.max(0, Math.round(Number(nextStep2?.delayMs) || 0));
+        await mutateFavoriteRunJob(job.jobId, (current) => ({
+          ...current,
+          status: "running",
+          completedSteps,
+          currentBroadcastId: null,
+          currentStepIndex: nextStepIndex2,
+          message: nextDelayMs2 > 0 ? deps.getWaitingStepMessage(nextStepIndex2, current.stepCount) : deps.getQueuedStepMessage(nextStepIndex2, current.stepCount),
+          updatedAt: deps.nowIso()
+        }));
+        await scheduleFavoriteJobAlarm(job.jobId, nextDelayMs2);
+        return;
+      }
       await mutateFavoriteRunJob(job.jobId, (current) => ({
         ...current,
         status: "failed",
@@ -4397,7 +4842,13 @@ function createFavoriteRunJobHandlers(deps) {
         );
         return deps.queueBroadcastRequest(
           prompt,
-          targetSiteIds.map((siteId) => ({ id: siteId })),
+          targetSiteIds.map((siteId) => {
+            const targetRef = { id: siteId };
+            if (step.targetMode === "new" || step.targetMode === "tab") {
+              targetRef.target = step.targetMode;
+            }
+            return targetRef;
+          }),
           {
             originFavoriteId: job.favoriteId,
             chainRunId: job.chainRunId,
@@ -5303,6 +5754,45 @@ function buildRuntimeHandlers(deps) {
     "quickPalette:close": {
       sync: true,
       run: () => ({ ok: true })
+    },
+    "service-health:get": {
+      run: () => deps.handleServiceHealthGet(),
+      errorLabel: "[AI Prompt Broadcaster] Service health retrieval failed."
+    },
+    "comparison-note:list": {
+      run: (message) => deps.handleComparisonNoteList(message)
+    },
+    "comparison-note:save": {
+      run: (message) => deps.handleComparisonNoteSave(message)
+    },
+    "comparison-note:delete": {
+      run: (message) => deps.handleComparisonNoteDelete(message)
+    },
+    "comparison-capture:start": {
+      run: (message) => deps.handleComparisonCaptureStart(message),
+      errorLabel: "[AI Prompt Broadcaster] Comparison capture failed."
+    },
+    "comparison-capture:stop": {
+      run: (message) => deps.handleComparisonCaptureStop(message)
+    },
+    "experiment:save": {
+      run: (message) => deps.handleExperimentSave(message)
+    },
+    "experiment:delete": {
+      run: (message) => deps.handleExperimentDelete(message)
+    },
+    "experiment:run": {
+      run: (message) => deps.handleExperimentRun(message),
+      errorLabel: "[AI Prompt Broadcaster] Prompt experiment run failed."
+    },
+    "template-pack:export": {
+      run: (message) => deps.handleTemplatePackExport(message)
+    },
+    "template-pack:import": {
+      run: (message) => deps.handleTemplatePackImport(message)
+    },
+    "service-groups:update": {
+      run: (message) => deps.handleServiceGroupsUpdate(message)
     }
   };
 }
@@ -5315,6 +5805,7 @@ var queuedInjectionTabIds = /* @__PURE__ */ new Set();
 var broadcastCompletionWaiters = /* @__PURE__ */ new Map();
 var selectionCache = /* @__PURE__ */ new Map();
 var suppressedCompletedBroadcastIds = /* @__PURE__ */ new Set();
+var activeComparisonCaptures = /* @__PURE__ */ new Map();
 var contextMenuRefreshChain = Promise.resolve();
 var injectionProcessChain = Promise.resolve();
 var SCHEDULED_VARIABLE_BLOCKLIST2 = /* @__PURE__ */ new Set([
@@ -5804,6 +6295,7 @@ async function createPendingBroadcast(prompt, targets, metadata = {}) {
     chainRunId: typeof metadata.chainRunId === "string" && metadata.chainRunId.trim() ? metadata.chainRunId.trim() : null,
     chainStepIndex: Number.isFinite(Number(metadata.chainStepIndex)) ? Math.max(0, Math.round(Number(metadata.chainStepIndex))) : null,
     chainStepCount: Number.isFinite(Number(metadata.chainStepCount)) ? Math.max(0, Math.round(Number(metadata.chainStepCount))) : null,
+    experimentRunId: typeof metadata.experimentRunId === "string" && metadata.experimentRunId.trim() ? metadata.experimentRunId.trim() : null,
     trigger: getBroadcastTriggerLabel(metadata.trigger)
   };
   await queueBackgroundStateMutation((state) => {
@@ -5835,8 +6327,8 @@ async function maybeCreateSelectorNotification(report) {
     await chrome.notifications.create(`selector-changed-${report.siteId}`, {
       type: "basic",
       iconUrl: chrome.runtime.getURL(NOTIFICATION_ICON_PATH),
-      title: getI18nMessage("notification_selector_title", [report.siteName]) || `${report.siteName} selector update required`,
-      message: getI18nMessage("notification_selector_message", [report.siteName]) || `${report.siteName} selector changed. Update config/sites.js to restore automatic injection.`
+      title: getI18nMessage("notification_selector_title", [report.siteName]) || `${report.siteName} input check needed`,
+      message: getI18nMessage("notification_selector_message", [report.siteName]) || `${report.siteName} input box was not found. Complete login or security checks, then try again.`
     });
   } catch (error) {
     console.error("[AI Prompt Broadcaster] Failed to create selector notification.", {
@@ -5955,6 +6447,7 @@ async function recordBroadcastSiteResult(broadcastId, siteId, resultInput) {
           chainRunId: completedRecord.chainRunId ?? null,
           chainStepIndex: completedRecord.chainStepIndex ?? null,
           chainStepCount: completedRecord.chainStepCount ?? null,
+          experimentRunId: completedRecord.experimentRunId ?? null,
           trigger: completedRecord.trigger ?? "popup"
         });
       });
@@ -6591,6 +7084,392 @@ async function handleBroadcastMessage(message) {
     trigger: "popup"
   });
 }
+function buildComparisonCaptureKey(historyId, serviceId) {
+  return `${historyId}:${serviceId}`;
+}
+async function handleServiceHealthGet() {
+  const [sites, history, failedSelectors, strategyStats] = await Promise.all([
+    getRuntimeSites(),
+    getStoredPromptHistory(),
+    getFailedSelectors(),
+    getStrategyStats()
+  ]);
+  const failedSelectorBySite = new Map(
+    failedSelectors.map((entry) => [entry.serviceId, entry])
+  );
+  const snapshots = sites.map((site) => {
+    let lastSuccessAt = null;
+    let lastFailureAt = null;
+    let lastFailureCode = null;
+    let successCount = 0;
+    let failureCount = 0;
+    for (const item of history) {
+      const result = item.siteResults?.[site.id];
+      if (!result && !item.requestedSiteIds?.includes(site.id)) {
+        continue;
+      }
+      if (result?.code === "submitted" || item.submittedSiteIds?.includes(site.id)) {
+        successCount += 1;
+        if (!lastSuccessAt) {
+          lastSuccessAt = item.createdAt;
+        }
+        continue;
+      }
+      failureCount += 1;
+      if (!lastFailureAt) {
+        lastFailureAt = item.createdAt;
+        lastFailureCode = result?.code ?? "unexpected_error";
+      }
+    }
+    const siteStrategyStats = strategyStats[site.id] ?? {};
+    const preferredStrategy = Object.entries(siteStrategyStats).sort(
+      ([, left], [, right]) => right.success - right.fail - (left.success - left.fail)
+    )[0]?.[0] ?? null;
+    return {
+      serviceId: site.id,
+      serviceName: site.name,
+      enabled: site.enabled,
+      lastSuccessAt,
+      lastFailureAt,
+      lastFailureCode,
+      selectorWarning: failedSelectorBySite.get(site.id) ?? null,
+      preferredStrategy,
+      successCount,
+      failureCount,
+      verification: {
+        lastVerified: site.lastVerified,
+        verifiedAt: site.verifiedAt,
+        verifiedRoute: site.verifiedRoute,
+        verifiedAuthState: site.verifiedAuthState,
+        verifiedLocale: site.verifiedLocale,
+        verifiedVersion: site.verifiedVersion
+      }
+    };
+  });
+  return {
+    ok: true,
+    snapshots
+  };
+}
+async function handleComparisonNoteList(message) {
+  const historyId = Number(message?.historyId);
+  const notes = await getComparisonNotes();
+  return {
+    ok: true,
+    notes: Number.isFinite(historyId) ? notes.filter((entry) => Number(entry.historyId) === historyId) : notes
+  };
+}
+async function handleComparisonNoteSave(message) {
+  const note = await saveComparisonNote(message?.note ?? {});
+  return {
+    ok: true,
+    note
+  };
+}
+async function handleComparisonNoteDelete(message) {
+  const notes = await deleteComparisonNote(message?.noteId ?? "");
+  return {
+    ok: true,
+    notes
+  };
+}
+async function handleContextMenuComparisonNote(selectedText, tab) {
+  const responseText = (selectedText || (tab?.id ? selectionCache.get(tab.id) : "") || "").trim();
+  if (!responseText) {
+    return;
+  }
+  const [history, site] = await Promise.all([
+    getStoredPromptHistory(),
+    getSiteForUrl(tab?.url ?? "")
+  ]);
+  const latestHistory = history[0];
+  if (!latestHistory || !site?.id) {
+    await enqueueUiToast({
+      message: "Open a supported service tab and keep at least one history item before saving a comparison note.",
+      type: "warning",
+      duration: 5e3
+    });
+    return;
+  }
+  await saveComparisonNote({
+    historyId: latestHistory.id,
+    serviceId: site.id,
+    responseText,
+    captureMode: "selection",
+    tags: ["selection"]
+  });
+  await enqueueUiToast({
+    message: `${site.name} response saved to the latest comparison note.`,
+    type: "success",
+    duration: 3500
+  });
+}
+async function findComparisonCaptureTab(serviceId, explicitTabId) {
+  if (Number.isFinite(Number(explicitTabId))) {
+    try {
+      return await chrome.tabs.get(Number(explicitTabId));
+    } catch (_error) {
+      return null;
+    }
+  }
+  const activeTabs = await chrome.tabs.query({
+    active: true,
+    lastFocusedWindow: true
+  }).catch(() => []);
+  for (const tab of activeTabs) {
+    const site = await getSiteForUrl(tab.url ?? "");
+    if (site?.id === serviceId) {
+      return tab;
+    }
+  }
+  const allTabs = await chrome.tabs.query({}).catch(() => []);
+  for (const tab of allTabs) {
+    const site = await getSiteForUrl(tab.url ?? "");
+    if (site?.id === serviceId) {
+      return tab;
+    }
+  }
+  return null;
+}
+async function captureVisibleAssistantResponse(tabId) {
+  const [result] = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => {
+      const selectors = [
+        '[data-message-author-role="assistant"]',
+        '[data-testid*="assistant" i]',
+        '[data-testid*="bot" i]',
+        '[class*="assistant" i]',
+        '[class*="response" i]',
+        '[class*="message" i]',
+        "article"
+      ];
+      const isVisible = (element) => {
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+      };
+      const getText = (element) => (element.textContent || "").replace(/\s+/g, " ").trim();
+      const candidates = selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector))).filter(isVisible).map((element) => ({
+        text: getText(element),
+        top: element.getBoundingClientRect().top
+      })).filter((entry) => entry.text.length >= 20).sort((left, right) => right.top - left.top);
+      return candidates[0]?.text ?? "";
+    }
+  });
+  return typeof result?.result === "string" ? result.result : "";
+}
+async function handleComparisonCaptureStart(message) {
+  const historyId = Math.max(0, Math.round(Number(message?.historyId)));
+  const serviceId = typeof message?.serviceId === "string" ? message.serviceId.trim() : "";
+  if (!historyId || !serviceId) {
+    return {
+      ok: false,
+      captured: false,
+      error: "historyId and serviceId are required."
+    };
+  }
+  activeComparisonCaptures.set(buildComparisonCaptureKey(historyId, serviceId), {
+    historyId,
+    serviceId,
+    startedAt: nowIso()
+  });
+  const tab = await findComparisonCaptureTab(serviceId, message?.tabId ?? null);
+  if (!tab?.id) {
+    return {
+      ok: true,
+      captured: false,
+      message: "Capture armed. Open the service tab and retry capture when the response is visible."
+    };
+  }
+  const responseText = await captureVisibleAssistantResponse(tab.id).catch(() => "");
+  if (!responseText.trim()) {
+    return {
+      ok: true,
+      captured: false,
+      message: "Capture armed, but no visible assistant response was found yet."
+    };
+  }
+  const note = await saveComparisonNote({
+    historyId,
+    serviceId,
+    responseText,
+    captureMode: "auto",
+    tags: ["auto"]
+  });
+  return {
+    ok: true,
+    note,
+    captured: true
+  };
+}
+async function handleComparisonCaptureStop(message) {
+  const historyId = Number(message?.historyId);
+  const serviceId = typeof message?.serviceId === "string" ? message.serviceId.trim() : "";
+  if (Number.isFinite(historyId) && serviceId) {
+    activeComparisonCaptures.delete(buildComparisonCaptureKey(historyId, serviceId));
+  } else {
+    activeComparisonCaptures.clear();
+  }
+  return { ok: true };
+}
+function buildExperimentRunId() {
+  return typeof crypto?.randomUUID === "function" ? crypto.randomUUID() : `experiment-run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+async function handleExperimentSave(message) {
+  const experiment = await savePromptExperiment(message?.experiment ?? {});
+  return {
+    ok: true,
+    experiment
+  };
+}
+async function handleExperimentDelete(message) {
+  const experiments = await deletePromptExperiment(message?.experimentId ?? "");
+  return {
+    ok: true,
+    experiments
+  };
+}
+async function handleExperimentRun(message) {
+  const experiments = await getPromptExperiments();
+  const experiment = experiments.find((entry) => entry.id === message?.experimentId);
+  if (!experiment) {
+    return {
+      ok: false,
+      experiment: null,
+      queuedCount: 0,
+      broadcastIds: [],
+      preview: [],
+      error: "Experiment not found."
+    };
+  }
+  const targetSiteIds = normalizeSiteIdList(experiment.targetSiteIds);
+  const variants = experiment.variants.filter((variant) => variant.text.trim());
+  const variableSets = experiment.variableSets.length > 0 ? experiment.variableSets : [{ id: "default", title: "Default", values: {} }];
+  const preview = variants.flatMap(
+    (variant) => variableSets.map((variableSet) => ({
+      variantId: variant.id,
+      variableSetId: variableSet.id,
+      targetSiteIds,
+      prompt: renderTemplatePrompt(variant.text, variableSet.values ?? {})
+    }))
+  );
+  if (targetSiteIds.length === 0 || preview.length === 0) {
+    return {
+      ok: false,
+      experiment,
+      queuedCount: 0,
+      broadcastIds: [],
+      preview,
+      error: "Experiment requires at least one variant and one target service."
+    };
+  }
+  const runId = buildExperimentRunId();
+  const broadcastIds = [];
+  for (const item of preview) {
+    const response = await queueBroadcastRequest(
+      item.prompt,
+      item.targetSiteIds.map((siteId) => ({ id: siteId })),
+      {
+        trigger: "options",
+        experimentRunId: runId
+      }
+    );
+    if (response?.broadcastId) {
+      broadcastIds.push(response.broadcastId);
+    }
+  }
+  const updatedExperiment = await appendPromptExperimentRun(experiment.id, {
+    id: runId,
+    variantId: preview.length === 1 ? preview[0].variantId : "mixed",
+    variableSetId: preview.length === 1 ? preview[0].variableSetId : "mixed",
+    targetSiteIds,
+    broadcastIds,
+    createdAt: nowIso()
+  });
+  return {
+    ok: broadcastIds.length > 0,
+    experiment: updatedExperiment ?? experiment,
+    runId,
+    queuedCount: broadcastIds.length,
+    broadcastIds,
+    preview,
+    error: broadcastIds.length > 0 ? void 0 : "No experiment broadcasts were queued."
+  };
+}
+function stripFavoriteSensitiveDefaults(favorite, includeSensitiveDefaults) {
+  if (includeSensitiveDefaults) {
+    return favorite;
+  }
+  return {
+    ...favorite,
+    templateDefaults: {},
+    steps: favorite.steps.map((step) => ({
+      ...step,
+      templateDefaults: {}
+    }))
+  };
+}
+async function handleTemplatePackExport(message) {
+  const favorites = await getPromptFavorites();
+  const selectedIds = normalizeSiteIdList(message?.favoriteIds);
+  const includeSensitiveDefaults = message?.includeSensitiveDefaults !== false;
+  const selectedFavorites = (selectedIds.length > 0 ? favorites.filter((favorite) => selectedIds.includes(favorite.id)) : favorites).map((favorite) => stripFavoriteSensitiveDefaults(favorite, includeSensitiveDefaults));
+  const pack = await saveTemplatePack({
+    title: message?.title || `Template Pack ${(/* @__PURE__ */ new Date()).toLocaleDateString()}`,
+    description: "",
+    favoriteIds: selectedFavorites.map((favorite) => favorite.id),
+    templates: selectedFavorites,
+    includeSensitiveDefaults
+  });
+  return {
+    ok: true,
+    pack
+  };
+}
+async function handleTemplatePackImport(message) {
+  const pack = await saveTemplatePack(message?.pack ?? {});
+  const currentFavorites = await getPromptFavorites();
+  const importedFavoriteIds = [];
+  const skippedFavoriteIds = [];
+  const nextFavorites = [...currentFavorites];
+  for (const template of pack.templates) {
+    const normalizedTemplate = buildFavoriteEntry(template);
+    const exactDuplicate = nextFavorites.find(
+      (favorite) => favorite.title === normalizedTemplate.title && favorite.text === normalizedTemplate.text
+    );
+    if (exactDuplicate) {
+      skippedFavoriteIds.push(normalizedTemplate.id);
+      continue;
+    }
+    const importedFavorite = {
+      ...normalizedTemplate,
+      id: ensureUniqueStringId(nextFavorites, normalizedTemplate.id),
+      favoritedAt: nowIso(),
+      createdAt: normalizedTemplate.createdAt || nowIso(),
+      usageCount: 0,
+      lastUsedAt: null
+    };
+    nextFavorites.unshift(importedFavorite);
+    importedFavoriteIds.push(importedFavorite.id);
+  }
+  if (importedFavoriteIds.length > 0) {
+    await setPromptFavorites(nextFavorites);
+  }
+  return {
+    ok: true,
+    pack,
+    importedFavoriteIds,
+    skippedFavoriteIds
+  };
+}
+async function handleServiceGroupsUpdate(message) {
+  const groups = await setServiceGroups(message?.groups ?? []);
+  return {
+    ok: true,
+    groups
+  };
+}
 async function handleSelectorCheckInit(message) {
   const site = await getSiteForUrl(message?.url ?? "");
   if (!site) {
@@ -6604,9 +7483,7 @@ async function handleSelectorCheckInit(message) {
 async function handleSelectorCheckReport(message) {
   if ((message?.status === "ok" || message?.status === "auth_page" || message?.status === "skipped") && message?.siteId) {
     await clearPendingSelectorChecksForSiteId(message.siteId);
-    if (message.status === "ok") {
-      await clearFailedSelector(message.siteId);
-    }
+    await clearFailedSelector(message.siteId);
     return { ok: true };
   }
   if (message?.status !== "selector_missing") {
@@ -6858,7 +7735,19 @@ registerRuntimeMessageRouter(buildRuntimeHandlers({
       }))
     };
   },
-  handleQuickPaletteExecuteMessage
+  handleQuickPaletteExecuteMessage,
+  handleServiceHealthGet,
+  handleComparisonNoteList,
+  handleComparisonNoteSave,
+  handleComparisonNoteDelete,
+  handleComparisonCaptureStart,
+  handleComparisonCaptureStop,
+  handleExperimentSave,
+  handleExperimentDelete,
+  handleExperimentRun,
+  handleTemplatePackExport,
+  handleTemplatePackImport,
+  handleServiceGroupsUpdate
 }));
 registerBackgroundChromeEvents({
   createContextMenus,
@@ -6869,6 +7758,7 @@ registerBackgroundChromeEvents({
   handleQuickPaletteCommand,
   getContextMenuTargetSiteIds,
   handleContextMenuBroadcast,
+  handleContextMenuComparisonNote,
   selectionCache,
   maybeInjectDynamicSelectorChecker,
   queuePendingInjection,

@@ -1,6 +1,7 @@
 import {
   BADGE_CLEAR_ALARM,
   CAPTURE_SELECTION_COMMAND,
+  CONTEXT_MENU_SAVE_COMPARISON_ID,
   QUICK_PALETTE_COMMAND,
   RECONCILE_ALARM,
 } from "../constants";
@@ -16,6 +17,10 @@ interface BackgroundChromeEventDeps {
   handleContextMenuBroadcast: (
     selectedText: string,
     siteIds: string[],
+  ) => Promise<void>;
+  handleContextMenuComparisonNote: (
+    selectedText: string,
+    tab: chrome.tabs.Tab | undefined,
   ) => Promise<void>;
   selectionCache: Map<number, string>;
   maybeInjectDynamicSelectorChecker: (
@@ -81,12 +86,17 @@ export function registerBackgroundChromeEvents(
     void (async () => {
       try {
         const siteIds = await deps.getContextMenuTargetSiteIds(info.menuItemId);
-        if (siteIds.length === 0) {
+        const selectedText =
+          typeof info.selectionText === "string" ? info.selectionText.trim() : "";
+
+        if (info.menuItemId === CONTEXT_MENU_SAVE_COMPARISON_ID) {
+          await deps.handleContextMenuComparisonNote(selectedText, tab);
           return;
         }
 
-        const selectedText =
-          typeof info.selectionText === "string" ? info.selectionText.trim() : "";
+        if (siteIds.length === 0) {
+          return;
+        }
 
         if (!selectedText && typeof tab?.id === "number") {
           const cachedText = deps.selectionCache.get(tab.id) ?? "";

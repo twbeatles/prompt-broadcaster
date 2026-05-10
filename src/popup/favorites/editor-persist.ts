@@ -80,6 +80,9 @@ export function createFavoriteEditorPersistence(
             step.targetSiteIds,
             step.delayMs,
             step.id,
+            step.failurePolicy,
+            step.targetMode,
+            step.templateDefaults,
           ))
         .filter((step) => step.text.trim());
 

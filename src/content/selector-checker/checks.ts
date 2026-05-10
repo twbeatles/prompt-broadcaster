@@ -9,6 +9,47 @@ import {
   shouldRequireVisibleSubmitSurface,
 } from "../../shared/sites";
 
+const ACCESS_CHALLENGE_SELECTORS = [
+  "a[href*='cloudflare.com']",
+  "#challenge-running",
+  ".cf-browser-verification",
+  ".cf-challenge",
+  ".cf-turnstile",
+  "iframe[src*='challenges.cloudflare.com']",
+];
+
+function normalizePageText(value) {
+  return String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+export function isLikelyAccessChallengePage() {
+  try {
+    const title = normalizePageText(document.title);
+    const bodyText = normalizePageText(document.body?.innerText ?? "");
+    const hasChallengeSelector = ACCESS_CHALLENGE_SELECTORS.some((selector) =>
+      Boolean(findElementDeep(selector, document, { visibleOnly: true }))
+    );
+
+    return (
+      hasChallengeSelector ||
+      title.includes("just a moment") ||
+      title.includes("잠시만 기다리십시오") ||
+      bodyText.includes("security check") ||
+      bodyText.includes("checking your browser") ||
+      bodyText.includes("checking if the site connection is secure") ||
+      bodyText.includes("verify you are human") ||
+      bodyText.includes("보안 확인 수행 중") ||
+      bodyText.includes("사용자가 봇이 아님")
+    );
+  } catch (error) {
+    logSelectorCheckerError("Failed access challenge detection in selector checker.", error);
+    return false;
+  }
+}
+
 export function isLikelyAuthPage(site) {
   try {
     if (getSitePathBlockReason(site, window.location.pathname) === "auth_path") {
@@ -26,6 +67,10 @@ export function isLikelyAuthPage(site) {
 
     if (hasPromptSurface) {
       return false;
+    }
+
+    if (isLikelyAccessChallengePage()) {
+      return true;
     }
 
     if (!Array.isArray(site?.authSelectors)) {

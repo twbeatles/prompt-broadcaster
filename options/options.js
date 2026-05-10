@@ -430,7 +430,11 @@ var LOCAL_STORAGE_KEYS = Object.freeze({
   favorites: "promptFavorites",
   templateVariableCache: "templateVariableCache",
   settings: "appSettings",
-  broadcastCounter: "broadcastCounter"
+  broadcastCounter: "broadcastCounter",
+  comparisonNotes: "comparisonNotes",
+  promptExperiments: "promptExperiments",
+  templatePacks: "templatePacks",
+  serviceGroups: "serviceGroups"
 });
 var DEFAULT_HISTORY_LIMIT = 50;
 var MIN_HISTORY_LIMIT = 10;
@@ -465,6 +469,21 @@ var VALID_FAVORITE_SORTS = /* @__PURE__ */ new Set([
   "createdAt"
 ]);
 var VALID_FAVORITE_MODES = /* @__PURE__ */ new Set(["single", "chain"]);
+var VALID_CAPTURE_MODES = /* @__PURE__ */ new Set([
+  "manual",
+  "selection",
+  "auto"
+]);
+var VALID_CHAIN_FAILURE_POLICIES = /* @__PURE__ */ new Set([
+  "stop",
+  "continue",
+  "retry-once"
+]);
+var VALID_BROADCAST_TARGET_MODES = /* @__PURE__ */ new Set([
+  "default",
+  "new",
+  "tab"
+]);
 var VALID_SCHEDULE_REPEATS = /* @__PURE__ */ new Set([
   "none",
   "daily",
@@ -572,6 +591,15 @@ function normalizeFavoriteSort(value) {
 }
 function normalizeFavoriteMode(value) {
   return VALID_FAVORITE_MODES.has(value) ? value : "single";
+}
+function normalizeComparisonCaptureMode(value) {
+  return VALID_CAPTURE_MODES.has(value) ? value : "manual";
+}
+function normalizeChainFailurePolicy(value) {
+  return VALID_CHAIN_FAILURE_POLICIES.has(value) ? value : "stop";
+}
+function normalizeBroadcastTargetMode(value) {
+  return VALID_BROADCAST_TARGET_MODES.has(value) ? value : void 0;
 }
 function normalizeScheduleRepeat(value) {
   return VALID_SCHEDULE_REPEATS.has(value) ? value : "none";
@@ -719,6 +747,130 @@ function normalizeTags(value) {
     )
   ).slice(0, 10);
 }
+function createStorageItemId(prefix, preferredId, fallbackIndex = 0) {
+  const trimmedId = safeText(preferredId).trim();
+  if (trimmedId) {
+    return trimmedId;
+  }
+  const safePrefix = safeText(prefix).trim() || "item";
+  return `${safePrefix}-${Date.now()}-${fallbackIndex}`;
+}
+function normalizeComparisonNote(value, fallback = {}, index = 0) {
+  const source = safeObject(value);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const createdAt = normalizeIsoDate(source.createdAt ?? fallback.createdAt, now);
+  const ratingValue = Number(source.rating ?? fallback.rating);
+  const rating = Number.isFinite(ratingValue) ? Math.min(5, Math.max(1, Math.round(ratingValue))) : null;
+  return {
+    id: createStorageItemId("note", source.id ?? fallback.id, index),
+    historyId: Number.isFinite(Number(source.historyId ?? fallback.historyId)) ? Math.max(0, Math.round(Number(source.historyId ?? fallback.historyId))) : 0,
+    serviceId: safeText(source.serviceId ?? fallback.serviceId).trim(),
+    responseText: safeText(source.responseText ?? fallback.responseText),
+    captureMode: normalizeComparisonCaptureMode(
+      source.captureMode ?? fallback.captureMode
+    ),
+    rating,
+    tags: normalizeTags(source.tags ?? fallback.tags),
+    createdAt,
+    updatedAt: normalizeIsoDate(source.updatedAt ?? fallback.updatedAt, createdAt)
+  };
+}
+function normalizePromptExperimentVariant(value, fallback = {}, index = 0) {
+  const source = safeObject(value);
+  return {
+    id: createStorageItemId("variant", source.id ?? fallback.id, index),
+    title: safeText(source.title ?? fallback.title).trim() || `Variant ${index + 1}`,
+    text: safeText(source.text ?? fallback.text)
+  };
+}
+function normalizePromptExperimentVariableSet(value, fallback = {}, index = 0) {
+  const source = safeObject(value);
+  return {
+    id: createStorageItemId("vars", source.id ?? fallback.id, index),
+    title: safeText(source.title ?? fallback.title).trim() || `Variables ${index + 1}`,
+    values: normalizeTemplateDefaults(source.values ?? fallback.values)
+  };
+}
+function normalizePromptExperimentRunRecord(value, fallback = {}, index = 0) {
+  const source = safeObject(value);
+  return {
+    id: createStorageItemId("run", source.id ?? fallback.id, index),
+    createdAt: normalizeIsoDate(source.createdAt ?? fallback.createdAt),
+    variantId: safeText(source.variantId ?? fallback.variantId).trim(),
+    variableSetId: safeText(source.variableSetId ?? fallback.variableSetId).trim(),
+    targetSiteIds: normalizeSiteIdList(source.targetSiteIds ?? fallback.targetSiteIds),
+    broadcastIds: normalizeSiteIdList(source.broadcastIds ?? fallback.broadcastIds)
+  };
+}
+function normalizePromptExperiment(value, fallback = {}, index = 0) {
+  const source = safeObject(value);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const createdAt = normalizeIsoDate(source.createdAt ?? fallback.createdAt, now);
+  const variants = safeArray(source.variants ?? fallback.variants).map((entry, variantIndex) => normalizePromptExperimentVariant(entry, {}, variantIndex)).filter((variant) => variant.text.trim());
+  const variableSets = safeArray(source.variableSets ?? fallback.variableSets).map((entry, setIndex) => normalizePromptExperimentVariableSet(entry, {}, setIndex));
+  const normalizedVariableSets = variableSets.length > 0 ? variableSets : [normalizePromptExperimentVariableSet({ title: "Default", values: {} }, {}, 0)];
+  return {
+    id: createStorageItemId("experiment", source.id ?? fallback.id, index),
+    title: safeText(source.title ?? fallback.title).trim() || `Experiment ${index + 1}`,
+    description: safeText(source.description ?? fallback.description),
+    variants,
+    targetSiteIds: normalizeSiteIdList(source.targetSiteIds ?? fallback.targetSiteIds),
+    variableSets: normalizedVariableSets,
+    runs: safeArray(source.runs ?? fallback.runs).map(
+      (entry, runIndex) => normalizePromptExperimentRunRecord(entry, {}, runIndex)
+    ),
+    createdAt,
+    updatedAt: normalizeIsoDate(source.updatedAt ?? fallback.updatedAt, createdAt)
+  };
+}
+function normalizeTemplatePack(value, fallback = {}, index = 0) {
+  const source = safeObject(value);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const createdAt = normalizeIsoDate(source.createdAt ?? fallback.createdAt, now);
+  return {
+    id: createStorageItemId("pack", source.id ?? fallback.id, index),
+    title: safeText(source.title ?? fallback.title).trim() || `Template Pack ${index + 1}`,
+    description: safeText(source.description ?? fallback.description),
+    favoriteIds: normalizeSiteIdList(source.favoriteIds ?? fallback.favoriteIds),
+    templates: safeArray(source.templates ?? fallback.templates),
+    includeSensitiveDefaults: normalizeBoolean(
+      source.includeSensitiveDefaults ?? fallback.includeSensitiveDefaults,
+      true
+    ),
+    createdAt,
+    updatedAt: normalizeIsoDate(source.updatedAt ?? fallback.updatedAt, createdAt)
+  };
+}
+function normalizeServiceGroup(value, fallback = {}, index = 0) {
+  const source = safeObject(value);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const createdAt = normalizeIsoDate(source.createdAt ?? fallback.createdAt, now);
+  const sortOrder = Number(source.sortOrder ?? fallback.sortOrder ?? index);
+  return {
+    id: createStorageItemId("group", source.id ?? fallback.id, index),
+    title: safeText(source.title ?? fallback.title).trim() || `Group ${index + 1}`,
+    serviceIds: normalizeSiteIdList(source.serviceIds ?? fallback.serviceIds),
+    sortOrder: Number.isFinite(sortOrder) ? Math.max(0, Math.round(sortOrder)) : index,
+    createdAt,
+    updatedAt: normalizeIsoDate(source.updatedAt ?? fallback.updatedAt, createdAt)
+  };
+}
+function normalizeScheduleContextSnapshot(value) {
+  const source = safeObject(value);
+  const hasMeaningfulValue = Boolean(
+    source.enabled || safeText(source.url).trim() || safeText(source.title).trim() || safeText(source.selection).trim() || safeText(source.capturedAt).trim()
+  );
+  if (!hasMeaningfulValue) {
+    return null;
+  }
+  return {
+    enabled: normalizeBoolean(source.enabled, false),
+    url: safeText(source.url),
+    title: safeText(source.title),
+    selection: safeText(source.selection),
+    capturedAt: normalizeNullableIsoDate(source.capturedAt)
+  };
+}
 function createChainStepId(preferredId, fallbackIndex = 0) {
   const trimmedId = safeText(preferredId).trim();
   return trimmedId || `step-${Date.now()}-${fallbackIndex}`;
@@ -739,6 +891,13 @@ function normalizeChainStep(value, fallback = {}, index = 0) {
     delayMs: normalizeDelayMs(source.delayMs ?? fallback.delayMs),
     targetSiteIds: normalizeSiteIdList(
       Array.isArray(source.targetSiteIds) ? source.targetSiteIds : fallbackTargets
+    ),
+    failurePolicy: normalizeChainFailurePolicy(
+      source.failurePolicy ?? fallback.failurePolicy
+    ),
+    targetMode: normalizeBroadcastTargetMode(source.targetMode ?? fallback.targetMode),
+    templateDefaults: normalizeTemplateDefaults(
+      source.templateDefaults ?? fallback.templateDefaults
     )
   };
 }
@@ -804,7 +963,8 @@ function buildFavoriteEntry(entry) {
     steps,
     scheduleEnabled: normalizeBoolean(source?.scheduleEnabled, false),
     scheduledAt: normalizeNullableIsoDate(source?.scheduledAt),
-    scheduleRepeat: normalizeScheduleRepeat(source?.scheduleRepeat)
+    scheduleRepeat: normalizeScheduleRepeat(source?.scheduleRepeat),
+    scheduleContextSnapshot: normalizeScheduleContextSnapshot(source?.scheduleContextSnapshot)
   };
 }
 async function getPromptFavorites() {
@@ -840,6 +1000,63 @@ async function updateFavoritePrompt(favoriteId, patch = {}) {
   });
   await setPromptFavorites(nextFavorites);
   return nextFavorites.find((item) => String(item.id) === String(favoriteId)) ?? null;
+}
+
+// src/shared/prompts/advanced-store.ts
+function normalizeTemplatePackEntry(value, fallback = {}, index = 0) {
+  const pack = normalizeTemplatePack(value, fallback, index);
+  return {
+    ...pack,
+    templates: safeArray(pack.templates).map((entry) => buildFavoriteEntry(entry))
+  };
+}
+async function getComparisonNotes() {
+  const rawValue = await readLocal(
+    LOCAL_STORAGE_KEYS.comparisonNotes,
+    []
+  );
+  return sortByDateDesc(
+    safeArray(rawValue).map(
+      (entry, index) => normalizeComparisonNote(entry, {}, index)
+    ),
+    "updatedAt"
+  ).filter((entry) => entry.historyId > 0 && entry.serviceId && entry.responseText.trim());
+}
+async function getPromptExperiments() {
+  const rawValue = await readLocal(
+    LOCAL_STORAGE_KEYS.promptExperiments,
+    []
+  );
+  return sortByDateDesc(
+    safeArray(rawValue).map(
+      (entry, index) => normalizePromptExperiment(entry, {}, index)
+    ),
+    "updatedAt"
+  );
+}
+async function getTemplatePacks() {
+  const rawValue = await readLocal(
+    LOCAL_STORAGE_KEYS.templatePacks,
+    []
+  );
+  return sortByDateDesc(
+    safeArray(rawValue).map(
+      (entry, index) => normalizeTemplatePackEntry(entry, {}, index)
+    ),
+    "updatedAt"
+  );
+}
+async function getServiceGroups() {
+  const rawValue = await readLocal(
+    LOCAL_STORAGE_KEYS.serviceGroups,
+    []
+  );
+  return safeArray(rawValue).map((entry, index) => normalizeServiceGroup(entry, {}, index)).sort((left, right) => left.sortOrder - right.sortOrder || left.title.localeCompare(right.title));
+}
+async function setServiceGroups(value) {
+  const normalized = safeArray(value).map((entry, index) => normalizeServiceGroup(entry, {}, index)).sort((left, right) => left.sortOrder - right.sortOrder || left.title.localeCompare(right.title));
+  await writeLocal(LOCAL_STORAGE_KEYS.serviceGroups, normalized);
+  return normalized;
 }
 
 // src/shared/broadcast/target-snapshots.ts
@@ -974,6 +1191,7 @@ function buildHistoryEntry(entry) {
     chainRunId: source.chainRunId === null || source.chainRunId === void 0 ? null : safeText(source.chainRunId).trim() || null,
     chainStepIndex: source.chainStepIndex === null || source.chainStepIndex === void 0 ? null : Number.isFinite(Number(source.chainStepIndex)) ? Math.max(0, Math.round(Number(source.chainStepIndex))) : null,
     chainStepCount: source.chainStepCount === null || source.chainStepCount === void 0 ? null : Number.isFinite(Number(source.chainStepCount)) ? Math.max(0, Math.round(Number(source.chainStepCount))) : null,
+    experimentRunId: source.experimentRunId === null || source.experimentRunId === void 0 ? null : safeText(source.experimentRunId).trim() || null,
     trigger: normalizeExecutionTrigger(source.trigger)
   };
 }
@@ -1026,13 +1244,15 @@ var AI_SITES = Object.freeze([
     url: "https://chatgpt.com/",
     hostname: "chatgpt.com",
     supportedRoutes: [],
-    inputSelector: "#prompt-textarea, div#prompt-textarea[contenteditable='true'], textarea[aria-label*='chatgpt' i], textarea[aria-label*='채팅' i]",
+    inputSelector: "#prompt-textarea, div#prompt-textarea[contenteditable='true'], textarea[aria-label*='chatgpt' i], textarea[aria-label*='채팅' i], textarea[placeholder*='ask' i]",
     fallbackSelectors: [
       "#prompt-textarea",
       "div#prompt-textarea[contenteditable='true']",
       "textarea[aria-label*='chatgpt' i]",
       "textarea[aria-label*='채팅' i]",
+      "textarea[placeholder*='ask' i]",
       "textarea.wcDTda_fallbackTextarea",
+      "div.ProseMirror[contenteditable='true']",
       "div[contenteditable='true'][data-id='root']",
       "main div[contenteditable='true']"
     ],
@@ -1042,16 +1262,22 @@ var AI_SITES = Object.freeze([
     selectorCheckMode: "input-and-conditional-submit",
     waitMs: 2e3,
     fallback: true,
-    lastVerified: "2026-04",
-    verifiedAt: "2026-04-10",
+    lastVerified: "2026-05",
+    verifiedAt: "2026-05-10",
     verifiedRoute: "/",
     verifiedAuthState: "logged-out",
     verifiedLocale: "ko",
-    verifiedVersion: "chatgpt-web-apr-2026",
+    verifiedVersion: "chatgpt-web-may-2026",
     authSelectors: [
       "form[action*='/auth']",
       "input[name='email']",
-      "input[name='username']"
+      "input[name='username']",
+      "a[href*='cloudflare.com']",
+      "#challenge-running",
+      ".cf-browser-verification",
+      ".cf-challenge",
+      ".cf-turnstile",
+      "iframe[src*='challenges.cloudflare.com']"
     ]
   },
   {
@@ -1060,26 +1286,30 @@ var AI_SITES = Object.freeze([
     url: "https://gemini.google.com/app",
     hostname: "gemini.google.com",
     supportedRoutes: ["/app"],
-    inputSelector: "div[contenteditable='true'][role='textbox'], div.ql-editor.textarea.new-input-ui[contenteditable='true'], div.ql-editor[contenteditable='true'][role='textbox']",
+    inputSelector: "div[contenteditable='true'][role='textbox'], div[aria-label*='Gemini' i][contenteditable='true'][role='textbox'], div.ql-editor.textarea.new-input-ui[contenteditable='true'], div.ql-editor[contenteditable='true'][role='textbox']",
     fallbackSelectors: [
       "div[contenteditable='true'][role='textbox']",
+      "div[aria-label*='Gemini' i][contenteditable='true'][role='textbox']",
       "div.ql-editor.textarea.new-input-ui[contenteditable='true']",
       "div.ql-editor[contenteditable='true'][role='textbox']",
       "textarea, div[contenteditable='true']"
     ],
     inputType: "contenteditable",
-    submitSelector: "button.send-button, button[aria-label*='send' i], button[aria-label*='보내기' i]",
+    submitSelector: "button.send-button, button[aria-label*='send' i], button[aria-label*='보내기' i], button[aria-label*='메시지 보내기' i], button[type='submit']",
     submitMethod: "click",
-    selectorCheckMode: "input-and-submit",
+    selectorCheckMode: "input-and-conditional-submit",
     waitMs: 2500,
     fallback: true,
-    lastVerified: "2026-04",
-    verifiedAt: "2026-04-10",
+    lastVerified: "2026-05",
+    verifiedAt: "2026-05-10",
     verifiedRoute: "/app",
     verifiedAuthState: "logged-out",
-    verifiedLocale: "en-US",
-    verifiedVersion: "gemini-app-apr-2026",
+    verifiedLocale: "ko",
+    verifiedVersion: "gemini-app-may-2026",
     authSelectors: [
+      "a[href*='accounts.google.com/ServiceLogin']",
+      "a[aria-label*='로그인']",
+      "a[aria-label*='sign in' i]",
       "input[type='email']",
       "input[type='password']"
     ]
@@ -1101,20 +1331,26 @@ var AI_SITES = Object.freeze([
     inputType: "contenteditable",
     submitSelector: "button[aria-label='Send message'], button[aria-label*='send' i], button[aria-label*='submit' i], button[aria-label*='보내' i], button[aria-label*='전송' i]",
     submitMethod: "click",
-    selectorCheckMode: "input-and-submit",
+    selectorCheckMode: "input-and-conditional-submit",
     waitMs: 1500,
     fallback: true,
-    lastVerified: "2026-04",
-    verifiedAt: "2026-04-10",
+    lastVerified: "2026-05",
+    verifiedAt: "2026-05-10",
     verifiedRoute: "/new",
     verifiedAuthState: "logged-out",
     verifiedLocale: "en-US",
-    verifiedVersion: "claude-web-apr-2026",
+    verifiedVersion: "claude-web-may-2026",
     authSelectors: [
       "input#email",
       "input[type='email']",
       "input[type='password']",
-      "form[action*='login']"
+      "form[action*='login']",
+      "a[href*='cloudflare.com']",
+      "#challenge-running",
+      ".cf-browser-verification",
+      ".cf-challenge",
+      ".cf-turnstile",
+      "iframe[src*='challenges.cloudflare.com']"
     ]
   },
   {
@@ -1123,27 +1359,28 @@ var AI_SITES = Object.freeze([
     url: "https://grok.com/",
     hostname: "grok.com",
     supportedRoutes: [],
-    inputSelector: "textarea[aria-label*='grok' i], textarea[placeholder*='help' i], textarea",
+    inputSelector: "textarea[aria-label*='grok' i], textarea[placeholder*='help' i], textarea[placeholder*='무엇' i], textarea",
     fallbackSelectors: [
       "textarea[aria-label*='grok' i]",
       "textarea[placeholder*='help' i]",
+      "textarea[placeholder*='무엇' i]",
       "textarea",
       "div.tiptap.ProseMirror[contenteditable='true']",
       "div.ProseMirror[contenteditable='true'][translate='no']",
       "div.ProseMirror[contenteditable='true']"
     ],
     inputType: "textarea",
-    submitSelector: "button[aria-label*='submit' i], button[aria-label*='제출' i]",
+    submitSelector: "button[data-testid='chat-submit'], button[type='submit'][aria-label*='submit' i], button[type='submit'][aria-label*='제출' i], button[aria-label*='submit' i], button[aria-label*='제출' i]",
     submitMethod: "click",
     selectorCheckMode: "input-and-conditional-submit",
-    waitMs: 2e3,
+    waitMs: 3e3,
     fallback: true,
-    lastVerified: "2026-04",
-    verifiedAt: "2026-04-10",
+    lastVerified: "2026-05",
+    verifiedAt: "2026-05-10",
     verifiedRoute: "/",
     verifiedAuthState: "logged-out",
     verifiedLocale: "ko",
-    verifiedVersion: "grok-web-apr-2026",
+    verifiedVersion: "grok-web-may-2026",
     authSelectors: [
       "input[autocomplete='username']",
       "input[type='password']",
@@ -1164,6 +1401,7 @@ var AI_SITES = Object.freeze([
       "div#ask-input[contenteditable='true'][role='textbox']",
       "#ask-input[contenteditable='true']",
       "div[contenteditable='true'][role='textbox']",
+      "textarea[aria-label*='Ask' i]",
       "textarea[placeholder*='Ask'][data-testid='search-input']",
       "textarea[placeholder*='Ask']",
       "textarea[placeholder*='질문']",
@@ -1175,16 +1413,22 @@ var AI_SITES = Object.freeze([
     selectorCheckMode: "input-and-conditional-submit",
     waitMs: 2e3,
     fallback: true,
-    lastVerified: "2026-04",
-    verifiedAt: "2026-04-10",
+    lastVerified: "2026-05",
+    verifiedAt: "2026-05-10",
     verifiedRoute: "/",
     verifiedAuthState: "soft-gated",
     verifiedLocale: "en-US",
-    verifiedVersion: "perplexity-web-apr-2026",
+    verifiedVersion: "perplexity-web-may-2026",
     authSelectors: [
       "input[type='email']",
       "input[type='password']",
-      "button[data-testid='login-button']"
+      "button[data-testid='login-button']",
+      "a[href*='cloudflare.com']",
+      "#challenge-running",
+      ".cf-browser-verification",
+      ".cf-challenge",
+      ".cf-turnstile",
+      "iframe[src*='challenges.cloudflare.com']"
     ]
   }
 ]);
@@ -2229,7 +2473,7 @@ async function getTemplateVariableCache() {
 }
 
 // src/shared/prompts/import-export.ts
-var CURRENT_EXPORT_VERSION = 8;
+var CURRENT_EXPORT_VERSION = 9;
 function asImportPayload(value) {
   return safeObject(value);
 }
@@ -2366,6 +2610,24 @@ function migrateV7ToV8(payload) {
     favorites: safeArray(payload.favorites).map((entry) => buildFavoriteEntry(entry))
   };
 }
+function migrateV8ToV9(payload) {
+  return {
+    ...payload,
+    version: 9,
+    comparisonNotes: safeArray(payload.comparisonNotes).map(
+      (entry, index) => normalizeComparisonNote(entry, {}, index)
+    ),
+    promptExperiments: safeArray(payload.promptExperiments).map(
+      (entry, index) => normalizePromptExperiment(entry, {}, index)
+    ),
+    templatePacks: safeArray(payload.templatePacks).map(
+      (entry, index) => normalizeTemplatePack(entry, {}, index)
+    ),
+    serviceGroups: safeArray(payload.serviceGroups).map(
+      (entry, index) => normalizeServiceGroup(entry, {}, index)
+    )
+  };
+}
 function migrateImportData(rawValue) {
   let payload = asImportPayload(rawValue);
   const sourceVersion = normalizeImportVersion(payload.version);
@@ -2398,6 +2660,10 @@ function migrateImportData(rawValue) {
     payload = migrateV7ToV8(payload);
     workingVersion = 8;
   }
+  if (workingVersion < 9) {
+    payload = migrateV8ToV9(payload);
+    workingVersion = 9;
+  }
   return {
     migrated: payload,
     sourceVersion,
@@ -2413,7 +2679,11 @@ async function exportPromptData() {
     settings,
     customSites,
     builtInSiteStates,
-    builtInSiteOverrides
+    builtInSiteOverrides,
+    comparisonNotes,
+    promptExperiments,
+    templatePacks,
+    serviceGroups
   ] = await Promise.all([
     getBroadcastCounter(),
     getStoredPromptHistory(),
@@ -2422,7 +2692,11 @@ async function exportPromptData() {
     getAppSettings(),
     getCustomSites(),
     getBuiltInSiteStates(),
-    getBuiltInSiteOverrides()
+    getBuiltInSiteOverrides(),
+    getComparisonNotes(),
+    getPromptExperiments(),
+    getTemplatePacks(),
+    getServiceGroups()
   ]);
   return {
     exportedAt: (/* @__PURE__ */ new Date()).toISOString(),
@@ -2434,7 +2708,11 @@ async function exportPromptData() {
     settings,
     customSites,
     builtInSiteStates,
-    builtInSiteOverrides
+    builtInSiteOverrides,
+    comparisonNotes,
+    promptExperiments,
+    templatePacks,
+    serviceGroups
   };
 }
 async function importPromptData(jsonString) {
@@ -2451,6 +2729,18 @@ async function importPromptData(jsonString) {
   const importedCustomSites = safeArray(migrated?.customSites);
   const importedBuiltInSiteStates = safeObject(migrated?.builtInSiteStates);
   const importedBuiltInSiteOverrides = safeObject(migrated?.builtInSiteOverrides);
+  const importedComparisonNotes = safeArray(migrated?.comparisonNotes).map(
+    (entry, index) => normalizeComparisonNote(entry, {}, index)
+  );
+  const importedPromptExperiments = safeArray(migrated?.promptExperiments).map(
+    (entry, index) => normalizePromptExperiment(entry, {}, index)
+  );
+  const importedTemplatePacks = safeArray(migrated?.templatePacks).map(
+    (entry, index) => normalizeTemplatePack(entry, {}, index)
+  );
+  const importedServiceGroups = safeArray(migrated?.serviceGroups).map(
+    (entry, index) => normalizeServiceGroup(entry, {}, index)
+  );
   const normalizedHistory = [];
   for (const item of sortByDateDesc(history)) {
     normalizedHistory.push({
@@ -2494,7 +2784,11 @@ async function importPromptData(jsonString) {
     [LOCAL_STORAGE_KEYS.history]: normalizedHistory,
     [SITE_STORAGE_KEYS.customSites]: customSiteImport.acceptedSites,
     [SITE_STORAGE_KEYS.builtInSiteStates]: builtInStateImport.normalized,
-    [SITE_STORAGE_KEYS.builtInSiteOverrides]: builtInOverrideImport.normalized
+    [SITE_STORAGE_KEYS.builtInSiteOverrides]: builtInOverrideImport.normalized,
+    [LOCAL_STORAGE_KEYS.comparisonNotes]: importedComparisonNotes,
+    [LOCAL_STORAGE_KEYS.promptExperiments]: importedPromptExperiments,
+    [LOCAL_STORAGE_KEYS.templatePacks]: importedTemplatePacks,
+    [LOCAL_STORAGE_KEYS.serviceGroups]: importedServiceGroups
   });
   try {
     await cleanupUnusedCustomSitePermissions(previousCustomSites, customSiteImport.acceptedSites);
@@ -2510,6 +2804,10 @@ async function importPromptData(jsonString) {
     customSites: customSiteImport.acceptedSites,
     builtInSiteStates: builtInStateImport.normalized,
     builtInSiteOverrides: builtInOverrideImport.normalized,
+    comparisonNotes: importedComparisonNotes,
+    promptExperiments: importedPromptExperiments,
+    templatePacks: importedTemplatePacks,
+    serviceGroups: importedServiceGroups,
     importSummary
   };
 }
@@ -2520,6 +2818,11 @@ var state = {
   favorites: [],
   favoriteJobs: [],
   strategyStats: {},
+  serviceHealthSnapshots: [],
+  comparisonNotes: [],
+  promptExperiments: [],
+  templatePacks: [],
+  serviceGroups: [],
   runtimeSites: [],
   settings: { ...DEFAULT_SETTINGS },
   activeSection: "dashboard",
@@ -2542,6 +2845,7 @@ var optionsDom = {
   },
   dashboard: {
     dashboardCards: document.getElementById("dashboard-cards"),
+    onboardingChecklist: document.getElementById("onboarding-checklist"),
     serviceDonut: document.getElementById("service-donut"),
     dailyBarChart: document.getElementById("daily-bar-chart"),
     activityHeatmap: document.getElementById("activity-heatmap"),
@@ -2571,7 +2875,23 @@ var optionsDom = {
   },
   services: {
     servicesGrid: document.getElementById("services-grid"),
+    servicesHealthCenter: document.getElementById("services-health-center"),
+    servicesRefreshHealthBtn: document.getElementById("services-refresh-health"),
+    serviceGroupTitle: document.getElementById("service-group-title"),
+    serviceGroupSaveBtn: document.getElementById("service-group-save"),
+    serviceGroupsList: document.getElementById("service-groups-list"),
     servicesOpenManagerBtn: document.getElementById("services-open-manager")
+  },
+  experiments: {
+    experimentTitle: document.getElementById("experiment-title"),
+    experimentVariants: document.getElementById("experiment-variants"),
+    experimentVariables: document.getElementById("experiment-variables"),
+    experimentTargets: document.getElementById("experiment-targets"),
+    experimentPreview: document.getElementById("experiment-preview"),
+    experimentSave: document.getElementById("experiment-save"),
+    experimentRun: document.getElementById("experiment-run"),
+    experimentPreviewOutput: document.getElementById("experiment-preview-output"),
+    experimentList: document.getElementById("experiment-list")
   },
   settings: {
     historyLimitSlider: document.getElementById("history-limit-slider"),
@@ -2590,7 +2910,12 @@ var optionsDom = {
     settingsResetData: document.getElementById("settings-reset-data"),
     settingsExportJson: document.getElementById("settings-export-json"),
     settingsImportJson: document.getElementById("settings-import-json"),
-    settingsImportJsonInput: document.getElementById("settings-import-json-input")
+    settingsImportJsonInput: document.getElementById("settings-import-json-input"),
+    templatePackSensitive: document.getElementById("template-pack-sensitive"),
+    templatePackExport: document.getElementById("template-pack-export"),
+    templatePackImport: document.getElementById("template-pack-import"),
+    templatePackImportInput: document.getElementById("template-pack-import-input"),
+    templatePackList: document.getElementById("template-pack-list")
   },
   modals: {
     historyModal: document.getElementById("history-modal"),
@@ -2598,6 +2923,7 @@ var optionsDom = {
     historyModalMeta: document.getElementById("history-modal-meta"),
     historyModalServices: document.getElementById("history-modal-services"),
     historyModalText: document.getElementById("history-modal-text"),
+    historyModalComparison: document.getElementById("history-modal-comparison"),
     importReportModal: document.getElementById("import-report-modal"),
     importReportModalClose: document.getElementById("import-report-modal-close"),
     importReportModalTitle: document.getElementById("import-report-modal-title"),
@@ -2606,6 +2932,50 @@ var optionsDom = {
   },
   toastHost: document.getElementById("toast-host")
 };
+
+// src/shared/chrome/messaging.ts
+var DEFAULT_RUNTIME_MESSAGE_TIMEOUT_MS = 5e3;
+function normalizeTimeoutMs(timeoutMs) {
+  const numericValue = Number(timeoutMs);
+  if (!Number.isFinite(numericValue) || numericValue <= 0) {
+    return 0;
+  }
+  return Math.max(0, Math.round(numericValue));
+}
+function sendRuntimeMessage(message, timeoutMs = 0, fallbackValue = null) {
+  return new Promise((resolve) => {
+    let settled = false;
+    let timeoutId = 0;
+    const finish = (value) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timeoutId) {
+        globalThis.clearTimeout(timeoutId);
+      }
+      resolve(value ?? fallbackValue);
+    };
+    const normalizedTimeoutMs = normalizeTimeoutMs(timeoutMs);
+    if (normalizedTimeoutMs > 0) {
+      timeoutId = globalThis.setTimeout(() => finish(fallbackValue), normalizedTimeoutMs);
+    }
+    try {
+      chrome.runtime.sendMessage(message, (response) => {
+        if (chrome.runtime.lastError) {
+          finish(fallbackValue);
+          return;
+        }
+        finish(response ?? fallbackValue);
+      });
+    } catch (_error) {
+      finish(fallbackValue);
+    }
+  });
+}
+function sendRuntimeMessageWithTimeout(message, timeoutMs = DEFAULT_RUNTIME_MESSAGE_TIMEOUT_MS, fallbackValue = null) {
+  return sendRuntimeMessage(message, timeoutMs, fallbackValue);
+}
 
 // src/shared/runtime-state/constants.ts
 var LOCAL_RUNTIME_KEYS = Object.freeze({
@@ -2659,6 +3029,15 @@ function normalizeExecutionContext(value) {
     clipboard: safeText(source.clipboard)
   };
 }
+function normalizeRetryCounts(value) {
+  const source = safeObject(value);
+  return Object.fromEntries(
+    Object.entries(source).map(([key, entryValue]) => [
+      safeText(key).trim(),
+      Math.max(0, Math.round(Number(entryValue) || 0))
+    ]).filter(([key]) => key)
+  );
+}
 function normalizeFavoriteRunJobRecord(value) {
   const source = safeObject(value);
   const jobId = safeText(source.jobId).trim();
@@ -2688,7 +3067,8 @@ function normalizeFavoriteRunJobRecord(value) {
     templateDefaults: source.templateDefaults && typeof source.templateDefaults === "object" && !Array.isArray(source.templateDefaults) ? Object.fromEntries(
       Object.entries(source.templateDefaults).map(([key, entryValue]) => [safeText(key).trim(), safeText(entryValue)]).filter(([key]) => Boolean(key))
     ) : {},
-    executionContext: normalizeExecutionContext(source.executionContext)
+    executionContext: normalizeExecutionContext(source.executionContext),
+    stepRetryCounts: normalizeRetryCounts(source.stepRetryCounts)
   };
 }
 function pruneFavoriteRunJobs(jobs, nowMs = Date.now()) {
@@ -3307,6 +3687,7 @@ var {
   dailyBarChart,
   dashboardCards,
   failureReasons,
+  onboardingChecklist,
   serviceDonut,
   serviceTrend,
   strategySummary
@@ -3366,6 +3747,39 @@ function buildStrategySummaryMarkup(items) {
     </div>
   `;
 }
+function renderOnboardingChecklist() {
+  if (!onboardingChecklist) {
+    return;
+  }
+  const checks = [
+    {
+      label: "Send your first broadcast",
+      done: state.history.length > 0
+    },
+    {
+      label: "Save a reusable favorite",
+      done: state.favorites.length > 0
+    },
+    {
+      label: "Review selector health",
+      done: state.serviceHealthSnapshots.some((item) => item.lastSuccessAt || item.selectorWarning)
+    },
+    {
+      label: "Create a service group",
+      done: state.serviceGroups.length > 0
+    },
+    {
+      label: "Save a comparison note",
+      done: state.comparisonNotes.length > 0
+    }
+  ];
+  onboardingChecklist.innerHTML = checks.map((check) => `
+    <label class="checkbox-inline">
+      <input type="checkbox" ${check.done ? "checked" : ""} disabled />
+      <span>${escapeHTML(check.label)}</span>
+    </label>
+  `).join("");
+}
 function renderDashboard() {
   const metrics = buildDashboardMetrics(
     state.history,
@@ -3376,7 +3790,9 @@ function renderDashboard() {
     { label: t.cards.totalTransmissions, value: metrics.totalTransmissions },
     { label: t.cards.mostUsedService, value: metrics.mostUsedService },
     { label: t.cards.weekCount, value: metrics.weekCount },
-    { label: t.cards.averagePromptLength, value: `${metrics.averagePromptLength} ${t.cards.charSuffix}` }
+    { label: t.cards.averagePromptLength, value: `${metrics.averagePromptLength} ${t.cards.charSuffix}` },
+    { label: "Comparison notes", value: state.comparisonNotes.length },
+    { label: "Prompt experiments", value: state.promptExperiments.length }
   ];
   dashboardCards.innerHTML = cards.map(
     (card) => `
@@ -3386,6 +3802,7 @@ function renderDashboard() {
         </article>
       `
   ).join("");
+  renderOnboardingChecklist();
   serviceDonut.innerHTML = buildDonutMarkup(metrics.donutItems, {
     noUsage: t.charts.noUsage,
     totalSent: t.charts.totalSent,
@@ -3771,6 +4188,124 @@ function buildResultComparisonMarkup(entry) {
     </div>
   `;
 }
+function buildCompareWorkspaceMarkup(entry) {
+  const requested = getRequestedServices(entry);
+  const notes = state.comparisonNotes.filter((note) => Number(note.historyId) === Number(entry.id));
+  const serviceOptions = requested.map((siteId) => {
+    const site = state.runtimeSites.find((siteEntry) => siteEntry.id === siteId);
+    return `<option value="${escapeHTML(siteId)}">${escapeHTML(site?.name || siteId)}</option>`;
+  }).join("");
+  const notesMarkup = notes.length ? notes.map((note) => {
+    const site = state.runtimeSites.find((siteEntry) => siteEntry.id === note.serviceId);
+    return `
+        <article class="compare-note">
+          <div class="section-head-row">
+            <div>
+              <strong>${escapeHTML(site?.name || note.serviceId)}</strong>
+              <div class="helper">${escapeHTML(note.captureMode)} · ${escapeHTML(formatDateTime(note.updatedAt))}${note.rating ? ` · ${note.rating}/5` : ""}</div>
+            </div>
+            <button class="btn danger ghost" type="button" data-comparison-delete="${escapeHTML(note.id)}">Delete</button>
+          </div>
+          <pre class="modal-prompt">${escapeHTML(note.responseText)}</pre>
+        </article>
+      `;
+  }).join("") : `<div class="empty-state">No saved comparison notes yet.</div>`;
+  return `
+    <div class="compare-workspace" data-compare-history-id="${escapeHTML(String(entry.id))}">
+      <h3 class="result-comparison-title">Compare</h3>
+      <div class="filter-row">
+        <select data-comparison-service>${serviceOptions}</select>
+        <input data-comparison-rating type="number" min="1" max="5" placeholder="Rating" />
+      </div>
+      <textarea data-comparison-text rows="5" placeholder="Paste an AI response here, or select response text on a service tab and use the context menu."></textarea>
+      <div class="settings-actions">
+        <button class="btn" type="button" data-comparison-save>Save note</button>
+        <button class="btn ghost" type="button" data-comparison-capture-start>Capture start</button>
+        <button class="btn ghost" type="button" data-comparison-capture-stop>Stop capture</button>
+      </div>
+      <div class="settings-stack">${notesMarkup}</div>
+    </div>
+  `;
+}
+async function refreshComparisonNotes(historyId) {
+  state.comparisonNotes = await getComparisonNotes();
+  const entry = state.history.find((item) => Number(item.id) === Number(historyId));
+  const comparisonEl = document.getElementById("history-modal-comparison");
+  if (entry && comparisonEl) {
+    comparisonEl.innerHTML = `${buildResultComparisonMarkup(entry)}${buildCompareWorkspaceMarkup(entry)}`;
+    bindCompareWorkspaceEvents(comparisonEl, entry);
+  }
+}
+function bindCompareWorkspaceEvents(comparisonEl, entry) {
+  comparisonEl.onclick = (event) => {
+    const workspace = event.target.closest("[data-compare-history-id]");
+    if (!workspace) {
+      return;
+    }
+    const serviceId = workspace.querySelector("[data-comparison-service]")?.value || entry.requestedSiteIds?.[0] || "";
+    const responseText = workspace.querySelector("[data-comparison-text]")?.value || "";
+    const ratingValue = Number(workspace.querySelector("[data-comparison-rating]")?.value);
+    if (event.target.closest("[data-comparison-save]")) {
+      void sendRuntimeMessageWithTimeout({
+        action: "comparison-note:save",
+        note: {
+          historyId: entry.id,
+          serviceId,
+          responseText,
+          captureMode: "manual",
+          rating: Number.isFinite(ratingValue) ? ratingValue : null,
+          tags: []
+        }
+      }, 8e3).then(async (response) => {
+        if (!response?.ok) {
+          throw new Error(response?.error || "Comparison note save failed.");
+        }
+        showAppToast("Comparison note saved.", "success", 1600);
+        await refreshComparisonNotes(entry.id);
+      }).catch((error) => {
+        console.error("[AI Prompt Broadcaster] Failed to save comparison note.", error);
+        showAppToast(error?.message || "Comparison note save failed.", "error", 3e3);
+      });
+      return;
+    }
+    if (event.target.closest("[data-comparison-capture-start]")) {
+      void sendRuntimeMessageWithTimeout({
+        action: "comparison-capture:start",
+        historyId: entry.id,
+        serviceId
+      }, 1e4).then(async (response) => {
+        if (!response?.ok) {
+          throw new Error(response?.error || "Capture start failed.");
+        }
+        showAppToast(response.captured ? "Response captured." : response.message || "Capture armed.", response.captured ? "success" : "info", 2600);
+        await refreshComparisonNotes(entry.id);
+      }).catch((error) => {
+        console.error("[AI Prompt Broadcaster] Failed to start comparison capture.", error);
+        showAppToast(error?.message || "Capture failed.", "error", 3e3);
+      });
+      return;
+    }
+    if (event.target.closest("[data-comparison-capture-stop]")) {
+      void sendRuntimeMessageWithTimeout({
+        action: "comparison-capture:stop",
+        historyId: entry.id,
+        serviceId
+      }, 5e3).then(() => showAppToast("Capture stopped.", "success", 1200));
+      return;
+    }
+    const deleteButton = event.target.closest("[data-comparison-delete]");
+    if (deleteButton) {
+      void sendRuntimeMessageWithTimeout({
+        action: "comparison-note:delete",
+        noteId: deleteButton.dataset.comparisonDelete
+      }, 8e3).then(async (response) => {
+        state.comparisonNotes = response?.notes ?? state.comparisonNotes;
+        showAppToast("Comparison note deleted.", "success", 1400);
+        await refreshComparisonNotes(entry.id);
+      });
+    }
+  };
+}
 function openHistoryModal(historyId) {
   const entry = state.history.find((item) => Number(item.id) === Number(historyId));
   if (!entry) {
@@ -3786,7 +4321,8 @@ function openHistoryModal(historyId) {
     comparisonEl.id = "history-modal-comparison";
     historyModalText.parentElement?.appendChild(comparisonEl);
   }
-  comparisonEl.innerHTML = buildResultComparisonMarkup(entry);
+  comparisonEl.innerHTML = `${buildResultComparisonMarkup(entry)}${buildCompareWorkspaceMarkup(entry)}`;
+  bindCompareWorkspaceEvents(comparisonEl, entry);
   openModal(historyModal, historyModalClose);
 }
 function closeHistoryModal() {
@@ -3958,50 +4494,6 @@ function renderSchedulesSection() {
   }).join("");
 }
 
-// src/shared/chrome/messaging.ts
-var DEFAULT_RUNTIME_MESSAGE_TIMEOUT_MS = 5e3;
-function normalizeTimeoutMs(timeoutMs) {
-  const numericValue = Number(timeoutMs);
-  if (!Number.isFinite(numericValue) || numericValue <= 0) {
-    return 0;
-  }
-  return Math.max(0, Math.round(numericValue));
-}
-function sendRuntimeMessage(message, timeoutMs = 0, fallbackValue = null) {
-  return new Promise((resolve) => {
-    let settled = false;
-    let timeoutId = 0;
-    const finish = (value) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      if (timeoutId) {
-        globalThis.clearTimeout(timeoutId);
-      }
-      resolve(value ?? fallbackValue);
-    };
-    const normalizedTimeoutMs = normalizeTimeoutMs(timeoutMs);
-    if (normalizedTimeoutMs > 0) {
-      timeoutId = globalThis.setTimeout(() => finish(fallbackValue), normalizedTimeoutMs);
-    }
-    try {
-      chrome.runtime.sendMessage(message, (response) => {
-        if (chrome.runtime.lastError) {
-          finish(fallbackValue);
-          return;
-        }
-        finish(response ?? fallbackValue);
-      });
-    } catch (_error) {
-      finish(fallbackValue);
-    }
-  });
-}
-function sendRuntimeMessageWithTimeout(message, timeoutMs = DEFAULT_RUNTIME_MESSAGE_TIMEOUT_MS, fallbackValue = null) {
-  return sendRuntimeMessage(message, timeoutMs, fallbackValue);
-}
-
 // src/options/features/schedules/actions.ts
 var { schedulesList: schedulesList2 } = optionsDom.schedules;
 async function runFavoriteFromOptions(favoriteId) {
@@ -4084,8 +4576,84 @@ function renderServiceFilterOptions() {
 }
 
 // src/options/features/services.ts
-var { servicesGrid } = optionsDom.services;
+var {
+  servicesGrid,
+  servicesHealthCenter,
+  servicesRefreshHealthBtn,
+  serviceGroupTitle,
+  serviceGroupSaveBtn,
+  serviceGroupsList
+} = optionsDom.services;
 var { servicesOpenManagerBtn } = optionsDom.services;
+function getHealthStatus(snapshot) {
+  if (snapshot?.selectorWarning) {
+    return { label: "Selector warning", tone: "danger" };
+  }
+  if (snapshot?.lastFailureAt && (!snapshot?.lastSuccessAt || Date.parse(snapshot.lastFailureAt) > Date.parse(snapshot.lastSuccessAt))) {
+    return { label: snapshot.lastFailureCode || "Recent failure", tone: "warning" };
+  }
+  if (snapshot?.lastSuccessAt) {
+    return { label: "Healthy", tone: "success" };
+  }
+  return { label: "No recent run", tone: "muted" };
+}
+function renderServiceHealthCenter() {
+  if (!servicesHealthCenter) {
+    return;
+  }
+  if (!state.serviceHealthSnapshots?.length) {
+    servicesHealthCenter.innerHTML = `<div class="empty-state">No service health snapshot yet.</div>`;
+    return;
+  }
+  servicesHealthCenter.innerHTML = state.serviceHealthSnapshots.map((snapshot) => {
+    const status = getHealthStatus(snapshot);
+    const selector = snapshot.selectorWarning?.selector || "";
+    const verified = snapshot.verification?.verifiedAt || snapshot.verification?.lastVerified || "";
+    return `
+      <article class="service-health-row" data-health-service="${escapeHTML(snapshot.serviceId)}">
+        <div>
+          <strong>${escapeHTML(snapshot.serviceName)}</strong>
+          <div class="helper">
+            ${escapeHTML(status.label)}
+            ${snapshot.preferredStrategy ? ` · strategy: ${escapeHTML(snapshot.preferredStrategy)}` : ""}
+            ${verified ? ` · verified: ${escapeHTML(formatDateTime(verified))}` : ""}
+          </div>
+          ${selector ? `<code class="inline-code">${escapeHTML(selector)}</code>` : ""}
+        </div>
+        <div class="settings-actions">
+          <button class="btn ghost" type="button" data-health-action="login" data-service-id="${escapeHTML(snapshot.serviceId)}">Login</button>
+          <button class="btn ghost" type="button" data-health-action="retry" data-service-id="${escapeHTML(snapshot.serviceId)}">Retry failed</button>
+          <button class="btn ghost" type="button" data-health-action="selector" data-service-id="${escapeHTML(snapshot.serviceId)}">Selector check</button>
+          <button class="btn ghost" type="button" data-health-action="new-tab" data-service-id="${escapeHTML(snapshot.serviceId)}">New tab</button>
+        </div>
+      </article>
+    `;
+  }).join("");
+}
+function renderServiceGroups() {
+  if (!serviceGroupsList) {
+    return;
+  }
+  if (!state.serviceGroups?.length) {
+    serviceGroupsList.innerHTML = `<div class="empty-state">No service groups yet.</div>`;
+    return;
+  }
+  serviceGroupsList.innerHTML = state.serviceGroups.map((group) => {
+    const names = group.serviceIds.map((siteId) => state.runtimeSites.find((site) => site.id === siteId)?.name || siteId).join(", ");
+    return `
+      <article class="service-health-row">
+        <div>
+          <strong>${escapeHTML(group.title)}</strong>
+          <div class="helper">${escapeHTML(names || "No services")}</div>
+        </div>
+        <div class="settings-actions">
+          <button class="btn ghost" type="button" data-group-select="${escapeHTML(group.id)}">Check services</button>
+          <button class="btn danger ghost" type="button" data-group-delete="${escapeHTML(group.id)}">Delete</button>
+        </div>
+      </article>
+    `;
+  }).join("");
+}
 function renderServicesSection() {
   servicesGrid.innerHTML = state.runtimeSites.map((site, index) => {
     const requestedEntries = state.history.filter((entry) => getRequestedServices(entry).includes(site.id));
@@ -4111,6 +4679,10 @@ function renderServicesSection() {
           <button class="btn ghost" type="button" data-move-site="${escapeHTML(site.id)}" data-direction="up" ${index === 0 ? "disabled" : ""}>${escapeHTML(t.services.moveUp)}</button>
           <button class="btn ghost" type="button" data-move-site="${escapeHTML(site.id)}" data-direction="down" ${index === state.runtimeSites.length - 1 ? "disabled" : ""}>${escapeHTML(t.services.moveDown)}</button>
         </div>
+        <label class="checkbox-inline">
+          <input type="checkbox" data-service-group-select="${escapeHTML(site.id)}" />
+          <span>Use in group</span>
+        </label>
         <label class="settings-control" for="wait-range-${escapeHTML(site.id)}">
           <strong>${escapeHTML(t.services.waitTime)}</strong>
           <input
@@ -4127,6 +4699,8 @@ function renderServicesSection() {
       </article>
     `;
   }).join("");
+  renderServiceHealthCenter();
+  renderServiceGroups();
 }
 async function saveSiteWaitMs(siteId, waitMs) {
   await updateRuntimeSite(siteId, { waitMs: Number(waitMs) });
@@ -4134,6 +4708,55 @@ async function saveSiteWaitMs(siteId, waitMs) {
   renderServiceFilterOptions();
   renderServicesSection();
   showAppToast(t.settings.waitSaved, "success", 1600);
+}
+async function refreshServiceHealth() {
+  const response = await sendRuntimeMessageWithTimeout({ action: "service-health:get" }, 5e3, {
+    ok: false,
+    snapshots: []
+  });
+  state.serviceHealthSnapshots = response?.snapshots ?? [];
+  renderServiceHealthCenter();
+}
+async function retryFailedService(serviceId) {
+  const failedEntry = state.history.find((entry) => entry.failedSiteIds?.includes(serviceId));
+  if (!failedEntry) {
+    showAppToast("No failed history item found for this service.", "warning", 2200);
+    return;
+  }
+  const response = await sendRuntimeMessageWithTimeout({
+    action: "broadcast",
+    prompt: failedEntry.text,
+    sites: [serviceId]
+  }, 1e4);
+  if (!response?.ok) {
+    throw new Error(response?.error || "Retry could not be queued.");
+  }
+  showAppToast("Retry queued for failed service.", "success", 1800);
+}
+async function saveCheckedServiceGroup() {
+  const selectedIds = [...servicesGrid.querySelectorAll("[data-service-group-select]:checked")].map((input) => input.dataset.serviceGroupSelect).filter(Boolean);
+  const title = serviceGroupTitle.value.trim() || `Group ${state.serviceGroups.length + 1}`;
+  if (selectedIds.length === 0) {
+    showAppToast("Check at least one service for the group.", "warning", 2200);
+    return;
+  }
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const existing = state.serviceGroups.find((group) => group.title === title);
+  const nextGroup = {
+    ...existing ?? {},
+    id: existing?.id || `group-${Date.now()}`,
+    title,
+    serviceIds: selectedIds,
+    sortOrder: existing?.sortOrder ?? state.serviceGroups.length,
+    createdAt: existing?.createdAt || now,
+    updatedAt: now
+  };
+  state.serviceGroups = await setServiceGroups([
+    nextGroup,
+    ...state.serviceGroups.filter((group) => group.id !== nextGroup.id)
+  ]);
+  renderServiceGroups();
+  showAppToast("Service group saved.", "success", 1600);
 }
 function moveRuntimeSite(siteId, direction) {
   const currentIndex = state.runtimeSites.findIndex((site) => site.id === siteId);
@@ -4184,6 +4807,63 @@ function bindServiceEvents() {
         showAppToast(t.services.openManagerFailed, "error", 3e3);
       }
     });
+  });
+  servicesRefreshHealthBtn?.addEventListener("click", () => {
+    void refreshServiceHealth().catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to refresh service health.", error);
+      showAppToast(error?.message || "Service health refresh failed.", "error", 3e3);
+    });
+  });
+  serviceGroupSaveBtn?.addEventListener("click", () => {
+    void saveCheckedServiceGroup().catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to save service group.", error);
+      showAppToast(error?.message || "Service group save failed.", "error", 3e3);
+    });
+  });
+  servicesHealthCenter?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-health-action][data-service-id]");
+    if (!button) {
+      return;
+    }
+    const site = state.runtimeSites.find((entry) => entry.id === button.dataset.serviceId);
+    if (!site) {
+      return;
+    }
+    if (button.dataset.healthAction === "retry") {
+      void retryFailedService(site.id).catch((error) => {
+        console.error("[AI Prompt Broadcaster] Failed to retry service.", error);
+        showAppToast(error?.message || "Retry failed.", "error", 3e3);
+      });
+      return;
+    }
+    if (button.dataset.healthAction === "selector") {
+      void chrome.tabs.create({ url: site.url, active: true });
+      showAppToast("Open the service tab, then use the popup test action after login.", "info", 3e3);
+      return;
+    }
+    void chrome.tabs.create({ url: site.url, active: true });
+  });
+  serviceGroupsList?.addEventListener("click", (event) => {
+    const selectButton = event.target.closest("[data-group-select]");
+    const deleteButton = event.target.closest("[data-group-delete]");
+    if (selectButton) {
+      const group = state.serviceGroups.find((entry) => entry.id === selectButton.dataset.groupSelect);
+      const selected = new Set(group?.serviceIds ?? []);
+      servicesGrid.querySelectorAll("[data-service-group-select]").forEach((input) => {
+        input.checked = selected.has(input.dataset.serviceGroupSelect);
+      });
+      if (group && serviceGroupTitle) {
+        serviceGroupTitle.value = group.title;
+      }
+      return;
+    }
+    if (deleteButton) {
+      state.serviceGroups = state.serviceGroups.filter((entry) => entry.id !== deleteButton.dataset.groupDelete);
+      void setServiceGroups(state.serviceGroups).then(() => {
+        renderServiceGroups();
+        showAppToast("Service group deleted.", "success", 1600);
+      });
+    }
   });
   servicesGrid.addEventListener("input", (event) => {
     const slider = event.target.closest("[data-waitms-site-id]");
@@ -4342,6 +5022,417 @@ function bindHistoryEvents() {
     showConfirmToast(t.history.deleteOlderConfirm(90), async () => {
       await deleteHistoryOlderThanDays(90);
     });
+  });
+}
+
+// src/shared/template/constants.ts
+var TEMPLATE_VARIABLE_PATTERN = /{{\s*([^{}]+?)\s*}}/g;
+var SYSTEM_TEMPLATE_VARIABLES = Object.freeze({
+  date: "date",
+  time: "time",
+  weekday: "weekday",
+  clipboard: "clipboard",
+  url: "url",
+  title: "title",
+  selection: "selection",
+  counter: "counter",
+  random: "random"
+});
+var SYSTEM_TEMPLATE_DEFINITIONS = Object.freeze({
+  [SYSTEM_TEMPLATE_VARIABLES.date]: {
+    aliases: ["date", "날짜"],
+    labels: { ko: "날짜", en: "date" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.time]: {
+    aliases: ["time", "시간"],
+    labels: { ko: "시간", en: "time" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.weekday]: {
+    aliases: ["weekday", "요일"],
+    labels: { ko: "요일", en: "weekday" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.clipboard]: {
+    aliases: ["clipboard", "클립보드"],
+    labels: { ko: "클립보드", en: "clipboard" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.url]: {
+    aliases: ["url", "주소"],
+    labels: { ko: "현재 탭 URL", en: "current tab URL" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.title]: {
+    aliases: ["title", "제목"],
+    labels: { ko: "현재 탭 제목", en: "current tab title" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.selection]: {
+    aliases: ["selection", "선택"],
+    labels: { ko: "선택한 텍스트", en: "selected text" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.counter]: {
+    aliases: ["counter", "카운터"],
+    labels: { ko: "카운터", en: "counter" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.random]: {
+    aliases: ["random", "랜덤"],
+    labels: { ko: "랜덤 숫자", en: "random number" }
+  }
+});
+var SYSTEM_TEMPLATE_ALIAS_MAP = new Map(
+  Object.entries(SYSTEM_TEMPLATE_DEFINITIONS).flatMap(
+    ([canonicalName, definition]) => definition.aliases.map((alias) => [alias.toLowerCase(), canonicalName])
+  )
+);
+var SYSTEM_TEMPLATE_KEYS = new Set(Object.keys(SYSTEM_TEMPLATE_DEFINITIONS));
+var WEEKDAY_LOCALES = Object.freeze({
+  ko: "ko-KR",
+  en: "en-US"
+});
+
+// src/shared/template/normalize.ts
+function normalizeTemplateVariableName(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+function canonicalizeTemplateVariableName(value) {
+  const normalizedValue = normalizeTemplateVariableName(value);
+  if (!normalizedValue) {
+    return "";
+  }
+  return SYSTEM_TEMPLATE_ALIAS_MAP.get(normalizedValue.toLowerCase()) ?? normalizedValue;
+}
+function normalizeTemplateValueRecord(values = {}) {
+  if (!values || typeof values !== "object" || Array.isArray(values)) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(values).map(([key, value]) => [
+      canonicalizeTemplateVariableName(key),
+      value
+    ])
+  );
+}
+
+// src/shared/template/render.ts
+function renderTemplatePrompt(template, values = {}) {
+  const source = typeof template === "string" ? template : "";
+  const normalizedValues = normalizeTemplateValueRecord(values);
+  return source.replace(TEMPLATE_VARIABLE_PATTERN, (_match, rawName) => {
+    const normalizedName = normalizeTemplateVariableName(rawName);
+    const canonicalName = canonicalizeTemplateVariableName(rawName);
+    if (!normalizedName) {
+      return "";
+    }
+    if (Object.prototype.hasOwnProperty.call(normalizedValues, canonicalName)) {
+      return String(normalizedValues[canonicalName] ?? "");
+    }
+    if (Object.prototype.hasOwnProperty.call(normalizedValues, normalizedName)) {
+      return String(normalizedValues[normalizedName] ?? "");
+    }
+    return `{{${normalizedName}}}`;
+  });
+}
+
+// src/options/features/experiments.ts
+var dom = optionsDom.experiments;
+function parseVariantBlocks() {
+  const raw = dom.experimentVariants?.value || "";
+  return raw.split(/\n---+\n/g).map((text, index) => ({
+    id: `variant-${index + 1}`,
+    title: `Variant ${index + 1}`,
+    text: text.trim()
+  })).filter((variant) => variant.text);
+}
+function parseVariableSets() {
+  const raw = dom.experimentVariables?.value.trim();
+  if (!raw) {
+    return [{ id: "vars-1", title: "Default", values: {} }];
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    const entries = Array.isArray(parsed) ? parsed : [parsed];
+    return entries.map((values, index) => ({
+      id: `vars-${index + 1}`,
+      title: `Variables ${index + 1}`,
+      values: values && typeof values === "object" && !Array.isArray(values) ? Object.fromEntries(
+        Object.entries(values).map(([key, value]) => [String(key), String(value ?? "")])
+      ) : {}
+    }));
+  } catch (_error) {
+    showAppToast("Variables JSON is invalid. Using an empty variable set.", "warning", 2600);
+    return [{ id: "vars-1", title: "Default", values: {} }];
+  }
+}
+function getSelectedTargetIds() {
+  return [...dom.experimentTargets.querySelectorAll("[data-experiment-target]:checked")].map((input) => input.dataset.experimentTarget).filter(Boolean);
+}
+function buildDraftExperiment(existingId = null) {
+  return {
+    id: existingId || state.activeExperimentId || void 0,
+    title: dom.experimentTitle?.value.trim() || `Experiment ${state.promptExperiments.length + 1}`,
+    description: "",
+    variants: parseVariantBlocks(),
+    targetSiteIds: getSelectedTargetIds(),
+    variableSets: parseVariableSets()
+  };
+}
+function buildPreviewItems(experiment) {
+  return experiment.variants.flatMap(
+    (variant) => experiment.variableSets.map((variableSet) => ({
+      variant,
+      variableSet,
+      prompt: renderTemplatePrompt(variant.text, variableSet.values),
+      targetSiteIds: experiment.targetSiteIds
+    }))
+  );
+}
+function renderExperimentTargets() {
+  if (!dom.experimentTargets) {
+    return;
+  }
+  const checked = new Set(getSelectedTargetIds());
+  if (checked.size === 0) {
+    state.runtimeSites.slice(0, 3).forEach((site) => checked.add(site.id));
+  }
+  dom.experimentTargets.innerHTML = state.runtimeSites.map((site) => `
+    <label class="checkbox-inline">
+      <input type="checkbox" data-experiment-target="${escapeHTML(site.id)}" ${checked.has(site.id) ? "checked" : ""} />
+      <span>${escapeHTML(site.name)}</span>
+    </label>
+  `).join("");
+}
+function renderPreview() {
+  const experiment = buildDraftExperiment();
+  const items = buildPreviewItems(experiment);
+  dom.experimentPreviewOutput.innerHTML = items.length ? items.map((item, index) => `
+      <article class="panel compact-panel">
+        <strong>${escapeHTML(item.variant.title)} x ${escapeHTML(item.variableSet.title)}</strong>
+        <div class="helper">${escapeHTML(item.targetSiteIds.join(", ") || "No target services")}</div>
+        <pre class="modal-prompt">${escapeHTML(item.prompt)}</pre>
+      </article>
+    `).join("") : `<div class="empty-state">Add variants and target services to preview combinations.</div>`;
+}
+function renderExperimentsSection() {
+  if (!dom.experimentList) {
+    return;
+  }
+  renderExperimentTargets();
+  dom.experimentList.innerHTML = state.promptExperiments.length ? state.promptExperiments.map((experiment) => `
+      <article class="panel compact-panel">
+        <div class="section-head-row">
+          <div>
+            <h2>${escapeHTML(experiment.title)}</h2>
+            <p>${experiment.variants.length} variants · ${experiment.variableSets.length} variable sets · ${experiment.targetSiteIds.length} services · ${experiment.runs.length} runs</p>
+          </div>
+          <div class="settings-actions">
+            <button class="btn ghost" type="button" data-experiment-load="${escapeHTML(experiment.id)}">Load</button>
+            <button class="btn primary" type="button" data-experiment-run="${escapeHTML(experiment.id)}">Run</button>
+            <button class="btn danger ghost" type="button" data-experiment-delete="${escapeHTML(experiment.id)}">Delete</button>
+          </div>
+        </div>
+      </article>
+    `).join("") : `<div class="panel empty-state">No saved experiments yet.</div>`;
+}
+async function saveDraftExperiment() {
+  const draft = buildDraftExperiment();
+  if (!draft.variants.length || !draft.targetSiteIds.length) {
+    showAppToast("Experiment needs at least one variant and one target service.", "warning", 2600);
+    return null;
+  }
+  const response = await sendRuntimeMessageWithTimeout({
+    action: "experiment:save",
+    experiment: draft
+  }, 8e3);
+  if (!response?.ok || !response.experiment) {
+    throw new Error(response?.error || "Experiment save failed.");
+  }
+  state.activeExperimentId = response.experiment.id;
+  state.promptExperiments = [
+    response.experiment,
+    ...state.promptExperiments.filter((entry) => entry.id !== response.experiment.id)
+  ];
+  renderExperimentsSection();
+  showAppToast("Experiment saved.", "success", 1600);
+  return response.experiment;
+}
+async function runExperiment(experimentId) {
+  const response = await sendRuntimeMessageWithTimeout({
+    action: "experiment:run",
+    experimentId
+  }, 3e4);
+  if (!response?.ok) {
+    throw new Error(response?.error || "Experiment run failed.");
+  }
+  if (response.experiment) {
+    state.promptExperiments = [
+      response.experiment,
+      ...state.promptExperiments.filter((entry) => entry.id !== response.experiment.id)
+    ];
+    renderExperimentsSection();
+  }
+  showAppToast(`Experiment queued: ${response.queuedCount} broadcasts.`, "success", 2600);
+}
+function loadExperiment(experimentId) {
+  const experiment = state.promptExperiments.find((entry) => entry.id === experimentId);
+  if (!experiment) {
+    return;
+  }
+  state.activeExperimentId = experiment.id;
+  dom.experimentTitle.value = experiment.title;
+  dom.experimentVariants.value = experiment.variants.map((variant) => variant.text).join("\n---\n");
+  dom.experimentVariables.value = JSON.stringify(
+    experiment.variableSets.map((set) => set.values),
+    null,
+    2
+  );
+  renderExperimentTargets();
+  const selected = new Set(experiment.targetSiteIds);
+  dom.experimentTargets.querySelectorAll("[data-experiment-target]").forEach((input) => {
+    input.checked = selected.has(input.dataset.experimentTarget);
+  });
+  renderPreview();
+}
+function bindExperimentEvents() {
+  dom.experimentPreview?.addEventListener("click", renderPreview);
+  dom.experimentSave?.addEventListener("click", () => {
+    void saveDraftExperiment().catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to save experiment.", error);
+      showAppToast(error?.message || "Experiment save failed.", "error", 3e3);
+    });
+  });
+  dom.experimentRun?.addEventListener("click", () => {
+    void (async () => {
+      const experiment = await saveDraftExperiment();
+      if (experiment) {
+        await runExperiment(experiment.id);
+      }
+    })().catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to run experiment.", error);
+      showAppToast(error?.message || "Experiment run failed.", "error", 3e3);
+    });
+  });
+  dom.experimentList?.addEventListener("click", (event) => {
+    const loadButton = event.target.closest("[data-experiment-load]");
+    const runButton = event.target.closest("[data-experiment-run]");
+    const deleteButton = event.target.closest("[data-experiment-delete]");
+    if (loadButton) {
+      loadExperiment(loadButton.dataset.experimentLoad);
+      return;
+    }
+    if (runButton) {
+      void runExperiment(runButton.dataset.experimentRun).catch((error) => {
+        console.error("[AI Prompt Broadcaster] Failed to run experiment.", error);
+        showAppToast(error?.message || "Experiment run failed.", "error", 3e3);
+      });
+      return;
+    }
+    if (deleteButton) {
+      void sendRuntimeMessageWithTimeout({
+        action: "experiment:delete",
+        experimentId: deleteButton.dataset.experimentDelete
+      }, 8e3).then((response) => {
+        state.promptExperiments = response?.experiments ?? state.promptExperiments;
+        renderExperimentsSection();
+        showAppToast("Experiment deleted.", "success", 1600);
+      });
+    }
+  });
+}
+
+// src/options/features/template-packs.ts
+var dom2 = optionsDom.settings;
+function downloadJson(filename, payload) {
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {
+    type: "application/json"
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+function renderTemplatePacksSection() {
+  if (!dom2.templatePackList) {
+    return;
+  }
+  dom2.templatePackList.innerHTML = state.templatePacks.length ? state.templatePacks.map((pack) => `
+      <article class="service-health-row">
+        <div>
+          <strong>${escapeHTML(pack.title)}</strong>
+          <div class="helper">${pack.templates.length} templates · defaults ${pack.includeSensitiveDefaults ? "included" : "removed"}</div>
+        </div>
+        <div class="settings-actions">
+          <button class="btn ghost" type="button" data-pack-download="${escapeHTML(pack.id)}">Download</button>
+        </div>
+      </article>
+    `).join("") : `<div class="empty-state">No template packs yet.</div>`;
+}
+async function exportTemplatePack() {
+  const response = await sendRuntimeMessageWithTimeout({
+    action: "template-pack:export",
+    includeSensitiveDefaults: dom2.templatePackSensitive?.checked !== false
+  }, 1e4);
+  if (!response?.ok || !response.pack) {
+    throw new Error(response?.error || "Template pack export failed.");
+  }
+  state.templatePacks = [
+    response.pack,
+    ...state.templatePacks.filter((pack) => pack.id !== response.pack.id)
+  ];
+  renderTemplatePacksSection();
+  downloadJson(`${response.pack.title.replace(/[\\/:*?"<>|]+/g, "-")}.json`, response.pack);
+  showAppToast("Template pack exported.", "success", 1800);
+}
+async function importTemplatePack(file) {
+  const text = await file.text();
+  const pack = JSON.parse(text);
+  const response = await sendRuntimeMessageWithTimeout({
+    action: "template-pack:import",
+    pack
+  }, 1e4);
+  if (!response?.ok || !response.pack) {
+    throw new Error(response?.error || "Template pack import failed.");
+  }
+  state.templatePacks = [
+    response.pack,
+    ...state.templatePacks.filter((entry) => entry.id !== response.pack.id)
+  ];
+  renderTemplatePacksSection();
+  showAppToast(
+    `Imported ${response.importedFavoriteIds?.length ?? 0}, skipped ${response.skippedFavoriteIds?.length ?? 0} duplicates.`,
+    "success",
+    2600
+  );
+}
+function bindTemplatePackEvents() {
+  dom2.templatePackExport?.addEventListener("click", () => {
+    void exportTemplatePack().catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to export template pack.", error);
+      showAppToast(error?.message || "Template pack export failed.", "error", 3e3);
+    });
+  });
+  dom2.templatePackImport?.addEventListener("click", () => {
+    dom2.templatePackImportInput?.click();
+  });
+  dom2.templatePackImportInput?.addEventListener("change", (event) => {
+    const [file] = [...event.target.files ?? []];
+    if (!file) {
+      return;
+    }
+    void importTemplatePack(file).catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to import template pack.", error);
+      showAppToast(error?.message || "Template pack import failed.", "error", 3e3);
+    }).finally(() => {
+      event.target.value = "";
+    });
+  });
+  dom2.templatePackList?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-pack-download]");
+    if (!button) {
+      return;
+    }
+    const pack = state.templatePacks.find((entry) => entry.id === button.dataset.packDownload);
+    if (pack) {
+      downloadJson(`${pack.title.replace(/[\\/:*?"<>|]+/g, "-")}.json`, pack);
+    }
   });
 }
 
@@ -4575,18 +5666,43 @@ function bindSettingsEvents({ loadData: loadData2 }) {
 
 // src/options/core/data.ts
 async function loadData() {
-  const [history, favorites, favoriteJobs, settings, runtimeSites, strategyStats] = await Promise.all([
+  const [
+    history,
+    favorites,
+    favoriteJobs,
+    settings,
+    runtimeSites,
+    strategyStats,
+    comparisonNotes,
+    promptExperiments,
+    templatePacks,
+    serviceGroups,
+    serviceHealth
+  ] = await Promise.all([
     getStoredPromptHistory(),
     getPromptFavorites(),
     getFavoriteRunJobs(),
     getAppSettings(),
     getRuntimeSites(),
-    getStrategyStats()
+    getStrategyStats(),
+    getComparisonNotes(),
+    getPromptExperiments(),
+    getTemplatePacks(),
+    getServiceGroups(),
+    sendRuntimeMessageWithTimeout({ action: "service-health:get" }, 5e3, {
+      ok: false,
+      snapshots: []
+    })
   ]);
   state.history = history;
   state.favorites = favorites;
   state.favoriteJobs = favoriteJobs;
   state.strategyStats = strategyStats;
+  state.comparisonNotes = comparisonNotes;
+  state.promptExperiments = promptExperiments;
+  state.templatePacks = templatePacks;
+  state.serviceGroups = serviceGroups;
+  state.serviceHealthSnapshots = serviceHealth?.snapshots ?? [];
   state.selectedHistoryIds.clear();
   state.runtimeSites = sortSitesByOrder(runtimeSites, settings.siteOrder);
   state.settings = settings;
@@ -4595,6 +5711,8 @@ async function loadData() {
   renderHistoryTable();
   renderSchedulesSection();
   renderServicesSection();
+  renderExperimentsSection();
+  renderTemplatePacksSection();
   applySettingsToControls();
 }
 
@@ -4626,9 +5744,11 @@ function bindEvents() {
   bindModalKeyboardEvents();
   bindNavigationEvents();
   bindHistoryEvents();
+  bindExperimentEvents();
   bindScheduleEvents({ reloadData: loadData });
   bindSettingsEvents({ loadData });
   bindServiceEvents();
+  bindTemplatePackEvents();
   bindStatusEvents();
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName === "session" && changes.favoriteRunJobs) {
@@ -4641,7 +5761,7 @@ function bindEvents() {
     if (areaName !== "local") {
       return;
     }
-    if (changes.promptHistory || changes.promptFavorites || changes.appSettings || changes.templateVariableCache || changes.customSites || changes.builtInSiteStates || changes.builtInSiteOverrides) {
+    if (changes.promptHistory || changes.promptFavorites || changes.comparisonNotes || changes.promptExperiments || changes.templatePacks || changes.serviceGroups || changes.appSettings || changes.templateVariableCache || changes.customSites || changes.builtInSiteStates || changes.builtInSiteOverrides) {
       void loadData().catch((error) => {
         console.error("[AI Prompt Broadcaster] Failed to refresh options page.", error);
         setStatus(error?.message ?? t.dataRefreshFailed, "error");

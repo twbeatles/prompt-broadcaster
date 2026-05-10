@@ -12,6 +12,7 @@ export const NOTIFICATION_ICON_PATH = "icons/icon-128.png";
 export const CONTEXT_MENU_ROOT_ID = "apb-root";
 export const CONTEXT_MENU_ALL_ID = "apb-send-all";
 export const CONTEXT_MENU_SITE_PREFIX = "apb-send-site:";
+export const CONTEXT_MENU_SAVE_COMPARISON_ID = "apb-save-comparison-note";
 export const CAPTURE_SELECTION_COMMAND = "capture-selected-text";
 export const QUICK_PALETTE_COMMAND = "quick-palette";
 export const RECONCILE_ALARM = "apb-reconcile";

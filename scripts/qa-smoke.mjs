@@ -291,6 +291,53 @@ async function main() {
     assert.equal(report.siteId, "selector-auth");
   });
 
+  await runStep("selector checker skips access challenge pages", async () => {
+    await openFixture(page, "access-challenge.html");
+    await configureSelectorChecker(page, {
+      id: "selector-challenge",
+      name: "Challenge Fixture",
+      inputSelector: "#prompt-box",
+      inputType: "textarea",
+      submitMethod: "click",
+      submitSelector: "#send-btn",
+      waitMs: 0,
+      authSelectors: [],
+    });
+    await runSelectorChecker(page);
+
+    const report = await waitForRuntimeMessage(
+      page,
+      (message) => message?.action === "selector-check:report",
+    );
+
+    assert.equal(report.status, "auth_page");
+    assert.equal(report.siteId, "selector-challenge");
+  });
+
+  await runStep("injector treats access challenge pages as auth required", async () => {
+    await openFixture(page, "access-challenge.html");
+    await loadInjector(page);
+
+    const result = await runInjector(page, "Challenge prompt", {
+      id: "injector-challenge",
+      name: "Challenge Fixture",
+      inputSelector: "#prompt-box",
+      inputType: "textarea",
+      submitMethod: "click",
+      submitSelector: "#send-btn",
+      waitMs: 0,
+      fallback: true,
+      authSelectors: [],
+    });
+    const messages = await getRuntimeMessages(page);
+
+    assert.equal(result.status, "auth_required");
+    assert.equal(
+      messages.some((message) => message?.action === "selectorFailed"),
+      false,
+    );
+  });
+
   await runStep("selector checker ignores conditional submit when conditional mode is used", async () => {
     await openFixture(page, "selector-check-conditional-submit.html");
     await configureSelectorChecker(page, {
@@ -1242,9 +1289,13 @@ async function main() {
       "broadcastCounter",
       "builtInSiteOverrides",
       "builtInSiteStates",
+      "comparisonNotes",
       "customSites",
+      "promptExperiments",
       "promptFavorites",
       "promptHistory",
+      "serviceGroups",
+      "templatePacks",
       "templateVariableCache",
     ]);
     assert.equal(result.broadcastCounter, 5);
@@ -1346,7 +1397,7 @@ async function main() {
     assert.equal(await module.getBroadcastCounter(), 1);
 
     const exported = await module.exportPromptData();
-    assert.equal(exported.version, 8);
+    assert.equal(exported.version, 9);
     assert.equal(exported.broadcastCounter, 1);
     assert.deepEqual(exported.settings, module.DEFAULT_SETTINGS);
     assert.deepEqual(exported.settings.siteOrder, []);
@@ -1358,7 +1409,7 @@ async function main() {
     }));
     assert.equal(legacyImport.broadcastCounter, 0);
     assert.equal(await module.getBroadcastCounter(), 0);
-    assert.equal(legacyImport.importSummary.version, 8);
+    assert.equal(legacyImport.importSummary.version, 9);
     assert.equal(legacyImport.importSummary.migratedFromVersion, 2);
     assert.equal(legacyImport.settings.waitMsMultiplier, 1);
     assert.equal(legacyImport.settings.historySort, "latest");
@@ -1392,7 +1443,7 @@ async function main() {
     }));
     assert.equal(modernImport.broadcastCounter, 4);
     assert.equal(await module.getBroadcastCounter(), 4);
-    assert.equal(modernImport.importSummary.version, 8);
+    assert.equal(modernImport.importSummary.version, 9);
     assert.equal(modernImport.importSummary.migratedFromVersion, 4);
     assert.equal(modernImport.settings.waitMsMultiplier, 1);
     assert.equal(modernImport.settings.historySort, "latest");
@@ -1454,7 +1505,7 @@ async function main() {
         },
       },
     }));
-    assert.equal(v7VerificationImport.importSummary.version, 8);
+    assert.equal(v7VerificationImport.importSummary.version, 9);
     assert.equal(v7VerificationImport.importSummary.migratedFromVersion, 7);
     assert.equal(v7VerificationImport.builtInSiteOverrides.chatgpt.lastVerified, "2026-04");
     assert.equal(v7VerificationImport.builtInSiteOverrides.chatgpt.verifiedAt, "2026-04-10");
@@ -1466,7 +1517,7 @@ async function main() {
     assert.deepEqual(v7VerificationImport.customSites[0].supportedRoutes, ["/app", "/chat"]);
 
     const reExported = await module.exportPromptData();
-    assert.equal(reExported.version, 8);
+    assert.equal(reExported.version, 9);
     assert.deepEqual(reExported.customSites[0].supportedRoutes, ["/app", "/chat"]);
 
     const legacyVerificationImport = await module.importPromptData(JSON.stringify({
@@ -1483,7 +1534,7 @@ async function main() {
         },
       ],
     }));
-    assert.equal(legacyVerificationImport.importSummary.version, 8);
+    assert.equal(legacyVerificationImport.importSummary.version, 9);
     assert.equal(legacyVerificationImport.importSummary.migratedFromVersion, 6);
     assert.equal(legacyVerificationImport.customSites[0].lastVerified, "2026-03");
     assert.equal(legacyVerificationImport.customSites[0].verifiedAt ?? "", "");
@@ -2428,6 +2479,91 @@ async function main() {
     assert.equal(historyEntry.siteResults.claude.message, "Scheduled favorites cannot resolve selection.");
   });
 
+  await runStep("chain failure policy can continue to the next step", async () => {
+    const chromeMock = createChromeMock();
+    const module = await loadBundledModule("src/background/popup/favorites-workflow.ts", chromeMock);
+    const nowIso = "2026-05-10T00:00:00.000Z";
+    const queuedPrompts = [];
+
+    await chromeMock.storage.local.set({
+      promptFavorites: [{
+        id: "fav-continue",
+        title: "Continue chain",
+        text: "First",
+        sentTo: ["chatgpt"],
+        createdAt: nowIso,
+        favoritedAt: nowIso,
+        templateDefaults: {},
+        tags: [],
+        folder: "",
+        pinned: false,
+        usageCount: 0,
+        lastUsedAt: null,
+        mode: "chain",
+        steps: [
+          {
+            id: "step-1",
+            text: "First",
+            delayMs: 0,
+            targetSiteIds: ["chatgpt"],
+            failurePolicy: "continue",
+          },
+          {
+            id: "step-2",
+            text: "Second",
+            delayMs: 0,
+            targetSiteIds: ["claude"],
+            failurePolicy: "stop",
+          },
+        ],
+        scheduleEnabled: false,
+        scheduledAt: null,
+        scheduleRepeat: "none",
+      }],
+      promptHistory: [],
+      templateVariableCache: {},
+      broadcastCounter: 0,
+    });
+
+    let broadcastCount = 0;
+    const workflow = module.createFavoriteWorkflow({
+      getBroadcastTriggerLabel: (trigger) => trigger ?? "popup",
+      getI18nMessage: () => "",
+      rememberNormalTab: async () => null,
+      getPreferredNormalActiveTab: async () => null,
+      isInjectableTabUrl: () => true,
+      getSelectedTextFromTab: async () => "",
+      openPopupWithPrompt: async () => {},
+      nowIso: () => nowIso,
+      buildChainRunId: () => "chain-continue",
+      queueBroadcastRequest: async (prompt) => {
+        queuedPrompts.push(prompt);
+        broadcastCount += 1;
+        return { ok: true, broadcastId: `broadcast-${broadcastCount}` };
+      },
+    });
+
+    const queued = await workflow.handleFavoriteRunMessage({
+      favoriteId: "fav-continue",
+      trigger: "popup",
+      allowPopupFallback: false,
+    }, {});
+    assert.equal(queued?.ok, true);
+
+    let job = chromeMock.__getStorage().session.favoriteRunJobs?.[0];
+    await workflow.handleFavoriteRunJobAlarm(`apb-favorite-job:${job.jobId}`);
+    await workflow.handleFavoriteBroadcastCompletion({
+      broadcastId: "broadcast-1",
+      status: "failed",
+    });
+    job = chromeMock.__getStorage().session.favoriteRunJobs?.[0];
+    assert.equal(job.status, "running");
+    assert.equal(job.currentStepIndex, 1);
+
+    await workflow.handleFavoriteRunJobAlarm(`apb-favorite-job:${job.jobId}`);
+    assert.deepEqual(queuedPrompts, ["First", "Second"]);
+  });
+
   await runStep("csv export helper escapes formulas safely", async () => {
     const module = await loadBundledModule("src/shared/export/csv.ts", createChromeMock());
 
@@ -2583,6 +2719,101 @@ async function main() {
     assert.deepEqual(v4Import.settings.siteOrder, []);
     assert.equal(v4Import.history[0].text, "Legacy");
     assert.equal(v4Import.favorites[0].id, "fav-v4");
+  });
+
+  await runStep("v8 import migrates v9 comparison experiment pack and group stores", async () => {
+    const chromeMock = createChromeMock();
+    const module = await loadBundledModule("src/shared/stores/prompt-store.ts", chromeMock);
+
+    const imported = await module.importPromptData(JSON.stringify({
+      version: 8,
+      broadcastCounter: 2,
+      history: [{
+        id: 101,
+        text: "Compare this",
+        createdAt: "2026-05-10T00:00:00.000Z",
+        requestedSiteIds: ["chatgpt"],
+        submittedSiteIds: ["chatgpt"],
+        siteResults: { chatgpt: { code: "submitted" } },
+      }],
+      favorites: [{
+        id: "fav-pack",
+        text: "Pack prompt",
+        sentTo: ["chatgpt"],
+        createdAt: "2026-05-10T00:00:00.000Z",
+        favoritedAt: "2026-05-10T00:00:00.000Z",
+      }],
+      comparisonNotes: [{
+        historyId: 101,
+        serviceId: "chatgpt",
+        responseText: "Captured answer",
+        captureMode: "manual",
+      }],
+      promptExperiments: [{
+        title: "Variant sweep",
+        variants: [{ text: "Tell me about {{topic}}" }],
+        targetSiteIds: ["chatgpt"],
+        variableSets: [{ values: { topic: "selectors" } }],
+      }],
+      templatePacks: [{
+        title: "Starter pack",
+        favoriteIds: ["fav-pack"],
+        templates: [],
+      }],
+      serviceGroups: [{
+        title: "Core",
+        serviceIds: ["chatgpt"],
+      }],
+    }));
+
+    assert.equal(imported.importSummary.migratedFromVersion, 8);
+    assert.equal(imported.importSummary.version, 9);
+    assert.equal(imported.comparisonNotes[0].captureMode, "manual");
+    assert.equal(imported.promptExperiments[0].variants[0].text, "Tell me about {{topic}}");
+    assert.equal(imported.templatePacks[0].includeSensitiveDefaults, true);
+    assert.deepEqual(imported.serviceGroups[0].serviceIds, ["chatgpt"]);
+
+    const exported = await module.exportPromptData();
+    assert.equal(exported.version, 9);
+    assert.equal(exported.comparisonNotes.length, 1);
+    assert.equal(exported.promptExperiments.length, 1);
+    assert.equal(exported.templatePacks.length, 1);
+    assert.equal(exported.serviceGroups.length, 1);
+  });
+
+  await runStep("comparison notes and template packs normalize duplicate-safe local data", async () => {
+    const chromeMock = createChromeMock();
+    const module = await loadBundledModule("src/shared/stores/prompt-store.ts", chromeMock);
+
+    const note = await module.saveComparisonNote({
+      historyId: 7,
+      serviceId: "claude",
+      responseText: "Manual response",
+      captureMode: "manual",
+      rating: 9,
+      tags: ["winner", "winner"],
+    });
+    assert.equal(note.rating, 5);
+    assert.deepEqual(note.tags, ["winner"]);
+
+    const notes = await module.getComparisonNotes();
+    assert.equal(notes.length, 1);
+    await module.deleteComparisonNote(note.id);
+    assert.deepEqual(await module.getComparisonNotes(), []);
+
+    const pack = await module.saveTemplatePack({
+      title: "Pack",
+      templates: [{
+        id: "fav-a",
+        text: "Prompt",
+        sentTo: ["chatgpt"],
+        createdAt: "2026-05-10T00:00:00.000Z",
+        favoritedAt: "2026-05-10T00:00:00.000Z",
+      }],
+      includeSensitiveDefaults: false,
+    });
+    assert.equal(pack.templates[0].id, "fav-a");
+    assert.equal(pack.includeSensitiveDefaults, false);
   });
 
   await runStep("scheduled run summary ignores manual runs and preserves failure details", async () => {
@@ -2791,6 +3022,10 @@ async function main() {
       lastPrompt: "draft",
       promptHistory: [{ id: 1 }],
       promptFavorites: [{ id: "fav-1" }],
+      comparisonNotes: [{ id: "note-1", historyId: 1, serviceId: "chatgpt", responseText: "Answer" }],
+      promptExperiments: [{ id: "experiment-1", title: "Experiment" }],
+      templatePacks: [{ id: "pack-1", title: "Pack" }],
+      serviceGroups: [{ id: "group-1", title: "Group", serviceIds: ["chatgpt"] }],
       templateVariableCache: { topic: "Launch" },
       appSettings: {
         historyLimit: 75,
@@ -2837,6 +3072,10 @@ async function main() {
     assert.equal(storage.local.lastPrompt, undefined);
     assert.deepEqual(storage.local.promptHistory, []);
     assert.deepEqual(storage.local.promptFavorites, []);
+    assert.deepEqual(storage.local.comparisonNotes, []);
+    assert.deepEqual(storage.local.promptExperiments, []);
+    assert.deepEqual(storage.local.templatePacks, []);
+    assert.deepEqual(storage.local.serviceGroups, []);
     assert.deepEqual(storage.local.templateVariableCache, {});
     assert.deepEqual(storage.local.appSettings, {
       historyLimit: 50,

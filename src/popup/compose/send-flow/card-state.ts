@@ -16,12 +16,18 @@ export function createPopupSendCardState(): PopupSendCardState {
     card.classList.remove("sending", "sent", "failed");
     card.classList.add(cardState);
     card.querySelector(".retry-btn")?.remove();
+    card.querySelector(".login-retry-btn")?.remove();
+    card.querySelector(".selector-check-btn")?.remove();
+    card.querySelector(".new-tab-retry-btn")?.remove();
   }
 
   function clearSiteCardStates(): void {
     document.querySelectorAll<HTMLElement>(".site-card").forEach((card) => {
       card.classList.remove("sending", "sent", "failed");
       card.querySelector(".retry-btn")?.remove();
+      card.querySelector(".login-retry-btn")?.remove();
+      card.querySelector(".selector-check-btn")?.remove();
+      card.querySelector(".new-tab-retry-btn")?.remove();
     });
   }
 

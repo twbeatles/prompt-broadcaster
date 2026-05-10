@@ -33,19 +33,36 @@ export function createPopupSendExecution(
   deps: PopupSendExecutionDeps,
   cardState: Pick<PopupSendCardState, "getSiteCardElement" | "setSiteCardState">,
 ) {
-  function addRetryButton(target: ComposerTarget, mainPrompt: string): void {
-    const siteId = target.id;
-    const card = cardState.getSiteCardElement(siteId);
-    if (!card || card.querySelector(".retry-btn")) {
+  function addRecoveryButton(
+    card: HTMLElement,
+    className: string,
+    label: string,
+    onClick: () => void,
+  ): void {
+    if (card.querySelector(`.${className}`)) {
       return;
     }
 
-    const retryBtn = document.createElement("button");
-    retryBtn.type = "button";
-    retryBtn.className = "secondary-btn retry-btn";
-    retryBtn.textContent = "Retry";
-    retryBtn.addEventListener("click", async () => {
-      retryBtn.disabled = true;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `secondary-btn ${className}`;
+    button.textContent = label;
+    button.addEventListener("click", onClick);
+    card.appendChild(button);
+  }
+
+  function addRetryButton(target: ComposerTarget, mainPrompt: string): void {
+    const siteId = target.id;
+    const card = cardState.getSiteCardElement(siteId);
+    if (!card) {
+      return;
+    }
+
+    addRecoveryButton(card, "retry-btn", "Retry failed", async () => {
+      const retryBtn = card.querySelector<HTMLButtonElement>(".retry-btn");
+      if (retryBtn) {
+        retryBtn.disabled = true;
+      }
       cardState.setSiteCardState(siteId, "sending");
 
       try {
@@ -73,7 +90,35 @@ export function createPopupSendExecution(
         addRetryButton(target, mainPrompt);
       }
     });
-    card.appendChild(retryBtn);
+
+    const site = state.runtimeSites.find((entry) => entry.id === siteId);
+    if (!site?.url) {
+      return;
+    }
+
+    addRecoveryButton(card, "login-retry-btn", "Login", () => {
+      void chrome.tabs.create({ url: site.url, active: true });
+    });
+    addRecoveryButton(card, "selector-check-btn", "Selector check", () => {
+      void chrome.tabs.create({ url: site.url, active: true });
+      deps.showAppToast("After login, open Settings > Services to run selector checks.", "info", 3500);
+    });
+    addRecoveryButton(card, "new-tab-retry-btn", "New tab", async () => {
+      cardState.setSiteCardState(siteId, "sending");
+      const response = await deps.sendPopupMessage<BroadcastResponse>(
+        {
+          action: "broadcast",
+          prompt: mainPrompt,
+          sites: [{ id: siteId, target: "new" }],
+        },
+        10000,
+      );
+      if (response?.ok) {
+        cardState.setSiteCardState(siteId, "sent");
+      } else {
+        cardState.setSiteCardState(siteId, "failed");
+      }
+    });
   }
 
   function markTargetsFailed(

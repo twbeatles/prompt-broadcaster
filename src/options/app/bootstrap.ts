@@ -8,9 +8,11 @@ import { bindModalKeyboardEvents } from "../core/modal";
 import { bindNavigationEvents, switchSection } from "../core/navigation";
 import { bindStatusEvents, setStatus, showAppToast } from "../core/status";
 import { bindHistoryEvents } from "../features/history";
+import { bindExperimentEvents } from "../features/experiments";
 import { bindScheduleEvents } from "../features/schedules";
 import { bindServiceEvents } from "../features/services";
 import { bindSettingsEvents, renderShortcutList } from "../features/settings";
+import { bindTemplatePackEvents } from "../features/template-packs";
 
 const { toastHost } = optionsDom;
 
@@ -18,9 +20,11 @@ function bindEvents() {
   bindModalKeyboardEvents();
   bindNavigationEvents();
   bindHistoryEvents();
+  bindExperimentEvents();
   bindScheduleEvents({ reloadData: loadData });
   bindSettingsEvents({ loadData });
   bindServiceEvents();
+  bindTemplatePackEvents();
   bindStatusEvents();
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
@@ -39,6 +43,10 @@ function bindEvents() {
     if (
       changes.promptHistory ||
       changes.promptFavorites ||
+      changes.comparisonNotes ||
+      changes.promptExperiments ||
+      changes.templatePacks ||
+      changes.serviceGroups ||
       changes.appSettings ||
       changes.templateVariableCache ||
       changes.customSites ||

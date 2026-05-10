@@ -212,6 +212,28 @@ export function createFavoriteEditorEvents(deps: FavoriteEditorEventsDeps) {
       }
 
       const target = event.target instanceof Element ? event.target : null;
+      const failurePolicySelect = target?.closest<HTMLSelectElement>("[data-favorite-step-failure-policy]");
+      if (failurePolicySelect) {
+        const step = modalState.steps.find(
+          (entry) => entry.id === failurePolicySelect.dataset.favoriteStepFailurePolicy,
+        );
+        if (step) {
+          step.failurePolicy = failurePolicySelect.value as typeof step.failurePolicy;
+        }
+        return;
+      }
+
+      const targetModeSelect = target?.closest<HTMLSelectElement>("[data-favorite-step-target-mode]");
+      if (targetModeSelect) {
+        const step = modalState.steps.find(
+          (entry) => entry.id === targetModeSelect.dataset.favoriteStepTargetMode,
+        );
+        if (step) {
+          step.targetMode = targetModeSelect.value as typeof step.targetMode;
+        }
+        return;
+      }
+
       const input = target?.closest<HTMLInputElement>("[data-favorite-step-target][data-site-id]");
       const stepId = input?.dataset.favoriteStepTarget;
       const siteId = input?.dataset.siteId;

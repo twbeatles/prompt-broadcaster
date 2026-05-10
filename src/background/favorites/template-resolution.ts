@@ -52,6 +52,9 @@ export function createFavoriteTemplateResolutionTools(
               : `step-${index + 1}`,
           text: step.text,
           delayMs: Math.max(0, Math.round(Number(step.delayMs) || 0)),
+          failurePolicy: step.failurePolicy ?? "stop",
+          targetMode: step.targetMode,
+          templateDefaults: step.templateDefaults ?? {},
           targetSiteIds: (() => {
             const stepTargets = normalizeSiteIdList(step.targetSiteIds);
             return stepTargets.length > 0 ? stepTargets : favoriteTargetSiteIds;
@@ -65,6 +68,8 @@ export function createFavoriteTemplateResolutionTools(
       text,
       delayMs: 0,
       targetSiteIds: favoriteTargetSiteIds,
+      failurePolicy: "stop",
+      templateDefaults: {},
     }];
   }
 
@@ -229,6 +234,7 @@ export function createFavoriteTemplateResolutionTools(
     const counter = await getBroadcastCounter().catch(() => 0);
     const values = {
       ...(templateDefaults ?? {}),
+      ...(step.templateDefaults ?? {}),
       ...buildSystemTemplateValues(new Date(), {
         extra: {
           url: executionContext.url ?? "",

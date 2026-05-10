@@ -19,6 +19,52 @@
   font-size: 13px;
 }
 
+.service-health-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.service-health-row > div:first-child {
+  min-width: 0;
+}
+
+.inline-code {
+  display: inline-block;
+  max-width: 100%;
+  margin-top: 6px;
+  padding: 3px 6px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.06);
+  color: var(--text-soft);
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+
+.compact-panel {
+  padding: 14px;
+}
+
+textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+@media (prefers-color-scheme: dark) {
+  .service-health-row {
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .inline-code {
+    background: rgba(255, 255, 255, 0.07);
+  }
+}
+
 /* ── Status line ── */
 .status-line {
   min-height: 18px;
