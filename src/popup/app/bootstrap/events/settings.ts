@@ -15,6 +15,7 @@ import type { PopupEventDeps } from "./deps";
 
 const {
   reuseExistingTabsToggle,
+  autoCaptureResponsesToggle,
   openOptionsBtn,
   clearHistoryBtn,
   exportJsonBtn,
@@ -59,6 +60,30 @@ export function bindSettingsEvents(deps: PopupEventDeps) {
     void updateAppSettings({ reuseExistingTabs: nextValue }).catch((error) => {
       console.error(
         "[AI Prompt Broadcaster] Failed to save tab reuse setting.",
+        error,
+      );
+      const errorMessage = t.error(deps.status.getErrorMessage(error));
+      deps.status.setStatus(errorMessage, "error");
+      deps.status.showAppToast(errorMessage, "error", 3200);
+    });
+  });
+
+  autoCaptureResponsesToggle.addEventListener("change", (event) => {
+    const target = getEventInput(event.target);
+    if (!target) {
+      return;
+    }
+
+    const nextValue = target.checked;
+    state.settings = {
+      ...state.settings,
+      autoCaptureResponses: nextValue,
+    };
+    deps.storage.applySettingsToControls();
+
+    void updateAppSettings({ autoCaptureResponses: nextValue }).catch((error) => {
+      console.error(
+        "[AI Prompt Broadcaster] Failed to save response capture setting.",
         error,
       );
       const errorMessage = t.error(deps.status.getErrorMessage(error));

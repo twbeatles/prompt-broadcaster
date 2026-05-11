@@ -90,6 +90,7 @@ export interface AppSettings {
   autoClosePopup: boolean;
   desktopNotifications: boolean;
   reuseExistingTabs: boolean;
+  autoCaptureResponses: boolean;
   waitMsMultiplier: number;
   historySort: HistorySort;
   favoriteSort: FavoriteSort;
@@ -372,6 +373,7 @@ export interface PendingBroadcastRecord {
   originTabId?: number | null;
   originWindowId?: number | null;
   openedTabIds: number[];
+  targetTabIdsBySiteId?: Record<string, number>;
   originFavoriteId?: string | null;
   chainRunId?: string | null;
   chainStepIndex?: number | null;

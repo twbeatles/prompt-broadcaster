@@ -28,15 +28,19 @@ const REQUIRED_INCLUDES = [
   },
   {
     file: "docs/web_store_checklist.md",
-    snippets: ["npm run docs:check", "npm run qa:extension", "selector:audit"],
-  },
-  {
-    file: "docs/release-selector-verification-checklist.md",
-    snippets: ["npm run selector:audit", "selector-verification-2026-05-11.md", "logged-in canonical route"],
+    snippets: ["npm run docs:check", "npm run qa:extension", "selector:audit", "AI response"],
   },
   {
     file: "docs/selector-verification-2026-05-11.md",
     snippets: ["Automated Audit Snapshot", "Logged-In Canonical Route Checklist", "Requires authenticated session"],
+  },
+  {
+    file: "docs/privacy-policy.md",
+    snippets: ["captured AI response text", "developer-controlled servers"],
+  },
+  {
+    file: "docs/web-store-copy.md",
+    snippets: ["saved AI responses", "developer-controlled servers"],
   },
 ];
 

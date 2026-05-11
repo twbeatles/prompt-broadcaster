@@ -108,6 +108,10 @@ async function main() {
     const optionsPage = await context.newPage();
     await optionsPage.goto(`chrome-extension://${extensionId}/options/options.html`);
     await optionsPage.waitForSelector("#section-dashboard");
+    await optionsPage.waitForSelector("#dashboard-cards .card");
+    assert.equal(await optionsPage.locator("#dashboard-cards .card").count(), 4);
+    assert.equal(await optionsPage.locator("#dashboard-recent-activity .dashboard-row").count(), 1);
+    assert.ok(await optionsPage.locator("#dashboard-next-actions .dashboard-row").count() >= 1);
 
     await optionsPage.click('[data-section="experiments"]');
     await optionsPage.waitForSelector("#section-experiments.active");
@@ -143,6 +147,9 @@ async function main() {
     assert.equal(comparisonStorage.activeComparisonContext.serviceId, "chatgpt");
     await optionsPage.click("#history-modal-close");
     await optionsPage.waitForSelector("#history-modal", { state: "hidden" });
+    await optionsPage.click('[data-section="dashboard"]');
+    await optionsPage.waitForSelector("#section-dashboard.active");
+    assert.match(await optionsPage.locator("#dashboard-cards").textContent(), /1/);
 
     await optionsPage.click('[data-section="services"]');
     await optionsPage.waitForSelector("#section-services.active");
@@ -153,6 +160,17 @@ async function main() {
 
     await optionsPage.click('[data-section="settings"]');
     await optionsPage.waitForSelector("#section-settings.active");
+    assert.equal(await optionsPage.isChecked("#auto-capture-toggle"), true);
+    await optionsPage.uncheck("#auto-capture-toggle");
+    await optionsPage.waitForFunction(async () => {
+      const { appSettings } = await chrome.storage.local.get("appSettings");
+      return appSettings?.autoCaptureResponses === false;
+    });
+    await optionsPage.check("#auto-capture-toggle");
+    await optionsPage.waitForFunction(async () => {
+      const { appSettings } = await chrome.storage.local.get("appSettings");
+      return appSettings?.autoCaptureResponses === true;
+    });
     const downloadPromise = optionsPage.waitForEvent("download");
     await optionsPage.click("#template-pack-export");
     await downloadPromise;
@@ -172,8 +190,18 @@ async function main() {
     await popupPage.goto(`chrome-extension://${extensionId}/popup/popup.html`);
     await popupPage.waitForSelector("#prompt-input");
     await popupPage.waitForSelector("#send-btn");
+    await popupPage.click('[data-tab="history"]');
+    await popupPage.waitForSelector("#panel-history.active");
+    await popupPage.waitForSelector(".response-badge");
+    assert.match(await popupPage.locator(".response-badge").first().textContent(), /1|응답/);
+    await popupPage.click(".prompt-item .menu-button");
+    await popupPage.click("[data-action='view-responses']");
+    await popupPage.waitForSelector("#responses-modal:not([hidden]) .response-note");
+    assert.match(await popupPage.locator("#responses-modal").textContent(), /Manual captured ChatGPT response/);
+    await popupPage.click("#responses-modal-confirm");
+    await popupPage.waitForSelector("#responses-modal", { state: "hidden" });
 
-    console.log("Extension E2E passed: options, experiments, comparison notes, service groups, template packs, and popup loaded.");
+    console.log("Extension E2E passed: dashboard, experiments, saved AI responses, service groups, template packs, settings toggle, and popup loaded.");
   } finally {
     await context.close();
   }

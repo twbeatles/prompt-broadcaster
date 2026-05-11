@@ -11,6 +11,7 @@ export const SITE_EMOJI: Record<string, string> = {
 export const state: PopupState = {
   activeTab: "compose",
   history: [],
+  comparisonNotes: [],
   favorites: [],
   historySearch: "",
   favoritesSearch: "",

@@ -245,6 +245,10 @@ export const t = {
       msg("options_settings_reuse_tabs_title") || "Reuse current-window AI tabs",
     reuseTabsDesc:
       msg("options_settings_reuse_tabs_desc") || "When enabled, matching open AI tabs are reused before opening a new one.",
+    autoCaptureTitle:
+      msg("options_settings_auto_capture") || "Save AI responses automatically",
+    autoCaptureDesc:
+      msg("options_settings_auto_capture_desc") || "After a send completes, save visible AI responses locally in history.",
     importReportTitle: msg("options_import_report_title") || "Import Details",
     importReportDesc: msg("options_import_report_desc") || "Review the imported items and any rejections.",
     importReportVersion: msg("options_import_report_version") || "Version",

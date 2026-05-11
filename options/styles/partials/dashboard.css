@@ -24,9 +24,8 @@
 
 .card-label {
   color: var(--text-soft);
-  font-size: 11.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  font-size: 12px;
+  letter-spacing: 0;
   font-weight: 600;
 }
 
@@ -35,6 +34,117 @@
   font-weight: 700;
   line-height: 1.1;
   letter-spacing: -0.01em;
+}
+
+.dashboard-main-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.dashboard-list {
+  display: grid;
+  gap: 10px;
+}
+
+.dashboard-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.54);
+}
+
+.dashboard-row-main {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.dashboard-row-main strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-row-main span {
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.dashboard-pill {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: rgba(93, 103, 112, 0.1);
+  color: var(--text-soft);
+  font-size: 11.5px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.dashboard-pill.success {
+  background: rgba(42, 157, 143, 0.12);
+  color: #1b7f74;
+}
+
+.dashboard-pill.warning {
+  background: rgba(230, 161, 48, 0.14);
+  color: #9a6500;
+}
+
+.action-row .btn {
+  min-width: 72px;
+}
+
+.dashboard-advanced {
+  padding: 0;
+  overflow: hidden;
+}
+
+.dashboard-advanced summary {
+  cursor: pointer;
+  padding: 16px 18px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.dashboard-advanced .charts-grid,
+.dashboard-advanced #failure-reasons {
+  padding: 0 18px 18px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .dashboard-row {
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  .dashboard-pill.success {
+    color: #65c7bb;
+  }
+
+  .dashboard-pill.warning {
+    color: #f0b75a;
+  }
+}
+
+@media (max-width: 920px) {
+  .dashboard-main-grid,
+  .charts-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ── Charts ── */

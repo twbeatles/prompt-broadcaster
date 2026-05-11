@@ -157,6 +157,7 @@ import type {
   LastBroadcastSummary,
   PendingBroadcastRecord,
   PendingInjectionRecord,
+  PromptHistoryItem,
   RuntimeInjectionSiteConfig,
   RuntimeSite,
   ServiceHealthSnapshot,
@@ -263,6 +264,11 @@ const COMPARISON_CAPTURE_SELECTORS: Record<string, string[]> = {
     "main .prose",
   ],
 };
+
+const AUTO_RESPONSE_CAPTURE_TIMEOUT_MS = 45_000;
+const AUTO_RESPONSE_CAPTURE_INTERVAL_MS = 3_000;
+const AUTO_RESPONSE_CAPTURE_MIN_LENGTH = 20;
+const AUTO_RESPONSE_CAPTURE_MEANINGFUL_DELTA = 40;
 
 function getI18nMessage(key: string, substitutions?: string[]): string {
   return chrome.i18n.getMessage(key, substitutions) || "";
@@ -877,6 +883,7 @@ async function createPendingBroadcast(
     originTabId: originContext?.tabId ?? null,
     originWindowId: originContext?.windowId ?? null,
     openedTabIds: [],
+    targetTabIdsBySiteId: {},
     originFavoriteId:
       typeof metadata.originFavoriteId === "string" && metadata.originFavoriteId.trim()
         ? metadata.originFavoriteId.trim()
@@ -1083,7 +1090,7 @@ async function recordBroadcastSiteResult(
       }
 
       await runSideEffect("appendPromptHistory", async () => {
-        await appendPromptHistory({
+        const historyItem = await appendPromptHistory({
           id: Date.now(),
           text: completedRecord.prompt,
           requestedSiteIds: completedRecord.siteIds,
@@ -1100,6 +1107,9 @@ async function recordBroadcastSiteResult(
           chainStepCount: completedRecord.chainStepCount ?? null,
           experimentRunId: completedRecord.experimentRunId ?? null,
           trigger: completedRecord.trigger ?? "popup",
+        });
+        void autoCaptureBroadcastResponses(historyItem, completedRecord).catch((error) => {
+          console.warn("[AI Prompt Broadcaster] Automatic response capture failed.", error);
         });
       });
       await runSideEffect("restoreBroadcastFocus", async () => {
@@ -1836,20 +1846,26 @@ async function queueResolvedBroadcastRequest(
         closeOnCancel: !reusableTab,
       });
 
-      if (!reusableTab) {
-        await queueBackgroundStateMutation((state) => {
-          const record = state.pendingBroadcasts[broadcast.id];
-          if (!record) {
-            return null;
-          }
+      await queueBackgroundStateMutation((state) => {
+        const record = state.pendingBroadcasts[broadcast.id];
+        if (!record) {
+          return null;
+        }
 
+        record.targetTabIdsBySiteId = {
+          ...(record.targetTabIdsBySiteId ?? {}),
+          [site.id]: targetTab.id,
+        };
+
+        if (!reusableTab) {
           record.openedTabIds = Array.from(
             new Set([...(Array.isArray(record.openedTabIds) ? record.openedTabIds : []), targetTab.id])
           );
-          state.pendingBroadcasts[broadcast.id] = record;
-          return clonePlainValue(record.openedTabIds);
-        });
-      }
+        }
+
+        state.pendingBroadcasts[broadcast.id] = record;
+        return clonePlainValue(record.targetTabIdsBySiteId);
+      });
 
       queuedSiteCount += 1;
 
@@ -2128,7 +2144,31 @@ async function findComparisonCaptureTab(
   return null;
 }
 
-async function captureVisibleAssistantResponse(tabId: number, serviceId: string): Promise<string> {
+function normalizeCapturedResponseText(value: string): string {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function isPromptEcho(responseText: string, promptText: string): boolean {
+  const response = normalizeCapturedResponseText(responseText).toLowerCase();
+  const prompt = normalizeCapturedResponseText(promptText).toLowerCase();
+  return Boolean(prompt) && (response === prompt || response.startsWith(prompt));
+}
+
+function shouldUpdateAutoCapturedResponse(existingText: string, nextText: string): boolean {
+  const existing = normalizeCapturedResponseText(existingText);
+  const next = normalizeCapturedResponseText(nextText);
+  if (!next || existing === next || existing.includes(next)) {
+    return false;
+  }
+
+  if (!existing || next.includes(existing)) {
+    return true;
+  }
+
+  return Math.abs(next.length - existing.length) >= AUTO_RESPONSE_CAPTURE_MEANINGFUL_DELTA;
+}
+
+async function captureVisibleAssistantResponse(tabId: number, serviceId: string, promptText = ""): Promise<string> {
   const selectors = COMPARISON_CAPTURE_SELECTORS[serviceId] ?? [];
   if (selectors.length === 0) {
     return "";
@@ -2174,7 +2214,93 @@ async function captureVisibleAssistantResponse(tabId: number, serviceId: string)
     },
   });
 
-  return typeof result?.result === "string" ? result.result : "";
+  const responseText = typeof result?.result === "string" ? result.result : "";
+  if (
+    normalizeCapturedResponseText(responseText).length < AUTO_RESPONSE_CAPTURE_MIN_LENGTH ||
+    isPromptEcho(responseText, promptText)
+  ) {
+    return "";
+  }
+
+  return responseText;
+}
+
+async function captureAssistantResponseWithRetry(
+  tabId: number,
+  serviceId: string,
+  promptText: string,
+): Promise<string> {
+  const deadline = Date.now() + AUTO_RESPONSE_CAPTURE_TIMEOUT_MS;
+  let lastResponse = "";
+
+  while (Date.now() <= deadline) {
+    const responseText = await captureVisibleAssistantResponse(tabId, serviceId, promptText).catch(() => "");
+    if (responseText) {
+      if (lastResponse && normalizeCapturedResponseText(lastResponse) === normalizeCapturedResponseText(responseText)) {
+        return responseText;
+      }
+      lastResponse = responseText;
+    }
+
+    await sleep(AUTO_RESPONSE_CAPTURE_INTERVAL_MS);
+  }
+
+  return lastResponse;
+}
+
+async function saveAutoCapturedResponse(
+  historyId: number,
+  serviceId: string,
+  responseText: string,
+): Promise<void> {
+  const existingNotes = await getComparisonNotes();
+  const existingAutoNote = existingNotes.find(
+    (note) =>
+      Number(note.historyId) === Number(historyId) &&
+      note.serviceId === serviceId &&
+      note.captureMode === "auto",
+  );
+
+  if (existingAutoNote && !shouldUpdateAutoCapturedResponse(existingAutoNote.responseText, responseText)) {
+    return;
+  }
+
+  await saveComparisonNote({
+    id: existingAutoNote?.id,
+    historyId,
+    serviceId,
+    responseText,
+    captureMode: "auto",
+    tags: ["auto"],
+  });
+}
+
+async function autoCaptureBroadcastResponses(
+  historyItem: PromptHistoryItem,
+  completedRecord: PendingBroadcastRecord,
+): Promise<void> {
+  const settings = await getAppSettings();
+  if (!settings.autoCaptureResponses) {
+    return;
+  }
+
+  const submittedSiteIds = Array.isArray(completedRecord.submittedSiteIds)
+    ? completedRecord.submittedSiteIds
+    : [];
+  for (const serviceId of submittedSiteIds) {
+    const tabId = Number(completedRecord.targetTabIdsBySiteId?.[serviceId]);
+    const tab = await findComparisonCaptureTab(serviceId, Number.isFinite(tabId) ? tabId : null);
+    if (!tab?.id) {
+      continue;
+    }
+
+    const responseText = await captureAssistantResponseWithRetry(tab.id, serviceId, historyItem.text);
+    if (!responseText.trim()) {
+      continue;
+    }
+
+    await saveAutoCapturedResponse(Number(historyItem.id), serviceId, responseText);
+  }
 }
 
 async function handleComparisonCaptureStart(
@@ -2199,7 +2325,9 @@ async function handleComparisonCaptureStart(
     };
   }
 
-  const responseText = await captureVisibleAssistantResponse(tab.id, serviceId).catch(() => "");
+  const history = await getStoredPromptHistory();
+  const historyItem = history.find((entry) => Number(entry.id) === historyId);
+  const responseText = await captureVisibleAssistantResponse(tab.id, serviceId, historyItem?.text ?? "").catch(() => "");
   if (!responseText.trim()) {
     return {
       ok: true,
@@ -2208,16 +2336,17 @@ async function handleComparisonCaptureStart(
     };
   }
 
-  const note = await saveComparisonNote({
-    historyId,
-    serviceId,
-    responseText,
-    captureMode: "auto",
-    tags: ["auto"],
-  });
+  await saveAutoCapturedResponse(historyId, serviceId, responseText);
+  const notes = await getComparisonNotes();
+  const note = notes.find(
+    (entry) =>
+      Number(entry.historyId) === Number(historyId) &&
+      entry.serviceId === serviceId &&
+      entry.captureMode === "auto",
+  ) ?? null;
   return {
     ok: true,
-    note,
+    note: note ?? undefined,
     captured: true,
   };
 }

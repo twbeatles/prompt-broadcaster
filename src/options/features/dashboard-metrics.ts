@@ -134,7 +134,19 @@ export function buildDashboardMetrics(
 
   const mostUsed = [...serviceCounts.entries()].sort((left, right) => right[1] - left[1])[0];
   const weekStart = getStartOfCurrentWeek(now);
-  const weekCount = history.filter((entry) => new Date(String(entry?.createdAt ?? "")).getTime() >= weekStart.getTime()).length;
+  const recentHistoryItems = history.filter((entry) => new Date(String(entry?.createdAt ?? "")).getTime() >= weekStart.getTime());
+  const weekCount = recentHistoryItems.length;
+  const recentRequestedCount = recentHistoryItems.reduce(
+    (sum, entry) => sum + getRequestedSiteIds(entry).length,
+    0,
+  );
+  const recentSubmittedCount = recentHistoryItems.reduce(
+    (sum, entry) => sum + getSubmittedSiteIds(entry).length,
+    0,
+  );
+  const recentSuccessRate = recentRequestedCount > 0
+    ? Math.round((recentSubmittedCount / recentRequestedCount) * 100)
+    : 0;
   const averagePromptLength = history.length > 0 ? Math.round(totalPromptLength / history.length) : 0;
   const donutItems = [...serviceCounts.entries()]
     .sort((left, right) => right[1] - left[1])
@@ -236,6 +248,16 @@ export function buildDashboardMetrics(
     totalTransmissions: history.length,
     mostUsedService: mostUsed ? getSiteLabel(mostUsed[0], runtimeSites) : "-",
     weekCount,
+    recentSuccessRate,
+    recentItems: history.slice(0, 5).map((entry) => ({
+      id: Number(entry?.id),
+      text: String(entry?.text ?? ""),
+      createdAt: String(entry?.createdAt ?? ""),
+      requestedSiteIds: getRequestedSiteIds(entry),
+      submittedSiteIds: getSubmittedSiteIds(entry),
+      failedSiteIds: normalizeSiteIds(entry?.failedSiteIds),
+      status: String(entry?.status ?? ""),
+    })),
     averagePromptLength,
     donutItems,
     dailyCounts,

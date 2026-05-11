@@ -14,6 +14,7 @@ export function createOverlayController(options: {
   closeFavoriteModal: () => void;
   hideTemplateModal: () => void;
   hideResendModal: () => void;
+  hideResponsesModal: () => void;
   hideImportReportModal: () => void;
   renderLists: () => void;
 }): PopupOverlayController {
@@ -22,6 +23,7 @@ export function createOverlayController(options: {
     closeFavoriteModal,
     hideTemplateModal,
     hideResendModal,
+    hideResponsesModal,
     hideImportReportModal,
     renderLists,
   } = options;
@@ -70,6 +72,10 @@ export function createOverlayController(options: {
       }
       if (overlay.id === "resend-modal") {
         hideResendModal();
+        return true;
+      }
+      if (overlay.id === "responses-modal") {
+        hideResponsesModal();
         return true;
       }
       if (overlay.id === "favorite-modal") {

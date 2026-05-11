@@ -13,7 +13,7 @@ AI Prompt Broadcaster(이하 "확장 프로그램")는 사용자가 입력하거
 ### 1. 개발자 서버 수집 여부
 
 - 확장 프로그램은 개발자 소유 서버를 운영하지 않습니다.
-- 확장 프로그램은 사용자의 프롬프트, 히스토리, 즐겨찾기, 템플릿 변수 값, 선택 텍스트를 개발자 서버로 업로드하거나 저장하지 않습니다.
+- 확장 프로그램은 사용자의 프롬프트, 히스토리, 즐겨찾기, 템플릿 변수 값, 선택 텍스트, 캡처된 AI 응답 텍스트를 개발자 서버로 업로드하거나 저장하지 않습니다.
 - 확장 프로그램은 사용자 데이터를 판매하거나 광고 목적의 프로파일링에 사용하지 않습니다.
 
 ### 2. 확장 프로그램이 처리하는 데이터
@@ -38,6 +38,7 @@ AI Prompt Broadcaster(이하 "확장 프로그램")는 사용자가 입력하거
 - 셀렉터 오류 기록 및 최근 브로드캐스트 상태
 - 서비스별 전송 결과 코드와 최근 import 요약
 - 서비스별 주입 전략 통계(`strategyStats`)
+- 전송 후 로컬에 저장된 AI 응답 텍스트(`comparisonNotes`)
 
 #### 탭 및 서비스 메타데이터
 
@@ -60,6 +61,7 @@ AI Prompt Broadcaster(이하 "확장 프로그램")는 사용자가 입력하거
 - 사용자가 선택한 AI 웹 서비스 탭에 프롬프트를 입력하고 전송하기 위해
 - 현재 창에서 이미 열려 있는 AI 탭을 식별하고 재사용하기 위해
 - 히스토리, 즐겨찾기, 템플릿 변수, 설정을 로컬에 저장하기 위해
+- 저장된 AI 응답을 히스토리와 팝업에서 다시 확인할 수 있게 하기 위해
 - 주입 실패, 셀렉터 변경, 전송 완료 상태를 사용자에게 알리기 위해
 - 사용자 정의 서비스 설정과 셀렉터 테스트 기능을 제공하기 위해
 
@@ -76,6 +78,7 @@ AI Prompt Broadcaster(이하 "확장 프로그램")는 사용자가 입력하거
   - 앱 설정
   - 셀렉터 실패 기록
   - 서비스별 전략 통계
+  - 캡처된 AI 응답 텍스트
 - `chrome.storage.session`
   - 최근 브로드캐스트 상태
   - 일시적인 UI 토스트 상태
@@ -166,7 +169,7 @@ This Privacy Policy explains what data the extension handles, how that data is u
 ### 1. No Developer-Controlled Backend Collection
 
 - The extension does not operate a developer-controlled backend for user data.
-- The extension does not upload or store prompts, histories, favorites, template values, or selected text on any developer server.
+- The extension does not upload or store prompts, histories, favorites, template values, selected text, or captured AI response text on any developer-controlled servers.
 - The extension does not sell user data or use it for advertising profiles.
 
 ### 2. Data the Extension May Handle
@@ -191,6 +194,7 @@ The extension may handle the following categories of data only as needed for its
 - selector failure records and recent broadcast status
 - per-service result codes and recent import summaries
 - per-service injector strategy statistics (`strategyStats`)
+- captured AI response text stored locally in `comparisonNotes`
 
 #### Tab and service metadata
 
@@ -213,6 +217,7 @@ The extension uses handled data only to:
 - insert and send prompts to AI services selected by the user
 - discover and reuse already-open AI tabs in the current window
 - store local history, favorites, template values, and settings
+- show saved AI responses again from popup history and options history details
 - display send-complete, selector-failure, and diagnostics feedback
 - support custom service configuration and selector testing
 
@@ -229,6 +234,7 @@ The following data may be stored only in the user's browser:
   - app settings
   - selector failure records
   - per-service strategy statistics
+  - captured AI response text
 - `chrome.storage.session`
   - recent broadcast state
   - transient UI toast state

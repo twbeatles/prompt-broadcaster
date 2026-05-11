@@ -49,6 +49,7 @@ const {
   templateModal,
   favoriteModal,
   resendModal,
+  responsesModal,
   importReportModal,
 } = popupDom.modals;
 const { toastHost } = popupDom;
@@ -99,12 +100,14 @@ function renderLists() {
 let hideFavoriteModal = (): void => undefined;
 let hideTemplateModal = (): void => undefined;
 let hideResendModal = (): void => undefined;
+let hideResponsesModal = (): void => undefined;
 let hideImportReportModal = (): void => undefined;
 let openTemplateModalV2 = async (
   _prompt: string,
   _targets: ComposerTarget[],
 ): Promise<void> => undefined;
 let openResendModal = (_historyItem: PromptHistoryItem): void => undefined;
+let openResponsesModal = (_historyItem: PromptHistoryItem): void => undefined;
 let openImportReportModal = (
   _summary: PopupState["pendingImportSummary"],
 ): void => undefined;
@@ -164,10 +167,11 @@ const {
 } = popupTargetsController;
 
 const overlayController = createOverlayController({
-  overlays: [importReportModal, resendModal, favoriteModal, templateModal],
+  overlays: [importReportModal, responsesModal, resendModal, favoriteModal, templateModal],
   closeFavoriteModal: () => hideFavoriteModal(),
   hideTemplateModal,
   hideResendModal,
+  hideResponsesModal,
   hideImportReportModal,
   renderLists,
 });
@@ -288,6 +292,8 @@ const popupHistoryModals = createPopupHistoryModals({
 });
 hideResendModal = popupHistoryModals.hideResendModal;
 openResendModal = popupHistoryModals.openResendModal;
+hideResponsesModal = popupHistoryModals.hideResponsesModal;
+openResponsesModal = popupHistoryModals.openResponsesModal;
 openImportReportModal = popupHistoryModals.openImportReportModal;
 hideImportReportModal = popupHistoryModals.hideImportReportModal;
 bindHistoryModalEvents = popupHistoryModals.bindHistoryModalEvents;
@@ -346,6 +352,7 @@ renderFavoritesList = favoritesController.renderFavoritesList;
 const historyController = createHistoryController({
   switchTab,
   loadPromptIntoComposer,
+  openResponsesModal,
   openResendModal,
   renderFavoritesList,
   setStatus,
@@ -380,6 +387,7 @@ function resetTransientModals() {
   hideTemplateModal();
   hideFavoriteModal();
   hideResendModal();
+  hideResponsesModal();
   hideImportReportModal();
 }
 

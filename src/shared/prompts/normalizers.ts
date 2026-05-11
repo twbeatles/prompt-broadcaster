@@ -254,6 +254,10 @@ export function normalizeSettings(value: unknown): AppSettings {
       settings.reuseExistingTabs,
       DEFAULT_SETTINGS.reuseExistingTabs
     ),
+    autoCaptureResponses: normalizeBoolean(
+      settings.autoCaptureResponses,
+      DEFAULT_SETTINGS.autoCaptureResponses
+    ),
     waitMsMultiplier: normalizeWaitMsMultiplier(settings.waitMsMultiplier),
     historySort: normalizeHistorySort(settings.historySort),
     favoriteSort: normalizeFavoriteSort(settings.favoriteSort),

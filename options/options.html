@@ -34,55 +34,46 @@
       <section id="section-dashboard" class="page-section active" role="tabpanel" tabindex="0">
         <div class="section-head">
           <h2 data-i18n="options_dashboard_title">Dashboard</h2>
-          <p data-i18n="options_dashboard_desc">Review high-level usage metrics and recent prompt activity.</p>
+          <p data-i18n="options_dashboard_desc">Check recent use, saved AI responses, and anything that needs attention.</p>
         </div>
         <div id="dashboard-cards" class="cards-grid"></div>
-        <div class="panel">
-          <div class="section-head">
-            <h2>Onboarding checklist</h2>
-          </div>
-          <div id="onboarding-checklist" class="settings-stack"></div>
-        </div>
-        <div class="charts-grid">
-          <div class="panel chart-box">
-            <div class="section-head">
-              <h2 data-i18n="options_chart_service_usage">Service usage share</h2>
+        <div class="dashboard-main-grid">
+          <div class="panel">
+            <div class="section-head-row">
+              <div class="section-head">
+                <h2 data-i18n="options_dashboard_recent_title">Recent activity</h2>
+                <p data-i18n="options_dashboard_recent_desc">Latest sends and whether AI responses were saved.</p>
+              </div>
+              <button class="btn ghost" type="button" data-dashboard-section="history" data-i18n="options_dashboard_view_history">View history</button>
             </div>
-            <div id="service-donut"></div>
+            <div id="dashboard-recent-activity" class="dashboard-list"></div>
           </div>
-          <div class="panel chart-box">
+          <div class="panel">
             <div class="section-head">
-              <h2 data-i18n="options_chart_recent_daily">Sends in the last 7 days</h2>
+              <h2 data-i18n="options_dashboard_actions_title">Next actions</h2>
+              <p data-i18n="options_dashboard_actions_desc">Simple checks that help the next send work better.</p>
             </div>
-            <div id="daily-bar-chart"></div>
-          </div>
-        </div>
-        <div class="charts-grid dashboard-secondary-grid">
-          <div class="panel chart-box">
-            <div class="section-head">
-              <h2 data-i18n="options_chart_heatmap_title">Activity heatmap</h2>
-            </div>
-            <div id="activity-heatmap"></div>
-          </div>
-          <div class="panel chart-box">
-            <div class="section-head">
-              <h2 data-i18n="options_chart_service_trend_title">Service success trend</h2>
-            </div>
-            <div id="service-trend"></div>
-          </div>
-          <div class="panel chart-box">
-            <div class="section-head">
-              <h2 data-i18n="options_chart_failure_title">Top failure reasons</h2>
-            </div>
-            <div id="failure-reasons"></div>
-          </div>
-          <div class="panel chart-box">
-            <div class="section-head">
-              <h2 data-i18n="options_chart_strategy_title">Strategy summary</h2>
-            </div>
-            <div id="strategy-summary"></div>
+            <div id="dashboard-next-actions" class="dashboard-list"></div>
           </div>
         </div>
+        <details class="panel dashboard-advanced">
+          <summary data-i18n="options_dashboard_advanced_summary">Advanced stats</summary>
+          <div class="charts-grid">
+            <div class="chart-box">
+              <div class="section-head">
+                <h2 data-i18n="options_chart_service_usage">Service usage</h2>
+              </div>
+              <div id="service-donut"></div>
+            </div>
+            <div class="chart-box">
+              <div class="section-head">
+                <h2 data-i18n="options_chart_recent_daily">Last 7 days</h2>
+              </div>
+              <div id="daily-bar-chart"></div>
+            </div>
+          </div>
+          <div id="failure-reasons" class="dashboard-failure-summary"></div>
+        </details>
       </section>
 
       <section id="section-history" class="page-section" role="tabpanel" tabindex="0">
@@ -206,6 +197,15 @@
             <div class="toggle-row">
               <strong data-i18n="options_settings_desktop_notifications">Desktop notification on completion</strong>
               <input id="desktop-notification-toggle" type="checkbox" />
+            </div>
+          </div>
+          <div class="settings-control">
+            <div class="toggle-row">
+              <div>
+                <strong id="auto-capture-setting-title" data-i18n="options_settings_auto_capture">Save AI responses automatically</strong>
+                <div id="auto-capture-setting-desc" class="helper" data-i18n="options_settings_auto_capture_desc">After a send completes, save visible AI responses locally in history.</div>
+              </div>
+              <input id="auto-capture-toggle" type="checkbox" />
             </div>
           </div>
           <div class="settings-control">

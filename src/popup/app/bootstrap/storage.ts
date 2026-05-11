@@ -1,4 +1,4 @@
-import { getAppSettings, getPromptFavorites, getPromptHistory, getTemplateVariableCache } from "../../../shared/prompts";
+import { getAppSettings, getComparisonNotes, getPromptFavorites, getPromptHistory, getTemplateVariableCache } from "../../../shared/prompts";
 import { consumePopupPromptIntent, getComposeDraftPrompt, getLastSentPrompt, pickRestoredComposePrompt } from "../../../shared/prompt-state";
 import { drainPendingUiToasts, getFavoriteRunJobs, getFailedSelectors } from "../../../shared/runtime-state";
 import { getRuntimeSites } from "../../../shared/sites";
@@ -13,6 +13,9 @@ const {
   reuseExistingTabsToggle,
   reuseExistingTabsLabel,
   reuseExistingTabsDesc,
+  autoCaptureResponsesToggle,
+  autoCaptureResponsesLabel,
+  autoCaptureResponsesDesc,
   waitMultiplierLabel,
   waitMultiplierRange,
   waitMultiplierValue,
@@ -41,6 +44,11 @@ export function createPopupStorageController(
     reuseExistingTabsDesc.textContent = state.settings.reuseExistingTabs
       ? t.reuseTabsDescEnabled
       : t.reuseTabsDescDisabled;
+    autoCaptureResponsesToggle.checked = Boolean(state.settings.autoCaptureResponses);
+    autoCaptureResponsesLabel.textContent = t.autoCaptureResponsesLabel;
+    autoCaptureResponsesDesc.textContent = state.settings.autoCaptureResponses
+      ? t.autoCaptureResponsesDescEnabled
+      : t.autoCaptureResponsesDescDisabled;
     waitMultiplierLabel.textContent = t.waitMultiplierLabel;
     waitMultiplierRange.value = String(state.settings.waitMsMultiplier);
     waitMultiplierValue.textContent = t.waitMultiplierValue(
@@ -53,6 +61,7 @@ export function createPopupStorageController(
     try {
       const [
         history,
+        comparisonNotes,
         favorites,
         variableCache,
         runtimeSites,
@@ -64,6 +73,7 @@ export function createPopupStorageController(
         settings,
       ] = await Promise.all([
         getPromptHistory(),
+        getComparisonNotes(),
         getPromptFavorites(),
         getTemplateVariableCache(),
         getRuntimeSites(),
@@ -76,6 +86,7 @@ export function createPopupStorageController(
       ]);
 
       state.history = history;
+      state.comparisonNotes = comparisonNotes;
       state.favorites = favorites;
       state.templateVariableCache = variableCache;
       state.runtimeSites = sortSitesByOrder(runtimeSites, settings.siteOrder);
@@ -114,6 +125,7 @@ export function createPopupStorageController(
     try {
       const [
         history,
+        comparisonNotes,
         favorites,
         variableCache,
         runtimeSites,
@@ -122,6 +134,7 @@ export function createPopupStorageController(
         settings,
       ] = await Promise.all([
         getPromptHistory(),
+        getComparisonNotes(),
         getPromptFavorites(),
         getTemplateVariableCache(),
         getRuntimeSites(),
@@ -131,6 +144,7 @@ export function createPopupStorageController(
       ]);
 
       state.history = history;
+      state.comparisonNotes = comparisonNotes;
       state.favorites = favorites;
       state.templateVariableCache = variableCache;
       state.runtimeSites = sortSitesByOrder(runtimeSites, settings.siteOrder);

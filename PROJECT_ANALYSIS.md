@@ -267,9 +267,9 @@ prompt-broadcaster/
 - `src/options/core/service-filter.ts`
   - history service filter option 동기화
 - `src/options/features/dashboard.ts`
-  - 메트릭 카드/차트 데이터
+  - 4개 핵심 카드, 최근 활동, 확인 필요 항목, 접힌 고급 통계 렌더링
 - `src/options/features/dashboard-metrics.ts`
-  - heatmap / service trend / failure reason / strategy summary 집계
+  - 최근 전송/성공률, 최근 활동, 사용 비율, 7일 카운트, 실패 원인 집계
 - `src/options/features/history.ts` + `src/options/features/history/*`
   - 히스토리 필터, 페이지네이션, bulk delete, 상세 모달
 - `src/options/features/schedules.ts` + `src/options/features/schedules/*`
@@ -537,7 +537,8 @@ siteResults / history / lastBroadcast 업데이트
 
 - `appSettings.siteOrder`는 runtime site 전체 순서를 저장하고 popup compose 서비스 카드, favorite editor 대상 체크리스트, options 서비스 목록에 동일 적용된다.
 - options `Services`는 drag-and-drop 대신 `Move up` / `Move down`으로 접근성 있는 순서 편집을 제공한다.
-- options `Dashboard`는 기본 overview 카드 외에 요일×시간대 heatmap, 서비스 성공률 추이, 상위 실패 원인, `strategyStats` 요약을 함께 렌더링한다.
+- options `Dashboard`는 최근 전송, 최근 성공률, 저장된 AI 응답 수, 확인 필요 서비스를 기본 화면에 먼저 렌더링한다. 사용 비율, 최근 7일 카운트, 상위 실패 원인은 접힌 고급 통계 영역으로 낮춘다.
+- `appSettings.autoCaptureResponses` 기본값은 `true`이며, 완료된 broadcast의 submitted 서비스에 대해 실제 사용된 tab id(`targetTabIdsBySiteId`)를 우선 사용해 서비스별 assistant response selector allowlist로 응답을 로컬 `comparisonNotes`에 저장한다.
 
 ---
 
@@ -683,12 +684,12 @@ npm run selector:audit
 - [x] timeout-safe runtime messaging helper
 - [x] router sender trust boundary
 - [x] import/export `v9`
-- [x] comparison notes / prompt experiments / template packs / service groups
+- [x] automatic local AI response capture / prompt experiments / template packs / service groups
 - [x] real extension-page E2E (`qa:extension`)
 - [x] 상세 import 리포트
 - [x] background mutation chain
 - [x] `siteOrder` 기반 서비스 순서 커스터마이징
-- [x] dashboard heatmap / trend / failure / strategy summary
+- [x] simplified dashboard cards / recent activity / action list / advanced stats
 - [x] reset-data 일원화
 
 ### UI/문서화/리팩터링

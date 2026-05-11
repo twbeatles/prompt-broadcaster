@@ -76,7 +76,7 @@ To package a release zip:
 - `src/options/core/`: shared status, navigation, data refresh, and filter helpers
 - `src/options/features/`: dashboard, history, schedules, services, and settings sections
 - `src/options/features/history/`, `settings/`, `schedules/`: nested section modules for rendering, actions, export/import, and modal flows
-- `src/options/features/dashboard-metrics.ts`: pure dashboard aggregation for cards, heatmap, trends, failures, and strategy summary
+- `src/options/features/dashboard-metrics.ts`: pure dashboard aggregation for the four summary cards, recent activity, actions, usage share, recent daily counts, and failures
 - `src/options/features/schedule-summary.ts`: pure scheduled-run summary helper used by options schedules UI
 - `src/options/ui/charts.ts`: chart rendering
 - `src/background/app/bootstrap.ts` + `src/background/app/bootstrap/{tab-targets,runtime-events}.ts`: service worker composition root plus tab-routing and listener-registration helpers
@@ -170,7 +170,7 @@ When `chrome.action.openPopup()` fails because Chrome has no active browser wind
 - Popup composer restore is `popupPromptIntent -> composeDraftPrompt -> lastSentPrompt`, and popup handoff is consumed after one use.
 - Quick palette uses `Alt+Shift+F`, matches popup favorite search across title/text/folder/tags/`#tag`, and falls back to popup handoff when additional inputs are required.
 - Options `Services` supports accessible `Move up` / `Move down` ordering controls, persisted through `appSettings.siteOrder`.
-- Options `Dashboard` now renders a weekday/hour heatmap, per-service success trends, top failure reasons, and a strategy summary in addition to the original overview cards.
+- Options `Dashboard` now renders four beginner-facing cards, recent activity, next actions, and a collapsed advanced stats area for usage share, recent daily counts, and top failure reasons.
 
 ### Selector checker
 Runs on supported pages and reports `ok`, `selector_missing`, or `auth_page` back to the background worker.
@@ -178,7 +178,7 @@ Runs on supported pages and reports `ok`, `selector_missing`, or `auth_page` bac
 Popup uses confirmed `failedSelectors` only, so pending selector noise never shows a warning badge.
 
 ### Release verification
-Use `docs/release-selector-verification-checklist.md` before shipping selector or route changes. Built-in checks should cover logged-out/auth route, canonical logged-in route, locale, prompt surface, submit surface, and whether the service is soft-gated.
+Update selector verification evidence such as `docs/selector-verification-2026-05-11.md` before shipping selector or route changes. Built-in checks should cover logged-out/auth route, canonical logged-in route, locale, prompt surface, submit surface, and whether the service is soft-gated.
 
 ### Toast styling
 Toast CSS is injected by `src/popup/ui/toast.ts`.
@@ -205,7 +205,7 @@ npm run qa:extension
 npm run selector:audit
 ```
 
-`docs:check` guards README/CLAUDE/build/architecture/export-version drift. `qa:extension` loads the built `dist/` extension in Chromium and covers options navigation, experiment execution limits, history comparison notes, template packs, service groups, and popup fallback behavior. It runs headed by default; set `APB_E2E_HEADLESS=1` only when the local Chromium build supports MV3 extension workers in headless mode.
+`docs:check` guards README/CLAUDE/build/architecture/export-version drift plus local AI response storage wording. `qa:extension` loads the built `dist/` extension in Chromium and covers options navigation, experiment execution limits, saved AI responses, template packs, service groups, and popup fallback behavior. It runs headed by default; set `APB_E2E_HEADLESS=1` only when the local Chromium build supports MV3 extension workers in headless mode.
 
 Smoke coverage includes:
 
@@ -231,7 +231,7 @@ Smoke coverage includes:
 - quick palette filtering parity with popup favorite search and execution handoff
 - favorite chain/schedule normalization for legacy imports
 - scheduled-run summary isolation from manual runs
-- dashboard metrics for heatmap, trend, failure reasons, and strategy summary
+- dashboard metrics for recent activity, action items, usage share, recent daily counts, and failure reasons
 - favorites search across title, text, tags, and folders
 - per-service override template resolution and retry prompt preservation
 - CSV export formula escaping

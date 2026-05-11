@@ -113,14 +113,14 @@ The smoke flow loads local fixtures from `qa/fixtures/` and validates the built 
 - CSV export escaping for spreadsheet formula-leading values
 - pending broadcast state accumulation across sequential site completions with structured `siteResults`
 - adaptive strategy-stat accumulation for injector attempts
-- dashboard metrics for heatmap, trends, failure reasons, and strategy summary
+- dashboard metrics for recent activity, saved AI responses, next actions, usage share, recent daily counts, and failure reasons
 - reusable-tab preflight filtering for auth/settings/non-input tabs
 - reset helper cleanup across local and session runtime state
 
 The smoke suite still does not cover full live Chrome popup behavior such as real-window open-tab discovery or explicit tab targeting. Check those manually in a real browser window before release.
 Run `npm run build` first and then `npm run qa:smoke` after the build finishes. The smoke script reads the built files from `dist/` and should not be started in parallel with the build.
 
-Run `npm run qa:extension` after `npm run build` when you need a real extension-page E2E pass. It loads `dist/` into a persistent Chromium profile under `output/extension-e2e/`, opens options and popup pages, and verifies experiments, comparison notes, service groups, and template packs. The script runs headed by default because Chromium extension service workers are not reliable in legacy headless mode; set `APB_E2E_HEADLESS=1` only when the local Chromium build supports extension workers in headless mode.
+Run `npm run qa:extension` after `npm run build` when you need a real extension-page E2E pass. It loads `dist/` into a persistent Chromium profile under `output/extension-e2e/`, opens options and popup pages, and verifies experiments, saved AI responses, service groups, and template packs. The script runs headed by default because Chromium extension service workers are not reliable in legacy headless mode; set `APB_E2E_HEADLESS=1` only when the local Chromium build supports extension workers in headless mode.
 
 Use the Playwright-based selector audit when you want a Markdown snapshot of the current built-in site surfaces:
 
@@ -200,7 +200,7 @@ The generated ZIP contains the built extension from `dist/` only.
    Confirm that auth pages, settings pages, unsupported routes, and tabs without a usable prompt surface are not offered as reusable targets
 11. Verify prompt submission on all built-in services, with dedicated checks for Claude click-submit behavior and Perplexity conditional submit behavior
    For Perplexity specifically, confirm that the prompt is inserted once into `#ask-input[data-lexical-editor='true']` and that submission still succeeds through the standard submit path
-12. Walk through [release-selector-verification-checklist.md](release-selector-verification-checklist.md) for every built-in touched by the release
+12. Update selector verification evidence such as [selector-verification-2026-05-11.md](selector-verification-2026-05-11.md) for every built-in touched by the release
 13. Verify that a per-service prompt override with template variables resolves correctly and that retry reuses the originally rendered prompt even after editing the popup text
 14. Add, import, delete, and reset a custom service and confirm optional host permissions are batch-requested, import aborts when any required origin stays denied, and cleanup only removes unused origins after commit
 15. Confirm that popup sorting, favorite duplication, resend-service selection, import-report modals, and the integrated favorite editor all behave correctly
@@ -212,7 +212,7 @@ The generated ZIP contains the built extension from `dist/` only.
 19. Confirm popup fallback resumes automatically when only popup-resolvable context was missing, and opens the editor only when user-variable input is still required
 20. Confirm that cancelling a broadcast leaves reused tabs open and closes only newly opened tabs
    Also confirm that stale explicit-tab targets fail with `tab_closed` semantics instead of silently falling back to another tab or a new tab
-21. In options `Dashboard`, confirm the heatmap, service trend, top failure reason, and strategy summary panels render with sane labels and escaped content
+21. In options `Dashboard`, confirm the four summary cards, recent activity, next actions, saved AI response count, and collapsed advanced stats render with sane labels and escaped content
 22. In options `Services`, reorder services with `Move up` / `Move down` and confirm the same order appears in popup compose and favorite editor target checklists
 23. Trigger **Reset data** and confirm it clears both local prompt data and in-memory/session runtime state, including `pendingSelectorChecks`, `activeComparisonContext`, and strategy stats
 24. Run the packaging script for your platform
@@ -244,7 +244,7 @@ Before uploading, run these manual checks in a real Chrome window:
 - custom-service add/import/delete/reset keeps optional host permissions aligned with `url + hostnameAliases`
 - per-service override retry still sends the originally resolved prompt
 - reusable-tab discovery excludes auth/settings/non-input tabs
-- options dashboard analytics panels render without broken labels or escaping issues
+- options dashboard summary cards, recent activity, action list, response count, and advanced stats render without broken labels or escaping issues
 - options services ordering persists across reopen and affects popup/favorite editor service order
 - reset-data clears both local prompt data and session runtime state
 - options page, history, favorites, and service editor text render correctly in Korean
@@ -293,6 +293,6 @@ Before uploading, run these manual checks in a real Chrome window:
 ## Related Docs
 
 - Architecture: [extension-architecture.md](extension-architecture.md)
-- Release selector checklist: [release-selector-verification-checklist.md](release-selector-verification-checklist.md)
+- Selector verification evidence: [selector-verification-2026-05-11.md](selector-verification-2026-05-11.md)
 - Web Store checklist: [web_store_checklist.md](web_store_checklist.md)
 - Privacy policy draft: [privacy-policy.md](privacy-policy.md)

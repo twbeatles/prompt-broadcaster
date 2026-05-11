@@ -90,19 +90,23 @@ function buildCompareWorkspaceMarkup(entry: PromptHistoryItem): string {
     return `<option value="${escapeHTML(siteId)}">${escapeHTML(site?.name || siteId)}</option>`;
   }).join("");
   const notesMarkup = notes.length
-    ? notes.map((note) => {
+    ? notes.map((note, index) => {
       const site = state.runtimeSites.find((siteEntry) => siteEntry.id === note.serviceId);
+      const preview = note.responseText.length > 500
+        ? `${note.responseText.slice(0, 500).trim()}...`
+        : note.responseText;
       return `
-        <article class="compare-note">
-          <div class="section-head-row">
-            <div>
-              <strong>${escapeHTML(site?.name || note.serviceId)}</strong>
-              <div class="helper">${escapeHTML(note.captureMode)} · ${escapeHTML(formatDateTime(note.updatedAt))}${note.rating ? ` · ${note.rating}/5` : ""}</div>
-            </div>
+        <details class="compare-note" ${index === 0 ? "open" : ""}>
+          <summary>
+            <span class="compare-note-title">${escapeHTML(site?.name || note.serviceId)}</span>
+            <span class="helper">${escapeHTML(note.captureMode)} | ${escapeHTML(formatDateTime(note.updatedAt))}</span>
+            <span class="compare-note-preview">${escapeHTML(preview)}</span>
+          </summary>
+          <pre class="modal-prompt">${escapeHTML(note.responseText)}</pre>
+          <div class="settings-actions">
             <button class="btn danger ghost" type="button" data-comparison-delete="${escapeHTML(note.id)}">${escapeHTML(t.comparison.delete)}</button>
           </div>
-          <pre class="modal-prompt">${escapeHTML(note.responseText)}</pre>
-        </article>
+        </details>
       `;
     }).join("")
     : `<div class="empty-state">${escapeHTML(t.comparison.empty)}</div>`;
@@ -112,7 +116,6 @@ function buildCompareWorkspaceMarkup(entry: PromptHistoryItem): string {
       <h3 class="result-comparison-title">${escapeHTML(t.comparison.title)}</h3>
       <div class="filter-row">
         <select data-comparison-service>${serviceOptions}</select>
-        <input data-comparison-rating type="number" min="1" max="5" placeholder="${escapeHTML(t.comparison.ratingPlaceholder)}" />
       </div>
       <textarea data-comparison-text rows="5" placeholder="${escapeHTML(t.comparison.textPlaceholder)}"></textarea>
       <div class="settings-actions">
@@ -147,7 +150,6 @@ function bindCompareWorkspaceEvents(comparisonEl: HTMLElement, entry: PromptHist
       entry.requestedSiteIds?.[0] ||
       "";
     const responseText = workspace.querySelector<HTMLTextAreaElement>("[data-comparison-text]")?.value || "";
-    const ratingValue = Number(workspace.querySelector<HTMLInputElement>("[data-comparison-rating]")?.value);
 
     if (target?.closest("[data-comparison-service]")) {
       void setActiveComparisonContext({
@@ -165,7 +167,7 @@ function bindCompareWorkspaceEvents(comparisonEl: HTMLElement, entry: PromptHist
           serviceId,
           responseText,
           captureMode: "manual",
-          rating: Number.isFinite(ratingValue) ? ratingValue : null,
+          rating: null,
           tags: [],
         },
       }, 8000).then(async (response) => {

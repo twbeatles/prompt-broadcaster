@@ -1,5 +1,6 @@
 import type {
   AppSettings,
+  BroadcastComparisonNote,
   FavoritePrompt,
   FavoriteRunJobRecord,
   FailedSelectorRecord,
@@ -86,6 +87,7 @@ export interface ServiceEditorState {
 export interface PopupState {
   activeTab: "compose" | "history" | "favorites" | "settings";
   history: PromptHistoryItem[];
+  comparisonNotes: BroadcastComparisonNote[];
   favorites: FavoritePrompt[];
   historySearch: string;
   favoritesSearch: string;

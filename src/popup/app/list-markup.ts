@@ -4,6 +4,7 @@ import type {
   FavoriteRunJobRecord,
   ImportSummary,
   PromptHistoryItem,
+  BroadcastComparisonNote,
   RuntimeSite,
 } from "../../shared/types/models";
 import { msg, t } from "./i18n";
@@ -46,14 +47,25 @@ export function buildHistoryItemMarkup(
   item: PromptHistoryItem,
   options: {
     openMenuKey?: string | null;
+    comparisonNotes?: BroadcastComparisonNote[];
     runtimeSites?: RuntimeSite[];
   } = {},
 ): string {
   const {
     openMenuKey = null,
+    comparisonNotes = [],
     runtimeSites = [],
   } = options;
   const menuKey = `history:${item.id}`;
+  const responseCount = comparisonNotes.filter(
+    (note) => Number(note.historyId) === Number(item.id),
+  ).length;
+  const responseBadge = responseCount > 0
+    ? `<span class="response-badge">${escapeHtml(
+      msg("popup_history_response_count", [String(responseCount)]) ||
+      `${responseCount} responses`,
+    )}</span>`
+    : "";
 
   return `
     <article class="prompt-item" data-history-id="${item.id}" role="listitem">
@@ -61,12 +73,14 @@ export function buildHistoryItemMarkup(
         <div class="prompt-preview">${escapeHtml(previewText(item.text))}</div>
         <div class="prompt-meta">
           <div class="service-icons">${renderServiceBadges(getHistorySelectedSiteIds(item), runtimeSites)}</div>
+          ${responseBadge}
           <span>${escapeHtml(formatDate(item.createdAt))}</span>
         </div>
       </button>
       <div class="prompt-actions">
         <button class="menu-button" type="button" aria-haspopup="menu" aria-expanded="${openMenuKey === menuKey ? "true" : "false"}" aria-label="${escapeAttribute(t.menuMore)}" data-toggle-menu="${escapeAttribute(menuKey)}">...</button>
         <div class="item-menu ${openMenuKey === menuKey ? "open" : ""}">
+          <button class="menu-item" type="button" data-action="view-responses" data-history-id="${item.id}">${escapeHtml(msg("popup_history_view_responses") || "View responses")}</button>
           <button class="menu-item" type="button" data-action="resend-history" data-history-id="${item.id}">${escapeHtml(t.historyResend)}</button>
           <button class="menu-item" type="button" data-action="favorite" data-history-id="${item.id}">${escapeHtml(t.addFavorite)}</button>
           <button class="menu-item danger" type="button" data-action="delete-history" data-history-id="${item.id}">${escapeHtml(t.delete)}</button>

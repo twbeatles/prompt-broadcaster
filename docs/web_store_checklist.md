@@ -98,7 +98,7 @@ npm run qa:extension
 npm run selector:audit
 ```
 
-`docs:check`는 README/CLAUDE/build/architecture/roadmap/export version 정합성을 검증합니다. `qa:smoke`는 `dist/` 기준 주입/전송 경로를 로컬 fixture로 검증합니다. 여기에는 custom service optional permission 정리, import repair, `broadcastCounter` 수명주기, 즐겨찾기 검색 범위, favorite run job dedupe, clipboard/context 준비 경로도 포함됩니다. `qa:extension`은 빌드된 확장 페이지를 Chromium에 로드해 options navigation, experiment cap, history comparison note, template pack, service group, popup fallback을 검사합니다. `selector:audit`는 built-in 사이트의 현재 surface를 Markdown으로 남깁니다. 다만 실제 Chrome 툴바 팝업 동작, 열린 탭 재사용, 실서비스 Claude logged-in composer 전송 성공 여부는 수동 검수가 필요합니다.
+`docs:check`는 README/CLAUDE/build/architecture/roadmap/export version과 AI response 로컬 저장 설명의 정합성을 검증합니다. `qa:smoke`는 `dist/` 기준 주입/전송 경로를 로컬 fixture로 검증합니다. 여기에는 custom service optional permission 정리, import repair, `broadcastCounter` 수명주기, 즐겨찾기 검색 범위, favorite run job dedupe, clipboard/context 준비 경로도 포함됩니다. `qa:extension`은 빌드된 확장 페이지를 Chromium에 로드해 options navigation, experiment cap, saved AI responses, template pack, service group, popup fallback을 검사합니다. `selector:audit`는 built-in 사이트의 현재 surface를 Markdown으로 남깁니다. 다만 실제 Chrome 툴바 팝업 동작, 열린 탭 재사용, 실서비스 Claude logged-in composer 전송 성공 여부는 수동 검수가 필요합니다.
 
 ### 로컬 테스트
 
@@ -147,7 +147,7 @@ bash ./package.sh
 - ChatGPT, Gemini, Claude, Grok, Perplexity에 각각 한 번씩 실제 전송을 시도하고 특히 Claude와 Perplexity의 전송 버튼 경로를 확인
 - 현재 창의 열린 AI 탭 재사용 설정과 서비스별 특정 탭 선택 UI를 확인
 - options `Services`에서 서비스 순서를 바꾼 뒤 popup compose와 favorite editor에도 같은 순서가 반영되는지 확인
-- options `Dashboard`의 heatmap / success trend / failure / strategy summary 패널이 깨지지 않는지 확인
+- options `Dashboard`의 4개 핵심 카드, 최근 활동, 확인 필요, 접힌 고급 통계, 저장된 AI response 표시가 깨지지 않는지 확인
 - `{{clipboard}}`, `{{url}}`, `{{selection}}`가 포함된 즐겨찾기를 popup과 quick palette/options fallback 경로에서 각각 확인
 - options `Schedules`에서 최근 scheduled 실행 시각 / 상태 / 실패 상세가 manual run과 분리되어 유지되는지 확인
 - 커스텀 서비스 추가/삭제/리셋 후 optional host permission이 필요한 origin에만 남는지 확인

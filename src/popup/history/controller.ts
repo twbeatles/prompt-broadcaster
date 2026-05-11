@@ -27,6 +27,7 @@ function filterItems(items: PromptHistoryItem[], query: string): PromptHistoryIt
 interface HistoryControllerDeps {
   switchTab: (tabId: "compose" | "history" | "favorites" | "settings") => void;
   loadPromptIntoComposer: (item: PromptHistoryItem & { templateDefaults: Record<string, string>; title: string }) => void;
+  openResponsesModal: (item: PromptHistoryItem) => void;
   openResendModal: (item: PromptHistoryItem) => void;
   renderFavoritesList: () => void;
   setStatus: (text: string, type?: string) => void;
@@ -37,6 +38,7 @@ export function createHistoryController(deps: HistoryControllerDeps) {
   const {
     switchTab,
     loadPromptIntoComposer,
+    openResponsesModal,
     openResendModal,
     renderFavoritesList,
     setStatus,
@@ -59,6 +61,7 @@ export function createHistoryController(deps: HistoryControllerDeps) {
     historyList.innerHTML = items
       .map((item) => buildHistoryItemMarkup(item, {
         openMenuKey: state.openMenuKey,
+        comparisonNotes: state.comparisonNotes,
         runtimeSites: state.runtimeSites,
       }))
       .join("");
@@ -85,6 +88,13 @@ export function createHistoryController(deps: HistoryControllerDeps) {
       state.openMenuKey = null;
       renderHistoryList();
       openResendModal(item);
+      return;
+    }
+
+    if (action === "view-responses") {
+      state.openMenuKey = null;
+      renderHistoryList();
+      openResponsesModal(item);
       return;
     }
 

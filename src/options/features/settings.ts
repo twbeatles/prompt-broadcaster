@@ -15,6 +15,9 @@ const {
   historyLimitNote,
   autoCloseToggle,
   desktopNotificationToggle,
+  autoCaptureToggle,
+  autoCaptureSettingTitle,
+  autoCaptureSettingDesc,
   reuseTabsToggle,
   reuseTabsSettingTitle,
   reuseTabsSettingDesc,
@@ -37,6 +40,9 @@ export function applySettingsToControls() {
   historyLimitNote.textContent = chrome.i18n.getMessage("options_settings_history_limit_note") || historyLimitNote.textContent;
   autoCloseToggle.checked = state.settings.autoClosePopup;
   desktopNotificationToggle.checked = state.settings.desktopNotifications;
+  autoCaptureToggle.checked = state.settings.autoCaptureResponses;
+  autoCaptureSettingTitle.textContent = t.settings.autoCaptureTitle;
+  autoCaptureSettingDesc.textContent = t.settings.autoCaptureDesc;
   reuseTabsToggle.checked = state.settings.reuseExistingTabs;
   reuseTabsSettingTitle.textContent = t.settings.reuseTabsTitle;
   reuseTabsSettingDesc.textContent = t.settings.reuseTabsDesc;
@@ -88,6 +94,14 @@ export function bindSettingsEvents({ loadData }) {
   desktopNotificationToggle.addEventListener("change", (event) => {
     void saveSettings({ desktopNotifications: event.target.checked }).catch((error) => {
       console.error("[AI Prompt Broadcaster] Failed to save desktop notification setting.", error);
+      setStatus(error?.message ?? t.saveFailed, "error");
+      showAppToast(error?.message ?? t.saveFailed, "error", 3000);
+    });
+  });
+
+  autoCaptureToggle.addEventListener("change", (event) => {
+    void saveSettings({ autoCaptureResponses: event.target.checked }).catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to save response capture setting.", error);
       setStatus(error?.message ?? t.saveFailed, "error");
       showAppToast(error?.message ?? t.saveFailed, "error", 3000);
     });

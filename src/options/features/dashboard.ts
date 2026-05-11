@@ -2,38 +2,24 @@
 import { escapeHTML } from "../../shared/security";
 import { optionsDom } from "../app/dom";
 import { formatShortDate } from "../app/helpers";
-import { locale, t } from "../app/i18n";
+import { msg, t } from "../app/i18n";
 import { state } from "../app/state";
 import {
   buildBarChartMarkup,
   buildDonutMarkup,
-  buildHeatmapMarkup,
-  buildTrendMarkup,
   createEmptyState,
 } from "../ui/charts";
+import { switchSection } from "../core/navigation";
 import { buildDashboardMetrics } from "./dashboard-metrics";
 
 const {
-  activityHeatmap,
   dailyBarChart,
   dashboardCards,
+  dashboardRecentActivity,
+  dashboardNextActions,
   failureReasons,
-  onboardingChecklist,
   serviceDonut,
-  serviceTrend,
-  strategySummary,
 } = optionsDom.dashboard;
-
-function getWeekdayLabels() {
-  const formatter = new Intl.DateTimeFormat(locale, { weekday: "short" });
-  const monday = new Date("2026-01-05T00:00:00");
-
-  return Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(monday);
-    date.setDate(monday.getDate() + index);
-    return formatter.format(date);
-  });
-}
 
 function formatDailyLabel(dateKey) {
   return formatShortDate(`${dateKey}T00:00:00`);
@@ -41,12 +27,15 @@ function formatDailyLabel(dateKey) {
 
 function buildFailureReasonsMarkup(items) {
   if (!Array.isArray(items) || items.length === 0) {
-    return createEmptyState(t.charts.noFailure);
+    return "";
   }
 
   return `
+    <div class="section-head dashboard-advanced-head">
+      <h2>${escapeHTML(msg("options_chart_failure_title") || "Failures")}</h2>
+    </div>
     <div class="summary-list">
-      ${items.slice(0, 6).map((item) => {
+      ${items.slice(0, 3).map((item) => {
         const label = t.settings.resultCodeLabels[item.code] || item.code;
         return `
           <div class="summary-row">
@@ -62,64 +51,127 @@ function buildFailureReasonsMarkup(items) {
   `;
 }
 
-function buildStrategySummaryMarkup(items) {
-  if (!Array.isArray(items) || items.length === 0) {
-    return createEmptyState(t.charts.noStrategy);
-  }
-
-  return `
-    <div class="summary-list">
-      ${items.slice(0, 6).map((item) => `
-        <div class="summary-row">
-          <div class="summary-copy">
-            <strong>${escapeHTML(item.label)}</strong>
-            <span>${escapeHTML(`${t.charts.bestStrategyLabel}: ${item.bestStrategy || "-"}`)}</span>
-          </div>
-          <div class="summary-meta">
-            ${escapeHTML(`${item.totalAttempts} ${t.charts.attemptsLabel}`)}
-            <br />
-            ${escapeHTML(`${item.bestSuccessRate}%`)}
-          </div>
-        </div>
-      `).join("")}
-    </div>
-  `;
+function getHistoryNoteCount(historyId) {
+  return state.comparisonNotes.filter((note) => Number(note.historyId) === Number(historyId)).length;
 }
 
-function renderOnboardingChecklist() {
-  if (!onboardingChecklist) {
+function getSubmittedWithoutResponseCount(entry) {
+  const submitted = Array.isArray(entry.submittedSiteIds) ? entry.submittedSiteIds : [];
+  const notes = new Set(
+    state.comparisonNotes
+      .filter((note) => Number(note.historyId) === Number(entry.id))
+      .map((note) => note.serviceId),
+  );
+  return submitted.filter((siteId) => !notes.has(siteId)).length;
+}
+
+function buildRecentActivityMarkup(items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return createEmptyState(msg("options_dashboard_no_recent") || "No sends yet.");
+  }
+
+  return items.map((item) => {
+    const noteCount = getHistoryNoteCount(item.id);
+    const missing = getSubmittedWithoutResponseCount(item);
+    const status = item.failedSiteIds.length > 0
+      ? (msg("options_dashboard_status_needs_check") || "Needs check")
+      : (msg("options_dashboard_status_sent") || "Sent");
+    const responseLabel = noteCount > 0
+      ? (msg("options_dashboard_response_count", [String(noteCount)]) || `${noteCount} responses`)
+      : missing > 0
+        ? (msg("options_dashboard_response_missing") || "Response not saved")
+        : (msg("options_dashboard_response_not_needed") || "No response yet");
+
+    return `
+      <article class="dashboard-row">
+        <div class="dashboard-row-main">
+          <strong>${escapeHTML(item.text || "-")}</strong>
+          <span>${escapeHTML(formatShortDate(item.createdAt))} | ${escapeHTML(status)}</span>
+        </div>
+        <span class="dashboard-pill ${noteCount > 0 ? "success" : missing > 0 ? "warning" : ""}">${escapeHTML(responseLabel)}</span>
+      </article>
+    `;
+  }).join("");
+}
+
+function buildActionItems(metrics) {
+  const items = [];
+  const serviceNeedsCheck = state.serviceHealthSnapshots.filter((snapshot) => {
+    if (snapshot.selectorWarning) {
+      return true;
+    }
+    if (!snapshot.lastFailureAt) {
+      return false;
+    }
+    return !snapshot.lastSuccessAt || Date.parse(snapshot.lastFailureAt) > Date.parse(snapshot.lastSuccessAt);
+  });
+  const latestMissingResponse = metrics.recentItems.find((item) => getSubmittedWithoutResponseCount(item) > 0);
+
+  if (serviceNeedsCheck.length > 0) {
+    items.push({
+      kind: "service",
+      label: msg("options_dashboard_action_service") || "Check service status",
+      detail: msg("options_dashboard_action_service_desc", [String(serviceNeedsCheck.length)]) || `${serviceNeedsCheck.length} service(s) need attention.`,
+      section: "services",
+    });
+  }
+
+  if (latestMissingResponse) {
+    items.push({
+      kind: "response",
+      label: msg("options_dashboard_action_response") || "Save missing responses",
+      detail: msg("options_dashboard_action_response_desc") || "Open history to capture or paste AI responses.",
+      section: "history",
+    });
+  }
+
+  if (!state.settings.autoCaptureResponses) {
+    items.push({
+      kind: "setting",
+      label: msg("options_dashboard_action_auto_capture") || "Turn on response saving",
+      detail: msg("options_dashboard_action_auto_capture_desc") || "Automatic response saving is currently off.",
+      section: "settings",
+    });
+  }
+
+  if (items.length === 0) {
+    items.push({
+      kind: "ready",
+      label: msg("options_dashboard_action_ready") || "Ready for the next send",
+      detail: msg("options_dashboard_action_ready_desc") || "No urgent action is needed right now.",
+      section: "history",
+    });
+  }
+
+  return items;
+}
+
+function buildNextActionsMarkup(metrics) {
+  return buildActionItems(metrics).map((item) => `
+    <article class="dashboard-row action-row">
+      <div class="dashboard-row-main">
+        <strong>${escapeHTML(item.label)}</strong>
+        <span>${escapeHTML(item.detail)}</span>
+      </div>
+      <button class="btn ghost" type="button" data-dashboard-section="${escapeHTML(item.section)}">${escapeHTML(msg("options_dashboard_open") || "Open")}</button>
+    </article>
+  `).join("");
+}
+
+function bindDashboardClicks() {
+  const section = document.getElementById("section-dashboard");
+  if (!section) {
     return;
   }
 
-  const checks = [
-    {
-      label: "Send your first broadcast",
-      done: state.history.length > 0,
-    },
-    {
-      label: "Save a reusable favorite",
-      done: state.favorites.length > 0,
-    },
-    {
-      label: "Review selector health",
-      done: state.serviceHealthSnapshots.some((item) => item.lastSuccessAt || item.selectorWarning),
-    },
-    {
-      label: "Create a service group",
-      done: state.serviceGroups.length > 0,
-    },
-    {
-      label: "Save a comparison note",
-      done: state.comparisonNotes.length > 0,
-    },
-  ];
-
-  onboardingChecklist.innerHTML = checks.map((check) => `
-    <label class="checkbox-inline">
-      <input type="checkbox" ${check.done ? "checked" : ""} disabled />
-      <span>${escapeHTML(check.label)}</span>
-    </label>
-  `).join("");
+  section.onclick = (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const button = target?.closest("[data-dashboard-section]");
+    const sectionId = button?.getAttribute("data-dashboard-section");
+    if (sectionId) {
+      switchSection(sectionId);
+    }
+  };
 }
 
 export function renderDashboard() {
@@ -129,15 +181,14 @@ export function renderDashboard() {
     state.strategyStats,
   );
   const cards = [
-    { label: t.cards.totalTransmissions, value: metrics.totalTransmissions },
-    { label: t.cards.mostUsedService, value: metrics.mostUsedService },
-    { label: t.cards.weekCount, value: metrics.weekCount },
-    { label: t.cards.averagePromptLength, value: `${metrics.averagePromptLength} ${t.cards.charSuffix}` },
-    { label: "Comparison notes", value: state.comparisonNotes.length },
-    { label: "Prompt experiments", value: state.promptExperiments.length },
+    { label: msg("options_dashboard_card_recent") || "Recent sends", value: metrics.weekCount },
+    { label: msg("options_dashboard_card_success") || "Recent success", value: `${metrics.recentSuccessRate}%` },
+    { label: msg("options_dashboard_card_responses") || "Saved responses", value: state.comparisonNotes.length },
+    { label: msg("options_dashboard_card_actions") || "Needs attention", value: buildActionItems(metrics).filter((item) => item.kind !== "ready").length },
   ];
 
-  dashboardCards.innerHTML = cards
+  if (dashboardCards) {
+    dashboardCards.innerHTML = cards
     .map(
       (card) => `
         <article class="card">
@@ -147,15 +198,26 @@ export function renderDashboard() {
       `,
     )
     .join("");
-  renderOnboardingChecklist();
+  }
 
-  serviceDonut.innerHTML = buildDonutMarkup(metrics.donutItems, {
+  if (dashboardRecentActivity) {
+    dashboardRecentActivity.innerHTML = buildRecentActivityMarkup(metrics.recentItems);
+  }
+
+  if (dashboardNextActions) {
+    dashboardNextActions.innerHTML = buildNextActionsMarkup(metrics);
+  }
+
+  if (serviceDonut) {
+    serviceDonut.innerHTML = buildDonutMarkup(metrics.donutItems, {
     noUsage: t.charts.noUsage,
     totalSent: t.charts.totalSent,
     donutAria: t.charts.donutAria,
-  });
+    });
+  }
 
-  dailyBarChart.innerHTML = buildBarChartMarkup(
+  if (dailyBarChart) {
+    dailyBarChart.innerHTML = buildBarChartMarkup(
     metrics.dailyCounts.map((item) => ({
       ...item,
       label: formatDailyLabel(item.key),
@@ -164,34 +226,12 @@ export function renderDashboard() {
       noDaily: t.charts.noDaily,
       barAria: t.charts.barAria,
     },
-  );
+    );
+  }
 
-  activityHeatmap.innerHTML = buildHeatmapMarkup(
-    metrics.heatmap.rows.map((row) => ({
-      ...row,
-      label: getWeekdayLabels()[row.dayIndex] ?? `D${row.dayIndex + 1}`,
-    })),
-    {
-      noHeatmap: t.charts.noHeatmap,
-      heatmapAria: t.charts.heatmapAria,
-      hourLabel: t.charts.hourLabel,
-    },
-  );
+  if (failureReasons) {
+    failureReasons.innerHTML = buildFailureReasonsMarkup(metrics.failureReasonItems);
+  }
 
-  serviceTrend.innerHTML = buildTrendMarkup(
-    metrics.serviceTrendItems.map((item) => ({
-      ...item,
-      dailySeries: (item.dailySeries ?? []).map((point) => ({
-        ...point,
-        label: formatDailyLabel(point.key),
-      })),
-    })),
-    {
-      noTrend: t.charts.noTrend,
-      requestsLabel: t.charts.requestsLabel,
-    },
-  );
-
-  failureReasons.innerHTML = buildFailureReasonsMarkup(metrics.failureReasonItems);
-  strategySummary.innerHTML = buildStrategySummaryMarkup(metrics.strategySummaryItems);
+  bindDashboardClicks();
 }

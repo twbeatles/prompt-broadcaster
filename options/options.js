@@ -455,6 +455,8 @@ var t = {
     waitMultiplierValue: (value) => msg("options_settings_wait_multiplier_value", [String(Number(value).toFixed(1))]) || `${Number(value).toFixed(1)}x`,
     reuseTabsTitle: msg("options_settings_reuse_tabs_title") || "Reuse current-window AI tabs",
     reuseTabsDesc: msg("options_settings_reuse_tabs_desc") || "When enabled, matching open AI tabs are reused before opening a new one.",
+    autoCaptureTitle: msg("options_settings_auto_capture") || "Save AI responses automatically",
+    autoCaptureDesc: msg("options_settings_auto_capture_desc") || "After a send completes, save visible AI responses locally in history.",
     importReportTitle: msg("options_import_report_title") || "Import Details",
     importReportDesc: msg("options_import_report_desc") || "Review the imported items and any rejections.",
     importReportVersion: msg("options_import_report_version") || "Version",
@@ -555,6 +557,7 @@ var DEFAULT_SETTINGS = Object.freeze({
   autoClosePopup: false,
   desktopNotifications: true,
   reuseExistingTabs: true,
+  autoCaptureResponses: true,
   waitMsMultiplier: DEFAULT_WAIT_MS_MULTIPLIER,
   historySort: DEFAULT_HISTORY_SORT,
   favoriteSort: DEFAULT_FAVORITE_SORT,
@@ -728,6 +731,10 @@ function normalizeSettings(value) {
     reuseExistingTabs: normalizeBoolean(
       settings.reuseExistingTabs,
       DEFAULT_SETTINGS.reuseExistingTabs
+    ),
+    autoCaptureResponses: normalizeBoolean(
+      settings.autoCaptureResponses,
+      DEFAULT_SETTINGS.autoCaptureResponses
     ),
     waitMsMultiplier: normalizeWaitMsMultiplier(settings.waitMsMultiplier),
     historySort: normalizeHistorySort(settings.historySort),
@@ -2968,7 +2975,8 @@ var optionsDom = {
   },
   dashboard: {
     dashboardCards: byId("dashboard-cards"),
-    onboardingChecklist: byId("onboarding-checklist"),
+    dashboardRecentActivity: byId("dashboard-recent-activity"),
+    dashboardNextActions: byId("dashboard-next-actions"),
     serviceDonut: byId("service-donut"),
     dailyBarChart: byId("daily-bar-chart"),
     activityHeatmap: byId("activity-heatmap"),
@@ -3022,6 +3030,9 @@ var optionsDom = {
     historyLimitNote: byId("history-limit-note"),
     autoCloseToggle: byId("auto-close-toggle"),
     desktopNotificationToggle: byId("desktop-notification-toggle"),
+    autoCaptureToggle: byId("auto-capture-toggle"),
+    autoCaptureSettingTitle: byId("auto-capture-setting-title"),
+    autoCaptureSettingDesc: byId("auto-capture-setting-desc"),
     reuseTabsToggle: byId("reuse-tabs-toggle"),
     reuseTabsSettingTitle: byId("reuse-tabs-setting-title"),
     reuseTabsSettingDesc: byId("reuse-tabs-setting-desc"),
@@ -3586,56 +3597,27 @@ function buildBarChartMarkup(items, labels) {
     </svg>
   `;
 }
-function buildHeatmapMarkup(rows, labels) {
-  const maxCount = Math.max(...Array.isArray(rows) ? rows.flatMap((row) => row.counts ?? []) : [0], 0);
-  if (!Array.isArray(rows) || rows.length === 0 || maxCount <= 0) {
-    return createEmptyState2(labels.noHeatmap);
-  }
-  const hourHeader = Array.from({ length: 24 }, (_, hour) => `<span>${hour}</span>`).join("");
-  return `
-    <div class="heatmap" role="img" aria-label="${escapeHTML(labels.heatmapAria)}">
-      <div class="heatmap-row heatmap-header">
-        <span>${escapeHTML(labels.hourLabel)}</span>
-        <div class="heatmap-cells">${hourHeader}</div>
-      </div>
-      ${rows.map((row) => `
-        <div class="heatmap-row">
-          <span>${escapeHTML(row.label)}</span>
-          <div class="heatmap-cells">
-            ${(row.counts ?? []).map((count) => {
-    const intensity = maxCount > 0 ? Math.max(0.08, count / maxCount) : 0.08;
-    return `<span class="heatmap-cell" title="${escapeHTML(`${row.label} · ${count}`)}" style="opacity:${intensity}">${count > 0 ? count : ""}</span>`;
-  }).join("")}
-          </div>
-        </div>
-      `).join("")}
-    </div>
-  `;
+
+// src/options/core/navigation.ts
+var { navButtons, pageSections } = optionsDom.navigation;
+function switchSection(sectionId) {
+  state.activeSection = sectionId;
+  navButtons.forEach((button) => {
+    const active = button.dataset.section === sectionId;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
+  });
+  pageSections.forEach((section) => {
+    const active = section.id === `section-${sectionId}`;
+    section.classList.toggle("active", active);
+    section.hidden = !active;
+  });
 }
-function buildTrendMarkup(items, labels) {
-  if (!Array.isArray(items) || items.length === 0) {
-    return createEmptyState2(labels.noTrend);
-  }
-  return `
-    <div class="trend-list">
-      ${items.map((item) => `
-        <div class="trend-card">
-          <div class="trend-head">
-            <strong>${escapeHTML(item.label)}</strong>
-            <span>${item.successRate}%</span>
-          </div>
-          <div class="trend-bars">
-            ${(item.dailySeries ?? []).map((point) => `
-              <span class="trend-bar-wrap" title="${escapeHTML(`${point.label}: ${point.successRate}% (${point.successes}/${point.requests})`)}">
-                <span class="trend-bar" style="height:${Math.max(8, point.successRate)}%"></span>
-              </span>
-            `).join("")}
-          </div>
-          <div class="trend-meta">${escapeHTML(`${item.requestCount} ${labels.requestsLabel}`)}</div>
-        </div>
-      `).join("")}
-    </div>
-  `;
+function bindNavigationEvents() {
+  navButtons.forEach((button) => {
+    button.addEventListener("click", () => switchSection(button.dataset.section));
+  });
 }
 
 // src/shared/date-utils.ts
@@ -3760,7 +3742,17 @@ function buildDashboardMetrics(historyItems = [], runtimeSites = [], strategySta
   });
   const mostUsed = [...serviceCounts.entries()].sort((left, right) => right[1] - left[1])[0];
   const weekStart = getStartOfCurrentWeek(now);
-  const weekCount = history.filter((entry) => new Date(String(entry?.createdAt ?? "")).getTime() >= weekStart.getTime()).length;
+  const recentHistoryItems = history.filter((entry) => new Date(String(entry?.createdAt ?? "")).getTime() >= weekStart.getTime());
+  const weekCount = recentHistoryItems.length;
+  const recentRequestedCount = recentHistoryItems.reduce(
+    (sum, entry) => sum + getRequestedSiteIds(entry).length,
+    0
+  );
+  const recentSubmittedCount = recentHistoryItems.reduce(
+    (sum, entry) => sum + getSubmittedSiteIds(entry).length,
+    0
+  );
+  const recentSuccessRate = recentRequestedCount > 0 ? Math.round(recentSubmittedCount / recentRequestedCount * 100) : 0;
   const averagePromptLength = history.length > 0 ? Math.round(totalPromptLength / history.length) : 0;
   const donutItems = [...serviceCounts.entries()].sort((left, right) => right[1] - left[1]).map(([siteId, count]) => ({
     id: siteId,
@@ -3837,6 +3829,16 @@ function buildDashboardMetrics(historyItems = [], runtimeSites = [], strategySta
     totalTransmissions: history.length,
     mostUsedService: mostUsed ? getSiteLabel2(mostUsed[0], runtimeSites) : "-",
     weekCount,
+    recentSuccessRate,
+    recentItems: history.slice(0, 5).map((entry) => ({
+      id: Number(entry?.id),
+      text: String(entry?.text ?? ""),
+      createdAt: String(entry?.createdAt ?? ""),
+      requestedSiteIds: getRequestedSiteIds(entry),
+      submittedSiteIds: getSubmittedSiteIds(entry),
+      failedSiteIds: normalizeSiteIds(entry?.failedSiteIds),
+      status: String(entry?.status ?? "")
+    })),
     averagePromptLength,
     donutItems,
     dailyCounts,
@@ -3852,34 +3854,26 @@ function buildDashboardMetrics(historyItems = [], runtimeSites = [], strategySta
 
 // src/options/features/dashboard.ts
 var {
-  activityHeatmap,
   dailyBarChart,
   dashboardCards,
+  dashboardRecentActivity,
+  dashboardNextActions,
   failureReasons,
-  onboardingChecklist,
-  serviceDonut,
-  serviceTrend,
-  strategySummary
+  serviceDonut
 } = optionsDom.dashboard;
-function getWeekdayLabels() {
-  const formatter = new Intl.DateTimeFormat(locale, { weekday: "short" });
-  const monday = /* @__PURE__ */ new Date("2026-01-05T00:00:00");
-  return Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(monday);
-    date.setDate(monday.getDate() + index);
-    return formatter.format(date);
-  });
-}
 function formatDailyLabel(dateKey) {
   return formatShortDate(`${dateKey}T00:00:00`);
 }
 function buildFailureReasonsMarkup(items) {
   if (!Array.isArray(items) || items.length === 0) {
-    return createEmptyState2(t.charts.noFailure);
+    return "";
   }
   return `
+    <div class="section-head dashboard-advanced-head">
+      <h2>${escapeHTML(msg("options_chart_failure_title") || "Failures")}</h2>
+    </div>
     <div class="summary-list">
-      ${items.slice(0, 6).map((item) => {
+      ${items.slice(0, 3).map((item) => {
     const label = t.settings.resultCodeLabels[item.code] || item.code;
     return `
           <div class="summary-row">
@@ -3894,60 +3888,106 @@ function buildFailureReasonsMarkup(items) {
     </div>
   `;
 }
-function buildStrategySummaryMarkup(items) {
-  if (!Array.isArray(items) || items.length === 0) {
-    return createEmptyState2(t.charts.noStrategy);
-  }
-  return `
-    <div class="summary-list">
-      ${items.slice(0, 6).map((item) => `
-        <div class="summary-row">
-          <div class="summary-copy">
-            <strong>${escapeHTML(item.label)}</strong>
-            <span>${escapeHTML(`${t.charts.bestStrategyLabel}: ${item.bestStrategy || "-"}`)}</span>
-          </div>
-          <div class="summary-meta">
-            ${escapeHTML(`${item.totalAttempts} ${t.charts.attemptsLabel}`)}
-            <br />
-            ${escapeHTML(`${item.bestSuccessRate}%`)}
-          </div>
-        </div>
-      `).join("")}
-    </div>
-  `;
+function getHistoryNoteCount(historyId) {
+  return state.comparisonNotes.filter((note) => Number(note.historyId) === Number(historyId)).length;
 }
-function renderOnboardingChecklist() {
-  if (!onboardingChecklist) {
+function getSubmittedWithoutResponseCount(entry) {
+  const submitted = Array.isArray(entry.submittedSiteIds) ? entry.submittedSiteIds : [];
+  const notes = new Set(
+    state.comparisonNotes.filter((note) => Number(note.historyId) === Number(entry.id)).map((note) => note.serviceId)
+  );
+  return submitted.filter((siteId) => !notes.has(siteId)).length;
+}
+function buildRecentActivityMarkup(items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return createEmptyState2(msg("options_dashboard_no_recent") || "No sends yet.");
+  }
+  return items.map((item) => {
+    const noteCount = getHistoryNoteCount(item.id);
+    const missing = getSubmittedWithoutResponseCount(item);
+    const status = item.failedSiteIds.length > 0 ? msg("options_dashboard_status_needs_check") || "Needs check" : msg("options_dashboard_status_sent") || "Sent";
+    const responseLabel = noteCount > 0 ? msg("options_dashboard_response_count", [String(noteCount)]) || `${noteCount} responses` : missing > 0 ? msg("options_dashboard_response_missing") || "Response not saved" : msg("options_dashboard_response_not_needed") || "No response yet";
+    return `
+      <article class="dashboard-row">
+        <div class="dashboard-row-main">
+          <strong>${escapeHTML(item.text || "-")}</strong>
+          <span>${escapeHTML(formatShortDate(item.createdAt))} | ${escapeHTML(status)}</span>
+        </div>
+        <span class="dashboard-pill ${noteCount > 0 ? "success" : missing > 0 ? "warning" : ""}">${escapeHTML(responseLabel)}</span>
+      </article>
+    `;
+  }).join("");
+}
+function buildActionItems(metrics) {
+  const items = [];
+  const serviceNeedsCheck = state.serviceHealthSnapshots.filter((snapshot) => {
+    if (snapshot.selectorWarning) {
+      return true;
+    }
+    if (!snapshot.lastFailureAt) {
+      return false;
+    }
+    return !snapshot.lastSuccessAt || Date.parse(snapshot.lastFailureAt) > Date.parse(snapshot.lastSuccessAt);
+  });
+  const latestMissingResponse = metrics.recentItems.find((item) => getSubmittedWithoutResponseCount(item) > 0);
+  if (serviceNeedsCheck.length > 0) {
+    items.push({
+      kind: "service",
+      label: msg("options_dashboard_action_service") || "Check service status",
+      detail: msg("options_dashboard_action_service_desc", [String(serviceNeedsCheck.length)]) || `${serviceNeedsCheck.length} service(s) need attention.`,
+      section: "services"
+    });
+  }
+  if (latestMissingResponse) {
+    items.push({
+      kind: "response",
+      label: msg("options_dashboard_action_response") || "Save missing responses",
+      detail: msg("options_dashboard_action_response_desc") || "Open history to capture or paste AI responses.",
+      section: "history"
+    });
+  }
+  if (!state.settings.autoCaptureResponses) {
+    items.push({
+      kind: "setting",
+      label: msg("options_dashboard_action_auto_capture") || "Turn on response saving",
+      detail: msg("options_dashboard_action_auto_capture_desc") || "Automatic response saving is currently off.",
+      section: "settings"
+    });
+  }
+  if (items.length === 0) {
+    items.push({
+      kind: "ready",
+      label: msg("options_dashboard_action_ready") || "Ready for the next send",
+      detail: msg("options_dashboard_action_ready_desc") || "No urgent action is needed right now.",
+      section: "history"
+    });
+  }
+  return items;
+}
+function buildNextActionsMarkup(metrics) {
+  return buildActionItems(metrics).map((item) => `
+    <article class="dashboard-row action-row">
+      <div class="dashboard-row-main">
+        <strong>${escapeHTML(item.label)}</strong>
+        <span>${escapeHTML(item.detail)}</span>
+      </div>
+      <button class="btn ghost" type="button" data-dashboard-section="${escapeHTML(item.section)}">${escapeHTML(msg("options_dashboard_open") || "Open")}</button>
+    </article>
+  `).join("");
+}
+function bindDashboardClicks() {
+  const section = document.getElementById("section-dashboard");
+  if (!section) {
     return;
   }
-  const checks = [
-    {
-      label: "Send your first broadcast",
-      done: state.history.length > 0
-    },
-    {
-      label: "Save a reusable favorite",
-      done: state.favorites.length > 0
-    },
-    {
-      label: "Review selector health",
-      done: state.serviceHealthSnapshots.some((item) => item.lastSuccessAt || item.selectorWarning)
-    },
-    {
-      label: "Create a service group",
-      done: state.serviceGroups.length > 0
-    },
-    {
-      label: "Save a comparison note",
-      done: state.comparisonNotes.length > 0
+  section.onclick = (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const button = target?.closest("[data-dashboard-section]");
+    const sectionId = button?.getAttribute("data-dashboard-section");
+    if (sectionId) {
+      switchSection(sectionId);
     }
-  ];
-  onboardingChecklist.innerHTML = checks.map((check) => `
-    <label class="checkbox-inline">
-      <input type="checkbox" ${check.done ? "checked" : ""} disabled />
-      <span>${escapeHTML(check.label)}</span>
-    </label>
-  `).join("");
+  };
 }
 function renderDashboard() {
   const metrics = buildDashboardMetrics(
@@ -3956,63 +3996,50 @@ function renderDashboard() {
     state.strategyStats
   );
   const cards = [
-    { label: t.cards.totalTransmissions, value: metrics.totalTransmissions },
-    { label: t.cards.mostUsedService, value: metrics.mostUsedService },
-    { label: t.cards.weekCount, value: metrics.weekCount },
-    { label: t.cards.averagePromptLength, value: `${metrics.averagePromptLength} ${t.cards.charSuffix}` },
-    { label: "Comparison notes", value: state.comparisonNotes.length },
-    { label: "Prompt experiments", value: state.promptExperiments.length }
+    { label: msg("options_dashboard_card_recent") || "Recent sends", value: metrics.weekCount },
+    { label: msg("options_dashboard_card_success") || "Recent success", value: `${metrics.recentSuccessRate}%` },
+    { label: msg("options_dashboard_card_responses") || "Saved responses", value: state.comparisonNotes.length },
+    { label: msg("options_dashboard_card_actions") || "Needs attention", value: buildActionItems(metrics).filter((item) => item.kind !== "ready").length }
   ];
-  dashboardCards.innerHTML = cards.map(
-    (card) => `
+  if (dashboardCards) {
+    dashboardCards.innerHTML = cards.map(
+      (card) => `
         <article class="card">
           <div class="card-label">${escapeHTML(card.label)}</div>
           <div class="card-value">${escapeHTML(String(card.value))}</div>
         </article>
       `
-  ).join("");
-  renderOnboardingChecklist();
-  serviceDonut.innerHTML = buildDonutMarkup(metrics.donutItems, {
-    noUsage: t.charts.noUsage,
-    totalSent: t.charts.totalSent,
-    donutAria: t.charts.donutAria
-  });
-  dailyBarChart.innerHTML = buildBarChartMarkup(
-    metrics.dailyCounts.map((item) => ({
-      ...item,
-      label: formatDailyLabel(item.key)
-    })),
-    {
-      noDaily: t.charts.noDaily,
-      barAria: t.charts.barAria
-    }
-  );
-  activityHeatmap.innerHTML = buildHeatmapMarkup(
-    metrics.heatmap.rows.map((row) => ({
-      ...row,
-      label: getWeekdayLabels()[row.dayIndex] ?? `D${row.dayIndex + 1}`
-    })),
-    {
-      noHeatmap: t.charts.noHeatmap,
-      heatmapAria: t.charts.heatmapAria,
-      hourLabel: t.charts.hourLabel
-    }
-  );
-  serviceTrend.innerHTML = buildTrendMarkup(
-    metrics.serviceTrendItems.map((item) => ({
-      ...item,
-      dailySeries: (item.dailySeries ?? []).map((point) => ({
-        ...point,
-        label: formatDailyLabel(point.key)
-      }))
-    })),
-    {
-      noTrend: t.charts.noTrend,
-      requestsLabel: t.charts.requestsLabel
-    }
-  );
-  failureReasons.innerHTML = buildFailureReasonsMarkup(metrics.failureReasonItems);
-  strategySummary.innerHTML = buildStrategySummaryMarkup(metrics.strategySummaryItems);
+    ).join("");
+  }
+  if (dashboardRecentActivity) {
+    dashboardRecentActivity.innerHTML = buildRecentActivityMarkup(metrics.recentItems);
+  }
+  if (dashboardNextActions) {
+    dashboardNextActions.innerHTML = buildNextActionsMarkup(metrics);
+  }
+  if (serviceDonut) {
+    serviceDonut.innerHTML = buildDonutMarkup(metrics.donutItems, {
+      noUsage: t.charts.noUsage,
+      totalSent: t.charts.totalSent,
+      donutAria: t.charts.donutAria
+    });
+  }
+  if (dailyBarChart) {
+    dailyBarChart.innerHTML = buildBarChartMarkup(
+      metrics.dailyCounts.map((item) => ({
+        ...item,
+        label: formatDailyLabel(item.key)
+      })),
+      {
+        noDaily: t.charts.noDaily,
+        barAria: t.charts.barAria
+      }
+    );
+  }
+  if (failureReasons) {
+    failureReasons.innerHTML = buildFailureReasonsMarkup(metrics.failureReasonItems);
+  }
+  bindDashboardClicks();
 }
 
 // src/options/features/history/filtering.ts
@@ -4364,19 +4391,21 @@ function buildCompareWorkspaceMarkup(entry) {
     const site = state.runtimeSites.find((siteEntry) => siteEntry.id === siteId);
     return `<option value="${escapeHTML(siteId)}">${escapeHTML(site?.name || siteId)}</option>`;
   }).join("");
-  const notesMarkup = notes.length ? notes.map((note) => {
+  const notesMarkup = notes.length ? notes.map((note, index) => {
     const site = state.runtimeSites.find((siteEntry) => siteEntry.id === note.serviceId);
+    const preview = note.responseText.length > 500 ? `${note.responseText.slice(0, 500).trim()}...` : note.responseText;
     return `
-        <article class="compare-note">
-          <div class="section-head-row">
-            <div>
-              <strong>${escapeHTML(site?.name || note.serviceId)}</strong>
-              <div class="helper">${escapeHTML(note.captureMode)} · ${escapeHTML(formatDateTime(note.updatedAt))}${note.rating ? ` · ${note.rating}/5` : ""}</div>
-            </div>
+        <details class="compare-note" ${index === 0 ? "open" : ""}>
+          <summary>
+            <span class="compare-note-title">${escapeHTML(site?.name || note.serviceId)}</span>
+            <span class="helper">${escapeHTML(note.captureMode)} | ${escapeHTML(formatDateTime(note.updatedAt))}</span>
+            <span class="compare-note-preview">${escapeHTML(preview)}</span>
+          </summary>
+          <pre class="modal-prompt">${escapeHTML(note.responseText)}</pre>
+          <div class="settings-actions">
             <button class="btn danger ghost" type="button" data-comparison-delete="${escapeHTML(note.id)}">${escapeHTML(t.comparison.delete)}</button>
           </div>
-          <pre class="modal-prompt">${escapeHTML(note.responseText)}</pre>
-        </article>
+        </details>
       `;
   }).join("") : `<div class="empty-state">${escapeHTML(t.comparison.empty)}</div>`;
   return `
@@ -4384,7 +4413,6 @@ function buildCompareWorkspaceMarkup(entry) {
       <h3 class="result-comparison-title">${escapeHTML(t.comparison.title)}</h3>
       <div class="filter-row">
         <select data-comparison-service>${serviceOptions}</select>
-        <input data-comparison-rating type="number" min="1" max="5" placeholder="${escapeHTML(t.comparison.ratingPlaceholder)}" />
       </div>
       <textarea data-comparison-text rows="5" placeholder="${escapeHTML(t.comparison.textPlaceholder)}"></textarea>
       <div class="settings-actions">
@@ -4413,7 +4441,6 @@ function bindCompareWorkspaceEvents(comparisonEl, entry) {
     }
     const serviceId = workspace.querySelector("[data-comparison-service]")?.value || entry.requestedSiteIds?.[0] || "";
     const responseText = workspace.querySelector("[data-comparison-text]")?.value || "";
-    const ratingValue = Number(workspace.querySelector("[data-comparison-rating]")?.value);
     if (target?.closest("[data-comparison-service]")) {
       void setActiveComparisonContext({
         historyId: Number(entry.id),
@@ -4429,7 +4456,7 @@ function bindCompareWorkspaceEvents(comparisonEl, entry) {
           serviceId,
           responseText,
           captureMode: "manual",
-          rating: Number.isFinite(ratingValue) ? ratingValue : null,
+          rating: null,
           tags: []
         }
       }, 8e3).then(async (response) => {
@@ -5853,6 +5880,9 @@ var {
   historyLimitNote,
   autoCloseToggle,
   desktopNotificationToggle,
+  autoCaptureToggle,
+  autoCaptureSettingTitle,
+  autoCaptureSettingDesc,
   reuseTabsToggle,
   reuseTabsSettingTitle,
   reuseTabsSettingDesc,
@@ -5874,6 +5904,9 @@ function applySettingsToControls() {
   historyLimitNote.textContent = chrome.i18n.getMessage("options_settings_history_limit_note") || historyLimitNote.textContent;
   autoCloseToggle.checked = state.settings.autoClosePopup;
   desktopNotificationToggle.checked = state.settings.desktopNotifications;
+  autoCaptureToggle.checked = state.settings.autoCaptureResponses;
+  autoCaptureSettingTitle.textContent = t.settings.autoCaptureTitle;
+  autoCaptureSettingDesc.textContent = t.settings.autoCaptureDesc;
   reuseTabsToggle.checked = state.settings.reuseExistingTabs;
   reuseTabsSettingTitle.textContent = t.settings.reuseTabsTitle;
   reuseTabsSettingDesc.textContent = t.settings.reuseTabsDesc;
@@ -5916,6 +5949,13 @@ function bindSettingsEvents({ loadData: loadData2 }) {
   desktopNotificationToggle.addEventListener("change", (event) => {
     void saveSettings({ desktopNotifications: event.target.checked }).catch((error) => {
       console.error("[AI Prompt Broadcaster] Failed to save desktop notification setting.", error);
+      setStatus(error?.message ?? t.saveFailed, "error");
+      showAppToast(error?.message ?? t.saveFailed, "error", 3e3);
+    });
+  });
+  autoCaptureToggle.addEventListener("change", (event) => {
+    void saveSettings({ autoCaptureResponses: event.target.checked }).catch((error) => {
+      console.error("[AI Prompt Broadcaster] Failed to save response capture setting.", error);
       setStatus(error?.message ?? t.saveFailed, "error");
       showAppToast(error?.message ?? t.saveFailed, "error", 3e3);
     });
@@ -5992,28 +6032,6 @@ async function loadData() {
   renderExperimentsSection();
   renderTemplatePacksSection();
   applySettingsToControls();
-}
-
-// src/options/core/navigation.ts
-var { navButtons, pageSections } = optionsDom.navigation;
-function switchSection(sectionId) {
-  state.activeSection = sectionId;
-  navButtons.forEach((button) => {
-    const active = button.dataset.section === sectionId;
-    button.classList.toggle("active", active);
-    button.setAttribute("aria-selected", String(active));
-    button.tabIndex = active ? 0 : -1;
-  });
-  pageSections.forEach((section) => {
-    const active = section.id === `section-${sectionId}`;
-    section.classList.toggle("active", active);
-    section.hidden = !active;
-  });
-}
-function bindNavigationEvents() {
-  navButtons.forEach((button) => {
-    button.addEventListener("click", () => switchSection(button.dataset.section));
-  });
 }
 
 // src/options/app/bootstrap.ts

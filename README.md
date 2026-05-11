@@ -39,10 +39,10 @@
 - **즐겨찾기 복제 + 정렬 옵션** – 최근 사용순, 사용 횟수순, 제목순, 생성일순 정렬과 복제 저장 지원
 - **서비스 순서 커스터마이징** – options `Services`에서 `Move up` / `Move down`으로 서비스 표시 순서를 저장하고 popup·favorite editor·options에 동일 반영
 - **히스토리 재전송 선택 + 옵션 일괄 삭제** – 원래 대상 기준 재전송 모달, 선택 삭제, 7/30/90일 이전 빠른 삭제
-- **히스토리 비교 노트** – options history 상세에서 서비스별 응답을 명시적 1회 캡처하거나 선택 텍스트 컨텍스트 메뉴로 저장
+- **AI 응답 저장** – 전송 후 보이는 AI 응답을 로컬 히스토리에 자동 저장하고, popup/options 히스토리에서 서비스별로 다시 확인
 - **프롬프트 실험 매트릭스** – variants × variable sets 조합을 미리 계산하고, 기본 soft 10개 / hard 30개 전송 제한으로 대량 실행을 제어
 - **템플릿 팩과 서비스 그룹** – options에서 템플릿 팩 export/import와 서비스 그룹 저장/선택을 관리
-- **확장 Dashboard 분석** – 서비스 점유율 외에 활동 히트맵, 서비스별 성공률 추이, 상위 실패 원인, 전략 요약 제공
+- **단순 Dashboard** – 최근 전송, 최근 성공률, 저장된 응답 수, 확인 필요 서비스를 먼저 표시하고 상세 통계는 접힘 영역으로 제공
 - **예약 실행 결과 요약** – options `Schedules`에서 최근 scheduled 실행 시각, 상태, 실패 상세를 별도로 확인 가능
 - **서비스별 프롬프트 오버라이드** – 서비스 카드마다 메인 프롬프트와 다른 별도 프롬프트를 지정 가능
 - 히스토리/즐겨찾기/템플릿 캐시/설정/서비스 구성을 JSON으로 내보내기 및 가져오기 (`v9`, 체인/예약 메타, 재전송 스냅샷, 구조화된 selector verification metadata, `supportedRoutes`, 비교 노트, 실험, 템플릿 팩, 서비스 그룹, `{{counter}}` 포함)
@@ -168,7 +168,7 @@ GIF 자리표시자: `docs/assets/usage-demo.gif`
 - `Alt+Shift+F` 빠른 팔레트는 shadow root 오버레이로 동작하며, popup 즐겨찾기 검색과 같은 로직으로 제목/본문/태그/폴더 및 `#tag` 검색을 지원합니다. 즉시 해석 가능한 즐겨찾기는 바로 실행하고 추가 입력이 필요하면 popup으로 handoff합니다.
 
 ### 옵션 Dashboard와 서비스 순서
-- options `Dashboard`는 기본 카드/도넛 차트 외에 **요일×시간대 activity heatmap**, **서비스별 성공률 추이**, **상위 실패 원인**, **strategy summary**를 함께 표시합니다.
+- options `Dashboard`는 최근 전송, 최근 성공률, 저장된 AI 응답, 확인 필요 항목을 먼저 보여주고, 사용 비율/최근 7일/실패 원인은 접힌 고급 통계로 낮췄습니다.
 - options `Services` 섹션의 `Move up` / `Move down`은 `appSettings.siteOrder`로 저장되며 popup compose 서비스 카드, favorite editor 대상 체크리스트, options 서비스 목록 순서에 동일하게 반영됩니다.
 
 ### 팝업 단축키와 정렬
@@ -238,7 +238,7 @@ proactive selector checker의 첫 번째 미검출은 같은 브라우저 세션
 - `supportedRoutes`는 selector checker와 열린 탭 재사용 preflight가 공통으로 쓰는 pathname prefix allowlist입니다. 비워 두면 전체 경로를 허용합니다.
 - `waitMs`는 너무 짧게 잡지 말고 hydration 이후를 고려해 설정하세요.
 - 변경 후 `npm run build`를 다시 실행해 `dist/`를 갱신하세요.
-- 릴리스 전에는 [docs/release-selector-verification-checklist.md](docs/release-selector-verification-checklist.md)를 따라 auth route, canonical route, locale, prompt surface, submit surface를 다시 검증하세요.
+- 릴리스 전에는 [docs/selector-verification-2026-05-11.md](docs/selector-verification-2026-05-11.md) 같은 selector verification 증적을 갱신해 auth route, canonical route, locale, prompt surface, submit surface를 다시 검증하세요.
 
 ### 셀렉터가 깨졌을 때 직접 수정하는 방법
 1. 문제 사이트를 Chrome에서 엽니다.
@@ -290,10 +290,10 @@ For build and packaging steps, see [docs/build-guide.md](docs/build-guide.md). F
 - **Favorite duplication and sort controls** — duplicate saved prompts and sort by recent use, usage count, title, or creation date
 - **Custom service ordering** — reorder service cards from the options `Services` section with `Move up` / `Move down`, and reuse that order across popup, favorite editor, and options
 - **History resend selection and bulk delete tools** — choose a subset of the original services when replaying history, with stale specific-tab targets disabled until you reselect them, and delete selected or aged entries from options
-- **History comparison notes** — capture one service response explicitly from options history detail or attach selected text through the context menu when the active comparison target matches
+- **AI response capture** — after a send completes, visible service responses can be captured automatically into local history; popup history and options history detail show saved responses per service
 - **Prompt experiment matrix** — preview variant × variable-set runs and enforce soft 10 / hard 30 broadcast limits before queueing
 - **Template packs and service groups** — manage reusable template pack export/import and saved service target groups from options
-- **Expanded dashboard analytics** — activity heatmap, per-service success trends, top failure reasons, and strategy summary on the options dashboard
+- **Simple dashboard** — recent sends, recent success rate, saved AI responses, and only the services or responses that need attention
 - **Scheduled-run result summary** — the options `Schedules` section separates the last scheduled run from manual runs and surfaces its status plus representative failure detail
 - **Per-service prompt overrides** — assign a different prompt to individual service cards without changing the main prompt
 - JSON export/import for history, favorites, template cache, settings, and service configuration, including `broadcastCounter`, history resend snapshots, structured selector verification metadata, `supportedRoutes`, comparison notes, prompt experiments, template packs, service groups, and export `version: 9`; custom-site host permissions are requested in one batch before commit and denied origins abort the import before local data changes
@@ -303,6 +303,7 @@ For build and packaging steps, see [docs/build-guide.md](docs/build-guide.md). F
 - Custom services can store fallback selectors, auth selectors, hostname aliases, and verification metadata
 - Pure MV3 extension, no backend required
 - Dynamic prompt injection using `chrome.scripting.executeScript`
+- Captured AI response text is stored locally in `comparisonNotes` and is not sent to developer-controlled servers
 - Central site configuration in `src/config/sites/builtins.ts`
 - ChatGPT, Grok, and Perplexity use `input-and-conditional-submit` selector-check semantics so empty composers do not fail preflight before a submit surface appears.
 - Perplexity prefers `#ask-input[data-lexical-editor='true']`, updates Lexical state from the page's `MAIN` world, and keeps the legacy submit path for dispatch
@@ -427,7 +428,7 @@ Template prompts support both user-defined variables and built-in system variabl
 - The quick palette uses a shadow-root overlay on the current page. Its search behavior now matches popup favorite search across title, body text, folder, tags, and `#tag` queries. Fully resolvable favorites run immediately; favorites that still need popup input fall back through a popup handoff intent.
 
 ### Options Dashboard and Service Ordering
-- The options `Dashboard` now includes a weekday-by-hour activity heatmap, per-service success trends, top failure reasons, and a strategy summary in addition to the original overview cards and usage charts.
+- The options `Dashboard` now starts with recent sends, recent success rate, saved AI responses, and needs-attention actions. Usage share, last-7-day bars, and failure reasons are kept in a collapsed advanced stats area.
 - The options `Services` section persists service ordering through `appSettings.siteOrder`, and that order is reused by popup compose service cards, favorite editor target checklists, and the options service list.
 
 ### Popup Shortcuts and Sorting
@@ -546,7 +547,7 @@ Additional notes:
 - `supportedRoutes` is the shared pathname-prefix allowlist used by selector checking and reusable-tab preflight. Leave it empty only when the service genuinely supports multiple composer routes.
 - Set `waitMs` conservatively to account for hydration and delayed editors.
 - Run `npm run build` again after any source change so both `dist/` and the generated root runtime mirrors stay current.
-- Before a release, walk through [docs/release-selector-verification-checklist.md](docs/release-selector-verification-checklist.md) for auth route, canonical route, locale, prompt surface, submit surface, and soft-gated checks.
+- Before a release, update selector verification evidence such as [docs/selector-verification-2026-05-11.md](docs/selector-verification-2026-05-11.md) for auth route, canonical route, locale, prompt surface, submit surface, and soft-gated checks.
 
 ### Local Smoke QA
 The repository includes Playwright-based local fixtures under `qa/fixtures/`, orchestrated by `scripts/qa-smoke.mjs` with helper modules under `scripts/qa-smoke/`.
@@ -561,7 +562,7 @@ npm run qa:extension
 npm run selector:audit
 ```
 
-`docs:check` verifies release documentation stays aligned with export/import versioning and validation commands. `qa:extension` loads the built `dist/` extension in Chromium and checks options navigation, experiment caps, history comparison notes, template packs, service groups, and popup fallback behavior.
+`docs:check` verifies release documentation stays aligned with export/import versioning, local AI response storage wording, and validation commands. `qa:extension` loads the built `dist/` extension in Chromium and checks options navigation, experiment caps, saved AI responses, template packs, service groups, and popup fallback behavior.
 
 The smoke script verifies:
 

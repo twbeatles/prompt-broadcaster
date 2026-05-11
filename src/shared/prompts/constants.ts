@@ -29,6 +29,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   autoClosePopup: false,
   desktopNotifications: true,
   reuseExistingTabs: true,
+  autoCaptureResponses: true,
   waitMsMultiplier: DEFAULT_WAIT_MS_MULTIPLIER,
   historySort: DEFAULT_HISTORY_SORT,
   favoriteSort: DEFAULT_FAVORITE_SORT,

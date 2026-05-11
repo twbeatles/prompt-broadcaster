@@ -6,7 +6,7 @@ import type { BroadcastTargetSnapshot } from "../../shared/types/models";
 import type { OpenSiteTab, PromptHistoryItem, RuntimeSite } from "../../shared/types/models";
 import type { PopupOverlayController, PopupState } from "../../shared/types/popup";
 import { popupDom } from "../app/dom";
-import { escapeAttribute, escapeHtml } from "../app/helpers";
+import { escapeAttribute, escapeHtml, formatDate } from "../app/helpers";
 import { msg, t } from "../app/i18n";
 import { buildImportReportMarkup, getHistorySelectedSiteIds } from "../app/list-markup";
 import { state } from "../app/state";
@@ -19,6 +19,12 @@ const {
   resendModalClose,
   resendModalCancel,
   resendModalConfirm,
+  responsesModal,
+  responsesModalTitle,
+  responsesModalDesc,
+  responsesModalBody,
+  responsesModalClose,
+  responsesModalConfirm,
   importReportModal,
   importReportModalTitle,
   importReportModalDesc,
@@ -132,6 +138,53 @@ export function createPopupHistoryModals(deps: PopupHistoryModalsDeps) {
     );
   }
 
+  function getServiceName(serviceId: string): string {
+    return deps.runtimeSites().find((site) => site.id === serviceId)?.name ?? serviceId;
+  }
+
+  function buildResponsesMarkup(historyItem: PromptHistoryItem): string {
+    const notes = state.comparisonNotes
+      .filter((note) => Number(note.historyId) === Number(historyItem.id))
+      .sort((left, right) => getServiceName(left.serviceId).localeCompare(getServiceName(right.serviceId)));
+
+    if (notes.length === 0) {
+      return `<div class="empty-state"><div>${escapeHtml(t.responsesEmpty)}</div></div>`;
+    }
+
+    return notes.map((note, index) => {
+      const modeLabel = note.captureMode === "auto"
+        ? t.responsesAuto
+        : t.responsesManual;
+      const updatedAt = note.updatedAt || note.createdAt;
+      const preview = note.responseText.length > 160
+        ? `${note.responseText.slice(0, 160).trim()}...`
+        : note.responseText;
+
+      return `
+        <details class="response-note" ${index === 0 ? "open" : ""}>
+          <summary>
+            <span class="response-note-title">${escapeHtml(getServiceName(note.serviceId))}</span>
+            <span class="response-note-meta">${escapeHtml(modeLabel)}${updatedAt ? ` | ${escapeHtml(formatDate(updatedAt))}` : ""}</span>
+            <span class="response-note-preview">${escapeHtml(preview)}</span>
+          </summary>
+          <pre>${escapeHtml(note.responseText)}</pre>
+        </details>
+      `;
+    }).join("");
+  }
+
+  function hideResponsesModal() {
+    deps.closeOverlay(responsesModal);
+  }
+
+  function openResponsesModal(historyItem: PromptHistoryItem): void {
+    responsesModalTitle.textContent = t.responsesModalTitle;
+    responsesModalDesc.textContent = t.responsesModalDesc;
+    responsesModalConfirm.textContent = t.responsesModalClose;
+    responsesModalBody.innerHTML = buildResponsesMarkup(historyItem);
+    deps.openOverlay(responsesModal, responsesModalClose);
+  }
+
   async function confirmResendModal() {
     const historyItem = state.pendingResendHistory;
     if (!historyItem) {
@@ -211,11 +264,21 @@ export function createPopupHistoryModals(deps: PopupHistoryModalsDeps) {
         hideImportReportModal();
       }
     });
+
+    responsesModalClose.addEventListener("click", hideResponsesModal);
+    responsesModalConfirm.addEventListener("click", hideResponsesModal);
+    responsesModal.addEventListener("click", (event) => {
+      if (event.target === responsesModal) {
+        hideResponsesModal();
+      }
+    });
   }
 
   return {
     hideResendModal,
     openResendModal,
+    hideResponsesModal,
+    openResponsesModal,
     openImportReportModal,
     hideImportReportModal,
     bindHistoryModalEvents,

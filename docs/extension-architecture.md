@@ -252,7 +252,7 @@ Options helper boundaries:
 
 - `src/options/core/`: shared status, navigation, reload, and filter helpers
 - `src/options/features/`: dashboard, history, schedules, services, and settings sections
-- `src/options/features/dashboard-metrics.ts`: pure aggregation for cards, heatmap, trends, failure reasons, and strategy summary
+- `src/options/features/dashboard-metrics.ts`: pure aggregation for summary cards, recent activity, next actions, usage share, recent daily counts, and failure reasons
 - `src/options/features/schedule-summary.ts`: pure scheduled-run summary helper
 - `src/options/ui/charts.ts`: chart rendering
 
@@ -376,6 +376,7 @@ Important local-storage keys:
 - `failedSelectors`
 - `onboardingCompleted`
 - `strategyStats`
+- `comparisonNotes`
 - `appSettings.siteOrder` (inside `appSettings`)
 
 Important session-storage keys:
@@ -462,8 +463,9 @@ Active job lookups prefer `queued/running` records over newer terminal records s
 ### Strategy Stats and Pending Tab Tracking
 
 - `strategyStats` stores per-site success/failure counts for injector strategies
-- `pendingBroadcasts` also keep `openedTabIds`
+- `pendingBroadcasts` also keep `openedTabIds` and `targetTabIdsBySiteId` so automatic response capture can prefer the exact tab used for each submitted service
 - cancellation closes only tabs opened for the current broadcast; reused tabs are preserved
+- when `appSettings.autoCaptureResponses` is enabled, completed broadcasts start a best-effort local response capture for submitted services only; captured text is stored in `comparisonNotes` with `captureMode: "auto"` and is not sent to developer-controlled servers
 
 ## High-Level Execution Flows
 
@@ -507,7 +509,7 @@ Active job lookups prefer `queued/running` records over newer terminal records s
 
 ## Options Analytics and Service Ordering
 
-- The options `Dashboard` now includes overview cards, usage share, 7-day activity bars, a weekday/hour heatmap, per-service success trends, top failure reasons, and a strategy summary backed by `strategyStats`.
+- The options `Dashboard` now starts with four summary cards, recent activity, and practical next actions. Usage share, 7-day activity bars, and failure reasons remain in a collapsed advanced stats area.
 - The options `Services` section persists runtime site order through `appSettings.siteOrder` using accessible `Move up` / `Move down` buttons instead of drag-and-drop.
 - That saved order is reused by popup compose service cards, favorite editor target lists, and the options services list. Explicit broadcast target arrays still keep their own requested order.
 
@@ -571,7 +573,7 @@ Current smoke coverage includes:
 - per-service override template resolution and retry prompt preservation
 - structured `siteResults` accumulation
 - adaptive strategy-stat accumulation
-- dashboard metrics for heatmap, trend, failure reasons, and strategy summary
+- dashboard metrics for recent activity, saved responses, action items, usage share, recent daily counts, and failure reasons
 - reusable-tab preflight rejection for auth/settings/non-input tabs
 - reset helper cleanup across local and session runtime state
 

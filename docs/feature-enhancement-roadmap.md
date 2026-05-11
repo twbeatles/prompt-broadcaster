@@ -1,10 +1,10 @@
 # AI Prompt Broadcaster 기능 고도화 및 추가 기능 분석
 
 > 작성일: 2026-05-10  
-> 참고 문서: `README.md`, `PROJECT_ANALYSIS.md`, `docs/extension-architecture.md`, `docs/build-guide.md`, `docs/web_store_checklist.md`, `docs/web-store-copy.md`, `docs/release-selector-verification-checklist.md`  
+> 참고 문서: `README.md`, `PROJECT_ANALYSIS.md`, `docs/extension-architecture.md`, `docs/build-guide.md`, `docs/web_store_checklist.md`, `docs/web-store-copy.md`, `docs/selector-verification-2026-05-11.md`
 > 목적: 현재 Chrome 확장 프로그램의 기능 성숙도를 기준으로, 실제 제품 가치가 큰 고도화 방향과 추가 기능 후보를 우선순위별로 정리한다.
 
-> 2026-05-11 구현 상태: Selector Health Center, history comparison notes, prompt experiment MVP, template packs, service groups, export/import v9, and extension-page E2E are now implemented as baseline features. This roadmap now treats those items as hardening/expansion tracks rather than wholly new work.
+> 2026-05-11 구현 상태: Selector Health Center, local AI response capture, prompt experiment MVP, template packs, service groups, export/import v9, simplified dashboard, and extension-page E2E are now implemented as baseline features. This roadmap now treats those items as hardening/expansion tracks rather than wholly new work.
 
 ---
 
@@ -31,7 +31,7 @@
 4. 운영성
    - 구조화된 전송 결과 코드
    - selector checker와 selector audit
-   - dashboard, heatmap, success trend, failure reason, strategy summary
+   - 단순 dashboard, saved AI responses, failure reason, selector 확인 항목
    - import/export v9, custom service, optional host permission 관리
 
 따라서 다음 기능 고도화는 "더 많은 버튼"보다 "결과 비교, 실험 관리, selector 신뢰도, 반복 워크플로우 품질"에 집중하는 편이 제품 방향과 잘 맞는다.
@@ -82,7 +82,7 @@
   - 최근 패치처럼 Cloudflare/access challenge 감지는 selector 변경으로 단정하지 않는 쪽이 맞음
 - "수동 복구 가이드" 링크
   - `tools/find_selector.js`
-  - `docs/release-selector-verification-checklist.md`
+  - `docs/selector-verification-2026-05-11.md`
   - GitHub issue search
 - audit 결과 import 또는 표시
   - `output/selector-audit/*.md`는 개발자 산출물이므로, 사용자 UI에는 요약 상태만 표시
@@ -156,10 +156,10 @@
    - 이미 selection script와 context menu가 있으므로 기존 구조와 잘 맞음
    - 자동 scraping보다 정책/신뢰 리스크가 낮음
 
-3. opt-in 자동 캡처 실험
-   - 특정 사이트별 assistant response selector가 안정적인 경우에만 optional로 제공
-   - 기본값 off
-   - Web Store 설명과 privacy 문구 보강 필요
+3. 자동 응답 저장 고도화
+   - 현재는 `autoCaptureResponses` 기본값 `true`와 설정 토글을 제공
+   - 특정 사이트별 assistant response selector allowlist가 있을 때만 저장
+   - Web Store 설명과 privacy 문구는 local-only 저장 기준으로 보강 완료
 
 데이터 모델 후보:
 
@@ -403,7 +403,7 @@ README는 설치/사용 설명이 풍부하지만, 실제 확장 첫 실행 경�
 
 ### 6.2 Dashboard 고도화
 
-현재 dashboard는 이미 heatmap/trend/failure/strategy summary가 있다. 추가 분석 후보는 아래 정도가 적당하다.
+현재 dashboard는 초보 사용자 기준으로 핵심 카드, 최근 활동, 확인 필요 항목을 먼저 보여주고 상세 분석은 접힌 영역에 둔다. 추가 분석 후보는 아래 정도가 적당하다.
 
 - prompt length 분포
 - 서비스별 평균 elapsedMs
@@ -448,7 +448,7 @@ README는 설치/사용 설명이 풍부하지만, 실제 확장 첫 실행 경�
 
 | 기능 | 주의점 | 권장 방식 |
 |---|---|---|
-| AI 답변 자동 캡처 | 제3자 사이트 DOM 읽기, 사용자 기대치, 사이트 정책 이슈 | 기본 off, 수동 선택 캡처부터 시작 |
+| AI 답변 자동 캡처 | 제3자 사이트 DOM 읽기, 사용자 기대치, 사이트 정책 이슈 | 기본 on이지만 설정에서 끌 수 있고, 서비스별 allowlist selector와 local-only 저장 설명을 유지 |
 | clipboard snapshot 예약 | 민감 정보 저장 가능 | 명시 동의, export 제외 옵션 |
 | Chrome sync | prompt/favorite가 계정 동기화됨 | opt-in, history 제외, 민감 필드 제외 |
 | 신규 내장 서비스 대량 추가 | host permission 증가, 유지보수 증가 | 선택 활성화, 명확한 권한 설명 |
@@ -539,7 +539,7 @@ README는 설치/사용 설명이 풍부하지만, 실제 확장 첫 실행 경�
 - service card에 "마지막 성공/실패" badge 추가
 - selector warning 클릭 시 바로 해당 서비스 설정 카드로 이동
 - schedule list에 "다음 실행 예정 시각" 명확히 표시
-- dashboard에 "평균 전송 시간" 추가
+- dashboard 고급 통계에 "평균 전송 시간" 추가
 - import/export에서 "favorites only", "settings only" 선택 export
 - README의 selector 오류 문구를 최근 access challenge 대응에 맞게 업데이트
 

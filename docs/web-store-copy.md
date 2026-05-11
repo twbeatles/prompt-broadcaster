@@ -19,8 +19,9 @@ AI Prompt Broadcaster는 반복 복붙 없이 하나의 프롬프트를 여러 A
 - 서비스별로 특정 열린 탭 선택 또는 새 탭 강제 열기
 - 선택한 텍스트를 우클릭 메뉴나 단축키로 바로 프롬프트로 사용
 - 단일/체인/예약 즐겨찾기, 빠른 팔레트, 템플릿 변수 지원
-- 옵션 페이지에서 서비스 순서 편집, dashboard 분석, 예약 실행 결과 확인 지원
+- 옵션 페이지에서 서비스 순서 편집, 단순 dashboard, 예약 실행 결과 확인 지원
 - 프롬프트 히스토리와 즐겨찾기 재실행, 즐겨찾기 자동화 흐름 지원
+- 전송 후 보이는 AI 응답을 로컬 히스토리에 자동 저장하고 팝업/옵션에서 다시 확인
 - 로컬 브라우저 저장소 기반 데이터 보관
 - 사용자 정의 AI 서비스 추가/비활성화/편집 지원
 
@@ -53,7 +54,7 @@ AI Prompt Broadcaster는 반복 복붙 없이 하나의 프롬프트를 여러 A
 
 ### 개인정보 관련 문구
 
-AI Prompt Broadcaster는 사용자 프롬프트, 히스토리, 즐겨찾기, 템플릿 값을 개발자 서버로 전송하거나 수집하지 않습니다. 모든 데이터는 사용자의 로컬 브라우저 저장소에 보관되며, 사용자가 직접 선택한 AI 웹사이트로만 전달됩니다.
+AI Prompt Broadcaster는 사용자 프롬프트, 히스토리, 즐겨찾기, 템플릿 값, 저장된 AI 응답 텍스트를 개발자 서버로 전송하거나 수집하지 않습니다. 모든 데이터는 사용자의 로컬 브라우저 저장소에 보관되며, 사용자가 직접 선택한 AI 웹사이트로만 전달됩니다.
 
 ---
 
@@ -74,8 +75,9 @@ Key features:
 - Pick a specific open tab or force a fresh tab per service from the popup
 - Use selected text from any page through shortcuts or the context menu
 - Single favorites, chain favorites, scheduled runs, quick palette, and template variables
-- Service ordering, dashboard analytics, and scheduled-run summaries from the options page
+- Service ordering, simple dashboard status, and scheduled-run summaries from the options page
 - Prompt history replay plus favorite-based automation flows
+- Automatically save visible AI responses to local history and view saved AI responses from popup or options
 - Local browser storage for user data
 - Add, disable, and edit custom AI services
 
@@ -108,4 +110,4 @@ This extension helps users open one or more AI web service tabs and automaticall
 
 ### Privacy Statement
 
-AI Prompt Broadcaster does not collect, transmit, or sell user prompts, history, favorites, or template values to developer-controlled servers. All data stays in the user's local browser storage and is only sent directly to AI websites explicitly selected by the user.
+AI Prompt Broadcaster does not collect, transmit, or sell user prompts, history, favorites, template values, or saved AI responses to developer-controlled servers. All data stays in the user's local browser storage and is only sent directly to AI websites explicitly selected by the user.

@@ -38,6 +38,7 @@ var DEFAULT_SETTINGS = Object.freeze({
   autoClosePopup: false,
   desktopNotifications: true,
   reuseExistingTabs: true,
+  autoCaptureResponses: true,
   waitMsMultiplier: DEFAULT_WAIT_MS_MULTIPLIER,
   historySort: DEFAULT_HISTORY_SORT,
   favoriteSort: DEFAULT_FAVORITE_SORT,
@@ -211,6 +212,10 @@ function normalizeSettings(value) {
     reuseExistingTabs: normalizeBoolean(
       settings.reuseExistingTabs,
       DEFAULT_SETTINGS.reuseExistingTabs
+    ),
+    autoCaptureResponses: normalizeBoolean(
+      settings.autoCaptureResponses,
+      DEFAULT_SETTINGS.autoCaptureResponses
     ),
     waitMsMultiplier: normalizeWaitMsMultiplier(settings.waitMsMultiplier),
     historySort: normalizeHistorySort(settings.historySort),
@@ -3197,6 +3202,17 @@ var t = {
   reuseTabsLabel: msg("popup_reuse_tabs_label") || "Reuse open AI tabs in the current window by default",
   reuseTabsDescEnabled: msg("popup_reuse_tabs_desc_enabled") || "When no tab is chosen explicitly, the broadcaster reuses a matching open AI tab before opening a new one.",
   reuseTabsDescDisabled: msg("popup_reuse_tabs_desc_disabled") || "When no tab is chosen explicitly, the broadcaster always opens a fresh tab.",
+  autoCaptureResponsesLabel: msg("popup_auto_capture_responses_label") || "Save AI responses automatically",
+  autoCaptureResponsesDescEnabled: msg("popup_auto_capture_responses_desc_enabled") || "Visible AI responses are saved locally after a send finishes.",
+  autoCaptureResponsesDescDisabled: msg("popup_auto_capture_responses_desc_disabled") || "AI responses will not be saved automatically.",
+  responseCount: (count) => msg("popup_history_response_count", [String(count)]) || `${count} responses`,
+  viewResponses: msg("popup_history_view_responses") || "View responses",
+  responsesModalTitle: msg("popup_responses_modal_title") || "Saved AI responses",
+  responsesModalDesc: msg("popup_responses_modal_desc") || "Responses are stored locally in this browser.",
+  responsesModalClose: msg("popup_responses_modal_close") || "Close",
+  responsesEmpty: msg("popup_responses_empty") || "No AI response has been saved for this history item yet.",
+  responsesAuto: msg("popup_responses_auto") || "auto",
+  responsesManual: msg("popup_responses_manual") || "manual",
   openTabsTitle: (count) => msg("popup_open_tabs_title", [String(count)]) || `${count} open tab${count === 1 ? "" : "s"}`,
   openTabsUseDefault: msg("popup_open_tabs_use_default") || "Use default behavior",
   openTabsUseDefaultDetail: (modeLabel) => msg("popup_open_tabs_use_default_detail", [String(modeLabel)]) || `Current setting: ${modeLabel}`,
@@ -3334,6 +3350,7 @@ var SITE_EMOJI = {
 var state = {
   activeTab: "compose",
   history: [],
+  comparisonNotes: [],
   favorites: [],
   historySearch: "",
   favoritesSearch: "",
@@ -4439,6 +4456,9 @@ var popupDom = {
     reuseExistingTabsToggle: requiredElement("reuse-existing-tabs-toggle"),
     reuseExistingTabsLabel: requiredElement("reuse-existing-tabs-label"),
     reuseExistingTabsDesc: requiredElement("reuse-existing-tabs-desc"),
+    autoCaptureResponsesToggle: requiredElement("auto-capture-responses-toggle"),
+    autoCaptureResponsesLabel: requiredElement("auto-capture-responses-label"),
+    autoCaptureResponsesDesc: requiredElement("auto-capture-responses-desc"),
     openOptionsBtn: requiredElement("open-options-btn"),
     clearHistoryBtn: requiredElement("clear-history-btn"),
     exportJsonBtn: requiredElement("export-json-btn"),
@@ -4564,6 +4584,12 @@ var popupDom = {
     resendModalClose: requiredElement("resend-modal-close"),
     resendModalCancel: requiredElement("resend-modal-cancel"),
     resendModalConfirm: requiredElement("resend-modal-confirm"),
+    responsesModal: requiredElement("responses-modal"),
+    responsesModalTitle: requiredElement("responses-modal-title"),
+    responsesModalDesc: requiredElement("responses-modal-desc"),
+    responsesModalBody: requiredElement("responses-modal-body"),
+    responsesModalClose: requiredElement("responses-modal-close"),
+    responsesModalConfirm: requiredElement("responses-modal-confirm"),
     importReportModal: requiredElement("import-report-modal"),
     importReportModalTitle: requiredElement("import-report-modal-title"),
     importReportModalDesc: requiredElement("import-report-modal-desc"),
@@ -5934,21 +5960,30 @@ function renderServiceBadges(siteIds = [], runtimeSites = []) {
 function buildHistoryItemMarkup(item, options = {}) {
   const {
     openMenuKey = null,
+    comparisonNotes = [],
     runtimeSites = []
   } = options;
   const menuKey = `history:${item.id}`;
+  const responseCount = comparisonNotes.filter(
+    (note) => Number(note.historyId) === Number(item.id)
+  ).length;
+  const responseBadge = responseCount > 0 ? `<span class="response-badge">${escapeHtml(
+    msg("popup_history_response_count", [String(responseCount)]) || `${responseCount} responses`
+  )}</span>` : "";
   return `
     <article class="prompt-item" data-history-id="${item.id}" role="listitem">
       <button class="prompt-main" type="button" data-load-history="${item.id}">
         <div class="prompt-preview">${escapeHtml(previewText(item.text))}</div>
         <div class="prompt-meta">
           <div class="service-icons">${renderServiceBadges(getHistorySelectedSiteIds(item), runtimeSites)}</div>
+          ${responseBadge}
           <span>${escapeHtml(formatDate(item.createdAt))}</span>
         </div>
       </button>
       <div class="prompt-actions">
         <button class="menu-button" type="button" aria-haspopup="menu" aria-expanded="${openMenuKey === menuKey ? "true" : "false"}" aria-label="${escapeAttribute(t.menuMore)}" data-toggle-menu="${escapeAttribute(menuKey)}">...</button>
         <div class="item-menu ${openMenuKey === menuKey ? "open" : ""}">
+          <button class="menu-item" type="button" data-action="view-responses" data-history-id="${item.id}">${escapeHtml(msg("popup_history_view_responses") || "View responses")}</button>
           <button class="menu-item" type="button" data-action="resend-history" data-history-id="${item.id}">${escapeHtml(t.historyResend)}</button>
           <button class="menu-item" type="button" data-action="favorite" data-history-id="${item.id}">${escapeHtml(t.addFavorite)}</button>
           <button class="menu-item danger" type="button" data-action="delete-history" data-history-id="${item.id}">${escapeHtml(t.delete)}</button>
@@ -6413,6 +6448,7 @@ function createHistoryController(deps) {
   const {
     switchTab: switchTab2,
     loadPromptIntoComposer: loadPromptIntoComposer2,
+    openResponsesModal: openResponsesModal2,
     openResendModal: openResendModal2,
     renderFavoritesList: renderFavoritesList2,
     setStatus: setStatus2,
@@ -6431,6 +6467,7 @@ function createHistoryController(deps) {
     }
     historyList.innerHTML = items.map((item) => buildHistoryItemMarkup(item, {
       openMenuKey: state.openMenuKey,
+      comparisonNotes: state.comparisonNotes,
       runtimeSites: state.runtimeSites
     })).join("");
   }
@@ -6453,6 +6490,12 @@ function createHistoryController(deps) {
       state.openMenuKey = null;
       renderHistoryList2();
       openResendModal2(item);
+      return;
+    }
+    if (action === "view-responses") {
+      state.openMenuKey = null;
+      renderHistoryList2();
+      openResponsesModal2(item);
       return;
     }
     if (action === "delete-history") {
@@ -6528,6 +6571,12 @@ var {
   resendModalClose,
   resendModalCancel,
   resendModalConfirm,
+  responsesModal,
+  responsesModalTitle,
+  responsesModalDesc,
+  responsesModalBody,
+  responsesModalClose,
+  responsesModalConfirm,
   importReportModal,
   importReportModalTitle,
   importReportModalDesc,
@@ -6600,6 +6649,40 @@ function createPopupHistoryModals(deps) {
       resendModalSites.querySelector("input:not([disabled])")
     );
   }
+  function getServiceName(serviceId) {
+    return deps.runtimeSites().find((site) => site.id === serviceId)?.name ?? serviceId;
+  }
+  function buildResponsesMarkup(historyItem) {
+    const notes = state.comparisonNotes.filter((note) => Number(note.historyId) === Number(historyItem.id)).sort((left, right) => getServiceName(left.serviceId).localeCompare(getServiceName(right.serviceId)));
+    if (notes.length === 0) {
+      return `<div class="empty-state"><div>${escapeHtml(t.responsesEmpty)}</div></div>`;
+    }
+    return notes.map((note, index) => {
+      const modeLabel = note.captureMode === "auto" ? t.responsesAuto : t.responsesManual;
+      const updatedAt = note.updatedAt || note.createdAt;
+      const preview = note.responseText.length > 160 ? `${note.responseText.slice(0, 160).trim()}...` : note.responseText;
+      return `
+        <details class="response-note" ${index === 0 ? "open" : ""}>
+          <summary>
+            <span class="response-note-title">${escapeHtml(getServiceName(note.serviceId))}</span>
+            <span class="response-note-meta">${escapeHtml(modeLabel)}${updatedAt ? ` | ${escapeHtml(formatDate(updatedAt))}` : ""}</span>
+            <span class="response-note-preview">${escapeHtml(preview)}</span>
+          </summary>
+          <pre>${escapeHtml(note.responseText)}</pre>
+        </details>
+      `;
+    }).join("");
+  }
+  function hideResponsesModal2() {
+    deps.closeOverlay(responsesModal);
+  }
+  function openResponsesModal2(historyItem) {
+    responsesModalTitle.textContent = t.responsesModalTitle;
+    responsesModalDesc.textContent = t.responsesModalDesc;
+    responsesModalConfirm.textContent = t.responsesModalClose;
+    responsesModalBody.innerHTML = buildResponsesMarkup(historyItem);
+    deps.openOverlay(responsesModal, responsesModalClose);
+  }
   async function confirmResendModal() {
     const historyItem = state.pendingResendHistory;
     if (!historyItem) {
@@ -6656,10 +6739,19 @@ function createPopupHistoryModals(deps) {
         hideImportReportModal2();
       }
     });
+    responsesModalClose.addEventListener("click", hideResponsesModal2);
+    responsesModalConfirm.addEventListener("click", hideResponsesModal2);
+    responsesModal.addEventListener("click", (event) => {
+      if (event.target === responsesModal) {
+        hideResponsesModal2();
+      }
+    });
   }
   return {
     hideResendModal: hideResendModal2,
     openResendModal: openResendModal2,
+    hideResponsesModal: hideResponsesModal2,
+    openResponsesModal: openResponsesModal2,
     openImportReportModal: openImportReportModal2,
     hideImportReportModal: hideImportReportModal2,
     bindHistoryModalEvents: bindHistoryModalEvents2
@@ -6680,6 +6772,7 @@ function createOverlayController(options) {
     closeFavoriteModal,
     hideTemplateModal: hideTemplateModal2,
     hideResendModal: hideResendModal2,
+    hideResponsesModal: hideResponsesModal2,
     hideImportReportModal: hideImportReportModal2,
     renderLists: renderLists2
   } = options;
@@ -6718,6 +6811,10 @@ function createOverlayController(options) {
       }
       if (overlay.id === "resend-modal") {
         hideResendModal2();
+        return true;
+      }
+      if (overlay.id === "responses-modal") {
+        hideResponsesModal2();
         return true;
       }
       if (overlay.id === "favorite-modal") {
@@ -8229,6 +8326,7 @@ function bindServiceEvents(deps) {
 // src/popup/app/bootstrap/events/settings.ts
 var {
   reuseExistingTabsToggle,
+  autoCaptureResponsesToggle,
   openOptionsBtn: openOptionsBtn2,
   clearHistoryBtn: clearHistoryBtn2,
   exportJsonBtn: exportJsonBtn2,
@@ -8269,6 +8367,27 @@ function bindSettingsEvents(deps) {
     void updateAppSettings({ reuseExistingTabs: nextValue }).catch((error) => {
       console.error(
         "[AI Prompt Broadcaster] Failed to save tab reuse setting.",
+        error
+      );
+      const errorMessage = t.error(deps.status.getErrorMessage(error));
+      deps.status.setStatus(errorMessage, "error");
+      deps.status.showAppToast(errorMessage, "error", 3200);
+    });
+  });
+  autoCaptureResponsesToggle.addEventListener("change", (event) => {
+    const target = getEventInput(event.target);
+    if (!target) {
+      return;
+    }
+    const nextValue = target.checked;
+    state.settings = {
+      ...state.settings,
+      autoCaptureResponses: nextValue
+    };
+    deps.storage.applySettingsToControls();
+    void updateAppSettings({ autoCaptureResponses: nextValue }).catch((error) => {
+      console.error(
+        "[AI Prompt Broadcaster] Failed to save response capture setting.",
         error
       );
       const errorMessage = t.error(deps.status.getErrorMessage(error));
@@ -8466,6 +8585,9 @@ var {
   reuseExistingTabsToggle: reuseExistingTabsToggle2,
   reuseExistingTabsLabel: reuseExistingTabsLabel2,
   reuseExistingTabsDesc: reuseExistingTabsDesc2,
+  autoCaptureResponsesToggle: autoCaptureResponsesToggle2,
+  autoCaptureResponsesLabel,
+  autoCaptureResponsesDesc,
   waitMultiplierLabel: waitMultiplierLabel2,
   waitMultiplierRange: waitMultiplierRange2,
   waitMultiplierValue: waitMultiplierValue3
@@ -8476,6 +8598,9 @@ function createPopupStorageController(deps) {
     reuseExistingTabsToggle2.checked = Boolean(state.settings.reuseExistingTabs);
     reuseExistingTabsLabel2.textContent = t.reuseTabsLabel;
     reuseExistingTabsDesc2.textContent = state.settings.reuseExistingTabs ? t.reuseTabsDescEnabled : t.reuseTabsDescDisabled;
+    autoCaptureResponsesToggle2.checked = Boolean(state.settings.autoCaptureResponses);
+    autoCaptureResponsesLabel.textContent = t.autoCaptureResponsesLabel;
+    autoCaptureResponsesDesc.textContent = state.settings.autoCaptureResponses ? t.autoCaptureResponsesDescEnabled : t.autoCaptureResponsesDescDisabled;
     waitMultiplierLabel2.textContent = t.waitMultiplierLabel;
     waitMultiplierRange2.value = String(state.settings.waitMsMultiplier);
     waitMultiplierValue3.textContent = t.waitMultiplierValue(
@@ -8487,6 +8612,7 @@ function createPopupStorageController(deps) {
     try {
       const [
         history,
+        comparisonNotes,
         favorites,
         variableCache,
         runtimeSites,
@@ -8498,6 +8624,7 @@ function createPopupStorageController(deps) {
         settings
       ] = await Promise.all([
         getPromptHistory(),
+        getComparisonNotes(),
         getPromptFavorites(),
         getTemplateVariableCache(),
         getRuntimeSites(),
@@ -8509,6 +8636,7 @@ function createPopupStorageController(deps) {
         getAppSettings()
       ]);
       state.history = history;
+      state.comparisonNotes = comparisonNotes;
       state.favorites = favorites;
       state.templateVariableCache = variableCache;
       state.runtimeSites = sortSitesByOrder(runtimeSites, settings.siteOrder);
@@ -8543,6 +8671,7 @@ function createPopupStorageController(deps) {
     try {
       const [
         history,
+        comparisonNotes,
         favorites,
         variableCache,
         runtimeSites,
@@ -8551,6 +8680,7 @@ function createPopupStorageController(deps) {
         settings
       ] = await Promise.all([
         getPromptHistory(),
+        getComparisonNotes(),
         getPromptFavorites(),
         getTemplateVariableCache(),
         getRuntimeSites(),
@@ -8559,6 +8689,7 @@ function createPopupStorageController(deps) {
         getAppSettings()
       ]);
       state.history = history;
+      state.comparisonNotes = comparisonNotes;
       state.favorites = favorites;
       state.templateVariableCache = variableCache;
       state.runtimeSites = sortSitesByOrder(runtimeSites, settings.siteOrder);
@@ -8597,6 +8728,7 @@ var {
   templateModal: templateModal2,
   favoriteModal: favoriteModal3,
   resendModal: resendModal2,
+  responsesModal: responsesModal2,
   importReportModal: importReportModal2
 } = popupDom.modals;
 var { toastHost } = popupDom;
@@ -8641,9 +8773,11 @@ function renderLists() {
 var hideFavoriteModal = () => void 0;
 var hideTemplateModal = () => void 0;
 var hideResendModal = () => void 0;
+var hideResponsesModal = () => void 0;
 var hideImportReportModal = () => void 0;
 var openTemplateModalV2 = async (_prompt, _targets) => void 0;
 var openResendModal = (_historyItem) => void 0;
+var openResponsesModal = (_historyItem) => void 0;
 var openImportReportModal = (_summary) => void 0;
 var setTemplateModalError = (_message) => void 0;
 var requestFavoriteRun = async () => ({
@@ -8677,10 +8811,11 @@ var {
   buildTemplatePreviewText
 } = popupTargetsController;
 var overlayController = createOverlayController({
-  overlays: [importReportModal2, resendModal2, favoriteModal3, templateModal2],
+  overlays: [importReportModal2, responsesModal2, resendModal2, favoriteModal3, templateModal2],
   closeFavoriteModal: () => hideFavoriteModal(),
   hideTemplateModal,
   hideResendModal,
+  hideResponsesModal,
   hideImportReportModal,
   renderLists
 });
@@ -8789,6 +8924,8 @@ var popupHistoryModals = createPopupHistoryModals({
 });
 hideResendModal = popupHistoryModals.hideResendModal;
 openResendModal = popupHistoryModals.openResendModal;
+hideResponsesModal = popupHistoryModals.hideResponsesModal;
+openResponsesModal = popupHistoryModals.openResponsesModal;
 openImportReportModal = popupHistoryModals.openImportReportModal;
 hideImportReportModal = popupHistoryModals.hideImportReportModal;
 bindHistoryModalEvents = popupHistoryModals.bindHistoryModalEvents;
@@ -8842,6 +8979,7 @@ renderFavoritesList = favoritesController.renderFavoritesList;
 var historyController = createHistoryController({
   switchTab,
   loadPromptIntoComposer,
+  openResponsesModal,
   openResendModal,
   renderFavoritesList,
   setStatus,
@@ -8873,6 +9011,7 @@ function resetTransientModals() {
   hideTemplateModal();
   hideFavoriteModal();
   hideResendModal();
+  hideResponsesModal();
   hideImportReportModal();
 }
 async function init() {

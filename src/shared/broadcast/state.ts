@@ -15,6 +15,7 @@ function clonePendingBroadcastRecord(record: PendingBroadcastRecord): PendingBro
     siteResults: { ...(record.siteResults ?? {}) },
     targetSnapshots: ensureBroadcastTargetSnapshots(record.targetSnapshots, record.siteIds, record.prompt),
     openedTabIds: [...(record.openedTabIds ?? [])],
+    targetTabIdsBySiteId: { ...(record.targetTabIdsBySiteId ?? {}) },
     originFavoriteId: record.originFavoriteId ?? null,
     chainRunId: record.chainRunId ?? null,
     chainStepIndex:

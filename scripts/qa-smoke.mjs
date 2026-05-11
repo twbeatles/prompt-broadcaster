@@ -1414,6 +1414,7 @@ async function main() {
     assert.equal(legacyImport.settings.waitMsMultiplier, 1);
     assert.equal(legacyImport.settings.historySort, "latest");
     assert.equal(legacyImport.settings.favoriteSort, "recentUsed");
+    assert.equal(legacyImport.settings.autoCaptureResponses, true);
     assert.deepEqual(legacyImport.settings.siteOrder, []);
 
     const modernImport = await module.importPromptData(JSON.stringify({
@@ -1448,6 +1449,7 @@ async function main() {
     assert.equal(modernImport.settings.waitMsMultiplier, 1);
     assert.equal(modernImport.settings.historySort, "latest");
     assert.equal(modernImport.settings.favoriteSort, "recentUsed");
+    assert.equal(modernImport.settings.autoCaptureResponses, true);
     assert.deepEqual(modernImport.settings.siteOrder, []);
     assert.equal(modernImport.history[0].siteResults.chatgpt.code, "submitted");
     assert.equal(modernImport.history[0].siteResults.claude.code, "selector_timeout");
@@ -2684,6 +2686,7 @@ async function main() {
         historyLimit: null,
         siteOrder: ["claude", "", "claude", "custom-1"],
         reuseExistingTabs: null,
+        autoCaptureResponses: null,
       },
       history: null,
       favorites: null,
@@ -2695,6 +2698,7 @@ async function main() {
     assert.equal(v3Import.importSummary.migratedFromVersion, 3);
     assert.equal(v3Import.settings.historyLimit, 10);
     assert.equal(v3Import.settings.reuseExistingTabs, true);
+    assert.equal(v3Import.settings.autoCaptureResponses, true);
     assert.deepEqual(v3Import.settings.siteOrder, ["claude", "custom-1"]);
     assert.deepEqual(v3Import.history, []);
     assert.deepEqual(v3Import.favorites, []);
@@ -2716,6 +2720,7 @@ async function main() {
       }],
     }));
     assert.equal(v4Import.importSummary.migratedFromVersion, 4);
+    assert.equal(v4Import.settings.autoCaptureResponses, true);
     assert.deepEqual(v4Import.settings.siteOrder, []);
     assert.equal(v4Import.history[0].text, "Legacy");
     assert.equal(v4Import.favorites[0].id, "fav-v4");
@@ -2908,7 +2913,7 @@ async function main() {
     assert.equal(summary.representativeMessage, "Composer button stayed disabled");
   });
 
-  await runStep("dashboard metrics include heatmap trends failures and strategy summary", async () => {
+  await runStep("dashboard metrics include recent activity success and failures", async () => {
     const module = await loadBundledModule("src/options/features/dashboard-metrics.ts", createChromeMock());
     const metrics = module.buildDashboardMetrics(
       [
@@ -2960,12 +2965,14 @@ async function main() {
     );
 
     assert.equal(metrics.totalTransmissions, 3);
+    assert.equal(metrics.weekCount, 3);
+    assert.equal(metrics.recentSuccessRate, 50);
+    assert.equal(metrics.recentItems.length, 3);
+    assert.equal(metrics.recentItems[0].text, "Prompt A");
+    assert.deepEqual(metrics.recentItems[1].submittedSiteIds, ["chatgpt"]);
     assert.ok(metrics.donutItems.some((item) => item.label === "ChatGPT" && item.count === 2));
-    assert.ok(metrics.heatmap.maxCount >= 1);
-    assert.ok(metrics.serviceTrendItems.some((item) => item.id === "chatgpt"));
     assert.ok(metrics.failureReasonItems.some((item) => item.code === "submit_failed" && item.count === 1));
     assert.ok(metrics.failureReasonItems.some((item) => item.code === "unexpected_error" && item.count === 1));
-    assert.ok(metrics.strategySummaryItems.some((item) => item.siteId === "chatgpt" && item.bestStrategy === "execCommand"));
   });
 
   await runStep("reusable tab preflight excludes auth settings and invalid composer surfaces", async () => {
@@ -3091,6 +3098,7 @@ async function main() {
         autoClosePopup: true,
         desktopNotifications: false,
         reuseExistingTabs: false,
+        autoCaptureResponses: false,
         waitMsMultiplier: 2.5,
         historySort: "oldest",
         favoriteSort: "title",
@@ -3142,6 +3150,7 @@ async function main() {
       autoClosePopup: false,
       desktopNotifications: true,
       reuseExistingTabs: true,
+      autoCaptureResponses: true,
       waitMsMultiplier: 1,
       historySort: "latest",
       favoriteSort: "recentUsed",

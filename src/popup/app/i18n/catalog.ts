@@ -313,6 +313,29 @@ export const t = {
   reuseTabsDescDisabled:
     msg("popup_reuse_tabs_desc_disabled") ||
     "When no tab is chosen explicitly, the broadcaster always opens a fresh tab.",
+  autoCaptureResponsesLabel:
+    msg("popup_auto_capture_responses_label") ||
+    "Save AI responses automatically",
+  autoCaptureResponsesDescEnabled:
+    msg("popup_auto_capture_responses_desc_enabled") ||
+    "Visible AI responses are saved locally after a send finishes.",
+  autoCaptureResponsesDescDisabled:
+    msg("popup_auto_capture_responses_desc_disabled") ||
+    "AI responses will not be saved automatically.",
+  responseCount: (count: number) =>
+    msg("popup_history_response_count", [String(count)]) ||
+    `${count} responses`,
+  viewResponses: msg("popup_history_view_responses") || "View responses",
+  responsesModalTitle:
+    msg("popup_responses_modal_title") || "Saved AI responses",
+  responsesModalDesc:
+    msg("popup_responses_modal_desc") ||
+    "Responses are stored locally in this browser.",
+  responsesModalClose: msg("popup_responses_modal_close") || "Close",
+  responsesEmpty:
+    msg("popup_responses_empty") || "No AI response has been saved for this history item yet.",
+  responsesAuto: msg("popup_responses_auto") || "auto",
+  responsesManual: msg("popup_responses_manual") || "manual",
   openTabsTitle: (count: number) =>
     msg("popup_open_tabs_title", [String(count)]) ||
     `${count} open tab${count === 1 ? "" : "s"}`,

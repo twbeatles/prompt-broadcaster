@@ -493,6 +493,44 @@
   "popup_reuse_tabs_desc_disabled": {
     "message": "When no tab is chosen explicitly, the broadcaster always opens a fresh tab."
   },
+  "popup_auto_capture_responses_label": {
+    "message": "Save AI responses automatically"
+  },
+  "popup_auto_capture_responses_desc_enabled": {
+    "message": "Visible AI responses are saved locally after a send finishes."
+  },
+  "popup_auto_capture_responses_desc_disabled": {
+    "message": "AI responses will not be saved automatically."
+  },
+  "popup_history_response_count": {
+    "message": "$COUNT$ responses",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "popup_history_view_responses": {
+    "message": "View responses"
+  },
+  "popup_responses_modal_title": {
+    "message": "Saved AI responses"
+  },
+  "popup_responses_modal_desc": {
+    "message": "Responses are stored locally in this browser."
+  },
+  "popup_responses_modal_close": {
+    "message": "Close"
+  },
+  "popup_responses_empty": {
+    "message": "No AI response has been saved for this history item yet."
+  },
+  "popup_responses_auto": {
+    "message": "auto"
+  },
+  "popup_responses_manual": {
+    "message": "manual"
+  },
   "popup_open_tabs_title": {
     "message": "Open tabs ($COUNT$)",
     "placeholders": {
@@ -763,7 +801,7 @@
     "message": "AI Prompt Broadcaster Dashboard"
   },
   "options_brand_subtitle": {
-    "message": "Dashboard & analytics"
+    "message": "Recent use"
   },
   "options_nav_dashboard": {
     "message": "Dashboard"
@@ -787,7 +825,92 @@
     "message": "Dashboard"
   },
   "options_dashboard_desc": {
-    "message": "Review high-level usage metrics and recent prompt activity."
+    "message": "Check recent use, saved AI responses, and anything that needs attention."
+  },
+  "options_dashboard_recent_title": {
+    "message": "Recent activity"
+  },
+  "options_dashboard_recent_desc": {
+    "message": "Latest sends and whether AI responses were saved."
+  },
+  "options_dashboard_view_history": {
+    "message": "View history"
+  },
+  "options_dashboard_actions_title": {
+    "message": "Next actions"
+  },
+  "options_dashboard_actions_desc": {
+    "message": "Simple checks that help the next send work better."
+  },
+  "options_dashboard_advanced_summary": {
+    "message": "Advanced stats"
+  },
+  "options_dashboard_no_recent": {
+    "message": "No sends yet."
+  },
+  "options_dashboard_status_needs_check": {
+    "message": "Needs check"
+  },
+  "options_dashboard_status_sent": {
+    "message": "Sent"
+  },
+  "options_dashboard_response_count": {
+    "message": "$COUNT$ responses",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "options_dashboard_response_missing": {
+    "message": "Response not saved"
+  },
+  "options_dashboard_response_not_needed": {
+    "message": "No response yet"
+  },
+  "options_dashboard_action_service": {
+    "message": "Check service status"
+  },
+  "options_dashboard_action_service_desc": {
+    "message": "$COUNT$ service(s) need attention.",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "options_dashboard_action_response": {
+    "message": "Save missing responses"
+  },
+  "options_dashboard_action_response_desc": {
+    "message": "Open history to capture or paste AI responses."
+  },
+  "options_dashboard_action_auto_capture": {
+    "message": "Turn on response saving"
+  },
+  "options_dashboard_action_auto_capture_desc": {
+    "message": "Automatic response saving is currently off."
+  },
+  "options_dashboard_action_ready": {
+    "message": "Ready for the next send"
+  },
+  "options_dashboard_action_ready_desc": {
+    "message": "No urgent action is needed right now."
+  },
+  "options_dashboard_open": {
+    "message": "Open"
+  },
+  "options_dashboard_card_recent": {
+    "message": "Recent sends"
+  },
+  "options_dashboard_card_success": {
+    "message": "Recent success"
+  },
+  "options_dashboard_card_responses": {
+    "message": "Saved responses"
+  },
+  "options_dashboard_card_actions": {
+    "message": "Needs attention"
   },
   "options_history_title": {
     "message": "History"
@@ -1038,6 +1161,12 @@
   },
   "options_settings_reuse_tabs_desc": {
     "message": "When enabled, matching open AI tabs are reused before opening a new one."
+  },
+  "options_settings_auto_capture": {
+    "message": "Save AI responses automatically"
+  },
+  "options_settings_auto_capture_desc": {
+    "message": "After a send completes, save visible AI responses locally in history."
   },
   "options_chart_service_usage": {
     "message": "Service usage share"
@@ -1578,25 +1707,25 @@
     "message": "Open"
   },
   "options_comparison_title": {
-    "message": "Compare"
+    "message": "AI responses"
   },
   "options_comparison_rating_placeholder": {
     "message": "Rating"
   },
   "options_comparison_text_placeholder": {
-    "message": "Paste an AI response here, or select response text on a service tab and use the context menu."
+    "message": "Paste an AI response here if automatic capture missed it."
   },
   "options_comparison_save_note": {
-    "message": "Save note"
+    "message": "Save response"
   },
   "options_comparison_capture_now": {
-    "message": "Capture now"
+    "message": "Capture again"
   },
   "options_comparison_save_success": {
-    "message": "Comparison note saved."
+    "message": "AI response saved."
   },
   "options_comparison_save_failed": {
-    "message": "Comparison note save failed."
+    "message": "AI response save failed."
   },
   "options_comparison_capture_success": {
     "message": "Response captured."
@@ -1608,10 +1737,10 @@
     "message": "Capture failed."
   },
   "options_comparison_delete_success": {
-    "message": "Comparison note deleted."
+    "message": "AI response deleted."
   },
   "options_comparison_empty": {
-    "message": "No saved comparison notes yet."
+    "message": "No saved AI responses yet."
   },
   "options_comparison_delete": {
     "message": "Delete"

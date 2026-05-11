@@ -84,6 +84,14 @@
         </div>
 
         <div class="settings-group">
+          <label class="checkbox-row settings-toggle-row" for="auto-capture-responses-toggle">
+            <input id="auto-capture-responses-toggle" type="checkbox" />
+            <span id="auto-capture-responses-label"></span>
+          </label>
+          <p id="auto-capture-responses-desc" class="helper-text"></p>
+        </div>
+
+        <div class="settings-group">
           <label class="field-stack" for="wait-multiplier-range">
             <span id="wait-multiplier-label"></span>
             <div class="range-row">
@@ -426,6 +434,22 @@
       <div class="modal-actions">
         <button id="resend-modal-cancel" class="ghost-button" type="button"></button>
         <button id="resend-modal-confirm" class="primary-button" type="button"></button>
+      </div>
+    </div>
+  </div>
+
+  <div id="responses-modal" class="modal-overlay" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="responses-modal-title" aria-describedby="responses-modal-desc">
+      <div class="modal-header">
+        <div>
+          <h2 id="responses-modal-title"></h2>
+          <p id="responses-modal-desc" class="helper-text"></p>
+        </div>
+        <button id="responses-modal-close" class="icon-button" type="button" aria-label="Close" data-i18n-aria-label="common_close">×</button>
+      </div>
+      <div id="responses-modal-body" class="modal-fields"></div>
+      <div class="modal-actions">
+        <button id="responses-modal-confirm" class="primary-button" type="button"></button>
       </div>
     </div>
   </div>
