@@ -256,6 +256,9 @@ var uiLanguage = chrome.i18n.getUILanguage().toLowerCase();
 var isKorean = uiLanguage === "ko" || uiLanguage.startsWith("ko-");
 var locale = isKorean ? "ko-KR" : "en-US";
 function msg(key, substitutions) {
+  if (!key) {
+    return "";
+  }
   return chrome.i18n.getMessage(key, substitutions) || "";
 }
 function applyI18n(root = document) {
@@ -347,7 +350,95 @@ var t = {
     moveUp: msg("options_service_move_up") || "Move up",
     moveDown: msg("options_service_move_down") || "Move down",
     orderSaved: msg("options_service_order_saved") || "Service order saved.",
-    openManagerFailed: msg("options_services_open_failed") || "Failed to open the popup manager."
+    openManagerFailed: msg("options_services_open_failed") || "Failed to open the popup manager.",
+    healthTitle: msg("options_services_health_title") || "Selector Health Center",
+    healthDesc: msg("options_services_health_desc") || "Track recent selector failures, auth gates, strategy hints, and verification metadata.",
+    healthRefresh: msg("options_services_health_refresh") || "Refresh health",
+    healthEmpty: msg("options_services_health_empty") || "No service health snapshot yet.",
+    healthWarning: msg("options_services_health_warning") || "Selector warning",
+    healthHealthy: msg("options_services_health_healthy") || "Healthy",
+    healthNoRecentRun: msg("options_services_health_no_recent_run") || "No recent run",
+    healthLogin: msg("options_services_health_login") || "Login",
+    healthRetry: msg("options_services_health_retry") || "Retry failed",
+    healthSelectorCheck: msg("options_services_health_selector_check") || "Selector check",
+    healthNewTab: msg("options_services_health_new_tab") || "New tab",
+    groupTitle: msg("options_service_groups_title") || "Service Groups",
+    groupDesc: msg("options_service_groups_desc") || "Create reusable target groups for popup favorites and experiment runs.",
+    groupNamePlaceholder: msg("options_service_groups_name_placeholder") || "Group name",
+    groupSave: msg("options_service_groups_save") || "Save group from checked services",
+    groupEmpty: msg("options_service_groups_empty") || "No service groups yet.",
+    groupNoServices: msg("options_service_groups_no_services") || "No services",
+    groupCheckServices: msg("options_service_groups_check_services") || "Check services",
+    groupDelete: msg("options_service_groups_delete") || "Delete",
+    groupUseInGroup: msg("options_service_groups_use_in_group") || "Use in group",
+    groupNeedsService: msg("options_service_groups_needs_service") || "Check at least one service for the group.",
+    groupSaved: msg("options_service_groups_saved") || "Service group saved.",
+    groupDeleted: msg("options_service_groups_deleted") || "Service group deleted.",
+    retryNoFailed: msg("options_services_retry_no_failed") || "No failed history item found for this service.",
+    retryQueued: msg("options_services_retry_queued") || "Retry queued for failed service.",
+    retryFailed: msg("options_services_retry_failed") || "Retry failed.",
+    selectorCheckHint: msg("options_services_selector_check_hint") || "Open the service tab, then use the popup test action after login.",
+    healthRefreshFailed: msg("options_services_health_refresh_failed") || "Service health refresh failed."
+  },
+  experiments: {
+    nav: msg("options_nav_experiments") || "Experiments",
+    title: msg("options_experiments_title") || "Prompt Experiments",
+    desc: msg("options_experiments_desc") || "Preview and run variant x service x variable-set experiments through the normal broadcast history flow.",
+    draft: msg("options_experiments_draft") || "Experiment draft",
+    titlePlaceholder: msg("options_experiments_title_placeholder") || "Experiment title",
+    variantsPlaceholder: msg("options_experiments_variants_placeholder") || "One variant per block. Separate variants with a line containing ---",
+    variablesPlaceholder: msg("options_experiments_variables_placeholder") || 'Variable sets as JSON array, e.g. [{"topic":"selectors"}]',
+    preview: msg("options_experiments_preview") || "Preview",
+    save: msg("options_experiments_save") || "Save",
+    runSaved: msg("options_experiments_run_saved") || "Run saved experiment",
+    load: msg("options_experiments_load") || "Load",
+    run: msg("options_experiments_run") || "Run",
+    delete: msg("options_experiments_delete") || "Delete",
+    deleteSuccess: msg("options_experiments_delete_success") || "Experiment deleted.",
+    empty: msg("options_experiments_empty") || "No saved experiments yet.",
+    previewEmpty: msg("options_experiments_preview_empty") || "Add variants and target services to preview combinations.",
+    noTargetServices: msg("options_experiments_no_target_services") || "No target services",
+    invalidVariables: msg("options_experiments_invalid_variables") || "Variables JSON is invalid. Using an empty variable set.",
+    needsVariantAndTarget: msg("options_experiments_needs_variant_target") || "Experiment needs at least one variant and one target service.",
+    saveSuccess: msg("options_experiments_save_success") || "Experiment saved.",
+    saveFailed: msg("options_experiments_save_failed") || "Experiment save failed.",
+    runFailed: msg("options_experiments_run_failed") || "Experiment run failed.",
+    notFound: msg("options_experiments_not_found") || "Experiment not found.",
+    queued: (count) => msg("options_experiments_queued", [String(count)]) || `Experiment queued: ${count} broadcasts.`,
+    summary: (variants, variableSets, services, runs, broadcasts) => msg("options_experiments_summary", [
+      String(variants),
+      String(variableSets),
+      String(services),
+      String(runs),
+      String(broadcasts)
+    ]) || `${variants} variants · ${variableSets} variable sets · ${services} services · ${runs} runs · ${broadcasts} broadcasts`,
+    runStats: (broadcasts, serviceSends, softLimit, hardLimit) => msg("options_experiments_run_stats", [
+      String(broadcasts),
+      String(serviceSends),
+      String(softLimit),
+      String(hardLimit)
+    ]) || `${broadcasts} broadcasts, ${serviceSends} service sends. Confirmation starts above ${softLimit}; ${hardLimit} is the hard limit.`,
+    confirmLarge: (broadcasts, serviceSends, softLimit) => msg("options_experiments_confirm_large", [
+      String(broadcasts),
+      String(serviceSends),
+      String(softLimit)
+    ]) || `Queue ${broadcasts} broadcasts (${serviceSends} service sends)? Runs above ${softLimit} need confirmation.`,
+    hardLimit: (broadcasts, hardLimit) => msg("options_experiments_hard_limit", [String(broadcasts), String(hardLimit)]) || `This experiment has ${broadcasts} broadcasts. Split it into batches of ${hardLimit} or fewer.`
+  },
+  comparison: {
+    title: msg("options_comparison_title") || "Compare",
+    ratingPlaceholder: msg("options_comparison_rating_placeholder") || "Rating",
+    textPlaceholder: msg("options_comparison_text_placeholder") || "Paste an AI response here, or select response text on a service tab and use the context menu.",
+    saveNote: msg("options_comparison_save_note") || "Save note",
+    captureNow: msg("options_comparison_capture_now") || "Capture now",
+    saveSuccess: msg("options_comparison_save_success") || "Comparison note saved.",
+    saveFailed: msg("options_comparison_save_failed") || "Comparison note save failed.",
+    captureSuccess: msg("options_comparison_capture_success") || "Response captured.",
+    captureNotFound: msg("options_comparison_capture_not_found") || "No visible assistant response was found.",
+    captureFailed: msg("options_comparison_capture_failed") || "Capture failed.",
+    deleteSuccess: msg("options_comparison_delete_success") || "Comparison note deleted.",
+    empty: msg("options_comparison_empty") || "No saved comparison notes yet.",
+    delete: msg("options_comparison_delete") || "Delete"
   },
   settings: {
     historyLimitValue: (count) => msg("options_settings_history_limit_value", [String(count)]),
@@ -385,7 +476,20 @@ var t = {
       injection_timeout: msg("result_code_injection_timeout") || "Injection timeout",
       cancelled: msg("result_code_cancelled") || "Cancelled",
       unexpected_error: msg("result_code_unexpected_error") || "Unexpected error"
-    }
+    },
+    templatePacksTitle: msg("options_template_packs_title") || "Template packs",
+    templatePacksDesc: msg("options_template_packs_desc") || "Export/import favorites as reusable local packs. Sensitive template defaults are included unless unchecked.",
+    templatePackSensitive: msg("options_template_pack_sensitive") || "Include template defaults",
+    templatePackExport: msg("options_template_pack_export") || "Export current favorites as pack",
+    templatePackImport: msg("options_template_pack_import") || "Import pack JSON",
+    templatePackEmpty: msg("options_template_pack_empty") || "No template packs yet.",
+    templatePackDownload: msg("options_template_pack_download") || "Download",
+    templatePackDefaultsIncluded: msg("options_template_pack_defaults_included") || "included",
+    templatePackDefaultsRemoved: msg("options_template_pack_defaults_removed") || "removed",
+    templatePackExported: msg("options_template_pack_exported") || "Template pack exported.",
+    templatePackExportFailed: msg("options_template_pack_export_failed") || "Template pack export failed.",
+    templatePackImportFailed: msg("options_template_pack_import_failed") || "Template pack import failed.",
+    templatePackImported: (imported, skipped) => msg("options_template_pack_imported", [String(imported), String(skipped)]) || `Imported ${imported}, skipped ${skipped} duplicates.`
   },
   statuses: {
     submitted: msg("options_status_complete"),
@@ -444,6 +548,8 @@ var MAX_WAIT_MS_MULTIPLIER = 3;
 var DEFAULT_WAIT_MS_MULTIPLIER = 1;
 var DEFAULT_HISTORY_SORT = "latest";
 var DEFAULT_FAVORITE_SORT = "recentUsed";
+var EXPERIMENT_SOFT_BROADCAST_LIMIT = 10;
+var EXPERIMENT_HARD_BROADCAST_LIMIT = 30;
 var DEFAULT_SETTINGS = Object.freeze({
   historyLimit: DEFAULT_HISTORY_LIMIT,
   autoClosePopup: false,
@@ -2812,6 +2918,19 @@ async function importPromptData(jsonString) {
   };
 }
 
+// src/shared/prompts/experiment-limits.ts
+function getPromptExperimentRunStats(experiment) {
+  const variantCount = experiment.variants.filter((variant) => variant.text.trim()).length;
+  const variableSetCount = experiment.variableSets.length > 0 ? experiment.variableSets.length : 1;
+  const broadcastCount = variantCount * variableSetCount;
+  const targetSiteCount = experiment.targetSiteIds.length;
+  return {
+    broadcastCount,
+    serviceSendCount: broadcastCount * targetSiteCount,
+    targetSiteCount
+  };
+}
+
 // src/options/app/state.ts
 var state = {
   history: [],
@@ -2826,6 +2945,7 @@ var state = {
   runtimeSites: [],
   settings: { ...DEFAULT_SETTINGS },
   activeSection: "dashboard",
+  activeExperimentId: null,
   historyPage: 1,
   selectedHistoryIds: /* @__PURE__ */ new Set(),
   pendingImportSummary: null,
@@ -2837,100 +2957,103 @@ var state = {
 };
 
 // src/options/app/dom.ts
+function byId(id) {
+  return document.getElementById(id);
+}
 var optionsDom = {
   navigation: {
-    navButtons: [...document.querySelectorAll(".nav-button")],
-    pageSections: [...document.querySelectorAll(".page-section")],
-    pageStatus: document.getElementById("page-status")
+    navButtons: Array.from(document.querySelectorAll(".nav-button")),
+    pageSections: Array.from(document.querySelectorAll(".page-section")),
+    pageStatus: byId("page-status")
   },
   dashboard: {
-    dashboardCards: document.getElementById("dashboard-cards"),
-    onboardingChecklist: document.getElementById("onboarding-checklist"),
-    serviceDonut: document.getElementById("service-donut"),
-    dailyBarChart: document.getElementById("daily-bar-chart"),
-    activityHeatmap: document.getElementById("activity-heatmap"),
-    serviceTrend: document.getElementById("service-trend"),
-    failureReasons: document.getElementById("failure-reasons"),
-    strategySummary: document.getElementById("strategy-summary")
+    dashboardCards: byId("dashboard-cards"),
+    onboardingChecklist: byId("onboarding-checklist"),
+    serviceDonut: byId("service-donut"),
+    dailyBarChart: byId("daily-bar-chart"),
+    activityHeatmap: byId("activity-heatmap"),
+    serviceTrend: byId("service-trend"),
+    failureReasons: byId("failure-reasons"),
+    strategySummary: byId("strategy-summary")
   },
   history: {
-    historyServiceFilter: document.getElementById("history-service-filter"),
-    historyDateFrom: document.getElementById("history-date-from"),
-    historyDateTo: document.getElementById("history-date-to"),
-    historyExportCsv: document.getElementById("history-export-csv"),
-    historyTableWrap: document.getElementById("history-table-wrap"),
-    historySelectAll: document.getElementById("history-select-all"),
-    historySelectAllLabel: document.getElementById("history-select-all-label"),
-    historyDeleteSelected: document.getElementById("history-delete-selected"),
-    historyDeleteFiltered: document.getElementById("history-delete-filtered"),
-    historyDelete7d: document.getElementById("history-delete-7d"),
-    historyDelete30d: document.getElementById("history-delete-30d"),
-    historyDelete90d: document.getElementById("history-delete-90d"),
-    historyPrevPage: document.getElementById("history-prev-page"),
-    historyNextPage: document.getElementById("history-next-page"),
-    historyPageInfo: document.getElementById("history-page-info")
+    historyServiceFilter: byId("history-service-filter"),
+    historyDateFrom: byId("history-date-from"),
+    historyDateTo: byId("history-date-to"),
+    historyExportCsv: byId("history-export-csv"),
+    historyTableWrap: byId("history-table-wrap"),
+    historySelectAll: byId("history-select-all"),
+    historySelectAllLabel: byId("history-select-all-label"),
+    historyDeleteSelected: byId("history-delete-selected"),
+    historyDeleteFiltered: byId("history-delete-filtered"),
+    historyDelete7d: byId("history-delete-7d"),
+    historyDelete30d: byId("history-delete-30d"),
+    historyDelete90d: byId("history-delete-90d"),
+    historyPrevPage: byId("history-prev-page"),
+    historyNextPage: byId("history-next-page"),
+    historyPageInfo: byId("history-page-info")
   },
   schedules: {
-    schedulesList: document.getElementById("schedules-list")
+    schedulesList: byId("schedules-list")
   },
   services: {
-    servicesGrid: document.getElementById("services-grid"),
-    servicesHealthCenter: document.getElementById("services-health-center"),
-    servicesRefreshHealthBtn: document.getElementById("services-refresh-health"),
-    serviceGroupTitle: document.getElementById("service-group-title"),
-    serviceGroupSaveBtn: document.getElementById("service-group-save"),
-    serviceGroupsList: document.getElementById("service-groups-list"),
-    servicesOpenManagerBtn: document.getElementById("services-open-manager")
+    servicesGrid: byId("services-grid"),
+    servicesHealthCenter: byId("services-health-center"),
+    servicesRefreshHealthBtn: byId("services-refresh-health"),
+    serviceGroupTitle: byId("service-group-title"),
+    serviceGroupSaveBtn: byId("service-group-save"),
+    serviceGroupsList: byId("service-groups-list"),
+    servicesOpenManagerBtn: byId("services-open-manager")
   },
   experiments: {
-    experimentTitle: document.getElementById("experiment-title"),
-    experimentVariants: document.getElementById("experiment-variants"),
-    experimentVariables: document.getElementById("experiment-variables"),
-    experimentTargets: document.getElementById("experiment-targets"),
-    experimentPreview: document.getElementById("experiment-preview"),
-    experimentSave: document.getElementById("experiment-save"),
-    experimentRun: document.getElementById("experiment-run"),
-    experimentPreviewOutput: document.getElementById("experiment-preview-output"),
-    experimentList: document.getElementById("experiment-list")
+    experimentTitle: byId("experiment-title"),
+    experimentVariants: byId("experiment-variants"),
+    experimentVariables: byId("experiment-variables"),
+    experimentTargets: byId("experiment-targets"),
+    experimentPreview: byId("experiment-preview"),
+    experimentSave: byId("experiment-save"),
+    experimentRun: byId("experiment-run"),
+    experimentPreviewOutput: byId("experiment-preview-output"),
+    experimentList: byId("experiment-list")
   },
   settings: {
-    historyLimitSlider: document.getElementById("history-limit-slider"),
-    historyLimitValue: document.getElementById("history-limit-value"),
-    historyLimitNote: document.getElementById("history-limit-note"),
-    autoCloseToggle: document.getElementById("auto-close-toggle"),
-    desktopNotificationToggle: document.getElementById("desktop-notification-toggle"),
-    reuseTabsToggle: document.getElementById("reuse-tabs-toggle"),
-    reuseTabsSettingTitle: document.getElementById("reuse-tabs-setting-title"),
-    reuseTabsSettingDesc: document.getElementById("reuse-tabs-setting-desc"),
-    waitMultiplierSettingTitle: document.getElementById("wait-multiplier-setting-title"),
-    waitMultiplierSlider: document.getElementById("wait-multiplier-slider"),
-    waitMultiplierSettingValue: document.getElementById("wait-multiplier-setting-value"),
-    shortcutList: document.getElementById("shortcut-list"),
-    openShortcutsBtn: document.getElementById("open-shortcuts-btn"),
-    settingsResetData: document.getElementById("settings-reset-data"),
-    settingsExportJson: document.getElementById("settings-export-json"),
-    settingsImportJson: document.getElementById("settings-import-json"),
-    settingsImportJsonInput: document.getElementById("settings-import-json-input"),
-    templatePackSensitive: document.getElementById("template-pack-sensitive"),
-    templatePackExport: document.getElementById("template-pack-export"),
-    templatePackImport: document.getElementById("template-pack-import"),
-    templatePackImportInput: document.getElementById("template-pack-import-input"),
-    templatePackList: document.getElementById("template-pack-list")
+    historyLimitSlider: byId("history-limit-slider"),
+    historyLimitValue: byId("history-limit-value"),
+    historyLimitNote: byId("history-limit-note"),
+    autoCloseToggle: byId("auto-close-toggle"),
+    desktopNotificationToggle: byId("desktop-notification-toggle"),
+    reuseTabsToggle: byId("reuse-tabs-toggle"),
+    reuseTabsSettingTitle: byId("reuse-tabs-setting-title"),
+    reuseTabsSettingDesc: byId("reuse-tabs-setting-desc"),
+    waitMultiplierSettingTitle: byId("wait-multiplier-setting-title"),
+    waitMultiplierSlider: byId("wait-multiplier-slider"),
+    waitMultiplierSettingValue: byId("wait-multiplier-setting-value"),
+    shortcutList: byId("shortcut-list"),
+    openShortcutsBtn: byId("open-shortcuts-btn"),
+    settingsResetData: byId("settings-reset-data"),
+    settingsExportJson: byId("settings-export-json"),
+    settingsImportJson: byId("settings-import-json"),
+    settingsImportJsonInput: byId("settings-import-json-input"),
+    templatePackSensitive: byId("template-pack-sensitive"),
+    templatePackExport: byId("template-pack-export"),
+    templatePackImport: byId("template-pack-import"),
+    templatePackImportInput: byId("template-pack-import-input"),
+    templatePackList: byId("template-pack-list")
   },
   modals: {
-    historyModal: document.getElementById("history-modal"),
-    historyModalClose: document.getElementById("history-modal-close"),
-    historyModalMeta: document.getElementById("history-modal-meta"),
-    historyModalServices: document.getElementById("history-modal-services"),
-    historyModalText: document.getElementById("history-modal-text"),
-    historyModalComparison: document.getElementById("history-modal-comparison"),
-    importReportModal: document.getElementById("import-report-modal"),
-    importReportModalClose: document.getElementById("import-report-modal-close"),
-    importReportModalTitle: document.getElementById("import-report-modal-title"),
-    importReportModalDesc: document.getElementById("import-report-modal-desc"),
-    importReportBody: document.getElementById("import-report-body")
+    historyModal: byId("history-modal"),
+    historyModalClose: byId("history-modal-close"),
+    historyModalMeta: byId("history-modal-meta"),
+    historyModalServices: byId("history-modal-services"),
+    historyModalText: byId("history-modal-text"),
+    historyModalComparison: byId("history-modal-comparison"),
+    importReportModal: byId("import-report-modal"),
+    importReportModalClose: byId("import-report-modal-close"),
+    importReportModalTitle: byId("import-report-modal-title"),
+    importReportModalDesc: byId("import-report-modal-desc"),
+    importReportBody: byId("import-report-body")
   },
-  toastHost: document.getElementById("toast-host")
+  toastHost: byId("toast-host")
 };
 
 // src/shared/chrome/messaging.ts
@@ -2988,6 +3111,7 @@ var SESSION_RUNTIME_KEYS = Object.freeze({
   lastBroadcast: "lastBroadcast",
   pendingSelectorChecks: "pendingSelectorChecks",
   popupFavoriteIntent: "popupFavoriteIntent",
+  activeComparisonContext: "activeComparisonContext",
   favoriteRunJobs: "favoriteRunJobs"
 });
 
@@ -2998,6 +3122,51 @@ function getStorageArea(area) {
 async function readStorage(area, key, fallbackValue) {
   const result = await getStorageArea(area).get(key);
   return result[key] ?? fallbackValue;
+}
+async function writeStorage(area, key, value) {
+  await getStorageArea(area).set({ [key]: value });
+}
+async function removeStorageKeys(area, keys) {
+  if (!Array.isArray(keys) || keys.length === 0) {
+    return;
+  }
+  await getStorageArea(area).remove(keys);
+}
+
+// src/shared/runtime-state/active-comparison.ts
+var ACTIVE_COMPARISON_CONTEXT_TTL_MS = 30 * 60 * 1e3;
+function normalizeActiveComparisonContext(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const source = value;
+  const historyId = Math.max(0, Math.round(Number(source.historyId)));
+  const serviceId = typeof source.serviceId === "string" && source.serviceId.trim() ? source.serviceId.trim() : "";
+  const updatedAt = typeof source.updatedAt === "string" && Number.isFinite(Date.parse(source.updatedAt)) ? new Date(source.updatedAt).toISOString() : (/* @__PURE__ */ new Date()).toISOString();
+  if (!historyId || !serviceId) {
+    return null;
+  }
+  return {
+    historyId,
+    serviceId,
+    source: "options-modal",
+    updatedAt
+  };
+}
+async function setActiveComparisonContext(context) {
+  const normalized = normalizeActiveComparisonContext(
+    context ? {
+      ...context,
+      source: "options-modal",
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    } : null
+  );
+  if (!normalized) {
+    await removeStorageKeys("session", [SESSION_RUNTIME_KEYS.activeComparisonContext]);
+    return null;
+  }
+  await writeStorage("session", SESSION_RUNTIME_KEYS.activeComparisonContext, normalized);
+  return normalized;
 }
 
 // src/shared/runtime-state/favorite-run-jobs.ts
@@ -3072,7 +3241,7 @@ function normalizeFavoriteRunJobRecord(value) {
   };
 }
 function pruneFavoriteRunJobs(jobs, nowMs = Date.now()) {
-  const byId = /* @__PURE__ */ new Map();
+  const byId2 = /* @__PURE__ */ new Map();
   safeArray(jobs).forEach((entry) => {
     const job = normalizeFavoriteRunJobRecord(entry);
     if (!job) {
@@ -3084,12 +3253,12 @@ function pruneFavoriteRunJobs(jobs, nowMs = Date.now()) {
     if (expired) {
       return;
     }
-    const existing = byId.get(job.jobId);
+    const existing = byId2.get(job.jobId);
     if (!existing || Date.parse(existing.updatedAt) < Date.parse(job.updatedAt)) {
-      byId.set(job.jobId, job);
+      byId2.set(job.jobId, job);
     }
   });
-  return [...byId.values()].sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt)).slice(0, MAX_JOB_COUNT);
+  return [...byId2.values()].sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt)).slice(0, MAX_JOB_COUNT);
 }
 async function getFavoriteRunJobs() {
   const rawValue = await readStorage("session", SESSION_RUNTIME_KEYS.favoriteRunJobs, []);
@@ -4164,7 +4333,7 @@ function buildResultComparisonMarkup(entry) {
     const color = site?.color ?? "#888";
     const icon = site?.icon ?? siteId.slice(0, 2).toUpperCase();
     const result = siteResults[siteId];
-    const rawStatus = normalizeResultCode(result?.code ?? (submitted.has(siteId) ? "submitted" : failed.has(siteId) ? "unexpected_error" : "unknown"));
+    const rawStatus = result?.code ? normalizeResultCode(result.code) : submitted.has(siteId) ? "submitted" : failed.has(siteId) ? "unexpected_error" : "unknown";
     const isOk = rawStatus === "submitted";
     const isFailed = rawStatus !== "submitted" && rawStatus !== "unknown";
     const statusEmoji = isOk ? "✅" : isFailed ? "❌" : "⏳";
@@ -4204,24 +4373,23 @@ function buildCompareWorkspaceMarkup(entry) {
               <strong>${escapeHTML(site?.name || note.serviceId)}</strong>
               <div class="helper">${escapeHTML(note.captureMode)} · ${escapeHTML(formatDateTime(note.updatedAt))}${note.rating ? ` · ${note.rating}/5` : ""}</div>
             </div>
-            <button class="btn danger ghost" type="button" data-comparison-delete="${escapeHTML(note.id)}">Delete</button>
+            <button class="btn danger ghost" type="button" data-comparison-delete="${escapeHTML(note.id)}">${escapeHTML(t.comparison.delete)}</button>
           </div>
           <pre class="modal-prompt">${escapeHTML(note.responseText)}</pre>
         </article>
       `;
-  }).join("") : `<div class="empty-state">No saved comparison notes yet.</div>`;
+  }).join("") : `<div class="empty-state">${escapeHTML(t.comparison.empty)}</div>`;
   return `
     <div class="compare-workspace" data-compare-history-id="${escapeHTML(String(entry.id))}">
-      <h3 class="result-comparison-title">Compare</h3>
+      <h3 class="result-comparison-title">${escapeHTML(t.comparison.title)}</h3>
       <div class="filter-row">
         <select data-comparison-service>${serviceOptions}</select>
-        <input data-comparison-rating type="number" min="1" max="5" placeholder="Rating" />
+        <input data-comparison-rating type="number" min="1" max="5" placeholder="${escapeHTML(t.comparison.ratingPlaceholder)}" />
       </div>
-      <textarea data-comparison-text rows="5" placeholder="Paste an AI response here, or select response text on a service tab and use the context menu."></textarea>
+      <textarea data-comparison-text rows="5" placeholder="${escapeHTML(t.comparison.textPlaceholder)}"></textarea>
       <div class="settings-actions">
-        <button class="btn" type="button" data-comparison-save>Save note</button>
-        <button class="btn ghost" type="button" data-comparison-capture-start>Capture start</button>
-        <button class="btn ghost" type="button" data-comparison-capture-stop>Stop capture</button>
+        <button class="btn" type="button" data-comparison-save>${escapeHTML(t.comparison.saveNote)}</button>
+        <button class="btn ghost" type="button" data-comparison-capture-start>${escapeHTML(t.comparison.captureNow)}</button>
       </div>
       <div class="settings-stack">${notesMarkup}</div>
     </div>
@@ -4238,14 +4406,22 @@ async function refreshComparisonNotes(historyId) {
 }
 function bindCompareWorkspaceEvents(comparisonEl, entry) {
   comparisonEl.onclick = (event) => {
-    const workspace = event.target.closest("[data-compare-history-id]");
+    const target = event.target instanceof Element ? event.target : null;
+    const workspace = target?.closest("[data-compare-history-id]");
     if (!workspace) {
       return;
     }
     const serviceId = workspace.querySelector("[data-comparison-service]")?.value || entry.requestedSiteIds?.[0] || "";
     const responseText = workspace.querySelector("[data-comparison-text]")?.value || "";
     const ratingValue = Number(workspace.querySelector("[data-comparison-rating]")?.value);
-    if (event.target.closest("[data-comparison-save]")) {
+    if (target?.closest("[data-comparison-service]")) {
+      void setActiveComparisonContext({
+        historyId: Number(entry.id),
+        serviceId
+      });
+      return;
+    }
+    if (target?.closest("[data-comparison-save]")) {
       void sendRuntimeMessageWithTimeout({
         action: "comparison-note:save",
         note: {
@@ -4258,52 +4434,64 @@ function bindCompareWorkspaceEvents(comparisonEl, entry) {
         }
       }, 8e3).then(async (response) => {
         if (!response?.ok) {
-          throw new Error(response?.error || "Comparison note save failed.");
+          throw new Error(response?.error || t.comparison.saveFailed);
         }
-        showAppToast("Comparison note saved.", "success", 1600);
+        showAppToast(t.comparison.saveSuccess, "success", 1600);
         await refreshComparisonNotes(entry.id);
       }).catch((error) => {
         console.error("[AI Prompt Broadcaster] Failed to save comparison note.", error);
-        showAppToast(error?.message || "Comparison note save failed.", "error", 3e3);
+        showAppToast(error?.message || t.comparison.saveFailed, "error", 3e3);
       });
       return;
     }
-    if (event.target.closest("[data-comparison-capture-start]")) {
+    if (target?.closest("[data-comparison-capture-start]")) {
+      void setActiveComparisonContext({
+        historyId: Number(entry.id),
+        serviceId
+      });
       void sendRuntimeMessageWithTimeout({
         action: "comparison-capture:start",
         historyId: entry.id,
         serviceId
       }, 1e4).then(async (response) => {
         if (!response?.ok) {
-          throw new Error(response?.error || "Capture start failed.");
+          throw new Error(response?.error || t.comparison.captureFailed);
         }
-        showAppToast(response.captured ? "Response captured." : response.message || "Capture armed.", response.captured ? "success" : "info", 2600);
+        showAppToast(
+          response.captured ? t.comparison.captureSuccess : response.message || t.comparison.captureNotFound,
+          response.captured ? "success" : "info",
+          2600
+        );
         await refreshComparisonNotes(entry.id);
       }).catch((error) => {
         console.error("[AI Prompt Broadcaster] Failed to start comparison capture.", error);
-        showAppToast(error?.message || "Capture failed.", "error", 3e3);
+        showAppToast(error?.message || t.comparison.captureFailed, "error", 3e3);
       });
       return;
     }
-    if (event.target.closest("[data-comparison-capture-stop]")) {
-      void sendRuntimeMessageWithTimeout({
-        action: "comparison-capture:stop",
-        historyId: entry.id,
-        serviceId
-      }, 5e3).then(() => showAppToast("Capture stopped.", "success", 1200));
-      return;
-    }
-    const deleteButton = event.target.closest("[data-comparison-delete]");
+    const deleteButton = target?.closest("[data-comparison-delete]");
     if (deleteButton) {
       void sendRuntimeMessageWithTimeout({
         action: "comparison-note:delete",
-        noteId: deleteButton.dataset.comparisonDelete
+        noteId: deleteButton.dataset.comparisonDelete ?? ""
       }, 8e3).then(async (response) => {
         state.comparisonNotes = response?.notes ?? state.comparisonNotes;
-        showAppToast("Comparison note deleted.", "success", 1400);
+        showAppToast(t.comparison.deleteSuccess, "success", 1400);
         await refreshComparisonNotes(entry.id);
       });
     }
+  };
+  comparisonEl.onchange = (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const workspace = target?.closest("[data-compare-history-id]");
+    if (!workspace || !target?.closest("[data-comparison-service]")) {
+      return;
+    }
+    const serviceId = workspace.querySelector("[data-comparison-service]")?.value || entry.requestedSiteIds?.[0] || "";
+    void setActiveComparisonContext({
+      historyId: Number(entry.id),
+      serviceId
+    });
   };
 }
 function openHistoryModal(historyId) {
@@ -4312,6 +4500,9 @@ function openHistoryModal(historyId) {
     return;
   }
   const status = getStatusInfo(entry.status);
+  if (!historyModal || !historyModalClose || !historyModalMeta || !historyModalServices || !historyModalText) {
+    return;
+  }
   historyModalMeta.textContent = `${formatDateTime(entry.createdAt)} · ${status.label}`;
   historyModalServices.innerHTML = getRequestedServices(entry).map((siteId) => buildBadgeMarkup(siteId, state.runtimeSites)).join("");
   historyModalText.textContent = entry.text;
@@ -4323,10 +4514,20 @@ function openHistoryModal(historyId) {
   }
   comparisonEl.innerHTML = `${buildResultComparisonMarkup(entry)}${buildCompareWorkspaceMarkup(entry)}`;
   bindCompareWorkspaceEvents(comparisonEl, entry);
+  const defaultServiceId = getRequestedServices(entry)[0] || "";
+  if (defaultServiceId) {
+    void setActiveComparisonContext({
+      historyId: Number(entry.id),
+      serviceId: defaultServiceId
+    });
+  }
   openModal(historyModal, historyModalClose);
 }
 function closeHistoryModal() {
-  closeModal(historyModal);
+  void setActiveComparisonContext(null);
+  if (historyModal) {
+    closeModal(historyModal);
+  }
 }
 
 // src/options/features/schedule-summary.ts
@@ -4587,22 +4788,22 @@ var {
 var { servicesOpenManagerBtn } = optionsDom.services;
 function getHealthStatus(snapshot) {
   if (snapshot?.selectorWarning) {
-    return { label: "Selector warning", tone: "danger" };
+    return { label: t.services.healthWarning, tone: "danger" };
   }
   if (snapshot?.lastFailureAt && (!snapshot?.lastSuccessAt || Date.parse(snapshot.lastFailureAt) > Date.parse(snapshot.lastSuccessAt))) {
     return { label: snapshot.lastFailureCode || "Recent failure", tone: "warning" };
   }
   if (snapshot?.lastSuccessAt) {
-    return { label: "Healthy", tone: "success" };
+    return { label: t.services.healthHealthy, tone: "success" };
   }
-  return { label: "No recent run", tone: "muted" };
+  return { label: t.services.healthNoRecentRun, tone: "muted" };
 }
 function renderServiceHealthCenter() {
   if (!servicesHealthCenter) {
     return;
   }
   if (!state.serviceHealthSnapshots?.length) {
-    servicesHealthCenter.innerHTML = `<div class="empty-state">No service health snapshot yet.</div>`;
+    servicesHealthCenter.innerHTML = `<div class="empty-state">${escapeHTML(t.services.healthEmpty)}</div>`;
     return;
   }
   servicesHealthCenter.innerHTML = state.serviceHealthSnapshots.map((snapshot) => {
@@ -4621,10 +4822,10 @@ function renderServiceHealthCenter() {
           ${selector ? `<code class="inline-code">${escapeHTML(selector)}</code>` : ""}
         </div>
         <div class="settings-actions">
-          <button class="btn ghost" type="button" data-health-action="login" data-service-id="${escapeHTML(snapshot.serviceId)}">Login</button>
-          <button class="btn ghost" type="button" data-health-action="retry" data-service-id="${escapeHTML(snapshot.serviceId)}">Retry failed</button>
-          <button class="btn ghost" type="button" data-health-action="selector" data-service-id="${escapeHTML(snapshot.serviceId)}">Selector check</button>
-          <button class="btn ghost" type="button" data-health-action="new-tab" data-service-id="${escapeHTML(snapshot.serviceId)}">New tab</button>
+          <button class="btn ghost" type="button" data-health-action="login" data-service-id="${escapeHTML(snapshot.serviceId)}">${escapeHTML(t.services.healthLogin)}</button>
+          <button class="btn ghost" type="button" data-health-action="retry" data-service-id="${escapeHTML(snapshot.serviceId)}">${escapeHTML(t.services.healthRetry)}</button>
+          <button class="btn ghost" type="button" data-health-action="selector" data-service-id="${escapeHTML(snapshot.serviceId)}">${escapeHTML(t.services.healthSelectorCheck)}</button>
+          <button class="btn ghost" type="button" data-health-action="new-tab" data-service-id="${escapeHTML(snapshot.serviceId)}">${escapeHTML(t.services.healthNewTab)}</button>
         </div>
       </article>
     `;
@@ -4635,7 +4836,7 @@ function renderServiceGroups() {
     return;
   }
   if (!state.serviceGroups?.length) {
-    serviceGroupsList.innerHTML = `<div class="empty-state">No service groups yet.</div>`;
+    serviceGroupsList.innerHTML = `<div class="empty-state">${escapeHTML(t.services.groupEmpty)}</div>`;
     return;
   }
   serviceGroupsList.innerHTML = state.serviceGroups.map((group) => {
@@ -4644,11 +4845,11 @@ function renderServiceGroups() {
       <article class="service-health-row">
         <div>
           <strong>${escapeHTML(group.title)}</strong>
-          <div class="helper">${escapeHTML(names || "No services")}</div>
+          <div class="helper">${escapeHTML(names || t.services.groupNoServices)}</div>
         </div>
         <div class="settings-actions">
-          <button class="btn ghost" type="button" data-group-select="${escapeHTML(group.id)}">Check services</button>
-          <button class="btn danger ghost" type="button" data-group-delete="${escapeHTML(group.id)}">Delete</button>
+          <button class="btn ghost" type="button" data-group-select="${escapeHTML(group.id)}">${escapeHTML(t.services.groupCheckServices)}</button>
+          <button class="btn danger ghost" type="button" data-group-delete="${escapeHTML(group.id)}">${escapeHTML(t.services.groupDelete)}</button>
         </div>
       </article>
     `;
@@ -4681,7 +4882,7 @@ function renderServicesSection() {
         </div>
         <label class="checkbox-inline">
           <input type="checkbox" data-service-group-select="${escapeHTML(site.id)}" />
-          <span>Use in group</span>
+          <span>${escapeHTML(t.services.groupUseInGroup)}</span>
         </label>
         <label class="settings-control" for="wait-range-${escapeHTML(site.id)}">
           <strong>${escapeHTML(t.services.waitTime)}</strong>
@@ -4720,7 +4921,7 @@ async function refreshServiceHealth() {
 async function retryFailedService(serviceId) {
   const failedEntry = state.history.find((entry) => entry.failedSiteIds?.includes(serviceId));
   if (!failedEntry) {
-    showAppToast("No failed history item found for this service.", "warning", 2200);
+    showAppToast(t.services.retryNoFailed, "warning", 2200);
     return;
   }
   const response = await sendRuntimeMessageWithTimeout({
@@ -4731,13 +4932,13 @@ async function retryFailedService(serviceId) {
   if (!response?.ok) {
     throw new Error(response?.error || "Retry could not be queued.");
   }
-  showAppToast("Retry queued for failed service.", "success", 1800);
+  showAppToast(t.services.retryQueued, "success", 1800);
 }
 async function saveCheckedServiceGroup() {
   const selectedIds = [...servicesGrid.querySelectorAll("[data-service-group-select]:checked")].map((input) => input.dataset.serviceGroupSelect).filter(Boolean);
   const title = serviceGroupTitle.value.trim() || `Group ${state.serviceGroups.length + 1}`;
   if (selectedIds.length === 0) {
-    showAppToast("Check at least one service for the group.", "warning", 2200);
+    showAppToast(t.services.groupNeedsService, "warning", 2200);
     return;
   }
   const now = (/* @__PURE__ */ new Date()).toISOString();
@@ -4756,7 +4957,7 @@ async function saveCheckedServiceGroup() {
     ...state.serviceGroups.filter((group) => group.id !== nextGroup.id)
   ]);
   renderServiceGroups();
-  showAppToast("Service group saved.", "success", 1600);
+  showAppToast(t.services.groupSaved, "success", 1600);
 }
 function moveRuntimeSite(siteId, direction) {
   const currentIndex = state.runtimeSites.findIndex((site) => site.id === siteId);
@@ -4811,7 +5012,7 @@ function bindServiceEvents() {
   servicesRefreshHealthBtn?.addEventListener("click", () => {
     void refreshServiceHealth().catch((error) => {
       console.error("[AI Prompt Broadcaster] Failed to refresh service health.", error);
-      showAppToast(error?.message || "Service health refresh failed.", "error", 3e3);
+      showAppToast(error?.message || t.services.healthRefreshFailed, "error", 3e3);
     });
   });
   serviceGroupSaveBtn?.addEventListener("click", () => {
@@ -4832,13 +5033,13 @@ function bindServiceEvents() {
     if (button.dataset.healthAction === "retry") {
       void retryFailedService(site.id).catch((error) => {
         console.error("[AI Prompt Broadcaster] Failed to retry service.", error);
-        showAppToast(error?.message || "Retry failed.", "error", 3e3);
+        showAppToast(error?.message || t.services.retryFailed, "error", 3e3);
       });
       return;
     }
     if (button.dataset.healthAction === "selector") {
       void chrome.tabs.create({ url: site.url, active: true });
-      showAppToast("Open the service tab, then use the popup test action after login.", "info", 3e3);
+      showAppToast(t.services.selectorCheckHint, "info", 3e3);
       return;
     }
     void chrome.tabs.create({ url: site.url, active: true });
@@ -4861,7 +5062,7 @@ function bindServiceEvents() {
       state.serviceGroups = state.serviceGroups.filter((entry) => entry.id !== deleteButton.dataset.groupDelete);
       void setServiceGroups(state.serviceGroups).then(() => {
         renderServiceGroups();
-        showAppToast("Service group deleted.", "success", 1600);
+        showAppToast(t.services.groupDeleted, "success", 1600);
       });
     }
   });
@@ -5156,12 +5357,14 @@ function parseVariableSets() {
       ) : {}
     }));
   } catch (_error) {
-    showAppToast("Variables JSON is invalid. Using an empty variable set.", "warning", 2600);
+    showAppToast(t.experiments.invalidVariables, "warning", 2600);
     return [{ id: "vars-1", title: "Default", values: {} }];
   }
 }
 function getSelectedTargetIds() {
-  return [...dom.experimentTargets.querySelectorAll("[data-experiment-target]:checked")].map((input) => input.dataset.experimentTarget).filter(Boolean);
+  return Array.from(
+    dom.experimentTargets?.querySelectorAll("[data-experiment-target]:checked") ?? []
+  ).map((input) => input.dataset.experimentTarget ?? "").filter(Boolean);
 }
 function buildDraftExperiment(existingId = null) {
   return {
@@ -5183,6 +5386,20 @@ function buildPreviewItems(experiment) {
     }))
   );
 }
+function getExperimentRunStats(experiment) {
+  return getPromptExperimentRunStats(experiment);
+}
+function buildRunLimitMarkup(experiment) {
+  const stats = getExperimentRunStats(experiment);
+  const tone = stats.broadcastCount > EXPERIMENT_HARD_BROADCAST_LIMIT ? "error" : stats.broadcastCount > EXPERIMENT_SOFT_BROADCAST_LIMIT ? "warning" : "info";
+  const label = t.experiments.runStats(
+    stats.broadcastCount,
+    stats.serviceSendCount,
+    EXPERIMENT_SOFT_BROADCAST_LIMIT,
+    EXPERIMENT_HARD_BROADCAST_LIMIT
+  );
+  return `<div class="helper experiment-run-limit ${tone}">${escapeHTML(label)}</div>`;
+}
 function renderExperimentTargets() {
   if (!dom.experimentTargets) {
     return;
@@ -5201,13 +5418,19 @@ function renderExperimentTargets() {
 function renderPreview() {
   const experiment = buildDraftExperiment();
   const items = buildPreviewItems(experiment);
-  dom.experimentPreviewOutput.innerHTML = items.length ? items.map((item, index) => `
+  if (!dom.experimentPreviewOutput) {
+    return;
+  }
+  dom.experimentPreviewOutput.innerHTML = items.length ? items.map((item) => `
       <article class="panel compact-panel">
         <strong>${escapeHTML(item.variant.title)} x ${escapeHTML(item.variableSet.title)}</strong>
-        <div class="helper">${escapeHTML(item.targetSiteIds.join(", ") || "No target services")}</div>
+        <div class="helper">${escapeHTML(item.targetSiteIds.join(", ") || t.experiments.noTargetServices)}</div>
         <pre class="modal-prompt">${escapeHTML(item.prompt)}</pre>
       </article>
-    `).join("") : `<div class="empty-state">Add variants and target services to preview combinations.</div>`;
+    `).join("") : `<div class="empty-state">${escapeHTML(t.experiments.previewEmpty)}</div>`;
+  if (items.length) {
+    dom.experimentPreviewOutput.insertAdjacentHTML("afterbegin", buildRunLimitMarkup(experiment));
+  }
 }
 function renderExperimentsSection() {
   if (!dom.experimentList) {
@@ -5219,21 +5442,27 @@ function renderExperimentsSection() {
         <div class="section-head-row">
           <div>
             <h2>${escapeHTML(experiment.title)}</h2>
-            <p>${experiment.variants.length} variants · ${experiment.variableSets.length} variable sets · ${experiment.targetSiteIds.length} services · ${experiment.runs.length} runs</p>
+            <p>${escapeHTML(t.experiments.summary(
+    experiment.variants.length,
+    experiment.variableSets.length,
+    experiment.targetSiteIds.length,
+    experiment.runs.length,
+    getExperimentRunStats(experiment).broadcastCount
+  ))}</p>
           </div>
           <div class="settings-actions">
-            <button class="btn ghost" type="button" data-experiment-load="${escapeHTML(experiment.id)}">Load</button>
-            <button class="btn primary" type="button" data-experiment-run="${escapeHTML(experiment.id)}">Run</button>
-            <button class="btn danger ghost" type="button" data-experiment-delete="${escapeHTML(experiment.id)}">Delete</button>
+            <button class="btn ghost" type="button" data-experiment-load="${escapeHTML(experiment.id)}">${escapeHTML(t.experiments.load)}</button>
+            <button class="btn primary" type="button" data-experiment-run="${escapeHTML(experiment.id)}">${escapeHTML(t.experiments.run)}</button>
+            <button class="btn danger ghost" type="button" data-experiment-delete="${escapeHTML(experiment.id)}">${escapeHTML(t.experiments.delete)}</button>
           </div>
         </div>
       </article>
-    `).join("") : `<div class="panel empty-state">No saved experiments yet.</div>`;
+    `).join("") : `<div class="panel empty-state">${escapeHTML(t.experiments.empty)}</div>`;
 }
 async function saveDraftExperiment() {
   const draft = buildDraftExperiment();
   if (!draft.variants.length || !draft.targetSiteIds.length) {
-    showAppToast("Experiment needs at least one variant and one target service.", "warning", 2600);
+    showAppToast(t.experiments.needsVariantAndTarget, "warning", 2600);
     return null;
   }
   const response = await sendRuntimeMessageWithTimeout({
@@ -5241,33 +5470,65 @@ async function saveDraftExperiment() {
     experiment: draft
   }, 8e3);
   if (!response?.ok || !response.experiment) {
-    throw new Error(response?.error || "Experiment save failed.");
+    throw new Error(response?.error || t.experiments.saveFailed);
   }
-  state.activeExperimentId = response.experiment.id;
+  const { experiment } = response;
+  state.activeExperimentId = experiment.id;
   state.promptExperiments = [
-    response.experiment,
-    ...state.promptExperiments.filter((entry) => entry.id !== response.experiment.id)
+    experiment,
+    ...state.promptExperiments.filter((entry) => entry.id !== experiment.id)
   ];
   renderExperimentsSection();
-  showAppToast("Experiment saved.", "success", 1600);
-  return response.experiment;
+  showAppToast(t.experiments.saveSuccess, "success", 1600);
+  return experiment;
+}
+function confirmExperimentRun(experiment) {
+  const stats = getExperimentRunStats(experiment);
+  if (stats.broadcastCount > EXPERIMENT_HARD_BROADCAST_LIMIT) {
+    showAppToast(
+      t.experiments.hardLimit(stats.broadcastCount, EXPERIMENT_HARD_BROADCAST_LIMIT),
+      "warning",
+      4200
+    );
+    return false;
+  }
+  if (stats.broadcastCount > EXPERIMENT_SOFT_BROADCAST_LIMIT) {
+    return window.confirm(
+      t.experiments.confirmLarge(
+        stats.broadcastCount,
+        stats.serviceSendCount,
+        EXPERIMENT_SOFT_BROADCAST_LIMIT
+      )
+    );
+  }
+  return true;
 }
 async function runExperiment(experimentId) {
+  const experiment = state.promptExperiments.find((entry) => entry.id === experimentId);
+  if (!experiment) {
+    throw new Error(t.experiments.notFound);
+  }
+  const confirmedLargeRun = confirmExperimentRun(experiment);
+  if (!confirmedLargeRun) {
+    return;
+  }
   const response = await sendRuntimeMessageWithTimeout({
     action: "experiment:run",
-    experimentId
+    experimentId,
+    confirmedLargeRun
   }, 3e4);
   if (!response?.ok) {
-    throw new Error(response?.error || "Experiment run failed.");
+    throw new Error(response?.error || t.experiments.runFailed);
   }
   if (response.experiment) {
+    const updatedExperiment = response.experiment;
     state.promptExperiments = [
-      response.experiment,
-      ...state.promptExperiments.filter((entry) => entry.id !== response.experiment.id)
+      updatedExperiment,
+      ...state.promptExperiments.filter((entry) => entry.id !== updatedExperiment.id)
     ];
     renderExperimentsSection();
   }
-  showAppToast(`Experiment queued: ${response.queuedCount} broadcasts.`, "success", 2600);
+  showAppToast(t.experiments.queued(response.queuedCount), "success", 2600);
 }
 function loadExperiment(experimentId) {
   const experiment = state.promptExperiments.find((entry) => entry.id === experimentId);
@@ -5275,17 +5536,23 @@ function loadExperiment(experimentId) {
     return;
   }
   state.activeExperimentId = experiment.id;
-  dom.experimentTitle.value = experiment.title;
-  dom.experimentVariants.value = experiment.variants.map((variant) => variant.text).join("\n---\n");
-  dom.experimentVariables.value = JSON.stringify(
-    experiment.variableSets.map((set) => set.values),
-    null,
-    2
-  );
+  if (dom.experimentTitle) {
+    dom.experimentTitle.value = experiment.title;
+  }
+  if (dom.experimentVariants) {
+    dom.experimentVariants.value = experiment.variants.map((variant) => variant.text).join("\n---\n");
+  }
+  if (dom.experimentVariables) {
+    dom.experimentVariables.value = JSON.stringify(
+      experiment.variableSets.map((set) => set.values),
+      null,
+      2
+    );
+  }
   renderExperimentTargets();
   const selected = new Set(experiment.targetSiteIds);
-  dom.experimentTargets.querySelectorAll("[data-experiment-target]").forEach((input) => {
-    input.checked = selected.has(input.dataset.experimentTarget);
+  dom.experimentTargets?.querySelectorAll("[data-experiment-target]").forEach((input) => {
+    input.checked = selected.has(input.dataset.experimentTarget ?? "");
   });
   renderPreview();
 }
@@ -5294,7 +5561,7 @@ function bindExperimentEvents() {
   dom.experimentSave?.addEventListener("click", () => {
     void saveDraftExperiment().catch((error) => {
       console.error("[AI Prompt Broadcaster] Failed to save experiment.", error);
-      showAppToast(error?.message || "Experiment save failed.", "error", 3e3);
+      showAppToast(error?.message || t.experiments.saveFailed, "error", 3e3);
     });
   });
   dom.experimentRun?.addEventListener("click", () => {
@@ -5305,32 +5572,33 @@ function bindExperimentEvents() {
       }
     })().catch((error) => {
       console.error("[AI Prompt Broadcaster] Failed to run experiment.", error);
-      showAppToast(error?.message || "Experiment run failed.", "error", 3e3);
+      showAppToast(error?.message || t.experiments.runFailed, "error", 3e3);
     });
   });
   dom.experimentList?.addEventListener("click", (event) => {
-    const loadButton = event.target.closest("[data-experiment-load]");
-    const runButton = event.target.closest("[data-experiment-run]");
-    const deleteButton = event.target.closest("[data-experiment-delete]");
+    const target = event.target instanceof Element ? event.target : null;
+    const loadButton = target?.closest("[data-experiment-load]");
+    const runButton = target?.closest("[data-experiment-run]");
+    const deleteButton = target?.closest("[data-experiment-delete]");
     if (loadButton) {
-      loadExperiment(loadButton.dataset.experimentLoad);
+      loadExperiment(loadButton.dataset.experimentLoad ?? "");
       return;
     }
     if (runButton) {
-      void runExperiment(runButton.dataset.experimentRun).catch((error) => {
+      void runExperiment(runButton.dataset.experimentRun ?? "").catch((error) => {
         console.error("[AI Prompt Broadcaster] Failed to run experiment.", error);
-        showAppToast(error?.message || "Experiment run failed.", "error", 3e3);
+        showAppToast(error?.message || t.experiments.runFailed, "error", 3e3);
       });
       return;
     }
     if (deleteButton) {
       void sendRuntimeMessageWithTimeout({
         action: "experiment:delete",
-        experimentId: deleteButton.dataset.experimentDelete
+        experimentId: deleteButton.dataset.experimentDelete ?? ""
       }, 8e3).then((response) => {
         state.promptExperiments = response?.experiments ?? state.promptExperiments;
         renderExperimentsSection();
-        showAppToast("Experiment deleted.", "success", 1600);
+        showAppToast(t.experiments.deleteSuccess, "success", 1600);
       });
     }
   });
@@ -5357,29 +5625,31 @@ function renderTemplatePacksSection() {
       <article class="service-health-row">
         <div>
           <strong>${escapeHTML(pack.title)}</strong>
-          <div class="helper">${pack.templates.length} templates · defaults ${pack.includeSensitiveDefaults ? "included" : "removed"}</div>
+          <div class="helper">${pack.templates.length} templates · defaults ${pack.includeSensitiveDefaults ? escapeHTML(t.settings.templatePackDefaultsIncluded) : escapeHTML(t.settings.templatePackDefaultsRemoved)}</div>
         </div>
         <div class="settings-actions">
-          <button class="btn ghost" type="button" data-pack-download="${escapeHTML(pack.id)}">Download</button>
+          <button class="btn ghost" type="button" data-pack-download="${escapeHTML(pack.id)}">${escapeHTML(t.settings.templatePackDownload)}</button>
         </div>
       </article>
-    `).join("") : `<div class="empty-state">No template packs yet.</div>`;
+    `).join("") : `<div class="empty-state">${escapeHTML(t.settings.templatePackEmpty)}</div>`;
 }
 async function exportTemplatePack() {
+  const includeSensitiveDefaults = !(dom2.templatePackSensitive instanceof HTMLInputElement) || dom2.templatePackSensitive.checked !== false;
   const response = await sendRuntimeMessageWithTimeout({
     action: "template-pack:export",
-    includeSensitiveDefaults: dom2.templatePackSensitive?.checked !== false
+    includeSensitiveDefaults
   }, 1e4);
   if (!response?.ok || !response.pack) {
-    throw new Error(response?.error || "Template pack export failed.");
+    throw new Error(response?.error || t.settings.templatePackExportFailed);
   }
+  const { pack } = response;
   state.templatePacks = [
-    response.pack,
-    ...state.templatePacks.filter((pack) => pack.id !== response.pack.id)
+    pack,
+    ...state.templatePacks.filter((entry) => entry.id !== pack.id)
   ];
   renderTemplatePacksSection();
-  downloadJson(`${response.pack.title.replace(/[\\/:*?"<>|]+/g, "-")}.json`, response.pack);
-  showAppToast("Template pack exported.", "success", 1800);
+  downloadJson(`${pack.title.replace(/[\\/:*?"<>|]+/g, "-")}.json`, pack);
+  showAppToast(t.settings.templatePackExported, "success", 1800);
 }
 async function importTemplatePack(file) {
   const text = await file.text();
@@ -5389,15 +5659,19 @@ async function importTemplatePack(file) {
     pack
   }, 1e4);
   if (!response?.ok || !response.pack) {
-    throw new Error(response?.error || "Template pack import failed.");
+    throw new Error(response?.error || t.settings.templatePackImportFailed);
   }
+  const { pack: importedPack } = response;
   state.templatePacks = [
-    response.pack,
-    ...state.templatePacks.filter((entry) => entry.id !== response.pack.id)
+    importedPack,
+    ...state.templatePacks.filter((entry) => entry.id !== importedPack.id)
   ];
   renderTemplatePacksSection();
   showAppToast(
-    `Imported ${response.importedFavoriteIds?.length ?? 0}, skipped ${response.skippedFavoriteIds?.length ?? 0} duplicates.`,
+    t.settings.templatePackImported(
+      response.importedFavoriteIds?.length ?? 0,
+      response.skippedFavoriteIds?.length ?? 0
+    ),
     "success",
     2600
   );
@@ -5406,26 +5680,30 @@ function bindTemplatePackEvents() {
   dom2.templatePackExport?.addEventListener("click", () => {
     void exportTemplatePack().catch((error) => {
       console.error("[AI Prompt Broadcaster] Failed to export template pack.", error);
-      showAppToast(error?.message || "Template pack export failed.", "error", 3e3);
+      showAppToast(error?.message || t.settings.templatePackExportFailed, "error", 3e3);
     });
   });
   dom2.templatePackImport?.addEventListener("click", () => {
     dom2.templatePackImportInput?.click();
   });
   dom2.templatePackImportInput?.addEventListener("change", (event) => {
-    const [file] = [...event.target.files ?? []];
+    const input = event.target instanceof HTMLInputElement ? event.target : null;
+    const [file] = Array.from(input?.files ?? []);
     if (!file) {
       return;
     }
     void importTemplatePack(file).catch((error) => {
       console.error("[AI Prompt Broadcaster] Failed to import template pack.", error);
-      showAppToast(error?.message || "Template pack import failed.", "error", 3e3);
+      showAppToast(error?.message || t.settings.templatePackImportFailed, "error", 3e3);
     }).finally(() => {
-      event.target.value = "";
+      if (input) {
+        input.value = "";
+      }
     });
   });
   dom2.templatePackList?.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-pack-download]");
+    const target = event.target instanceof Element ? event.target : null;
+    const button = target?.closest("[data-pack-download]");
     if (!button) {
       return;
     }

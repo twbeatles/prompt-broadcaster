@@ -156,12 +156,6 @@ export interface ComparisonCaptureStartMessage {
   tabId?: number | null;
 }
 
-export interface ComparisonCaptureStopMessage {
-  action: "comparison-capture:stop";
-  historyId?: number | string | null;
-  serviceId?: string | null;
-}
-
 export interface ExperimentSaveMessage {
   action: "experiment:save";
   experiment: Partial<PromptExperiment>;
@@ -175,6 +169,7 @@ export interface ExperimentDeleteMessage {
 export interface ExperimentRunMessage {
   action: "experiment:run";
   experimentId: string;
+  confirmedLargeRun?: boolean;
 }
 
 export interface TemplatePackExportMessage {
@@ -415,7 +410,6 @@ export interface RuntimeRequestMap {
   "comparison-note:save": ComparisonNoteSaveMessage;
   "comparison-note:delete": ComparisonNoteDeleteMessage;
   "comparison-capture:start": ComparisonCaptureStartMessage;
-  "comparison-capture:stop": ComparisonCaptureStopMessage;
   "experiment:save": ExperimentSaveMessage;
   "experiment:delete": ExperimentDeleteMessage;
   "experiment:run": ExperimentRunMessage;
@@ -450,7 +444,6 @@ export interface RuntimeResponseMap {
   "comparison-note:save": ComparisonNoteSaveResponse;
   "comparison-note:delete": ComparisonNoteDeleteResponse;
   "comparison-capture:start": ComparisonCaptureStartResponse;
-  "comparison-capture:stop": GenericOkResponse;
   "experiment:save": ExperimentSaveResponse;
   "experiment:delete": ExperimentDeleteResponse;
   "experiment:run": ExperimentRunResponse;

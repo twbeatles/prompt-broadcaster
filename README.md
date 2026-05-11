@@ -39,10 +39,13 @@
 - **즐겨찾기 복제 + 정렬 옵션** – 최근 사용순, 사용 횟수순, 제목순, 생성일순 정렬과 복제 저장 지원
 - **서비스 순서 커스터마이징** – options `Services`에서 `Move up` / `Move down`으로 서비스 표시 순서를 저장하고 popup·favorite editor·options에 동일 반영
 - **히스토리 재전송 선택 + 옵션 일괄 삭제** – 원래 대상 기준 재전송 모달, 선택 삭제, 7/30/90일 이전 빠른 삭제
+- **히스토리 비교 노트** – options history 상세에서 서비스별 응답을 명시적 1회 캡처하거나 선택 텍스트 컨텍스트 메뉴로 저장
+- **프롬프트 실험 매트릭스** – variants × variable sets 조합을 미리 계산하고, 기본 soft 10개 / hard 30개 전송 제한으로 대량 실행을 제어
+- **템플릿 팩과 서비스 그룹** – options에서 템플릿 팩 export/import와 서비스 그룹 저장/선택을 관리
 - **확장 Dashboard 분석** – 서비스 점유율 외에 활동 히트맵, 서비스별 성공률 추이, 상위 실패 원인, 전략 요약 제공
 - **예약 실행 결과 요약** – options `Schedules`에서 최근 scheduled 실행 시각, 상태, 실패 상세를 별도로 확인 가능
 - **서비스별 프롬프트 오버라이드** – 서비스 카드마다 메인 프롬프트와 다른 별도 프롬프트를 지정 가능
-- 히스토리/즐겨찾기/템플릿 캐시/설정/서비스 구성을 JSON으로 내보내기 및 가져오기 (`v8`, 체인/예약 메타, 재전송 스냅샷, 구조화된 selector verification metadata, `supportedRoutes`, `{{counter}}` 포함)
+- 히스토리/즐겨찾기/템플릿 캐시/설정/서비스 구성을 JSON으로 내보내기 및 가져오기 (`v9`, 체인/예약 메타, 재전송 스냅샷, 구조화된 selector verification metadata, `supportedRoutes`, 비교 노트, 실험, 템플릿 팩, 서비스 그룹, `{{counter}}` 포함)
 - **상세 import 리포트 + 구조화된 전송 결과 코드** – 권한 거부/ID 재작성/built-in 보정 내역과 서비스별 결과 코드 표시
 - **확장 템플릿 변수** – `{{url}}`, `{{title}}`, `{{selection}}`, `{{counter}}`, `{{random}}` 등 9개 이상의 시스템 변수 지원
 - Chrome MV3 기반, 백엔드 없음
@@ -196,9 +199,9 @@ proactive selector checker의 첫 번째 미검출은 같은 브라우저 세션
 서비스별 결과는 문자열 한 개가 아니라 구조화된 결과 코드로 저장됩니다. 현재 주요 코드는 `submitted`, `selector_timeout`, `auth_required`, `submit_failed`, `strategy_exhausted`, `injection_timeout`, `cancelled`, `unexpected_error` 등입니다.
 
 ### 가져오기/내보내기와 상세 리포트
-- JSON export는 항상 `version: 8`로 기록됩니다.
-- import는 `v1 -> v2 -> v3 -> v4 -> v5 -> v6 -> v7 -> v8` 단계형 마이그레이션을 거쳐 기존 데이터를 정규화합니다.
-- `v8`은 구조화된 selector verification metadata(`verifiedAt`, `verifiedRoute`, `verifiedAuthState`, `verifiedLocale`, `verifiedVersion`)와 서비스별 `supportedRoutes`를 유지합니다. legacy `lastVerified`는 호환용 month 필드로 남고, `verifiedAt`가 있으면 `YYYY-MM`으로 자동 derive됩니다.
+- JSON export는 항상 `version: 9`로 기록됩니다.
+- import는 `v1 -> v2 -> v3 -> v4 -> v5 -> v6 -> v7 -> v8 -> v9` 단계형 마이그레이션을 거쳐 기존 데이터를 정규화합니다.
+- `v9`은 구조화된 selector verification metadata(`verifiedAt`, `verifiedRoute`, `verifiedAuthState`, `verifiedLocale`, `verifiedVersion`), 서비스별 `supportedRoutes`, 비교 노트(`comparisonNotes`), 프롬프트 실험(`promptExperiments`), 템플릿 팩(`templatePacks`), 서비스 그룹(`serviceGroups`)을 유지합니다. legacy `lastVerified`는 호환용 month 필드로 남고, `verifiedAt`가 있으면 `YYYY-MM`으로 자동 derive됩니다. `v8` 이하 payload는 새 v9 컬렉션을 빈 배열로 보강합니다.
 - popup과 options 모두 import 직후 상세 리포트 모달을 띄워 적용된 서비스, 거부된 서비스, 권한 거부 origin, ID 재작성, alias 검증 오류, built-in 보정 내역을 보여줍니다.
 
 ### Reset data
@@ -287,10 +290,13 @@ For build and packaging steps, see [docs/build-guide.md](docs/build-guide.md). F
 - **Favorite duplication and sort controls** — duplicate saved prompts and sort by recent use, usage count, title, or creation date
 - **Custom service ordering** — reorder service cards from the options `Services` section with `Move up` / `Move down`, and reuse that order across popup, favorite editor, and options
 - **History resend selection and bulk delete tools** — choose a subset of the original services when replaying history, with stale specific-tab targets disabled until you reselect them, and delete selected or aged entries from options
+- **History comparison notes** — capture one service response explicitly from options history detail or attach selected text through the context menu when the active comparison target matches
+- **Prompt experiment matrix** — preview variant × variable-set runs and enforce soft 10 / hard 30 broadcast limits before queueing
+- **Template packs and service groups** — manage reusable template pack export/import and saved service target groups from options
 - **Expanded dashboard analytics** — activity heatmap, per-service success trends, top failure reasons, and strategy summary on the options dashboard
 - **Scheduled-run result summary** — the options `Schedules` section separates the last scheduled run from manual runs and surfaces its status plus representative failure detail
 - **Per-service prompt overrides** — assign a different prompt to individual service cards without changing the main prompt
-- JSON export/import for history, favorites, template cache, settings, and service configuration, including `broadcastCounter`, history resend snapshots, structured selector verification metadata, `supportedRoutes`, and export `version: 8`; custom-site host permissions are requested in one batch before commit and denied origins abort the import before local data changes
+- JSON export/import for history, favorites, template cache, settings, and service configuration, including `broadcastCounter`, history resend snapshots, structured selector verification metadata, `supportedRoutes`, comparison notes, prompt experiments, template packs, service groups, and export `version: 9`; custom-site host permissions are requested in one batch before commit and denied origins abort the import before local data changes
 - History keeps requested, submitted, failed, and per-site snapshot prompt data so partial broadcasts can be replayed accurately
 - **Detailed import reports and structured result codes** — popup/options show rejected services, rewritten ids, built-in adjustments, service-level result codes, and selector verification metadata
 - **Extended template variables** — 9+ system variables including `{{url}}`, `{{title}}`, `{{selection}}`, `{{counter}}`, and `{{random}}`
@@ -455,9 +461,9 @@ Each stored service result now uses a structured code rather than a free-form st
 - History rows can carry `originFavoriteId`, `chainRunId`, `chainStepIndex`, `chainStepCount`, and `trigger` so chain runs and scheduled executions remain traceable.
 
 ### Import / Export and Detailed Reports
-- JSON export always writes `version: 8`.
-- Import applies staged migrations from older payloads (`v1 -> v2 -> v3 -> v4 -> v5 -> v6 -> v7 -> v8`) before normalizing settings, favorites, and history records.
-- `v8` preserves structured selector verification metadata (`verifiedAt`, `verifiedRoute`, `verifiedAuthState`, `verifiedLocale`, `verifiedVersion`) and `supportedRoutes`. Legacy `lastVerified` remains for compatibility and is derived from `verifiedAt` when available.
+- JSON export always writes `version: 9`.
+- Import applies staged migrations from older payloads (`v1 -> v2 -> v3 -> v4 -> v5 -> v6 -> v7 -> v8 -> v9`) before normalizing settings, favorites, history records, comparison notes, prompt experiments, template packs, and service groups.
+- `v9` preserves structured selector verification metadata (`verifiedAt`, `verifiedRoute`, `verifiedAuthState`, `verifiedLocale`, `verifiedVersion`), `supportedRoutes`, `comparisonNotes`, `promptExperiments`, `templatePacks`, and `serviceGroups`. Legacy `lastVerified` remains for compatibility and is derived from `verifiedAt` when available. Imports from `v8` and older payloads keep backward compatibility by creating empty v9-only collections when they are absent.
 - Import requests all required custom-site host permissions in one preflight batch, aborts before commit if any requested origin stays denied, and applies the local data update through one `chrome.storage.local.set` call. Optional permission cleanup after commit is best-effort only.
 - Both popup and options show a detailed import report modal listing accepted services, rejected services, denied origins, rewritten ids, alias validation errors, and built-in override adjustments.
 
@@ -548,10 +554,14 @@ The repository includes Playwright-based local fixtures under `qa/fixtures/`, or
 Run the local smoke flow with:
 
 ```bash
+npm run docs:check
 npm run build
 npm run qa:smoke
+npm run qa:extension
 npm run selector:audit
 ```
+
+`docs:check` verifies release documentation stays aligned with export/import versioning and validation commands. `qa:extension` loads the built `dist/` extension in Chromium and checks options navigation, experiment caps, history comparison notes, template packs, service groups, and popup fallback behavior.
 
 The smoke script verifies:
 
@@ -568,7 +578,7 @@ The smoke script verifies:
 - JSON import repair for alias-based custom service permissions and invalid built-in click-submit overrides
 - batched custom-site permission preflight and atomic local import commit behavior
 - `broadcastCounter` export/import/reset semantics
-- import migration to export `version: 8` defaults
+- import migration to export `version: 9` defaults
 - history replay snapshot fallback and resend routing safety
 - popup restore precedence (`popupPromptIntent -> composeDraftPrompt -> lastSentPrompt`) and popup handoff consumption
 - favorite background job dedupe helpers and runtime-state cleanup

@@ -9,6 +9,7 @@ var SESSION_RUNTIME_KEYS = Object.freeze({
   lastBroadcast: "lastBroadcast",
   pendingSelectorChecks: "pendingSelectorChecks",
   popupFavoriteIntent: "popupFavoriteIntent",
+  activeComparisonContext: "activeComparisonContext",
   favoriteRunJobs: "favoriteRunJobs"
 });
 
@@ -2652,6 +2653,9 @@ async function getLastBroadcast() {
   const value = await readStorage("session", SESSION_RUNTIME_KEYS.lastBroadcast, null);
   return normalizeLastBroadcast(value);
 }
+
+// src/shared/runtime-state/active-comparison.ts
+var ACTIVE_COMPARISON_CONTEXT_TTL_MS = 30 * 60 * 1e3;
 
 // src/shared/runtime-state/popup-intent.ts
 function normalizePopupFavoriteIntent(value) {

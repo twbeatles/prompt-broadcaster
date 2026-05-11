@@ -1,8 +1,9 @@
-// @ts-nocheck
 // 중앙 사이트 레지스트리.
 // injector.js / popup.js / background service worker가 모두 이 배열을 기준으로 동작하도록 설계한다.
 // 셀렉터는 2026-05-10 기준 공개 웹앱 DOM을 바탕으로 한 best-effort 값이며,
 // 외부 서비스 UI 변경 시 이 파일만 수정하면 되도록 구성한다.
+
+import type { SiteConfig } from "../../shared/types/models";
 
 export const AI_SITES = Object.freeze([
   {
@@ -207,6 +208,6 @@ export const AI_SITES = Object.freeze([
       "iframe[src*='challenges.cloudflare.com']",
     ],
   },
-]);
+]) satisfies readonly SiteConfig[];
 
 export default AI_SITES;

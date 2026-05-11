@@ -36,6 +36,16 @@ Run a type-only validation before building:
 npm run typecheck
 ```
 
+## Documentation Consistency Check
+
+Run the Markdown consistency guard before release commits:
+
+```bash
+npm run docs:check
+```
+
+This checks the release-facing docs for export/import version drift, required validation commands, selector evidence links, and stale v8-only wording. Keep this command in the pre-publish path whenever README, CLAUDE, architecture, roadmap, selector, or Web Store docs change.
+
 ## Build
 
 Create a fresh extension bundle in `dist/`:
@@ -85,7 +95,7 @@ The smoke flow loads local fixtures from `qa/fixtures/` and validates the built 
 - batched custom-site permission preflight and atomic local import commits
 - built-in override import repair for `click` configurations with empty selectors
 - `broadcastCounter` export/import/reset consistency
-- import migration and export `version: 8` normalization
+- import migration and export `version: 9` normalization, including comparison notes, prompt experiments, template packs, and service groups
 - `supportedRoutes` normalization and reusable-tab route gating
 - pending selector escalation (`pendingSelectorChecks` -> confirmed warning)
 - `siteOrder` normalization and ordering reuse
@@ -109,6 +119,8 @@ The smoke flow loads local fixtures from `qa/fixtures/` and validates the built 
 
 The smoke suite still does not cover full live Chrome popup behavior such as real-window open-tab discovery or explicit tab targeting. Check those manually in a real browser window before release.
 Run `npm run build` first and then `npm run qa:smoke` after the build finishes. The smoke script reads the built files from `dist/` and should not be started in parallel with the build.
+
+Run `npm run qa:extension` after `npm run build` when you need a real extension-page E2E pass. It loads `dist/` into a persistent Chromium profile under `output/extension-e2e/`, opens options and popup pages, and verifies experiments, comparison notes, service groups, and template packs. The script runs headed by default because Chromium extension service workers are not reliable in legacy headless mode; set `APB_E2E_HEADLESS=1` only when the local Chromium build supports extension workers in headless mode.
 
 Use the Playwright-based selector audit when you want a Markdown snapshot of the current built-in site surfaces:
 
@@ -177,32 +189,34 @@ The generated ZIP contains the built extension from `dist/` only.
 
 1. `npm install`
 2. `npm run typecheck`
-3. `npm run build`
-4. `npm run qa:smoke`
-5. Load `dist/` in Chrome and verify the extension
-6. Open the toolbar popup and confirm no modal is shown on initial load
-7. Open and close the favorites-save modal from the popup and confirm both `닫기` and `취소` work
-8. In the popup, verify that currently open AI tabs appear under the matching service cards and that `Reuse open AI tabs` behaves as expected
+3. `npm run docs:check`
+4. `npm run build`
+5. `npm run qa:smoke`
+6. `npm run qa:extension`
+7. Load `dist/` in Chrome and verify the extension
+8. Open the toolbar popup and confirm no modal is shown on initial load
+9. Open and close the favorites-save modal from the popup and confirm both `닫기` and `취소` work
+10. In the popup, verify that currently open AI tabs appear under the matching service cards and that `Reuse open AI tabs` behaves as expected
    Confirm that auth pages, settings pages, unsupported routes, and tabs without a usable prompt surface are not offered as reusable targets
-9. Verify prompt submission on all built-in services, with dedicated checks for Claude click-submit behavior and Perplexity conditional submit behavior
+11. Verify prompt submission on all built-in services, with dedicated checks for Claude click-submit behavior and Perplexity conditional submit behavior
    For Perplexity specifically, confirm that the prompt is inserted once into `#ask-input[data-lexical-editor='true']` and that submission still succeeds through the standard submit path
-10. Walk through [release-selector-verification-checklist.md](release-selector-verification-checklist.md) for every built-in touched by the release
-11. Verify that a per-service prompt override with template variables resolves correctly and that retry reuses the originally rendered prompt even after editing the popup text
-12. Add, import, delete, and reset a custom service and confirm optional host permissions are batch-requested, import aborts when any required origin stays denied, and cleanup only removes unused origins after commit
-13. Confirm that popup sorting, favorite duplication, resend-service selection, import-report modals, and the integrated favorite editor all behave correctly
+12. Walk through [release-selector-verification-checklist.md](release-selector-verification-checklist.md) for every built-in touched by the release
+13. Verify that a per-service prompt override with template variables resolves correctly and that retry reuses the originally rendered prompt even after editing the popup text
+14. Add, import, delete, and reset a custom service and confirm optional host permissions are batch-requested, import aborts when any required origin stays denied, and cleanup only removes unused origins after commit
+15. Confirm that popup sorting, favorite duplication, resend-service selection, import-report modals, and the integrated favorite editor all behave correctly
    Verify that single favorites can edit prompt body text inline and that single/chain mode switches preserve expected values
-14. Verify single favorites, chain favorites, scheduled favorites, and the options `Schedules` section
+16. Verify single favorites, chain favorites, scheduled favorites, and the options `Schedules` section
    Confirm the options action label is `Edit in popup`, that the services section opens the popup manager for detailed editing, and that scheduled overlap leaves a `skipped` job without hiding any active run
-15. Trigger popup-side favorite runs that use `{{clipboard}}`, `{{url}}`, or `{{selection}}` and confirm they queue without opening the editor unnecessarily
-16. Trigger the quick palette with `Alt+Shift+F` on an injectable page and confirm both direct execution and popup fallback flows
-17. Confirm popup fallback resumes automatically when only popup-resolvable context was missing, and opens the editor only when user-variable input is still required
-18. Confirm that cancelling a broadcast leaves reused tabs open and closes only newly opened tabs
+17. Trigger popup-side favorite runs that use `{{clipboard}}`, `{{url}}`, or `{{selection}}` and confirm they queue without opening the editor unnecessarily
+18. Trigger the quick palette with `Alt+Shift+F` on an injectable page and confirm both direct execution and popup fallback flows
+19. Confirm popup fallback resumes automatically when only popup-resolvable context was missing, and opens the editor only when user-variable input is still required
+20. Confirm that cancelling a broadcast leaves reused tabs open and closes only newly opened tabs
    Also confirm that stale explicit-tab targets fail with `tab_closed` semantics instead of silently falling back to another tab or a new tab
-19. In options `Dashboard`, confirm the heatmap, service trend, top failure reason, and strategy summary panels render with sane labels and escaped content
-20. In options `Services`, reorder services with `Move up` / `Move down` and confirm the same order appears in popup compose and favorite editor target checklists
-21. Trigger **Reset data** and confirm it clears both local prompt data and in-memory/session runtime state, including `pendingSelectorChecks` and strategy stats
-22. Run the packaging script for your platform
-23. Upload the generated ZIP to Chrome Web Store or attach it to a GitHub release
+21. In options `Dashboard`, confirm the heatmap, service trend, top failure reason, and strategy summary panels render with sane labels and escaped content
+22. In options `Services`, reorder services with `Move up` / `Move down` and confirm the same order appears in popup compose and favorite editor target checklists
+23. Trigger **Reset data** and confirm it clears both local prompt data and in-memory/session runtime state, including `pendingSelectorChecks`, `activeComparisonContext`, and strategy stats
+24. Run the packaging script for your platform
+25. Upload the generated ZIP to Chrome Web Store or attach it to a GitHub release
 
 ## Chrome Web Store Release Checklist
 
@@ -210,12 +224,14 @@ Use this short sequence when producing a store-ready build:
 
 1. `npm install`
 2. `npm run typecheck`
-3. `npm run build`
-4. `npm run qa:smoke`
-5. `powershell -ExecutionPolicy Bypass -File .\\package.ps1` on Windows or `bash ./package.sh` on macOS/Linux
-6. Confirm that `prompt-broadcaster-v<version>.zip` exists in the repository root
-7. Confirm that the ZIP was generated from `dist/` only
-8. Upload that ZIP to Chrome Web Store
+3. `npm run docs:check`
+4. `npm run build`
+5. `npm run qa:smoke`
+6. `npm run qa:extension`
+7. `powershell -ExecutionPolicy Bypass -File .\\package.ps1` on Windows or `bash ./package.sh` on macOS/Linux
+8. Confirm that `prompt-broadcaster-v<version>.zip` exists in the repository root
+9. Confirm that the ZIP was generated from `dist/` only
+10. Upload that ZIP to Chrome Web Store
 
 Before uploading, run these manual checks in a real Chrome window:
 

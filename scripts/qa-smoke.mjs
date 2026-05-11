@@ -2781,6 +2781,65 @@ async function main() {
     assert.equal(exported.serviceGroups.length, 1);
   });
 
+  await runStep("experiment run limits require confirmation and block oversized batches", async () => {
+    const module = await loadBundledModule("src/shared/prompts/experiment-limits.ts", createChromeMock());
+    const makeExperiment = (variantCount) => ({
+      variants: Array.from({ length: variantCount }, (_, index) => ({
+        id: `variant-${index + 1}`,
+        title: `Variant ${index + 1}`,
+        text: `Prompt ${index + 1}`,
+      })),
+      variableSets: [{ id: "vars-1", title: "Default", values: {} }],
+      targetSiteIds: ["chatgpt", "claude"],
+    });
+
+    assert.deepEqual(module.getPromptExperimentRunStats(makeExperiment(3)), {
+      broadcastCount: 3,
+      serviceSendCount: 6,
+      targetSiteCount: 2,
+    });
+    assert.deepEqual(module.evaluatePromptExperimentRunLimit(makeExperiment(11), false), {
+      broadcastCount: 11,
+      serviceSendCount: 22,
+      targetSiteCount: 2,
+      ok: false,
+      requiresConfirmation: true,
+      reason: "confirmation_required",
+    });
+    assert.equal(module.evaluatePromptExperimentRunLimit(makeExperiment(11), true).ok, true);
+    assert.deepEqual(module.evaluatePromptExperimentRunLimit(makeExperiment(31), true), {
+      broadcastCount: 31,
+      serviceSendCount: 62,
+      targetSiteCount: 2,
+      ok: false,
+      requiresConfirmation: false,
+      reason: "hard_limit",
+    });
+  });
+
+  await runStep("active comparison context expires and clears cleanly", async () => {
+    const chromeMock = createChromeMock();
+    const module = await loadBundledModule("src/shared/runtime-state/active-comparison.ts", chromeMock);
+
+    const saved = await module.setActiveComparisonContext({
+      historyId: 42,
+      serviceId: "chatgpt",
+    });
+    assert.equal(saved.historyId, 42);
+    assert.equal((await module.getActiveComparisonContext())?.serviceId, "chatgpt");
+
+    await chromeMock.storage.session.set({
+      activeComparisonContext: {
+        historyId: 99,
+        serviceId: "claude",
+        source: "options-modal",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+    assert.equal(await module.getActiveComparisonContext(), null);
+    assert.equal(chromeMock.__getStorage().session.activeComparisonContext, undefined);
+  });
+
   await runStep("comparison notes and template packs normalize duplicate-safe local data", async () => {
     const chromeMock = createChromeMock();
     const module = await loadBundledModule("src/shared/stores/prompt-store.ts", chromeMock);
@@ -3056,6 +3115,7 @@ async function main() {
       pendingBroadcasts: { "broadcast-1": { id: "broadcast-1" } },
       selectorAlerts: { signature: 1 },
       popupFavoriteIntent: { type: "run", favoriteId: "fav-1" },
+      activeComparisonContext: { historyId: 1, serviceId: "chatgpt", updatedAt: "2026-04-03T00:00:00.000Z" },
       popupPromptIntent: { prompt: "handoff prompt", createdAt: "2026-04-03T00:00:00.000Z" },
       favoriteRunJobs: [{ jobId: "job-1", favoriteId: "fav-1" }],
     });
@@ -3101,6 +3161,7 @@ async function main() {
     assert.equal(storage.session.pendingBroadcasts, undefined);
     assert.equal(storage.session.selectorAlerts, undefined);
     assert.equal(storage.session.popupFavoriteIntent, undefined);
+    assert.equal(storage.session.activeComparisonContext, undefined);
     assert.equal(storage.session.popupPromptIntent, undefined);
     assert.equal(storage.session.favoriteRunJobs, undefined);
     assert.deepEqual(chromeMock.__getAlarms(), {});

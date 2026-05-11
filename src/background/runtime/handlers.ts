@@ -8,7 +8,6 @@ import type {
   CancelBroadcastResponse,
   ComparisonCaptureStartMessage,
   ComparisonCaptureStartResponse,
-  ComparisonCaptureStopMessage,
   ComparisonNoteDeleteMessage,
   ComparisonNoteDeleteResponse,
   ComparisonNoteListMessage,
@@ -80,7 +79,6 @@ interface BackgroundRuntimeHandlerDeps {
   handleComparisonNoteSave: (message: ComparisonNoteSaveMessage) => Promise<ComparisonNoteSaveResponse>;
   handleComparisonNoteDelete: (message: ComparisonNoteDeleteMessage) => Promise<ComparisonNoteDeleteResponse>;
   handleComparisonCaptureStart: (message: ComparisonCaptureStartMessage) => Promise<ComparisonCaptureStartResponse>;
-  handleComparisonCaptureStop: (message: ComparisonCaptureStopMessage) => Promise<GenericOkResponse>;
   handleExperimentSave: (message: ExperimentSaveMessage) => Promise<ExperimentSaveResponse>;
   handleExperimentDelete: (message: ExperimentDeleteMessage) => Promise<ExperimentDeleteResponse>;
   handleExperimentRun: (message: ExperimentRunMessage) => Promise<ExperimentRunResponse>;
@@ -186,9 +184,6 @@ export function buildRuntimeHandlers(
     "comparison-capture:start": {
       run: (message) => deps.handleComparisonCaptureStart(message),
       errorLabel: "[AI Prompt Broadcaster] Comparison capture failed.",
-    },
-    "comparison-capture:stop": {
-      run: (message) => deps.handleComparisonCaptureStop(message),
     },
     "experiment:save": {
       run: (message) => deps.handleExperimentSave(message),

@@ -774,6 +774,9 @@
   "options_nav_schedules": {
     "message": "Schedules"
   },
+  "options_nav_experiments": {
+    "message": "Experiments"
+  },
   "options_nav_services": {
     "message": "Services"
   },
@@ -803,6 +806,226 @@
   },
   "options_services_open_failed": {
     "message": "Failed to open the popup manager."
+  },
+  "options_services_health_title": {
+    "message": "Selector Health Center"
+  },
+  "options_services_health_desc": {
+    "message": "Track recent selector failures, auth gates, strategy hints, and verification metadata."
+  },
+  "options_services_health_refresh": {
+    "message": "Refresh health"
+  },
+  "options_services_health_empty": {
+    "message": "No service health snapshot yet."
+  },
+  "options_services_health_warning": {
+    "message": "Selector warning"
+  },
+  "options_services_health_healthy": {
+    "message": "Healthy"
+  },
+  "options_services_health_no_recent_run": {
+    "message": "No recent run"
+  },
+  "options_services_health_login": {
+    "message": "Login"
+  },
+  "options_services_health_retry": {
+    "message": "Retry failed"
+  },
+  "options_services_health_selector_check": {
+    "message": "Selector check"
+  },
+  "options_services_health_new_tab": {
+    "message": "New tab"
+  },
+  "options_services_retry_no_failed": {
+    "message": "No failed history item found for this service."
+  },
+  "options_services_retry_queued": {
+    "message": "Retry queued for failed service."
+  },
+  "options_services_retry_failed": {
+    "message": "Retry failed."
+  },
+  "options_services_selector_check_hint": {
+    "message": "Open the service tab, then use the popup test action after login."
+  },
+  "options_services_health_refresh_failed": {
+    "message": "Service health refresh failed."
+  },
+  "options_service_groups_title": {
+    "message": "Service Groups"
+  },
+  "options_service_groups_desc": {
+    "message": "Create reusable target groups for popup favorites and experiment runs."
+  },
+  "options_service_groups_name_placeholder": {
+    "message": "Group name"
+  },
+  "options_service_groups_save": {
+    "message": "Save group from checked services"
+  },
+  "options_service_groups_empty": {
+    "message": "No service groups yet."
+  },
+  "options_service_groups_no_services": {
+    "message": "No services"
+  },
+  "options_service_groups_check_services": {
+    "message": "Check services"
+  },
+  "options_service_groups_delete": {
+    "message": "Delete"
+  },
+  "options_service_groups_use_in_group": {
+    "message": "Use in group"
+  },
+  "options_service_groups_needs_service": {
+    "message": "Check at least one service for the group."
+  },
+  "options_service_groups_saved": {
+    "message": "Service group saved."
+  },
+  "options_service_groups_deleted": {
+    "message": "Service group deleted."
+  },
+  "options_experiments_title": {
+    "message": "Prompt Experiments"
+  },
+  "options_experiments_desc": {
+    "message": "Preview and run variant x service x variable-set experiments through the normal broadcast history flow."
+  },
+  "options_experiments_draft": {
+    "message": "Experiment draft"
+  },
+  "options_experiments_title_placeholder": {
+    "message": "Experiment title"
+  },
+  "options_experiments_variants_placeholder": {
+    "message": "One variant per block. Separate variants with a line containing ---"
+  },
+  "options_experiments_variables_placeholder": {
+    "message": "Variable sets as JSON array, e.g. [{\"topic\":\"selectors\"}]"
+  },
+  "options_experiments_preview": {
+    "message": "Preview"
+  },
+  "options_experiments_save": {
+    "message": "Save"
+  },
+  "options_experiments_run_saved": {
+    "message": "Run saved experiment"
+  },
+  "options_experiments_load": {
+    "message": "Load"
+  },
+  "options_experiments_run": {
+    "message": "Run"
+  },
+  "options_experiments_delete": {
+    "message": "Delete"
+  },
+  "options_experiments_delete_success": {
+    "message": "Experiment deleted."
+  },
+  "options_experiments_empty": {
+    "message": "No saved experiments yet."
+  },
+  "options_experiments_preview_empty": {
+    "message": "Add variants and target services to preview combinations."
+  },
+  "options_experiments_no_target_services": {
+    "message": "No target services"
+  },
+  "options_experiments_invalid_variables": {
+    "message": "Variables JSON is invalid. Using an empty variable set."
+  },
+  "options_experiments_needs_variant_target": {
+    "message": "Experiment needs at least one variant and one target service."
+  },
+  "options_experiments_save_success": {
+    "message": "Experiment saved."
+  },
+  "options_experiments_save_failed": {
+    "message": "Experiment save failed."
+  },
+  "options_experiments_run_failed": {
+    "message": "Experiment run failed."
+  },
+  "options_experiments_not_found": {
+    "message": "Experiment not found."
+  },
+  "options_experiments_queued": {
+    "message": "Experiment queued: $COUNT$ broadcasts.",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "options_experiments_summary": {
+    "message": "$VARIANTS$ variants · $VARIABLESETS$ variable sets · $SERVICES$ services · $RUNS$ runs · $BROADCASTS$ broadcasts",
+    "placeholders": {
+      "variants": {
+        "content": "$1"
+      },
+      "variablesets": {
+        "content": "$2"
+      },
+      "services": {
+        "content": "$3"
+      },
+      "runs": {
+        "content": "$4"
+      },
+      "broadcasts": {
+        "content": "$5"
+      }
+    }
+  },
+  "options_experiments_run_stats": {
+    "message": "$BROADCASTS$ broadcasts, $SERVICESENDS$ service sends. Confirmation starts above $SOFTLIMIT$; $HARDLIMIT$ is the hard limit.",
+    "placeholders": {
+      "broadcasts": {
+        "content": "$1"
+      },
+      "servicesends": {
+        "content": "$2"
+      },
+      "softlimit": {
+        "content": "$3"
+      },
+      "hardlimit": {
+        "content": "$4"
+      }
+    }
+  },
+  "options_experiments_confirm_large": {
+    "message": "Queue $BROADCASTS$ broadcasts ($SERVICESENDS$ service sends)? Runs above $SOFTLIMIT$ need confirmation.",
+    "placeholders": {
+      "broadcasts": {
+        "content": "$1"
+      },
+      "servicesends": {
+        "content": "$2"
+      },
+      "softlimit": {
+        "content": "$3"
+      }
+    }
+  },
+  "options_experiments_hard_limit": {
+    "message": "This experiment has $BROADCASTS$ broadcasts. Split it into batches of $HARDLIMIT$ or fewer.",
+    "placeholders": {
+      "broadcasts": {
+        "content": "$1"
+      },
+      "hardlimit": {
+        "content": "$2"
+      }
+    }
   },
   "options_settings_title": {
     "message": "Settings"
@@ -1029,6 +1252,53 @@
   },
   "options_settings_shortcuts_open_failed": {
     "message": "Failed to open the shortcuts page."
+  },
+  "options_template_packs_title": {
+    "message": "Template packs"
+  },
+  "options_template_packs_desc": {
+    "message": "Export/import favorites as reusable local packs. Sensitive template defaults are included unless unchecked."
+  },
+  "options_template_pack_sensitive": {
+    "message": "Include template defaults"
+  },
+  "options_template_pack_export": {
+    "message": "Export current favorites as pack"
+  },
+  "options_template_pack_import": {
+    "message": "Import pack JSON"
+  },
+  "options_template_pack_empty": {
+    "message": "No template packs yet."
+  },
+  "options_template_pack_download": {
+    "message": "Download"
+  },
+  "options_template_pack_defaults_included": {
+    "message": "included"
+  },
+  "options_template_pack_defaults_removed": {
+    "message": "removed"
+  },
+  "options_template_pack_exported": {
+    "message": "Template pack exported."
+  },
+  "options_template_pack_export_failed": {
+    "message": "Template pack export failed."
+  },
+  "options_template_pack_import_failed": {
+    "message": "Template pack import failed."
+  },
+  "options_template_pack_imported": {
+    "message": "Imported $IMPORTED$, skipped $SKIPPED$ duplicates.",
+    "placeholders": {
+      "imported": {
+        "content": "$1"
+      },
+      "skipped": {
+        "content": "$2"
+      }
+    }
   },
   "options_status_complete": {
     "message": "Completed"
@@ -1306,6 +1576,45 @@
   },
   "options_result_open_tab": {
     "message": "Open"
+  },
+  "options_comparison_title": {
+    "message": "Compare"
+  },
+  "options_comparison_rating_placeholder": {
+    "message": "Rating"
+  },
+  "options_comparison_text_placeholder": {
+    "message": "Paste an AI response here, or select response text on a service tab and use the context menu."
+  },
+  "options_comparison_save_note": {
+    "message": "Save note"
+  },
+  "options_comparison_capture_now": {
+    "message": "Capture now"
+  },
+  "options_comparison_save_success": {
+    "message": "Comparison note saved."
+  },
+  "options_comparison_save_failed": {
+    "message": "Comparison note save failed."
+  },
+  "options_comparison_capture_success": {
+    "message": "Response captured."
+  },
+  "options_comparison_capture_not_found": {
+    "message": "No visible assistant response was found."
+  },
+  "options_comparison_capture_failed": {
+    "message": "Capture failed."
+  },
+  "options_comparison_delete_success": {
+    "message": "Comparison note deleted."
+  },
+  "options_comparison_empty": {
+    "message": "No saved comparison notes yet."
+  },
+  "options_comparison_delete": {
+    "message": "Delete"
   },
   "template_var_url_label": {
     "message": "Current page URL"

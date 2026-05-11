@@ -192,6 +192,8 @@ var MAX_WAIT_MS_MULTIPLIER = 3;
 var DEFAULT_WAIT_MS_MULTIPLIER = 1;
 var DEFAULT_HISTORY_SORT = "latest";
 var DEFAULT_FAVORITE_SORT = "recentUsed";
+var EXPERIMENT_SOFT_BROADCAST_LIMIT = 10;
+var EXPERIMENT_HARD_BROADCAST_LIMIT = 30;
 var DEFAULT_SETTINGS = Object.freeze({
   historyLimit: DEFAULT_HISTORY_LIMIT,
   autoClosePopup: false,
@@ -2244,6 +2246,44 @@ async function setTemplateVariableCache(cache) {
   return normalized;
 }
 
+// src/shared/prompts/experiment-limits.ts
+function getPromptExperimentRunStats(experiment) {
+  const variantCount = experiment.variants.filter((variant) => variant.text.trim()).length;
+  const variableSetCount = experiment.variableSets.length > 0 ? experiment.variableSets.length : 1;
+  const broadcastCount = variantCount * variableSetCount;
+  const targetSiteCount = experiment.targetSiteIds.length;
+  return {
+    broadcastCount,
+    serviceSendCount: broadcastCount * targetSiteCount,
+    targetSiteCount
+  };
+}
+function evaluatePromptExperimentRunLimit(experiment, confirmedLargeRun = false) {
+  const stats = getPromptExperimentRunStats(experiment);
+  if (stats.broadcastCount > EXPERIMENT_HARD_BROADCAST_LIMIT) {
+    return {
+      ...stats,
+      ok: false,
+      requiresConfirmation: false,
+      reason: "hard_limit"
+    };
+  }
+  if (stats.broadcastCount > EXPERIMENT_SOFT_BROADCAST_LIMIT && !confirmedLargeRun) {
+    return {
+      ...stats,
+      ok: false,
+      requiresConfirmation: true,
+      reason: "confirmation_required"
+    };
+  }
+  return {
+    ...stats,
+    ok: true,
+    requiresConfirmation: stats.broadcastCount > EXPERIMENT_SOFT_BROADCAST_LIMIT,
+    reason: ""
+  };
+}
+
 // src/shared/broadcast/state.ts
 function clonePendingBroadcastRecord(record) {
   return {
@@ -2368,6 +2408,7 @@ var SESSION_RUNTIME_KEYS = Object.freeze({
   lastBroadcast: "lastBroadcast",
   pendingSelectorChecks: "pendingSelectorChecks",
   popupFavoriteIntent: "popupFavoriteIntent",
+  activeComparisonContext: "activeComparisonContext",
   favoriteRunJobs: "favoriteRunJobs"
 });
 
@@ -2505,6 +2546,55 @@ async function getLastBroadcast() {
 async function setLastBroadcast(broadcast) {
   const normalized = normalizeLastBroadcast(broadcast);
   await writeStorage("session", SESSION_RUNTIME_KEYS.lastBroadcast, normalized);
+  return normalized;
+}
+
+// src/shared/runtime-state/active-comparison.ts
+var ACTIVE_COMPARISON_CONTEXT_TTL_MS = 30 * 60 * 1e3;
+function normalizeActiveComparisonContext(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const source = value;
+  const historyId = Math.max(0, Math.round(Number(source.historyId)));
+  const serviceId = typeof source.serviceId === "string" && source.serviceId.trim() ? source.serviceId.trim() : "";
+  const updatedAt = typeof source.updatedAt === "string" && Number.isFinite(Date.parse(source.updatedAt)) ? new Date(source.updatedAt).toISOString() : (/* @__PURE__ */ new Date()).toISOString();
+  if (!historyId || !serviceId) {
+    return null;
+  }
+  return {
+    historyId,
+    serviceId,
+    source: "options-modal",
+    updatedAt
+  };
+}
+function isExpired(context) {
+  const updatedAt = Date.parse(context.updatedAt);
+  return !Number.isFinite(updatedAt) || Date.now() - updatedAt > ACTIVE_COMPARISON_CONTEXT_TTL_MS;
+}
+async function getActiveComparisonContext() {
+  const value = await readStorage("session", SESSION_RUNTIME_KEYS.activeComparisonContext, null);
+  const context = normalizeActiveComparisonContext(value);
+  if (!context || isExpired(context)) {
+    await setActiveComparisonContext(null);
+    return null;
+  }
+  return context;
+}
+async function setActiveComparisonContext(context) {
+  const normalized = normalizeActiveComparisonContext(
+    context ? {
+      ...context,
+      source: "options-modal",
+      updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+    } : null
+  );
+  if (!normalized) {
+    await removeStorageKeys("session", [SESSION_RUNTIME_KEYS.activeComparisonContext]);
+    return null;
+  }
+  await writeStorage("session", SESSION_RUNTIME_KEYS.activeComparisonContext, normalized);
   return normalized;
 }
 
@@ -2814,6 +2904,7 @@ async function resetPersistedExtensionState(options = {}) {
   const sessionKeys = normalizeStorageKeys(options.additionalSessionKeys, [
     SESSION_RUNTIME_KEYS.pendingSelectorChecks,
     SESSION_RUNTIME_KEYS.popupFavoriteIntent,
+    SESSION_RUNTIME_KEYS.activeComparisonContext,
     SESSION_RUNTIME_KEYS.favoriteRunJobs,
     SESSION_PROMPT_STATE_KEYS.popupPromptIntent
   ]);
@@ -5772,9 +5863,6 @@ function buildRuntimeHandlers(deps) {
       run: (message) => deps.handleComparisonCaptureStart(message),
       errorLabel: "[AI Prompt Broadcaster] Comparison capture failed."
     },
-    "comparison-capture:stop": {
-      run: (message) => deps.handleComparisonCaptureStop(message)
-    },
     "experiment:save": {
       run: (message) => deps.handleExperimentSave(message)
     },
@@ -5805,7 +5893,6 @@ var queuedInjectionTabIds = /* @__PURE__ */ new Set();
 var broadcastCompletionWaiters = /* @__PURE__ */ new Map();
 var selectionCache = /* @__PURE__ */ new Map();
 var suppressedCompletedBroadcastIds = /* @__PURE__ */ new Set();
-var activeComparisonCaptures = /* @__PURE__ */ new Map();
 var contextMenuRefreshChain = Promise.resolve();
 var injectionProcessChain = Promise.resolve();
 var SCHEDULED_VARIABLE_BLOCKLIST2 = /* @__PURE__ */ new Set([
@@ -5814,6 +5901,31 @@ var SCHEDULED_VARIABLE_BLOCKLIST2 = /* @__PURE__ */ new Set([
   SYSTEM_TEMPLATE_VARIABLES.selection,
   SYSTEM_TEMPLATE_VARIABLES.clipboard
 ]);
+var COMPARISON_CAPTURE_SELECTORS = {
+  chatgpt: [
+    '[data-message-author-role="assistant"]',
+    'article [data-message-author-role="assistant"]'
+  ],
+  gemini: [
+    "message-content",
+    ".model-response-text",
+    "[data-response-index] message-content"
+  ],
+  claude: [
+    '[data-testid="conversation-turn-assistant"]',
+    '[data-testid*="assistant" i]',
+    ".font-claude-message"
+  ],
+  grok: [
+    '[data-testid*="message" i] [class*="markdown" i]',
+    '[data-testid*="answer" i]'
+  ],
+  perplexity: [
+    '[data-testid*="answer" i]',
+    '[data-testid*="thread-answer" i]',
+    "main .prose"
+  ]
+};
 function getI18nMessage(key, substitutions) {
   return chrome.i18n.getMessage(key, substitutions) || "";
 }
@@ -7084,9 +7196,6 @@ async function handleBroadcastMessage(message) {
     trigger: "popup"
   });
 }
-function buildComparisonCaptureKey(historyId, serviceId) {
-  return `${historyId}:${serviceId}`;
-}
 async function handleServiceHealthGet() {
   const [sites, history, failedSelectors, strategyStats] = await Promise.all([
     getRuntimeSites(),
@@ -7173,6 +7282,22 @@ async function handleComparisonNoteDelete(message) {
     notes
   };
 }
+async function resolveContextMenuComparisonTarget(siteId) {
+  const [history, activeContext] = await Promise.all([
+    getStoredPromptHistory(),
+    getActiveComparisonContext()
+  ]);
+  if (activeContext?.serviceId !== siteId) {
+    return null;
+  }
+  const activeHistory = history.find((entry) => Number(entry.id) === activeContext.historyId);
+  if (activeHistory?.requestedSiteIds?.includes(siteId)) {
+    return {
+      historyId: activeHistory.id
+    };
+  }
+  return null;
+}
 async function handleContextMenuComparisonNote(selectedText, tab) {
   const responseText = (selectedText || (tab?.id ? selectionCache.get(tab.id) : "") || "").trim();
   if (!responseText) {
@@ -7182,8 +7307,7 @@ async function handleContextMenuComparisonNote(selectedText, tab) {
     getStoredPromptHistory(),
     getSiteForUrl(tab?.url ?? "")
   ]);
-  const latestHistory = history[0];
-  if (!latestHistory || !site?.id) {
+  if (history.length === 0 || !site?.id) {
     await enqueueUiToast({
       message: "Open a supported service tab and keep at least one history item before saving a comparison note.",
       type: "warning",
@@ -7191,15 +7315,24 @@ async function handleContextMenuComparisonNote(selectedText, tab) {
     });
     return;
   }
+  const target = await resolveContextMenuComparisonTarget(site.id);
+  if (!target) {
+    await enqueueUiToast({
+      message: `${site.name} is not the active comparison target. Open the matching history item first.`,
+      type: "warning",
+      duration: 5e3
+    });
+    return;
+  }
   await saveComparisonNote({
-    historyId: latestHistory.id,
+    historyId: target.historyId,
     serviceId: site.id,
     responseText,
     captureMode: "selection",
     tags: ["selection"]
   });
   await enqueueUiToast({
-    message: `${site.name} response saved to the latest comparison note.`,
+    message: `${site.name} response saved to the active comparison note.`,
     type: "success",
     duration: 3500
   });
@@ -7231,26 +7364,34 @@ async function findComparisonCaptureTab(serviceId, explicitTabId) {
   }
   return null;
 }
-async function captureVisibleAssistantResponse(tabId) {
+async function captureVisibleAssistantResponse(tabId, serviceId) {
+  const selectors = COMPARISON_CAPTURE_SELECTORS[serviceId] ?? [];
+  if (selectors.length === 0) {
+    return "";
+  }
   const [result] = await chrome.scripting.executeScript({
     target: { tabId },
-    func: () => {
-      const selectors = [
-        '[data-message-author-role="assistant"]',
-        '[data-testid*="assistant" i]',
-        '[data-testid*="bot" i]',
-        '[class*="assistant" i]',
-        '[class*="response" i]',
-        '[class*="message" i]',
-        "article"
-      ];
+    args: [selectors],
+    func: (assistantSelectors) => {
       const isVisible = (element) => {
         const rect = element.getBoundingClientRect();
         const style = window.getComputedStyle(element);
         return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
       };
+      const isAssistantCandidate = (element) => {
+        const role = element.getAttribute("role") || "";
+        const editable = element.getAttribute("contenteditable") || "";
+        return role.toLowerCase() !== "textbox" && editable.toLowerCase() !== "true";
+      };
       const getText = (element) => (element.textContent || "").replace(/\s+/g, " ").trim();
-      const candidates = selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector))).filter(isVisible).map((element) => ({
+      const seen = /* @__PURE__ */ new Set();
+      const candidates = assistantSelectors.flatMap((selector) => Array.from(document.querySelectorAll(selector))).filter((element) => {
+        if (seen.has(element)) {
+          return false;
+        }
+        seen.add(element);
+        return true;
+      }).filter(isVisible).filter(isAssistantCandidate).map((element) => ({
         text: getText(element),
         top: element.getBoundingClientRect().top
       })).filter((entry) => entry.text.length >= 20).sort((left, right) => right.top - left.top);
@@ -7269,25 +7410,20 @@ async function handleComparisonCaptureStart(message) {
       error: "historyId and serviceId are required."
     };
   }
-  activeComparisonCaptures.set(buildComparisonCaptureKey(historyId, serviceId), {
-    historyId,
-    serviceId,
-    startedAt: nowIso()
-  });
   const tab = await findComparisonCaptureTab(serviceId, message?.tabId ?? null);
   if (!tab?.id) {
     return {
       ok: true,
       captured: false,
-      message: "Capture armed. Open the service tab and retry capture when the response is visible."
+      message: "Open the service tab and run capture again when the response is visible."
     };
   }
-  const responseText = await captureVisibleAssistantResponse(tab.id).catch(() => "");
+  const responseText = await captureVisibleAssistantResponse(tab.id, serviceId).catch(() => "");
   if (!responseText.trim()) {
     return {
       ok: true,
       captured: false,
-      message: "Capture armed, but no visible assistant response was found yet."
+      message: "No visible assistant response was found. Use manual paste or select response text from the service tab."
     };
   }
   const note = await saveComparisonNote({
@@ -7302,16 +7438,6 @@ async function handleComparisonCaptureStart(message) {
     note,
     captured: true
   };
-}
-async function handleComparisonCaptureStop(message) {
-  const historyId = Number(message?.historyId);
-  const serviceId = typeof message?.serviceId === "string" ? message.serviceId.trim() : "";
-  if (Number.isFinite(historyId) && serviceId) {
-    activeComparisonCaptures.delete(buildComparisonCaptureKey(historyId, serviceId));
-  } else {
-    activeComparisonCaptures.clear();
-  }
-  return { ok: true };
 }
 function buildExperimentRunId() {
   return typeof crypto?.randomUUID === "function" ? crypto.randomUUID() : `experiment-run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -7362,6 +7488,34 @@ async function handleExperimentRun(message) {
       broadcastIds: [],
       preview,
       error: "Experiment requires at least one variant and one target service."
+    };
+  }
+  const limitResult = evaluatePromptExperimentRunLimit(
+    {
+      variants,
+      variableSets,
+      targetSiteIds
+    },
+    message?.confirmedLargeRun === true
+  );
+  if (limitResult.reason === "hard_limit") {
+    return {
+      ok: false,
+      experiment,
+      queuedCount: 0,
+      broadcastIds: [],
+      preview,
+      error: `Experiment has ${limitResult.broadcastCount} broadcasts. Split it into batches of ${EXPERIMENT_HARD_BROADCAST_LIMIT} or fewer.`
+    };
+  }
+  if (limitResult.reason === "confirmation_required") {
+    return {
+      ok: false,
+      experiment,
+      queuedCount: 0,
+      broadcastIds: [],
+      preview,
+      error: `Experiment has ${limitResult.broadcastCount} broadcasts. Confirm the large run before queuing more than ${EXPERIMENT_SOFT_BROADCAST_LIMIT}.`
     };
   }
   const runId = buildExperimentRunId();
@@ -7741,7 +7895,6 @@ registerRuntimeMessageRouter(buildRuntimeHandlers({
   handleComparisonNoteSave,
   handleComparisonNoteDelete,
   handleComparisonCaptureStart,
-  handleComparisonCaptureStop,
   handleExperimentSave,
   handleExperimentDelete,
   handleExperimentRun,

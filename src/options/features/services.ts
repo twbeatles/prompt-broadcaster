@@ -28,15 +28,15 @@ const { servicesOpenManagerBtn } = optionsDom.services;
 
 function getHealthStatus(snapshot) {
   if (snapshot?.selectorWarning) {
-    return { label: "Selector warning", tone: "danger" };
+    return { label: t.services.healthWarning, tone: "danger" };
   }
   if (snapshot?.lastFailureAt && (!snapshot?.lastSuccessAt || Date.parse(snapshot.lastFailureAt) > Date.parse(snapshot.lastSuccessAt))) {
     return { label: snapshot.lastFailureCode || "Recent failure", tone: "warning" };
   }
   if (snapshot?.lastSuccessAt) {
-    return { label: "Healthy", tone: "success" };
+    return { label: t.services.healthHealthy, tone: "success" };
   }
-  return { label: "No recent run", tone: "muted" };
+  return { label: t.services.healthNoRecentRun, tone: "muted" };
 }
 
 function renderServiceHealthCenter() {
@@ -45,7 +45,7 @@ function renderServiceHealthCenter() {
   }
 
   if (!state.serviceHealthSnapshots?.length) {
-    servicesHealthCenter.innerHTML = `<div class="empty-state">No service health snapshot yet.</div>`;
+    servicesHealthCenter.innerHTML = `<div class="empty-state">${escapeHTML(t.services.healthEmpty)}</div>`;
     return;
   }
 
@@ -65,10 +65,10 @@ function renderServiceHealthCenter() {
           ${selector ? `<code class="inline-code">${escapeHTML(selector)}</code>` : ""}
         </div>
         <div class="settings-actions">
-          <button class="btn ghost" type="button" data-health-action="login" data-service-id="${escapeHTML(snapshot.serviceId)}">Login</button>
-          <button class="btn ghost" type="button" data-health-action="retry" data-service-id="${escapeHTML(snapshot.serviceId)}">Retry failed</button>
-          <button class="btn ghost" type="button" data-health-action="selector" data-service-id="${escapeHTML(snapshot.serviceId)}">Selector check</button>
-          <button class="btn ghost" type="button" data-health-action="new-tab" data-service-id="${escapeHTML(snapshot.serviceId)}">New tab</button>
+          <button class="btn ghost" type="button" data-health-action="login" data-service-id="${escapeHTML(snapshot.serviceId)}">${escapeHTML(t.services.healthLogin)}</button>
+          <button class="btn ghost" type="button" data-health-action="retry" data-service-id="${escapeHTML(snapshot.serviceId)}">${escapeHTML(t.services.healthRetry)}</button>
+          <button class="btn ghost" type="button" data-health-action="selector" data-service-id="${escapeHTML(snapshot.serviceId)}">${escapeHTML(t.services.healthSelectorCheck)}</button>
+          <button class="btn ghost" type="button" data-health-action="new-tab" data-service-id="${escapeHTML(snapshot.serviceId)}">${escapeHTML(t.services.healthNewTab)}</button>
         </div>
       </article>
     `;
@@ -81,7 +81,7 @@ function renderServiceGroups() {
   }
 
   if (!state.serviceGroups?.length) {
-    serviceGroupsList.innerHTML = `<div class="empty-state">No service groups yet.</div>`;
+    serviceGroupsList.innerHTML = `<div class="empty-state">${escapeHTML(t.services.groupEmpty)}</div>`;
     return;
   }
 
@@ -93,11 +93,11 @@ function renderServiceGroups() {
       <article class="service-health-row">
         <div>
           <strong>${escapeHTML(group.title)}</strong>
-          <div class="helper">${escapeHTML(names || "No services")}</div>
+          <div class="helper">${escapeHTML(names || t.services.groupNoServices)}</div>
         </div>
         <div class="settings-actions">
-          <button class="btn ghost" type="button" data-group-select="${escapeHTML(group.id)}">Check services</button>
-          <button class="btn danger ghost" type="button" data-group-delete="${escapeHTML(group.id)}">Delete</button>
+          <button class="btn ghost" type="button" data-group-select="${escapeHTML(group.id)}">${escapeHTML(t.services.groupCheckServices)}</button>
+          <button class="btn danger ghost" type="button" data-group-delete="${escapeHTML(group.id)}">${escapeHTML(t.services.groupDelete)}</button>
         </div>
       </article>
     `;
@@ -132,7 +132,7 @@ export function renderServicesSection() {
         </div>
         <label class="checkbox-inline">
           <input type="checkbox" data-service-group-select="${escapeHTML(site.id)}" />
-          <span>Use in group</span>
+          <span>${escapeHTML(t.services.groupUseInGroup)}</span>
         </label>
         <label class="settings-control" for="wait-range-${escapeHTML(site.id)}">
           <strong>${escapeHTML(t.services.waitTime)}</strong>
@@ -174,7 +174,7 @@ async function refreshServiceHealth() {
 async function retryFailedService(serviceId) {
   const failedEntry = state.history.find((entry) => entry.failedSiteIds?.includes(serviceId));
   if (!failedEntry) {
-    showAppToast("No failed history item found for this service.", "warning", 2200);
+    showAppToast(t.services.retryNoFailed, "warning", 2200);
     return;
   }
 
@@ -186,7 +186,7 @@ async function retryFailedService(serviceId) {
   if (!response?.ok) {
     throw new Error(response?.error || "Retry could not be queued.");
   }
-  showAppToast("Retry queued for failed service.", "success", 1800);
+  showAppToast(t.services.retryQueued, "success", 1800);
 }
 
 async function saveCheckedServiceGroup() {
@@ -195,7 +195,7 @@ async function saveCheckedServiceGroup() {
     .filter(Boolean);
   const title = serviceGroupTitle.value.trim() || `Group ${state.serviceGroups.length + 1}`;
   if (selectedIds.length === 0) {
-    showAppToast("Check at least one service for the group.", "warning", 2200);
+    showAppToast(t.services.groupNeedsService, "warning", 2200);
     return;
   }
 
@@ -215,7 +215,7 @@ async function saveCheckedServiceGroup() {
     ...state.serviceGroups.filter((group) => group.id !== nextGroup.id),
   ]);
   renderServiceGroups();
-  showAppToast("Service group saved.", "success", 1600);
+  showAppToast(t.services.groupSaved, "success", 1600);
 }
 
 function moveRuntimeSite(siteId, direction) {
@@ -277,7 +277,7 @@ export function bindServiceEvents() {
   servicesRefreshHealthBtn?.addEventListener("click", () => {
     void refreshServiceHealth().catch((error) => {
       console.error("[AI Prompt Broadcaster] Failed to refresh service health.", error);
-      showAppToast(error?.message || "Service health refresh failed.", "error", 3000);
+      showAppToast(error?.message || t.services.healthRefreshFailed, "error", 3000);
     });
   });
 
@@ -302,14 +302,14 @@ export function bindServiceEvents() {
     if (button.dataset.healthAction === "retry") {
       void retryFailedService(site.id).catch((error) => {
         console.error("[AI Prompt Broadcaster] Failed to retry service.", error);
-        showAppToast(error?.message || "Retry failed.", "error", 3000);
+        showAppToast(error?.message || t.services.retryFailed, "error", 3000);
       });
       return;
     }
 
     if (button.dataset.healthAction === "selector") {
       void chrome.tabs.create({ url: site.url, active: true });
-      showAppToast("Open the service tab, then use the popup test action after login.", "info", 3000);
+      showAppToast(t.services.selectorCheckHint, "info", 3000);
       return;
     }
 
@@ -336,7 +336,7 @@ export function bindServiceEvents() {
       state.serviceGroups = state.serviceGroups.filter((entry) => entry.id !== deleteButton.dataset.groupDelete);
       void setServiceGroups(state.serviceGroups).then(() => {
         renderServiceGroups();
-        showAppToast("Service group deleted.", "success", 1600);
+        showAppToast(t.services.groupDeleted, "success", 1600);
       });
     }
   });

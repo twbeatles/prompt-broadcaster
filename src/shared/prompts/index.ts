@@ -9,6 +9,8 @@ export {
   DEFAULT_HISTORY_SORT,
   DEFAULT_SETTINGS,
   DEFAULT_WAIT_MS_MULTIPLIER,
+  EXPERIMENT_HARD_BROADCAST_LIMIT,
+  EXPERIMENT_SOFT_BROADCAST_LIMIT,
   LOCAL_STORAGE_KEYS,
   MAX_HISTORY_LIMIT,
   MAX_WAIT_MS_MULTIPLIER,
@@ -105,6 +107,10 @@ export {
   exportPromptData,
   importPromptData,
 } from "./import-export";
+export {
+  evaluatePromptExperimentRunLimit,
+  getPromptExperimentRunStats,
+} from "./experiment-limits";
 export { matchesFavoriteSearch } from "./search";
 export {
   getAppSettings,

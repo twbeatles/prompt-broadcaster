@@ -4,6 +4,8 @@
 > 참고 문서: `README.md`, `PROJECT_ANALYSIS.md`, `docs/extension-architecture.md`, `docs/build-guide.md`, `docs/web_store_checklist.md`, `docs/web-store-copy.md`, `docs/release-selector-verification-checklist.md`  
 > 목적: 현재 Chrome 확장 프로그램의 기능 성숙도를 기준으로, 실제 제품 가치가 큰 고도화 방향과 추가 기능 후보를 우선순위별로 정리한다.
 
+> 2026-05-11 구현 상태: Selector Health Center, history comparison notes, prompt experiment MVP, template packs, service groups, export/import v9, and extension-page E2E are now implemented as baseline features. This roadmap now treats those items as hardening/expansion tracks rather than wholly new work.
+
 ---
 
 ## 1. 현재 제품 포지션 요약
@@ -30,7 +32,7 @@
    - 구조화된 전송 결과 코드
    - selector checker와 selector audit
    - dashboard, heatmap, success trend, failure reason, strategy summary
-   - import/export v8, custom service, optional host permission 관리
+   - import/export v9, custom service, optional host permission 관리
 
 따라서 다음 기능 고도화는 "더 많은 버튼"보다 "결과 비교, 실험 관리, selector 신뢰도, 반복 워크플로우 품질"에 집중하는 편이 제품 방향과 잘 맞는다.
 
@@ -462,14 +464,15 @@ README는 설치/사용 설명이 풍부하지만, 실제 확장 첫 실행 경�
 
 작업:
 
-- Selector Health Center
+- Selector Health Center baseline 유지 및 실패 코드별 복구 action 확장
 - 실패 코드별 action 버튼
 - selector/auth/access challenge 문구 정리
 - history detail에서 실패 서비스만 재전송 강화
 
 검증:
 
-- 기존 `qa:smoke`
+- `qa:smoke`
+- `qa:extension`
 - auth/access challenge/missing selector fixture 추가
 - 수동으로 실제 5개 서비스 selector audit
 
@@ -479,8 +482,8 @@ README는 설치/사용 설명이 풍부하지만, 실제 확장 첫 실행 경�
 
 작업:
 
-- history detail에 Compare 탭 추가
-- 서비스별 응답 수동 붙여넣기 저장
+- history detail의 comparison capture/notes UX 고도화
+- 서비스별 응답 수동 붙여넣기와 명시적 1회 캡처 개선
 - Markdown/CSV export
 - context menu로 선택 답변을 특정 history에 저장
 
@@ -488,6 +491,7 @@ README는 설치/사용 설명이 풍부하지만, 실제 확장 첫 실행 경�
 
 - local storage migration
 - export/import roundtrip
+- active comparison context reset
 - 긴 답변/Markdown escaping
 
 ### Milestone 3: Prompt Experiment
@@ -496,10 +500,9 @@ README는 설치/사용 설명이 풍부하지만, 실제 확장 첫 실행 경�
 
 작업:
 
-- experiment 모델 추가
-- prompt variants UI
-- variable set UI
+- experiment 모델/variants/variable set UI baseline 유지
 - 실행량 preview
+- soft 10 / hard 30 실행 제한 유지
 - experiment run history
 
 검증:
@@ -515,8 +518,8 @@ README는 설치/사용 설명이 풍부하지만, 실제 확장 첫 실행 경�
 작업:
 
 - Copilot/DeepSeek/Mistral/HuggingChat 중 안정적인 후보부터 추가
-- 서비스 그룹
-- 템플릿 팩 export/import
+- 서비스 그룹 hardening
+- 템플릿 팩 export/import hardening
 - 샘플 favorite pack
 
 검증:

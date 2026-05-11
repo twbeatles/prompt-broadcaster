@@ -430,11 +430,12 @@ interface SiteConfig {
 - `popupPromptIntent`
 - `popupFavoriteIntent`
 - `favoriteRunJobs`
+- `activeComparisonContext`
 
 JSON export/import:
 
-- 현재 export version: `8`
-- 지원 migration: `v1 -> v2 -> v3 -> v4 -> v5 -> v6 -> v7 -> v8`
+- 현재 export version: `9`
+- 지원 migration: `v1 -> v2 -> v3 -> v4 -> v5 -> v6 -> v7 -> v8 -> v9`
 - `v6`에서 backfill 되는 대표 항목:
   - favorite `mode`
   - `steps`
@@ -453,6 +454,11 @@ JSON export/import:
 - `v8`에서 유지되는 대표 항목:
   - `supportedRoutes`
   - built-in/custom route normalization
+- `v9`에서 유지되는 대표 항목:
+  - 비교 노트(`comparisonNotes`)
+  - 프롬프트 실험(`promptExperiments`)
+  - 템플릿 팩(`templatePacks`)
+  - 서비스 그룹(`serviceGroups`)
 - 커스텀 서비스 permission은 `url + hostnameAliases` 전체 origin 세트를 기준으로 batch preflight 한다.
 - import는 permission preflight가 끝난 뒤 관련 local 키를 한 번의 `chrome.storage.local.set`으로 커밋한다.
 - 필요한 origin 중 하나라도 계속 거부되면 import 전체를 중단하고 기존 local state는 유지한다.
@@ -611,8 +617,11 @@ siteResults / history / lastBroadcast 업데이트
 
 ```bash
 npm run typecheck
+npm run docs:check
 npm run build
 npm run qa:smoke
+npm run qa:extension
+npm run selector:audit
 ```
 
 ### smoke coverage 핵심
@@ -626,7 +635,7 @@ npm run qa:smoke
 - custom service permission cleanup
 - invalid built-in override import repair
 - `broadcastCounter` export/import/reset
-- export `version: 8` migration
+- export `version: 9` migration
 - supported-route normalization / pending selector escalation
 - `siteOrder` normalization / ordering reuse
 - favorite chain/schedule field backfill
@@ -673,7 +682,9 @@ npm run qa:smoke
 - [x] selector audit CLI
 - [x] timeout-safe runtime messaging helper
 - [x] router sender trust boundary
-- [x] import/export `v8`
+- [x] import/export `v9`
+- [x] comparison notes / prompt experiments / template packs / service groups
+- [x] real extension-page E2E (`qa:extension`)
 - [x] 상세 import 리포트
 - [x] background mutation chain
 - [x] `siteOrder` 기반 서비스 순서 커스터마이징

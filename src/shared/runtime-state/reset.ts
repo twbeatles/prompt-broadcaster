@@ -47,6 +47,7 @@ export async function resetPersistedExtensionState(
   const sessionKeys = normalizeStorageKeys(options.additionalSessionKeys, [
     SESSION_RUNTIME_KEYS.pendingSelectorChecks,
     SESSION_RUNTIME_KEYS.popupFavoriteIntent,
+    SESSION_RUNTIME_KEYS.activeComparisonContext,
     SESSION_RUNTIME_KEYS.favoriteRunJobs,
     SESSION_PROMPT_STATE_KEYS.popupPromptIntent,
   ]);

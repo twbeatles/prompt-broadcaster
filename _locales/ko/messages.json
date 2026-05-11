@@ -774,6 +774,9 @@
   "options_nav_schedules": {
     "message": "예약"
   },
+  "options_nav_experiments": {
+    "message": "실험"
+  },
   "options_nav_services": {
     "message": "서비스 관리"
   },
@@ -803,6 +806,226 @@
   },
   "options_services_open_failed": {
     "message": "팝업 관리자를 열지 못했습니다."
+  },
+  "options_services_health_title": {
+    "message": "셀렉터 상태 센터"
+  },
+  "options_services_health_desc": {
+    "message": "최근 셀렉터 실패, 로그인 차단, 전략 힌트와 검증 메타데이터를 추적합니다."
+  },
+  "options_services_health_refresh": {
+    "message": "상태 새로고침"
+  },
+  "options_services_health_empty": {
+    "message": "아직 서비스 상태 스냅샷이 없습니다."
+  },
+  "options_services_health_warning": {
+    "message": "셀렉터 경고"
+  },
+  "options_services_health_healthy": {
+    "message": "정상"
+  },
+  "options_services_health_no_recent_run": {
+    "message": "최근 실행 없음"
+  },
+  "options_services_health_login": {
+    "message": "로그인"
+  },
+  "options_services_health_retry": {
+    "message": "실패 재시도"
+  },
+  "options_services_health_selector_check": {
+    "message": "셀렉터 확인"
+  },
+  "options_services_health_new_tab": {
+    "message": "새 탭"
+  },
+  "options_services_retry_no_failed": {
+    "message": "이 서비스의 실패 이력을 찾지 못했습니다."
+  },
+  "options_services_retry_queued": {
+    "message": "실패 서비스 재시도를 대기열에 넣었습니다."
+  },
+  "options_services_retry_failed": {
+    "message": "재시도에 실패했습니다."
+  },
+  "options_services_selector_check_hint": {
+    "message": "서비스 탭을 연 뒤 로그인 후 팝업의 테스트 동작을 사용하세요."
+  },
+  "options_services_health_refresh_failed": {
+    "message": "서비스 상태를 새로고침하지 못했습니다."
+  },
+  "options_service_groups_title": {
+    "message": "서비스 그룹"
+  },
+  "options_service_groups_desc": {
+    "message": "팝업 즐겨찾기와 실험 실행에 재사용할 대상 그룹을 만듭니다."
+  },
+  "options_service_groups_name_placeholder": {
+    "message": "그룹 이름"
+  },
+  "options_service_groups_save": {
+    "message": "체크한 서비스로 그룹 저장"
+  },
+  "options_service_groups_empty": {
+    "message": "아직 서비스 그룹이 없습니다."
+  },
+  "options_service_groups_no_services": {
+    "message": "서비스 없음"
+  },
+  "options_service_groups_check_services": {
+    "message": "서비스 체크"
+  },
+  "options_service_groups_delete": {
+    "message": "삭제"
+  },
+  "options_service_groups_use_in_group": {
+    "message": "그룹에 사용"
+  },
+  "options_service_groups_needs_service": {
+    "message": "그룹에 넣을 서비스를 하나 이상 체크하세요."
+  },
+  "options_service_groups_saved": {
+    "message": "서비스 그룹을 저장했습니다."
+  },
+  "options_service_groups_deleted": {
+    "message": "서비스 그룹을 삭제했습니다."
+  },
+  "options_experiments_title": {
+    "message": "프롬프트 실험"
+  },
+  "options_experiments_desc": {
+    "message": "변형 x 서비스 x 변수 세트 조합을 미리 보고 일반 전송 이력 흐름으로 실행합니다."
+  },
+  "options_experiments_draft": {
+    "message": "실험 초안"
+  },
+  "options_experiments_title_placeholder": {
+    "message": "실험 제목"
+  },
+  "options_experiments_variants_placeholder": {
+    "message": "블록 하나가 변형 하나입니다. --- 만 있는 줄로 변형을 구분하세요"
+  },
+  "options_experiments_variables_placeholder": {
+    "message": "JSON 배열 변수 세트, 예: [{\"topic\":\"selectors\"}]"
+  },
+  "options_experiments_preview": {
+    "message": "미리보기"
+  },
+  "options_experiments_save": {
+    "message": "저장"
+  },
+  "options_experiments_run_saved": {
+    "message": "저장된 실험 실행"
+  },
+  "options_experiments_load": {
+    "message": "불러오기"
+  },
+  "options_experiments_run": {
+    "message": "실행"
+  },
+  "options_experiments_delete": {
+    "message": "삭제"
+  },
+  "options_experiments_delete_success": {
+    "message": "실험을 삭제했습니다."
+  },
+  "options_experiments_empty": {
+    "message": "아직 저장된 실험이 없습니다."
+  },
+  "options_experiments_preview_empty": {
+    "message": "조합을 미리 보려면 변형과 대상 서비스를 추가하세요."
+  },
+  "options_experiments_no_target_services": {
+    "message": "대상 서비스 없음"
+  },
+  "options_experiments_invalid_variables": {
+    "message": "변수 JSON이 올바르지 않습니다. 빈 변수 세트를 사용합니다."
+  },
+  "options_experiments_needs_variant_target": {
+    "message": "실험에는 변형과 대상 서비스가 각각 하나 이상 필요합니다."
+  },
+  "options_experiments_save_success": {
+    "message": "실험을 저장했습니다."
+  },
+  "options_experiments_save_failed": {
+    "message": "실험 저장에 실패했습니다."
+  },
+  "options_experiments_run_failed": {
+    "message": "실험 실행에 실패했습니다."
+  },
+  "options_experiments_not_found": {
+    "message": "실험을 찾지 못했습니다."
+  },
+  "options_experiments_queued": {
+    "message": "실험 전송 $COUNT$건을 대기열에 넣었습니다.",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "options_experiments_summary": {
+    "message": "변형 $VARIANTS$개 · 변수 세트 $VARIABLESETS$개 · 서비스 $SERVICES$개 · 실행 $RUNS$회 · 전송 $BROADCASTS$건",
+    "placeholders": {
+      "variants": {
+        "content": "$1"
+      },
+      "variablesets": {
+        "content": "$2"
+      },
+      "services": {
+        "content": "$3"
+      },
+      "runs": {
+        "content": "$4"
+      },
+      "broadcasts": {
+        "content": "$5"
+      }
+    }
+  },
+  "options_experiments_run_stats": {
+    "message": "전송 $BROADCASTS$건, 서비스 발송 $SERVICESENDS$건. $SOFTLIMIT$건 초과는 확인이 필요하고 최대 $HARDLIMIT$건까지 허용됩니다.",
+    "placeholders": {
+      "broadcasts": {
+        "content": "$1"
+      },
+      "servicesends": {
+        "content": "$2"
+      },
+      "softlimit": {
+        "content": "$3"
+      },
+      "hardlimit": {
+        "content": "$4"
+      }
+    }
+  },
+  "options_experiments_confirm_large": {
+    "message": "전송 $BROADCASTS$건(서비스 발송 $SERVICESENDS$건)을 대기열에 넣을까요? $SOFTLIMIT$건 초과 실행은 확인이 필요합니다.",
+    "placeholders": {
+      "broadcasts": {
+        "content": "$1"
+      },
+      "servicesends": {
+        "content": "$2"
+      },
+      "softlimit": {
+        "content": "$3"
+      }
+    }
+  },
+  "options_experiments_hard_limit": {
+    "message": "이 실험은 전송 $BROADCASTS$건입니다. $HARDLIMIT$건 이하의 배치로 나누세요.",
+    "placeholders": {
+      "broadcasts": {
+        "content": "$1"
+      },
+      "hardlimit": {
+        "content": "$2"
+      }
+    }
   },
   "options_settings_title": {
     "message": "설정"
@@ -1029,6 +1252,53 @@
   },
   "options_settings_shortcuts_open_failed": {
     "message": "단축키 페이지를 열지 못했습니다."
+  },
+  "options_template_packs_title": {
+    "message": "템플릿 팩"
+  },
+  "options_template_packs_desc": {
+    "message": "즐겨찾기를 재사용 가능한 로컬 팩으로 내보내거나 가져옵니다. 체크를 해제하지 않으면 민감할 수 있는 템플릿 기본값도 포함됩니다."
+  },
+  "options_template_pack_sensitive": {
+    "message": "템플릿 기본값 포함"
+  },
+  "options_template_pack_export": {
+    "message": "현재 즐겨찾기를 팩으로 내보내기"
+  },
+  "options_template_pack_import": {
+    "message": "팩 JSON 가져오기"
+  },
+  "options_template_pack_empty": {
+    "message": "아직 템플릿 팩이 없습니다."
+  },
+  "options_template_pack_download": {
+    "message": "다운로드"
+  },
+  "options_template_pack_defaults_included": {
+    "message": "포함"
+  },
+  "options_template_pack_defaults_removed": {
+    "message": "제거"
+  },
+  "options_template_pack_exported": {
+    "message": "템플릿 팩을 내보냈습니다."
+  },
+  "options_template_pack_export_failed": {
+    "message": "템플릿 팩 내보내기에 실패했습니다."
+  },
+  "options_template_pack_import_failed": {
+    "message": "템플릿 팩 가져오기에 실패했습니다."
+  },
+  "options_template_pack_imported": {
+    "message": "$IMPORTED$건을 가져오고 중복 $SKIPPED$건을 건너뛰었습니다.",
+    "placeholders": {
+      "imported": {
+        "content": "$1"
+      },
+      "skipped": {
+        "content": "$2"
+      }
+    }
   },
   "options_status_complete": {
     "message": "완료"
@@ -1306,6 +1576,45 @@
   },
   "options_result_open_tab": {
     "message": "열기"
+  },
+  "options_comparison_title": {
+    "message": "비교"
+  },
+  "options_comparison_rating_placeholder": {
+    "message": "평점"
+  },
+  "options_comparison_text_placeholder": {
+    "message": "AI 응답을 붙여넣거나 서비스 탭에서 응답 텍스트를 선택한 뒤 컨텍스트 메뉴를 사용하세요."
+  },
+  "options_comparison_save_note": {
+    "message": "노트 저장"
+  },
+  "options_comparison_capture_now": {
+    "message": "지금 캡처"
+  },
+  "options_comparison_save_success": {
+    "message": "비교 노트를 저장했습니다."
+  },
+  "options_comparison_save_failed": {
+    "message": "비교 노트 저장에 실패했습니다."
+  },
+  "options_comparison_capture_success": {
+    "message": "응답을 캡처했습니다."
+  },
+  "options_comparison_capture_not_found": {
+    "message": "화면에서 보이는 assistant 응답을 찾지 못했습니다."
+  },
+  "options_comparison_capture_failed": {
+    "message": "캡처에 실패했습니다."
+  },
+  "options_comparison_delete_success": {
+    "message": "비교 노트를 삭제했습니다."
+  },
+  "options_comparison_empty": {
+    "message": "아직 저장된 비교 노트가 없습니다."
+  },
+  "options_comparison_delete": {
+    "message": "삭제"
   },
   "template_var_url_label": {
     "message": "현재 페이지 URL"

@@ -14,6 +14,9 @@ import {
   deleteComparisonNote,
   deletePromptExperiment,
   ensureUniqueStringId,
+  evaluatePromptExperimentRunLimit,
+  EXPERIMENT_HARD_BROADCAST_LIMIT,
+  EXPERIMENT_SOFT_BROADCAST_LIMIT,
   getAppSettings,
   getBroadcastCounter,
   getComparisonNotes,
@@ -41,6 +44,7 @@ import {
 import {
   clearFailedSelector,
   enqueueUiToast,
+  getActiveComparisonContext,
   getFailedSelectors,
   getLastBroadcast,
   markFailedSelector,
@@ -119,7 +123,6 @@ import type {
   CancelBroadcastResponse,
   ComparisonCaptureStartMessage,
   ComparisonCaptureStartResponse,
-  ComparisonCaptureStopMessage,
   ComparisonNoteDeleteMessage,
   ComparisonNoteDeleteResponse,
   ComparisonNoteListMessage,
@@ -225,7 +228,6 @@ const queuedInjectionTabIds = new Set<number>();
 const broadcastCompletionWaiters = new Map<string, BackgroundBroadcastWaiter<LastBroadcastSummary>>();
 const selectionCache = new Map<number, string>();
 const suppressedCompletedBroadcastIds = new Set<string>();
-const activeComparisonCaptures = new Map<string, { historyId: number; serviceId: string; startedAt: string }>();
 let contextMenuRefreshChain: Promise<void> = Promise.resolve();
 let injectionProcessChain: Promise<void> = Promise.resolve();
 
@@ -235,6 +237,32 @@ const SCHEDULED_VARIABLE_BLOCKLIST = new Set([
   SYSTEM_TEMPLATE_VARIABLES.selection,
   SYSTEM_TEMPLATE_VARIABLES.clipboard,
 ]);
+
+const COMPARISON_CAPTURE_SELECTORS: Record<string, string[]> = {
+  chatgpt: [
+    '[data-message-author-role="assistant"]',
+    'article [data-message-author-role="assistant"]',
+  ],
+  gemini: [
+    "message-content",
+    ".model-response-text",
+    '[data-response-index] message-content',
+  ],
+  claude: [
+    '[data-testid="conversation-turn-assistant"]',
+    '[data-testid*="assistant" i]',
+    ".font-claude-message",
+  ],
+  grok: [
+    '[data-testid*="message" i] [class*="markdown" i]',
+    '[data-testid*="answer" i]',
+  ],
+  perplexity: [
+    '[data-testid*="answer" i]',
+    '[data-testid*="thread-answer" i]',
+    "main .prose",
+  ],
+};
 
 function getI18nMessage(key: string, substitutions?: string[]): string {
   return chrome.i18n.getMessage(key, substitutions) || "";
@@ -1891,10 +1919,6 @@ async function handleBroadcastMessage(message: BroadcastMessage): Promise<Broadc
   });
 }
 
-function buildComparisonCaptureKey(historyId: number, serviceId: string) {
-  return `${historyId}:${serviceId}`;
-}
-
 async function handleServiceHealthGet(): Promise<ServiceHealthGetResponse> {
   const [sites, history, failedSelectors, strategyStats] = await Promise.all([
     getRuntimeSites(),
@@ -2002,6 +2026,28 @@ async function handleComparisonNoteDelete(
   };
 }
 
+async function resolveContextMenuComparisonTarget(
+  siteId: string,
+): Promise<{ historyId: number } | null> {
+  const [history, activeContext] = await Promise.all([
+    getStoredPromptHistory(),
+    getActiveComparisonContext(),
+  ]);
+
+  if (activeContext?.serviceId !== siteId) {
+    return null;
+  }
+
+  const activeHistory = history.find((entry) => Number(entry.id) === activeContext.historyId);
+  if (activeHistory?.requestedSiteIds?.includes(siteId)) {
+    return {
+      historyId: activeHistory.id,
+    };
+  }
+
+  return null;
+}
+
 async function handleContextMenuComparisonNote(
   selectedText: string,
   tab: chrome.tabs.Tab | undefined,
@@ -2015,8 +2061,7 @@ async function handleContextMenuComparisonNote(
     getStoredPromptHistory(),
     getSiteForUrl(tab?.url ?? ""),
   ]);
-  const latestHistory = history[0];
-  if (!latestHistory || !site?.id) {
+  if (history.length === 0 || !site?.id) {
     await enqueueUiToast({
       message: "Open a supported service tab and keep at least one history item before saving a comparison note.",
       type: "warning",
@@ -2025,15 +2070,25 @@ async function handleContextMenuComparisonNote(
     return;
   }
 
+  const target = await resolveContextMenuComparisonTarget(site.id);
+  if (!target) {
+    await enqueueUiToast({
+      message: `${site.name} is not the active comparison target. Open the matching history item first.`,
+      type: "warning",
+      duration: 5000,
+    });
+    return;
+  }
+
   await saveComparisonNote({
-    historyId: latestHistory.id,
+    historyId: target.historyId,
     serviceId: site.id,
     responseText,
     captureMode: "selection",
     tags: ["selection"],
   });
   await enqueueUiToast({
-    message: `${site.name} response saved to the latest comparison note.`,
+    message: `${site.name} response saved to the active comparison note.`,
     type: "success",
     duration: 3500,
   });
@@ -2073,30 +2128,41 @@ async function findComparisonCaptureTab(
   return null;
 }
 
-async function captureVisibleAssistantResponse(tabId: number): Promise<string> {
+async function captureVisibleAssistantResponse(tabId: number, serviceId: string): Promise<string> {
+  const selectors = COMPARISON_CAPTURE_SELECTORS[serviceId] ?? [];
+  if (selectors.length === 0) {
+    return "";
+  }
+
   const [result] = await chrome.scripting.executeScript({
     target: { tabId },
-    func: () => {
-      const selectors = [
-        '[data-message-author-role="assistant"]',
-        '[data-testid*="assistant" i]',
-        '[data-testid*="bot" i]',
-        '[class*="assistant" i]',
-        '[class*="response" i]',
-        '[class*="message" i]',
-        "article",
-      ];
+    args: [selectors],
+    func: (assistantSelectors: string[]) => {
       const isVisible = (element: Element) => {
         const rect = element.getBoundingClientRect();
         const style = window.getComputedStyle(element);
         return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
       };
+      const isAssistantCandidate = (element: Element) => {
+        const role = element.getAttribute("role") || "";
+        const editable = element.getAttribute("contenteditable") || "";
+        return role.toLowerCase() !== "textbox" && editable.toLowerCase() !== "true";
+      };
       const getText = (element: Element) => (element.textContent || "")
         .replace(/\s+/g, " ")
         .trim();
-      const candidates = selectors
+      const seen = new Set<Element>();
+      const candidates = assistantSelectors
         .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
+        .filter((element) => {
+          if (seen.has(element)) {
+            return false;
+          }
+          seen.add(element);
+          return true;
+        })
         .filter(isVisible)
+        .filter(isAssistantCandidate)
         .map((element) => ({
           text: getText(element),
           top: element.getBoundingClientRect().top,
@@ -2124,27 +2190,21 @@ async function handleComparisonCaptureStart(
     };
   }
 
-  activeComparisonCaptures.set(buildComparisonCaptureKey(historyId, serviceId), {
-    historyId,
-    serviceId,
-    startedAt: nowIso(),
-  });
-
   const tab = await findComparisonCaptureTab(serviceId, message?.tabId ?? null);
   if (!tab?.id) {
     return {
       ok: true,
       captured: false,
-      message: "Capture armed. Open the service tab and retry capture when the response is visible.",
+      message: "Open the service tab and run capture again when the response is visible.",
     };
   }
 
-  const responseText = await captureVisibleAssistantResponse(tab.id).catch(() => "");
+  const responseText = await captureVisibleAssistantResponse(tab.id, serviceId).catch(() => "");
   if (!responseText.trim()) {
     return {
       ok: true,
       captured: false,
-      message: "Capture armed, but no visible assistant response was found yet.",
+      message: "No visible assistant response was found. Use manual paste or select response text from the service tab.",
     };
   }
 
@@ -2160,20 +2220,6 @@ async function handleComparisonCaptureStart(
     note,
     captured: true,
   };
-}
-
-async function handleComparisonCaptureStop(
-  message: ComparisonCaptureStopMessage,
-): Promise<GenericOkResponse> {
-  const historyId = Number(message?.historyId);
-  const serviceId = typeof message?.serviceId === "string" ? message.serviceId.trim() : "";
-  if (Number.isFinite(historyId) && serviceId) {
-    activeComparisonCaptures.delete(buildComparisonCaptureKey(historyId, serviceId));
-  } else {
-    activeComparisonCaptures.clear();
-  }
-
-  return { ok: true };
 }
 
 function buildExperimentRunId() {
@@ -2240,6 +2286,37 @@ async function handleExperimentRun(
       broadcastIds: [],
       preview,
       error: "Experiment requires at least one variant and one target service.",
+    };
+  }
+
+  const limitResult = evaluatePromptExperimentRunLimit(
+    {
+      variants,
+      variableSets,
+      targetSiteIds,
+    },
+    message?.confirmedLargeRun === true,
+  );
+
+  if (limitResult.reason === "hard_limit") {
+    return {
+      ok: false,
+      experiment,
+      queuedCount: 0,
+      broadcastIds: [],
+      preview,
+      error: `Experiment has ${limitResult.broadcastCount} broadcasts. Split it into batches of ${EXPERIMENT_HARD_BROADCAST_LIMIT} or fewer.`,
+    };
+  }
+
+  if (limitResult.reason === "confirmation_required") {
+    return {
+      ok: false,
+      experiment,
+      queuedCount: 0,
+      broadcastIds: [],
+      preview,
+      error: `Experiment has ${limitResult.broadcastCount} broadcasts. Confirm the large run before queuing more than ${EXPERIMENT_SOFT_BROADCAST_LIMIT}.`,
     };
   }
 
@@ -2727,7 +2804,6 @@ registerRuntimeMessageRouter(buildRuntimeHandlers({
   handleComparisonNoteSave,
   handleComparisonNoteDelete,
   handleComparisonCaptureStart,
-  handleComparisonCaptureStop,
   handleExperimentSave,
   handleExperimentDelete,
   handleExperimentRun,

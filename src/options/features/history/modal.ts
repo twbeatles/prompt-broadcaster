@@ -1,7 +1,8 @@
-// @ts-nocheck
 import { getComparisonNotes, normalizeResultCode } from "../../../shared/prompts";
 import { sendRuntimeMessageWithTimeout } from "../../../shared/chrome/messaging";
+import { setActiveComparisonContext } from "../../../shared/runtime-state";
 import { escapeHTML } from "../../../shared/security";
+import type { PromptHistoryItem } from "../../../shared/types/models";
 import { optionsDom } from "../../app/dom";
 import { msg, t } from "../../app/i18n";
 import { state } from "../../app/state";
@@ -20,9 +21,15 @@ const {
   historyModalMeta,
   historyModalServices,
   historyModalText,
-} = optionsDom.modals;
+} = optionsDom.modals as {
+  historyModal: HTMLElement | null;
+  historyModalClose: HTMLElement | null;
+  historyModalMeta: HTMLElement | null;
+  historyModalServices: HTMLElement | null;
+  historyModalText: HTMLElement | null;
+};
 
-export function buildResultComparisonMarkup(entry) {
+export function buildResultComparisonMarkup(entry: PromptHistoryItem): string {
   const requested = getRequestedServices(entry);
   const submitted = new Set(Array.isArray(entry.submittedSiteIds) ? entry.submittedSiteIds : (entry.sentTo ?? []));
   const failed = new Set(Array.isArray(entry.failedSiteIds) ? entry.failedSiteIds : []);
@@ -32,13 +39,19 @@ export function buildResultComparisonMarkup(entry) {
     return "";
   }
 
-  const siteRows = requested.map((siteId) => {
+  const siteRows = requested.map((siteId: string) => {
     const site = state.runtimeSites.find((siteEntry) => siteEntry.id === siteId);
     const name = site?.name ?? siteId;
     const color = site?.color ?? "#888";
     const icon = site?.icon ?? siteId.slice(0, 2).toUpperCase();
     const result = siteResults[siteId];
-    const rawStatus = normalizeResultCode(result?.code ?? (submitted.has(siteId) ? "submitted" : failed.has(siteId) ? "unexpected_error" : "unknown"));
+    const rawStatus = result?.code
+      ? normalizeResultCode(result.code)
+      : submitted.has(siteId)
+        ? "submitted"
+        : failed.has(siteId)
+          ? "unexpected_error"
+          : "unknown";
     const isOk = rawStatus === "submitted";
     const isFailed = rawStatus !== "submitted" && rawStatus !== "unknown";
     const statusEmoji = isOk ? "✅" : isFailed ? "❌" : "⏳";
@@ -69,10 +82,10 @@ export function buildResultComparisonMarkup(entry) {
   `;
 }
 
-function buildCompareWorkspaceMarkup(entry) {
+function buildCompareWorkspaceMarkup(entry: PromptHistoryItem): string {
   const requested = getRequestedServices(entry);
   const notes = state.comparisonNotes.filter((note) => Number(note.historyId) === Number(entry.id));
-  const serviceOptions = requested.map((siteId) => {
+  const serviceOptions = requested.map((siteId: string) => {
     const site = state.runtimeSites.find((siteEntry) => siteEntry.id === siteId);
     return `<option value="${escapeHTML(siteId)}">${escapeHTML(site?.name || siteId)}</option>`;
   }).join("");
@@ -86,33 +99,32 @@ function buildCompareWorkspaceMarkup(entry) {
               <strong>${escapeHTML(site?.name || note.serviceId)}</strong>
               <div class="helper">${escapeHTML(note.captureMode)} · ${escapeHTML(formatDateTime(note.updatedAt))}${note.rating ? ` · ${note.rating}/5` : ""}</div>
             </div>
-            <button class="btn danger ghost" type="button" data-comparison-delete="${escapeHTML(note.id)}">Delete</button>
+            <button class="btn danger ghost" type="button" data-comparison-delete="${escapeHTML(note.id)}">${escapeHTML(t.comparison.delete)}</button>
           </div>
           <pre class="modal-prompt">${escapeHTML(note.responseText)}</pre>
         </article>
       `;
     }).join("")
-    : `<div class="empty-state">No saved comparison notes yet.</div>`;
+    : `<div class="empty-state">${escapeHTML(t.comparison.empty)}</div>`;
 
   return `
     <div class="compare-workspace" data-compare-history-id="${escapeHTML(String(entry.id))}">
-      <h3 class="result-comparison-title">Compare</h3>
+      <h3 class="result-comparison-title">${escapeHTML(t.comparison.title)}</h3>
       <div class="filter-row">
         <select data-comparison-service>${serviceOptions}</select>
-        <input data-comparison-rating type="number" min="1" max="5" placeholder="Rating" />
+        <input data-comparison-rating type="number" min="1" max="5" placeholder="${escapeHTML(t.comparison.ratingPlaceholder)}" />
       </div>
-      <textarea data-comparison-text rows="5" placeholder="Paste an AI response here, or select response text on a service tab and use the context menu."></textarea>
+      <textarea data-comparison-text rows="5" placeholder="${escapeHTML(t.comparison.textPlaceholder)}"></textarea>
       <div class="settings-actions">
-        <button class="btn" type="button" data-comparison-save>Save note</button>
-        <button class="btn ghost" type="button" data-comparison-capture-start>Capture start</button>
-        <button class="btn ghost" type="button" data-comparison-capture-stop>Stop capture</button>
+        <button class="btn" type="button" data-comparison-save>${escapeHTML(t.comparison.saveNote)}</button>
+        <button class="btn ghost" type="button" data-comparison-capture-start>${escapeHTML(t.comparison.captureNow)}</button>
       </div>
       <div class="settings-stack">${notesMarkup}</div>
     </div>
   `;
 }
 
-async function refreshComparisonNotes(historyId) {
+async function refreshComparisonNotes(historyId: number | string): Promise<void> {
   state.comparisonNotes = await getComparisonNotes();
   const entry = state.history.find((item) => Number(item.id) === Number(historyId));
   const comparisonEl = document.getElementById("history-modal-comparison");
@@ -122,19 +134,31 @@ async function refreshComparisonNotes(historyId) {
   }
 }
 
-function bindCompareWorkspaceEvents(comparisonEl, entry) {
-  comparisonEl.onclick = (event) => {
-    const workspace = event.target.closest("[data-compare-history-id]");
+function bindCompareWorkspaceEvents(comparisonEl: HTMLElement, entry: PromptHistoryItem): void {
+  comparisonEl.onclick = (event: MouseEvent) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const workspace = target?.closest<HTMLElement>("[data-compare-history-id]");
     if (!workspace) {
       return;
     }
 
-    const serviceId = workspace.querySelector("[data-comparison-service]")?.value || entry.requestedSiteIds?.[0] || "";
-    const responseText = workspace.querySelector("[data-comparison-text]")?.value || "";
-    const ratingValue = Number(workspace.querySelector("[data-comparison-rating]")?.value);
+    const serviceId =
+      workspace.querySelector<HTMLSelectElement>("[data-comparison-service]")?.value ||
+      entry.requestedSiteIds?.[0] ||
+      "";
+    const responseText = workspace.querySelector<HTMLTextAreaElement>("[data-comparison-text]")?.value || "";
+    const ratingValue = Number(workspace.querySelector<HTMLInputElement>("[data-comparison-rating]")?.value);
 
-    if (event.target.closest("[data-comparison-save]")) {
-      void sendRuntimeMessageWithTimeout({
+    if (target?.closest("[data-comparison-service]")) {
+      void setActiveComparisonContext({
+        historyId: Number(entry.id),
+        serviceId,
+      });
+      return;
+    }
+
+    if (target?.closest("[data-comparison-save]")) {
+      void sendRuntimeMessageWithTimeout<"comparison-note:save">({
         action: "comparison-note:save",
         note: {
           historyId: entry.id,
@@ -146,68 +170,88 @@ function bindCompareWorkspaceEvents(comparisonEl, entry) {
         },
       }, 8000).then(async (response) => {
         if (!response?.ok) {
-          throw new Error(response?.error || "Comparison note save failed.");
+          throw new Error(response?.error || t.comparison.saveFailed);
         }
-        showAppToast("Comparison note saved.", "success", 1600);
+        showAppToast(t.comparison.saveSuccess, "success", 1600);
         await refreshComparisonNotes(entry.id);
       }).catch((error) => {
         console.error("[AI Prompt Broadcaster] Failed to save comparison note.", error);
-        showAppToast(error?.message || "Comparison note save failed.", "error", 3000);
+        showAppToast(error?.message || t.comparison.saveFailed, "error", 3000);
       });
       return;
     }
 
-    if (event.target.closest("[data-comparison-capture-start]")) {
-      void sendRuntimeMessageWithTimeout({
+    if (target?.closest("[data-comparison-capture-start]")) {
+      void setActiveComparisonContext({
+        historyId: Number(entry.id),
+        serviceId,
+      });
+      void sendRuntimeMessageWithTimeout<"comparison-capture:start">({
         action: "comparison-capture:start",
         historyId: entry.id,
         serviceId,
       }, 10000).then(async (response) => {
         if (!response?.ok) {
-          throw new Error(response?.error || "Capture start failed.");
+          throw new Error(response?.error || t.comparison.captureFailed);
         }
-        showAppToast(response.captured ? "Response captured." : (response.message || "Capture armed."), response.captured ? "success" : "info", 2600);
+        showAppToast(
+          response.captured ? t.comparison.captureSuccess : (response.message || t.comparison.captureNotFound),
+          response.captured ? "success" : "info",
+          2600,
+        );
         await refreshComparisonNotes(entry.id);
       }).catch((error) => {
         console.error("[AI Prompt Broadcaster] Failed to start comparison capture.", error);
-        showAppToast(error?.message || "Capture failed.", "error", 3000);
+        showAppToast(error?.message || t.comparison.captureFailed, "error", 3000);
       });
       return;
     }
 
-    if (event.target.closest("[data-comparison-capture-stop]")) {
-      void sendRuntimeMessageWithTimeout({
-        action: "comparison-capture:stop",
-        historyId: entry.id,
-        serviceId,
-      }, 5000).then(() => showAppToast("Capture stopped.", "success", 1200));
-      return;
-    }
-
-    const deleteButton = event.target.closest("[data-comparison-delete]");
+    const deleteButton = target?.closest<HTMLElement>("[data-comparison-delete]");
     if (deleteButton) {
-      void sendRuntimeMessageWithTimeout({
+      void sendRuntimeMessageWithTimeout<"comparison-note:delete">({
         action: "comparison-note:delete",
-        noteId: deleteButton.dataset.comparisonDelete,
+        noteId: deleteButton.dataset.comparisonDelete ?? "",
       }, 8000).then(async (response) => {
         state.comparisonNotes = response?.notes ?? state.comparisonNotes;
-        showAppToast("Comparison note deleted.", "success", 1400);
+        showAppToast(t.comparison.deleteSuccess, "success", 1400);
         await refreshComparisonNotes(entry.id);
       });
     }
   };
+
+  comparisonEl.onchange = (event: Event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const workspace = target?.closest<HTMLElement>("[data-compare-history-id]");
+    if (!workspace || !target?.closest("[data-comparison-service]")) {
+      return;
+    }
+
+    const serviceId =
+      workspace.querySelector<HTMLSelectElement>("[data-comparison-service]")?.value ||
+      entry.requestedSiteIds?.[0] ||
+      "";
+    void setActiveComparisonContext({
+      historyId: Number(entry.id),
+      serviceId,
+    });
+  };
 }
 
-export function openHistoryModal(historyId) {
+export function openHistoryModal(historyId: number | string): void {
   const entry = state.history.find((item) => Number(item.id) === Number(historyId));
   if (!entry) {
     return;
   }
 
   const status = getStatusInfo(entry.status);
+  if (!historyModal || !historyModalClose || !historyModalMeta || !historyModalServices || !historyModalText) {
+    return;
+  }
+
   historyModalMeta.textContent = `${formatDateTime(entry.createdAt)} · ${status.label}`;
   historyModalServices.innerHTML = getRequestedServices(entry)
-    .map((siteId) => buildBadgeMarkup(siteId, state.runtimeSites))
+    .map((siteId: string) => buildBadgeMarkup(siteId, state.runtimeSites))
     .join("");
   historyModalText.textContent = entry.text;
 
@@ -219,10 +263,20 @@ export function openHistoryModal(historyId) {
   }
   comparisonEl.innerHTML = `${buildResultComparisonMarkup(entry)}${buildCompareWorkspaceMarkup(entry)}`;
   bindCompareWorkspaceEvents(comparisonEl, entry);
+  const defaultServiceId = getRequestedServices(entry)[0] || "";
+  if (defaultServiceId) {
+    void setActiveComparisonContext({
+      historyId: Number(entry.id),
+      serviceId: defaultServiceId,
+    });
+  }
 
   openModal(historyModal, historyModalClose);
 }
 
-export function closeHistoryModal() {
-  closeModal(historyModal);
+export function closeHistoryModal(): void {
+  void setActiveComparisonContext(null);
+  if (historyModal) {
+    closeModal(historyModal);
+  }
 }

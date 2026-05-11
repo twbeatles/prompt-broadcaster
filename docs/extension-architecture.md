@@ -135,6 +135,8 @@ prompt-broadcaster/
 ├── qa/fixtures/
 ├── scripts/
 │   ├── build.mjs
+│   ├── check-docs.mjs
+│   ├── qa-extension.mjs
 │   ├── qa-smoke.mjs
 │   ├── selector-audit.mjs
 │   └── qa-smoke/
@@ -155,8 +157,10 @@ prompt-broadcaster/
 ```bash
 npm install
 npm run typecheck
+npm run docs:check
 npm run build
 npm run qa:smoke
+npm run qa:extension
 npm run selector:audit
 ```
 
@@ -385,8 +389,9 @@ Important session-storage keys:
 - `popupPromptIntent`
 - `popupFavoriteIntent`
 - `favoriteRunJobs`
+- `activeComparisonContext`
 
-The background worker mirrors `pendingInjections`, `pendingBroadcasts`, `pendingSelectorChecks`, and `selectorAlerts` in memory and updates them through a serialized mutation chain so overlapping completions and cancellations do not lose results. Favorite popup intents and favorite run jobs are stored through `src/shared/runtime-state/`.
+The background worker mirrors `pendingInjections`, `pendingBroadcasts`, `pendingSelectorChecks`, and `selectorAlerts` in memory and updates them through a serialized mutation chain so overlapping completions and cancellations do not lose results. Favorite popup intents, favorite run jobs, and the one-shot comparison capture context are stored through `src/shared/runtime-state/`.
 Popup compose restoration is intentionally one-shot on load with precedence `popupPromptIntent -> composeDraftPrompt -> lastSentPrompt`.
 
 ### Prompt History Schema
@@ -442,13 +447,14 @@ Active job lookups prefer `queued/running` records over newer terminal records s
 
 ### Broadcast Counter and Export Version
 
-`broadcastCounter` is stored in local storage and exported with prompt data JSON `version: 8`.
+`broadcastCounter` is stored in local storage and exported with prompt data JSON `version: 9`.
 
 - popup preview resolves `{{counter}}` as `current + 1`
 - the stored counter increments only when a broadcast queues at least one target site
-- import migrates older payloads through `v1 -> v2 -> v3 -> v4 -> v5 -> v6 -> v7 -> v8`
+- import migrates older payloads through `v1 -> v2 -> v3 -> v4 -> v5 -> v6 -> v7 -> v8 -> v9`
 - runtime site verification metadata is preserved as structured fields, while `lastVerified` is derived from `verifiedAt` when available
 - runtime site route policy is preserved through normalized `supportedRoutes`
+- v9 export/import also preserves comparison notes, prompt experiments, template packs, and service groups; v8 and older payloads import with those collections empty when absent
 - `appSettings.historyLimit` is a non-destructive default visible cap. Popup/options history lists apply it at read time, while storage and JSON export keep the full history set.
 - denied custom-site origins abort import before the local commit, while post-commit permission cleanup failures are best-effort only
 - reset-data clears the counter together with the rest of the user data
@@ -549,7 +555,7 @@ Current smoke coverage includes:
 - custom service permission cleanup and alias-origin handling
 - built-in override repair for invalid click-submit imports
 - `broadcastCounter` export/import/reset semantics
-- import migration to export `version: 8`
+- import migration to export `version: 9`
 - batched permission preflight plus atomic import commit behavior
 - `supportedRoutes` normalization and route-aware preflight
 - pending selector escalation (`pendingSelectorChecks`)

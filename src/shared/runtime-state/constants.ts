@@ -9,5 +9,6 @@ export const SESSION_RUNTIME_KEYS = Object.freeze({
   lastBroadcast: "lastBroadcast",
   pendingSelectorChecks: "pendingSelectorChecks",
   popupFavoriteIntent: "popupFavoriteIntent",
+  activeComparisonContext: "activeComparisonContext",
   favoriteRunJobs: "favoriteRunJobs",
 });

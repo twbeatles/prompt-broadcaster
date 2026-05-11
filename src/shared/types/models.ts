@@ -409,6 +409,13 @@ export interface PopupFavoriteIntent {
   createdAt: string;
 }
 
+export interface ActiveComparisonContext {
+  historyId: number;
+  serviceId: string;
+  source: "options-modal";
+  updatedAt: string;
+}
+
 export interface PopupPromptIntent {
   prompt: string;
   createdAt: string;

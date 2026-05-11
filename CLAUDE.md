@@ -14,7 +14,9 @@ Source of truth: `src/` (TypeScript). Chrome loads the built output in `dist/`, 
 npm install
 npm run build
 npm run typecheck
+npm run docs:check
 npm run qa:smoke
+npm run qa:extension
 npm run selector:audit
 ```
 
@@ -128,7 +130,8 @@ Favorite runs use the same popup-side context preparation for `{{url}}`, `{{titl
 - Deleting custom services, resetting service settings, or replacing imported custom services should remove unused optional host permissions.
 
 ### Import/export and counter semantics
-- JSON export now writes `version: 8` and import migrates older payloads through `v1 -> v2 -> v3 -> v4 -> v5 -> v6 -> v7 -> v8`.
+- JSON export now writes `version: 9` and import migrates older payloads through `v1 -> v2 -> v3 -> v4 -> v5 -> v6 -> v7 -> v8 -> v9`.
+- Export/import v9 includes comparison notes, prompt experiments, template packs, and service groups. Imports from v8 and older payloads keep those collections empty when they are absent.
 - Runtime sites keep structured selector verification metadata: `verifiedAt`, `verifiedRoute`, `verifiedAuthState`, `verifiedLocale`, `verifiedVersion`, plus normalized `supportedRoutes`. Legacy `lastVerified` remains for compatibility and is derived from `verifiedAt` when present.
 - `{{counter}}` preview uses `current + 1`, but the stored counter only increments when at least one target site is successfully queued.
 - `appSettings.historyLimit` is now a default visible history cap only. Lower values hide older rows in popup/options without deleting stored history, and export/import still operate on the full stored history.
@@ -195,9 +198,14 @@ Smoke QA lives in `qa/` and uses Playwright against local fixtures.
 
 ```bash
 npx playwright install chromium
+npm run docs:check
+npm run build
 npm run qa:smoke
+npm run qa:extension
 npm run selector:audit
 ```
+
+`docs:check` guards README/CLAUDE/build/architecture/export-version drift. `qa:extension` loads the built `dist/` extension in Chromium and covers options navigation, experiment execution limits, history comparison notes, template packs, service groups, and popup fallback behavior. It runs headed by default; set `APB_E2E_HEADLESS=1` only when the local Chromium build supports MV3 extension workers in headless mode.
 
 Smoke coverage includes:
 
@@ -212,7 +220,7 @@ Smoke coverage includes:
 - built-in override import repair for invalid `click` + empty selector combinations
 - internal-only runtime router trust checks and timeout-safe runtime messaging fallback
 - `broadcastCounter` export/import/reset lifecycle
-- import migration to export `version: 8`
+- import migration to export `version: 9`
 - supported-route normalization plus reusable-tab route gating
 - pending selector escalation (session pending -> confirmed warning)
 - `siteOrder` normalization and ordering reuse

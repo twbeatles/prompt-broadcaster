@@ -54,6 +54,12 @@ Use this checklist before shipping selector or route changes.
 - Treat `lastVerified` as a compatibility field only. If `verifiedAt` is present, let the code derive `lastVerified` instead of hand-editing both.
 - Re-run `npm run selector:audit` after selector or route-policy changes and carry the recorded route/auth/locale details into release notes when behavior stays best-effort or soft-gated.
 
+## Automation and evidence files
+- Run `npm run docs:check` before publishing selector docs so stale export-version or validation-command wording is caught.
+- Run `npm run qa:extension` after `npm run build` when options navigation, selector health, comparison notes, service groups, template packs, experiments, or popup fallback changed.
+- Store audit evidence in a dated file such as [selector-verification-2026-05-11.md](selector-verification-2026-05-11.md). Automated audit rows that hit Cloudflare, login, or access challenges must stay separate from logged-in canonical route proof.
+- Do not promote a selector to verified logged-in status unless the manual evidence records route, auth state, locale, prompt surface, submit surface after input, and build/UI version.
+
 ## Source touchpoints for selector changes
 - `src/config/sites/builtins.ts`: built-in selector, route, and verification metadata source of truth.
 - `src/shared/sites/normalizers/site-records.ts`: built-in override repair and runtime site-record normalization logic.

@@ -1,13 +1,14 @@
-// @ts-nocheck
 import { sendRuntimeMessageWithTimeout } from "../../shared/chrome/messaging";
 import { escapeHTML } from "../../shared/security";
+import type { TemplatePack } from "../../shared/types/models";
 import { optionsDom } from "../app/dom";
+import { t } from "../app/i18n";
 import { state } from "../app/state";
 import { showAppToast } from "../core/status";
 
 const dom = optionsDom.settings;
 
-function downloadJson(filename, payload) {
+function downloadJson(filename: string, payload: unknown): void {
   const blob = new Blob([JSON.stringify(payload, null, 2)], {
     type: "application/json",
   });
@@ -29,52 +30,60 @@ export function renderTemplatePacksSection() {
       <article class="service-health-row">
         <div>
           <strong>${escapeHTML(pack.title)}</strong>
-          <div class="helper">${pack.templates.length} templates · defaults ${pack.includeSensitiveDefaults ? "included" : "removed"}</div>
+          <div class="helper">${pack.templates.length} templates · defaults ${pack.includeSensitiveDefaults ? escapeHTML(t.settings.templatePackDefaultsIncluded) : escapeHTML(t.settings.templatePackDefaultsRemoved)}</div>
         </div>
         <div class="settings-actions">
-          <button class="btn ghost" type="button" data-pack-download="${escapeHTML(pack.id)}">Download</button>
+          <button class="btn ghost" type="button" data-pack-download="${escapeHTML(pack.id)}">${escapeHTML(t.settings.templatePackDownload)}</button>
         </div>
       </article>
     `).join("")
-    : `<div class="empty-state">No template packs yet.</div>`;
+    : `<div class="empty-state">${escapeHTML(t.settings.templatePackEmpty)}</div>`;
 }
 
 async function exportTemplatePack() {
-  const response = await sendRuntimeMessageWithTimeout({
+  const includeSensitiveDefaults =
+    !(dom.templatePackSensitive instanceof HTMLInputElement) ||
+    dom.templatePackSensitive.checked !== false;
+  const response = await sendRuntimeMessageWithTimeout<"template-pack:export">({
     action: "template-pack:export",
-    includeSensitiveDefaults: dom.templatePackSensitive?.checked !== false,
+    includeSensitiveDefaults,
   }, 10000);
   if (!response?.ok || !response.pack) {
-    throw new Error(response?.error || "Template pack export failed.");
+    throw new Error(response?.error || t.settings.templatePackExportFailed);
   }
 
+  const { pack } = response;
   state.templatePacks = [
-    response.pack,
-    ...state.templatePacks.filter((pack) => pack.id !== response.pack.id),
+    pack,
+    ...state.templatePacks.filter((entry) => entry.id !== pack.id),
   ];
   renderTemplatePacksSection();
-  downloadJson(`${response.pack.title.replace(/[\\/:*?"<>|]+/g, "-")}.json`, response.pack);
-  showAppToast("Template pack exported.", "success", 1800);
+  downloadJson(`${pack.title.replace(/[\\/:*?"<>|]+/g, "-")}.json`, pack);
+  showAppToast(t.settings.templatePackExported, "success", 1800);
 }
 
-async function importTemplatePack(file) {
+async function importTemplatePack(file: File): Promise<void> {
   const text = await file.text();
-  const pack = JSON.parse(text);
-  const response = await sendRuntimeMessageWithTimeout({
+  const pack = JSON.parse(text) as Partial<TemplatePack>;
+  const response = await sendRuntimeMessageWithTimeout<"template-pack:import">({
     action: "template-pack:import",
     pack,
   }, 10000);
   if (!response?.ok || !response.pack) {
-    throw new Error(response?.error || "Template pack import failed.");
+    throw new Error(response?.error || t.settings.templatePackImportFailed);
   }
 
+  const { pack: importedPack } = response;
   state.templatePacks = [
-    response.pack,
-    ...state.templatePacks.filter((entry) => entry.id !== response.pack.id),
+    importedPack,
+    ...state.templatePacks.filter((entry) => entry.id !== importedPack.id),
   ];
   renderTemplatePacksSection();
   showAppToast(
-    `Imported ${response.importedFavoriteIds?.length ?? 0}, skipped ${response.skippedFavoriteIds?.length ?? 0} duplicates.`,
+    t.settings.templatePackImported(
+      response.importedFavoriteIds?.length ?? 0,
+      response.skippedFavoriteIds?.length ?? 0,
+    ),
     "success",
     2600,
   );
@@ -84,7 +93,7 @@ export function bindTemplatePackEvents() {
   dom.templatePackExport?.addEventListener("click", () => {
     void exportTemplatePack().catch((error) => {
       console.error("[AI Prompt Broadcaster] Failed to export template pack.", error);
-      showAppToast(error?.message || "Template pack export failed.", "error", 3000);
+      showAppToast(error?.message || t.settings.templatePackExportFailed, "error", 3000);
     });
   });
 
@@ -93,21 +102,25 @@ export function bindTemplatePackEvents() {
   });
 
   dom.templatePackImportInput?.addEventListener("change", (event) => {
-    const [file] = [...(event.target.files ?? [])];
+    const input = event.target instanceof HTMLInputElement ? event.target : null;
+    const [file] = Array.from(input?.files ?? []);
     if (!file) {
       return;
     }
 
     void importTemplatePack(file).catch((error) => {
       console.error("[AI Prompt Broadcaster] Failed to import template pack.", error);
-      showAppToast(error?.message || "Template pack import failed.", "error", 3000);
+      showAppToast(error?.message || t.settings.templatePackImportFailed, "error", 3000);
     }).finally(() => {
-      event.target.value = "";
+      if (input) {
+        input.value = "";
+      }
     });
   });
 
   dom.templatePackList?.addEventListener("click", (event) => {
-    const button = event.target.closest("[data-pack-download]");
+    const target = event.target instanceof Element ? event.target : null;
+    const button = target?.closest<HTMLElement>("[data-pack-download]");
     if (!button) {
       return;
     }

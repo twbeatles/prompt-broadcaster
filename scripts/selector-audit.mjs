@@ -152,7 +152,9 @@ function hasKnownAuthPath(pathname) {
 
 async function loadBuiltInSites() {
   const source = await readFile(path.join(rootDir, "src", "config", "sites", "builtins.ts"), "utf8");
-  const match = source.match(/export const AI_SITES = Object\.freeze\(([\s\S]*?)\);\s*export default AI_SITES;/);
+  const match = source.match(
+    /export const AI_SITES = Object\.freeze\(([\s\S]*?)\)\s*(?:satisfies\s+readonly\s+SiteConfig\[\])?;\s*export default AI_SITES;/,
+  );
 
   if (!match?.[1]) {
     throw new Error("Could not parse built-in site definitions.");

@@ -22,6 +22,8 @@ export const DEFAULT_HISTORY_SORT = "latest";
 export const DEFAULT_FAVORITE_SORT = "recentUsed";
 export const DEFAULT_FAVORITE_MODE = "single";
 export const DEFAULT_SCHEDULE_REPEAT = "none";
+export const EXPERIMENT_SOFT_BROADCAST_LIMIT = 10;
+export const EXPERIMENT_HARD_BROADCAST_LIMIT = 30;
 export const DEFAULT_SETTINGS = Object.freeze({
   historyLimit: DEFAULT_HISTORY_LIMIT,
   autoClosePopup: false,

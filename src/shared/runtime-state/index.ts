@@ -17,6 +17,10 @@ export {
   setPendingSelectorChecks,
 } from "./pending-selector-checks";
 export {
+  getActiveComparisonContext,
+  setActiveComparisonContext,
+} from "./active-comparison";
+export {
   consumePopupFavoriteIntent,
   getPopupFavoriteIntent,
   setPopupFavoriteIntent,

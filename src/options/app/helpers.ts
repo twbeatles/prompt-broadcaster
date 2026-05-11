@@ -2,6 +2,7 @@
 import { AI_SITES } from "../../config/sites";
 import { getTargetSnapshotSiteIds } from "../../shared/broadcast/target-snapshots";
 import { escapeHTML } from "../../shared/security";
+import type { PromptHistoryItem, RuntimeSite } from "../../shared/types/models";
 import { isKorean, locale, t } from "./i18n";
 
 export function buildImportSummaryText(summary, { short = false } = {}) {
@@ -48,7 +49,7 @@ export function buildImportSummaryText(summary, { short = false } = {}) {
   return parts.join(", ");
 }
 
-export function formatDateTime(value) {
+export function formatDateTime(value: string) {
   try {
     return new Intl.DateTimeFormat(locale, {
       year: "numeric",
@@ -78,13 +79,13 @@ export function previewText(text, maxLength = 60) {
   return collapsed.length <= maxLength ? collapsed || "-" : `${collapsed.slice(0, maxLength)}...`;
 }
 
-export function getSiteLabel(siteId, runtimeSites = []) {
+export function getSiteLabel(siteId: string, runtimeSites: RuntimeSite[] = []) {
   return runtimeSites.find((site) => site.id === siteId)?.name
     ?? AI_SITES.find((site) => site.id === siteId)?.name
     ?? siteId;
 }
 
-export function getRequestedServices(entry) {
+export function getRequestedServices(entry: PromptHistoryItem): string[] {
   const snapshotSiteIds = getTargetSnapshotSiteIds(entry);
   if (snapshotSiteIds.length > 0) {
     return snapshotSiteIds;
@@ -94,7 +95,7 @@ export function getRequestedServices(entry) {
   return siteResultKeys.length > 0 ? siteResultKeys : entry.sentTo ?? [];
 }
 
-export function getSubmittedServices(entry) {
+export function getSubmittedServices(entry: PromptHistoryItem): string[] {
   if (Array.isArray(entry?.submittedSiteIds) && entry.submittedSiteIds.length > 0) {
     return entry.submittedSiteIds;
   }
@@ -102,7 +103,7 @@ export function getSubmittedServices(entry) {
   return entry.sentTo ?? [];
 }
 
-export function getStatusInfo(status) {
+export function getStatusInfo(status: string) {
   switch (status) {
     case "submitted":
       return { label: t.statuses.submitted, className: "success" };
@@ -115,7 +116,7 @@ export function getStatusInfo(status) {
   }
 }
 
-export function buildBadgeMarkup(siteId, runtimeSites = []) {
+export function buildBadgeMarkup(siteId: string, runtimeSites: RuntimeSite[] = []) {
   return `<span class="badge">${escapeHTML(getSiteLabel(siteId, runtimeSites))}</span>`;
 }
 

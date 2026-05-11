@@ -91,12 +91,14 @@
 ```bash
 npm install
 npm run typecheck
+npm run docs:check
 npm run build
 npm run qa:smoke
+npm run qa:extension
 npm run selector:audit
 ```
 
-`qa:smoke`는 `dist/` 기준 주입/전송 경로를 로컬 fixture로 검증합니다. 여기에는 custom service optional permission 정리, import repair, `broadcastCounter` 수명주기, 즐겨찾기 검색 범위, favorite run job dedupe, clipboard/context 준비 경로도 포함됩니다. `selector:audit`는 built-in 사이트의 현재 surface를 Markdown으로 남깁니다. 다만 실제 Chrome 툴바 팝업 동작, 열린 탭 재사용, 실서비스 Claude logged-in composer 전송 성공 여부는 수동 검수가 필요합니다.
+`docs:check`는 README/CLAUDE/build/architecture/roadmap/export version 정합성을 검증합니다. `qa:smoke`는 `dist/` 기준 주입/전송 경로를 로컬 fixture로 검증합니다. 여기에는 custom service optional permission 정리, import repair, `broadcastCounter` 수명주기, 즐겨찾기 검색 범위, favorite run job dedupe, clipboard/context 준비 경로도 포함됩니다. `qa:extension`은 빌드된 확장 페이지를 Chromium에 로드해 options navigation, experiment cap, history comparison note, template pack, service group, popup fallback을 검사합니다. `selector:audit`는 built-in 사이트의 현재 surface를 Markdown으로 남깁니다. 다만 실제 Chrome 툴바 팝업 동작, 열린 탭 재사용, 실서비스 Claude logged-in composer 전송 성공 여부는 수동 검수가 필요합니다.
 
 ### 로컬 테스트
 
@@ -136,6 +138,7 @@ bash ./package.sh
 ## 7. 제출 전 최종 체크
 
 - `npm run build` 후 `dist/manifest.json`이 최신 상태인지 확인
+- `npm run docs:check`, `npm run qa:smoke`, `npm run qa:extension`이 통과했는지 확인
 - `dist/`를 로드했을 때 manifest 오류가 없는지 확인
 - 팝업을 처음 열었을 때 즐겨찾기 저장 모달이 자동으로 뜨지 않는지 확인
 - 즐겨찾기 저장 모달에서 `닫기`/`취소`/`저장` 버튼이 모두 정상 동작하는지 확인

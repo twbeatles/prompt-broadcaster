@@ -1,18 +1,50 @@
-// @ts-nocheck
 import { sendRuntimeMessageWithTimeout } from "../../shared/chrome/messaging";
+import {
+  EXPERIMENT_HARD_BROADCAST_LIMIT,
+  EXPERIMENT_SOFT_BROADCAST_LIMIT,
+  getPromptExperimentRunStats,
+} from "../../shared/prompts";
 import { renderTemplatePrompt } from "../../shared/template";
 import { escapeHTML } from "../../shared/security";
+import type {
+  PromptExperiment,
+  PromptExperimentVariableSet,
+  PromptExperimentVariant,
+} from "../../shared/types/models";
 import { optionsDom } from "../app/dom";
+import { t } from "../app/i18n";
 import { state } from "../app/state";
 import { showAppToast } from "../core/status";
 
-const dom = optionsDom.experiments;
+interface ExperimentDom {
+  experimentTitle: HTMLInputElement | null;
+  experimentVariants: HTMLTextAreaElement | null;
+  experimentVariables: HTMLTextAreaElement | null;
+  experimentTargets: HTMLElement | null;
+  experimentPreview: HTMLElement | null;
+  experimentSave: HTMLElement | null;
+  experimentRun: HTMLElement | null;
+  experimentPreviewOutput: HTMLElement | null;
+  experimentList: HTMLElement | null;
+}
 
-function parseVariantBlocks() {
+type PromptExperimentDraft = Partial<PromptExperiment> &
+  Pick<PromptExperiment, "title" | "description" | "variants" | "targetSiteIds" | "variableSets">;
+
+interface ExperimentPreviewItem {
+  variant: PromptExperimentVariant;
+  variableSet: PromptExperimentVariableSet;
+  prompt: string;
+  targetSiteIds: string[];
+}
+
+const dom = optionsDom.experiments as ExperimentDom;
+
+function parseVariantBlocks(): PromptExperimentVariant[] {
   const raw = dom.experimentVariants?.value || "";
   return raw
     .split(/\n---+\n/g)
-    .map((text, index) => ({
+    .map((text: string, index: number) => ({
       id: `variant-${index + 1}`,
       title: `Variant ${index + 1}`,
       text: text.trim(),
@@ -20,7 +52,7 @@ function parseVariantBlocks() {
     .filter((variant) => variant.text);
 }
 
-function parseVariableSets() {
+function parseVariableSets(): PromptExperimentVariableSet[] {
   const raw = dom.experimentVariables?.value.trim();
   if (!raw) {
     return [{ id: "vars-1", title: "Default", values: {} }];
@@ -29,7 +61,7 @@ function parseVariableSets() {
   try {
     const parsed = JSON.parse(raw);
     const entries = Array.isArray(parsed) ? parsed : [parsed];
-    return entries.map((values, index) => ({
+    return entries.map((values: unknown, index: number) => ({
       id: `vars-${index + 1}`,
       title: `Variables ${index + 1}`,
       values: values && typeof values === "object" && !Array.isArray(values)
@@ -39,18 +71,20 @@ function parseVariableSets() {
         : {},
     }));
   } catch (_error) {
-    showAppToast("Variables JSON is invalid. Using an empty variable set.", "warning", 2600);
+    showAppToast(t.experiments.invalidVariables, "warning", 2600);
     return [{ id: "vars-1", title: "Default", values: {} }];
   }
 }
 
-function getSelectedTargetIds() {
-  return [...dom.experimentTargets.querySelectorAll("[data-experiment-target]:checked")]
-    .map((input) => input.dataset.experimentTarget)
+function getSelectedTargetIds(): string[] {
+  return Array.from(
+    dom.experimentTargets?.querySelectorAll<HTMLInputElement>("[data-experiment-target]:checked") ?? [],
+  )
+    .map((input) => input.dataset.experimentTarget ?? "")
     .filter(Boolean);
 }
 
-function buildDraftExperiment(existingId = null) {
+function buildDraftExperiment(existingId: string | null = null): PromptExperimentDraft {
   return {
     id: existingId || state.activeExperimentId || undefined,
     title: dom.experimentTitle?.value.trim() || `Experiment ${state.promptExperiments.length + 1}`,
@@ -61,7 +95,7 @@ function buildDraftExperiment(existingId = null) {
   };
 }
 
-function buildPreviewItems(experiment) {
+function buildPreviewItems(experiment: PromptExperimentDraft | PromptExperiment): ExperimentPreviewItem[] {
   return experiment.variants.flatMap((variant) =>
     experiment.variableSets.map((variableSet) => ({
       variant,
@@ -72,7 +106,31 @@ function buildPreviewItems(experiment) {
   );
 }
 
-function renderExperimentTargets() {
+function getExperimentRunStats(experiment: PromptExperimentDraft | PromptExperiment): {
+  broadcastCount: number;
+  serviceSendCount: number;
+} {
+  return getPromptExperimentRunStats(experiment);
+}
+
+function buildRunLimitMarkup(experiment: PromptExperimentDraft | PromptExperiment): string {
+  const stats = getExperimentRunStats(experiment);
+  const tone = stats.broadcastCount > EXPERIMENT_HARD_BROADCAST_LIMIT
+    ? "error"
+    : stats.broadcastCount > EXPERIMENT_SOFT_BROADCAST_LIMIT
+      ? "warning"
+      : "info";
+  const label = t.experiments.runStats(
+    stats.broadcastCount,
+    stats.serviceSendCount,
+    EXPERIMENT_SOFT_BROADCAST_LIMIT,
+    EXPERIMENT_HARD_BROADCAST_LIMIT,
+  );
+
+  return `<div class="helper experiment-run-limit ${tone}">${escapeHTML(label)}</div>`;
+}
+
+function renderExperimentTargets(): void {
   if (!dom.experimentTargets) {
     return;
   }
@@ -90,18 +148,25 @@ function renderExperimentTargets() {
   `).join("");
 }
 
-function renderPreview() {
+function renderPreview(): void {
   const experiment = buildDraftExperiment();
   const items = buildPreviewItems(experiment);
+  if (!dom.experimentPreviewOutput) {
+    return;
+  }
+
   dom.experimentPreviewOutput.innerHTML = items.length
-    ? items.map((item, index) => `
+    ? items.map((item: ExperimentPreviewItem) => `
       <article class="panel compact-panel">
         <strong>${escapeHTML(item.variant.title)} x ${escapeHTML(item.variableSet.title)}</strong>
-        <div class="helper">${escapeHTML(item.targetSiteIds.join(", ") || "No target services")}</div>
+        <div class="helper">${escapeHTML(item.targetSiteIds.join(", ") || t.experiments.noTargetServices)}</div>
         <pre class="modal-prompt">${escapeHTML(item.prompt)}</pre>
       </article>
     `).join("")
-    : `<div class="empty-state">Add variants and target services to preview combinations.</div>`;
+    : `<div class="empty-state">${escapeHTML(t.experiments.previewEmpty)}</div>`;
+  if (items.length) {
+    dom.experimentPreviewOutput.insertAdjacentHTML("afterbegin", buildRunLimitMarkup(experiment));
+  }
 }
 
 export function renderExperimentsSection() {
@@ -116,81 +181,130 @@ export function renderExperimentsSection() {
         <div class="section-head-row">
           <div>
             <h2>${escapeHTML(experiment.title)}</h2>
-            <p>${experiment.variants.length} variants · ${experiment.variableSets.length} variable sets · ${experiment.targetSiteIds.length} services · ${experiment.runs.length} runs</p>
+            <p>${escapeHTML(t.experiments.summary(
+              experiment.variants.length,
+              experiment.variableSets.length,
+              experiment.targetSiteIds.length,
+              experiment.runs.length,
+              getExperimentRunStats(experiment).broadcastCount,
+            ))}</p>
           </div>
           <div class="settings-actions">
-            <button class="btn ghost" type="button" data-experiment-load="${escapeHTML(experiment.id)}">Load</button>
-            <button class="btn primary" type="button" data-experiment-run="${escapeHTML(experiment.id)}">Run</button>
-            <button class="btn danger ghost" type="button" data-experiment-delete="${escapeHTML(experiment.id)}">Delete</button>
+            <button class="btn ghost" type="button" data-experiment-load="${escapeHTML(experiment.id)}">${escapeHTML(t.experiments.load)}</button>
+            <button class="btn primary" type="button" data-experiment-run="${escapeHTML(experiment.id)}">${escapeHTML(t.experiments.run)}</button>
+            <button class="btn danger ghost" type="button" data-experiment-delete="${escapeHTML(experiment.id)}">${escapeHTML(t.experiments.delete)}</button>
           </div>
         </div>
       </article>
     `).join("")
-    : `<div class="panel empty-state">No saved experiments yet.</div>`;
+    : `<div class="panel empty-state">${escapeHTML(t.experiments.empty)}</div>`;
 }
 
-async function saveDraftExperiment() {
+async function saveDraftExperiment(): Promise<PromptExperiment | null> {
   const draft = buildDraftExperiment();
   if (!draft.variants.length || !draft.targetSiteIds.length) {
-    showAppToast("Experiment needs at least one variant and one target service.", "warning", 2600);
+    showAppToast(t.experiments.needsVariantAndTarget, "warning", 2600);
     return null;
   }
 
-  const response = await sendRuntimeMessageWithTimeout({
+  const response = await sendRuntimeMessageWithTimeout<"experiment:save">({
     action: "experiment:save",
     experiment: draft,
   }, 8000);
   if (!response?.ok || !response.experiment) {
-    throw new Error(response?.error || "Experiment save failed.");
+    throw new Error(response?.error || t.experiments.saveFailed);
   }
 
-  state.activeExperimentId = response.experiment.id;
+  const { experiment } = response;
+  state.activeExperimentId = experiment.id;
   state.promptExperiments = [
-    response.experiment,
-    ...state.promptExperiments.filter((entry) => entry.id !== response.experiment.id),
+    experiment,
+    ...state.promptExperiments.filter((entry) => entry.id !== experiment.id),
   ];
   renderExperimentsSection();
-  showAppToast("Experiment saved.", "success", 1600);
-  return response.experiment;
+  showAppToast(t.experiments.saveSuccess, "success", 1600);
+  return experiment;
 }
 
-async function runExperiment(experimentId) {
-  const response = await sendRuntimeMessageWithTimeout({
+function confirmExperimentRun(experiment: PromptExperiment): boolean {
+  const stats = getExperimentRunStats(experiment);
+  if (stats.broadcastCount > EXPERIMENT_HARD_BROADCAST_LIMIT) {
+    showAppToast(
+      t.experiments.hardLimit(stats.broadcastCount, EXPERIMENT_HARD_BROADCAST_LIMIT),
+      "warning",
+      4200,
+    );
+    return false;
+  }
+
+  if (stats.broadcastCount > EXPERIMENT_SOFT_BROADCAST_LIMIT) {
+    return window.confirm(
+      t.experiments.confirmLarge(
+        stats.broadcastCount,
+        stats.serviceSendCount,
+        EXPERIMENT_SOFT_BROADCAST_LIMIT,
+      ),
+    );
+  }
+
+  return true;
+}
+
+async function runExperiment(experimentId: string): Promise<void> {
+  const experiment = state.promptExperiments.find((entry) => entry.id === experimentId);
+  if (!experiment) {
+    throw new Error(t.experiments.notFound);
+  }
+
+  const confirmedLargeRun = confirmExperimentRun(experiment);
+  if (!confirmedLargeRun) {
+    return;
+  }
+
+  const response = await sendRuntimeMessageWithTimeout<"experiment:run">({
     action: "experiment:run",
     experimentId,
+    confirmedLargeRun,
   }, 30000);
   if (!response?.ok) {
-    throw new Error(response?.error || "Experiment run failed.");
+    throw new Error(response?.error || t.experiments.runFailed);
   }
 
   if (response.experiment) {
+    const updatedExperiment = response.experiment;
     state.promptExperiments = [
-      response.experiment,
-      ...state.promptExperiments.filter((entry) => entry.id !== response.experiment.id),
+      updatedExperiment,
+      ...state.promptExperiments.filter((entry) => entry.id !== updatedExperiment.id),
     ];
     renderExperimentsSection();
   }
-  showAppToast(`Experiment queued: ${response.queuedCount} broadcasts.`, "success", 2600);
+  showAppToast(t.experiments.queued(response.queuedCount), "success", 2600);
 }
 
-function loadExperiment(experimentId) {
+function loadExperiment(experimentId: string): void {
   const experiment = state.promptExperiments.find((entry) => entry.id === experimentId);
   if (!experiment) {
     return;
   }
 
   state.activeExperimentId = experiment.id;
-  dom.experimentTitle.value = experiment.title;
-  dom.experimentVariants.value = experiment.variants.map((variant) => variant.text).join("\n---\n");
-  dom.experimentVariables.value = JSON.stringify(
+  if (dom.experimentTitle) {
+    dom.experimentTitle.value = experiment.title;
+  }
+  if (dom.experimentVariants) {
+    dom.experimentVariants.value = experiment.variants.map((variant) => variant.text).join("\n---\n");
+  }
+  if (dom.experimentVariables) {
+    dom.experimentVariables.value = JSON.stringify(
     experiment.variableSets.map((set) => set.values),
     null,
     2,
   );
+  }
   renderExperimentTargets();
   const selected = new Set(experiment.targetSiteIds);
-  dom.experimentTargets.querySelectorAll("[data-experiment-target]").forEach((input) => {
-    input.checked = selected.has(input.dataset.experimentTarget);
+  dom.experimentTargets?.querySelectorAll<HTMLInputElement>("[data-experiment-target]").forEach((input) => {
+    input.checked = selected.has(input.dataset.experimentTarget ?? "");
   });
   renderPreview();
 }
@@ -200,7 +314,7 @@ export function bindExperimentEvents() {
   dom.experimentSave?.addEventListener("click", () => {
     void saveDraftExperiment().catch((error) => {
       console.error("[AI Prompt Broadcaster] Failed to save experiment.", error);
-      showAppToast(error?.message || "Experiment save failed.", "error", 3000);
+      showAppToast(error?.message || t.experiments.saveFailed, "error", 3000);
     });
   });
   dom.experimentRun?.addEventListener("click", () => {
@@ -211,35 +325,36 @@ export function bindExperimentEvents() {
       }
     })().catch((error) => {
       console.error("[AI Prompt Broadcaster] Failed to run experiment.", error);
-      showAppToast(error?.message || "Experiment run failed.", "error", 3000);
+      showAppToast(error?.message || t.experiments.runFailed, "error", 3000);
     });
   });
   dom.experimentList?.addEventListener("click", (event) => {
-    const loadButton = event.target.closest("[data-experiment-load]");
-    const runButton = event.target.closest("[data-experiment-run]");
-    const deleteButton = event.target.closest("[data-experiment-delete]");
+    const target = event.target instanceof Element ? event.target : null;
+    const loadButton = target?.closest<HTMLElement>("[data-experiment-load]");
+    const runButton = target?.closest<HTMLElement>("[data-experiment-run]");
+    const deleteButton = target?.closest<HTMLElement>("[data-experiment-delete]");
 
     if (loadButton) {
-      loadExperiment(loadButton.dataset.experimentLoad);
+      loadExperiment(loadButton.dataset.experimentLoad ?? "");
       return;
     }
 
     if (runButton) {
-      void runExperiment(runButton.dataset.experimentRun).catch((error) => {
+      void runExperiment(runButton.dataset.experimentRun ?? "").catch((error) => {
         console.error("[AI Prompt Broadcaster] Failed to run experiment.", error);
-        showAppToast(error?.message || "Experiment run failed.", "error", 3000);
+        showAppToast(error?.message || t.experiments.runFailed, "error", 3000);
       });
       return;
     }
 
     if (deleteButton) {
-      void sendRuntimeMessageWithTimeout({
+      void sendRuntimeMessageWithTimeout<"experiment:delete">({
         action: "experiment:delete",
-        experimentId: deleteButton.dataset.experimentDelete,
+        experimentId: deleteButton.dataset.experimentDelete ?? "",
       }, 8000).then((response) => {
         state.promptExperiments = response?.experiments ?? state.promptExperiments;
         renderExperimentsSection();
-        showAppToast("Experiment deleted.", "success", 1600);
+        showAppToast(t.experiments.deleteSuccess, "success", 1600);
       });
     }
   });
