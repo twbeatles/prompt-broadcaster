@@ -112,6 +112,9 @@ export function createPopupServiceEditorController(
   ): void {
     const aliasErrors = validation?.fieldErrors?.hostnameAliases ?? [];
     const supportedRouteErrors = validation?.fieldErrors?.supportedRoutes ?? [];
+    const inputSelectorErrors = validation?.fieldErrors?.inputSelector ?? [];
+    const submitSelectorErrors = validation?.fieldErrors?.submitSelector ?? [];
+    const fallbackSelectorErrors = validation?.fieldErrors?.fallbackSelectors ?? [];
     const aliasValidation =
       aliasErrors.length > 0
         ? { valid: false, errors: aliasErrors }
@@ -125,6 +128,18 @@ export function createPopupServiceEditorController(
     serviceSupportedRoutesInput.setAttribute(
       "aria-invalid",
       String(supportedRouteErrors.length > 0),
+    );
+    serviceInputSelectorInput.setAttribute(
+      "aria-invalid",
+      String(inputSelectorErrors.length > 0),
+    );
+    serviceSubmitSelectorInput.setAttribute(
+      "aria-invalid",
+      String(submitSelectorErrors.length > 0),
+    );
+    serviceFallbackSelectorsInput.setAttribute(
+      "aria-invalid",
+      String(fallbackSelectorErrors.length > 0),
     );
 
     if (hasAliasError) {

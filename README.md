@@ -23,7 +23,7 @@
 백엔드나 API 키 없이, 사용자가 이미 로그인한 각 AI 웹앱의 DOM 입력창에 직접 프롬프트를 주입하는 방식으로 동작합니다.
 
 현재 소스 코드는 `src/` 아래 TypeScript 모듈로 관리됩니다. Chrome에는 `dist/` 산출물을 기본으로 로드하고, 루트 런타임 JS는 `npm run build`가 함께 동기화하는 generated mirror입니다. `src/*/main.ts`는 얇은 composition root로 유지되고, 실제 런타임은 `src/background/{commands,context-menu,messages,popup,runtime,selection,session,tabs}`, `src/options/{core,features}`, `src/popup/{app,compose,favorites,history,overlays,services,ui}`, `src/content/palette/*`, `src/shared/*`, `scripts/qa-smoke/*`, `popup/styles/partials`, `options/styles/partials`처럼 기능 기준으로 분리되어 있습니다.
-최근 분할 기준으로도 조립용 배럴 파일은 유지하되, `src/background/app/bootstrap/{tab-targets,runtime-events}.ts`, `src/background/popup/favorites-workflow/{entrypoints,run-jobs,messages}.ts`, `src/popup/app/{bootstrap,i18n,rendering}/*`, `src/popup/compose/{send-flow,template-modal}/*`, `src/popup/services/controller/*`, `src/shared/sites/normalizers/*`처럼 책임이 하위 디렉터리로 더 세분화되어 있습니다.
+최근 분할 기준으로도 조립용 배럴 파일은 유지하되, `src/background/app/bootstrap/{app,context,utils,tab-targets,runtime-events}.ts`, `src/background/app/{comparison,experiments,injection}/*`, `src/background/popup/favorites-workflow/{entrypoints,run-jobs,messages}.ts`, `src/popup/app/{bootstrap,i18n,rendering}/*`, `src/popup/favorites/controller/*`, `src/options/features/{experiments,services}/*`, `src/shared/prompts/normalizers/*`, `src/shared/sites/normalizers/*`처럼 책임이 하위 디렉터리로 더 세분화되어 있습니다.
 
 빌드 및 패키징 절차는 [docs/build-guide.md](docs/build-guide.md), 현재 구조 설명은 [docs/extension-architecture.md](docs/extension-architecture.md)를 참고하세요.
 
@@ -51,7 +51,7 @@
 - Chrome MV3 기반, 백엔드 없음
 - `chrome.scripting.executeScript` 기반 동적 주입
 - 사이트별 셀렉터와 전략을 `src/config/sites/builtins.ts`에서 중앙 관리
-- ChatGPT / Grok / Perplexity는 selector check 단계에서 `input-and-conditional-submit` semantics를 사용해 empty composer false negative를 줄입니다.
+- 모든 5개 built-in 서비스(ChatGPT, Gemini, Claude, Grok, Perplexity)는 selector check 단계에서 `input-and-conditional-submit` semantics를 사용해 empty composer false negative를 줄입니다.
 - Perplexity는 `#ask-input[data-lexical-editor='true']`를 최우선으로 잡고, `MAIN` world에서 Lexical 상태를 갱신한 뒤 기존 submit 경로로 전송
 - **전역 대기 배율(wait multiplier)** 과 서비스별 적응형 주입 전략 통계(내부 저장) 지원
 - 입력 실패 시 클립보드 복사 + 비차단 폴백 배너 제공
@@ -272,7 +272,7 @@ MIT
 It works without a backend or API keys by injecting prompts directly into each AI web app's input surface after the target tab loads.
 
 The source of truth lives in `src/` as TypeScript modules. Chrome should load the built `dist/` output, and the root runtime JS files are generated mirrors refreshed by `npm run build`. The runtime entrypoints in `src/*/main.ts` stay intentionally thin while the implementation is split by feature into modules such as `src/background/{commands,context-menu,messages,popup,runtime,selection,session,tabs}`, `src/options/{core,features}`, `src/popup/{app,compose,favorites,history,overlays,services,ui}`, `src/content/palette/*`, `src/shared/*`, `scripts/qa-smoke/*`, and CSS partials under `popup/styles/partials` and `options/styles/partials`.
-The recent refactor keeps the public barrel files stable while pushing concrete responsibilities into nested folders such as `src/background/app/bootstrap/{tab-targets,runtime-events}.ts`, `src/background/popup/favorites-workflow/{entrypoints,run-jobs,messages}.ts`, `src/popup/app/{bootstrap,i18n,rendering}/*`, `src/popup/compose/{send-flow,template-modal}/*`, `src/popup/services/controller/*`, and `src/shared/sites/normalizers/*`.
+The recent refactor keeps the public barrel files stable while pushing concrete responsibilities into nested folders such as `src/background/app/bootstrap/{app,context,utils,tab-targets,runtime-events}.ts`, `src/background/app/{comparison,experiments,injection}/*`, `src/background/popup/favorites-workflow/{entrypoints,run-jobs,messages}.ts`, `src/popup/app/{bootstrap,i18n,rendering}/*`, `src/popup/favorites/controller/*`, `src/options/features/{experiments,services}/*`, `src/shared/prompts/normalizers/*`, and `src/shared/sites/normalizers/*`.
 
 For build and packaging steps, see [docs/build-guide.md](docs/build-guide.md). For the current architecture, see [docs/extension-architecture.md](docs/extension-architecture.md).
 
@@ -305,7 +305,7 @@ For build and packaging steps, see [docs/build-guide.md](docs/build-guide.md). F
 - Dynamic prompt injection using `chrome.scripting.executeScript`
 - Captured AI response text is stored locally in `comparisonNotes` and is not sent to developer-controlled servers
 - Central site configuration in `src/config/sites/builtins.ts`
-- ChatGPT, Grok, and Perplexity use `input-and-conditional-submit` selector-check semantics so empty composers do not fail preflight before a submit surface appears.
+- All 5 built-in services (ChatGPT, Gemini, Claude, Grok, Perplexity) use `input-and-conditional-submit` selector-check semantics so empty composers do not fail preflight before a submit surface appears.
 - Perplexity prefers `#ask-input[data-lexical-editor='true']`, updates Lexical state from the page's `MAIN` world, and keeps the legacy submit path for dispatch
 - Global wait scaling (`waitMsMultiplier`) and internally persisted adaptive strategy stats improve reliability on slow or changing sites
 - Click-submit flows wait for the submit button to become enabled so async React editors can finish state updates before submission
@@ -456,7 +456,7 @@ Each stored service result now uses a structured code rather than a free-form st
 - History entries now store `requestedSiteIds`, `submittedSiteIds`, and `failedSiteIds`.
 - History entries also store `targetSnapshots`, which capture the original per-site resolved prompt and routing mode used for replay.
 - The legacy `sentTo` field is still exported for backward compatibility and mirrors the submitted service ids.
-- `appSettings.historyLimit` is a non-destructive default visible cap for popup/options history lists. Lowering it does not delete stored history, and exports still include the full stored history.
+- `appSettings.historyLimit` is a non-destructive default visible cap for popup/options history lists. Lowering it does not delete stored history, and exports still include the full stored history up to the 1000-entry storage hard cap.
 - Reloading a history entry or creating a favorite from it uses `targetSnapshots` first, then falls back to requested services for legacy data, so partially failed broadcasts can be retried with the original target list and prompt text intact.
 - Favorite records also track `mode`, `steps`, `scheduleEnabled`, `scheduledAt`, `scheduleRepeat`, `usageCount`, and `lastUsedAt`.
 - History rows can carry `originFavoriteId`, `chainRunId`, `chainStepIndex`, `chainStepCount`, and `trigger` so chain runs and scheduled executions remain traceable.

@@ -28,6 +28,9 @@ var LOCAL_STORAGE_KEYS = Object.freeze({
 var DEFAULT_HISTORY_LIMIT = 50;
 var MIN_HISTORY_LIMIT = 10;
 var MAX_HISTORY_LIMIT = 200;
+var MAX_STORED_PROMPT_HISTORY = 1e3;
+var EMERGENCY_STORED_PROMPT_HISTORY = 500;
+var MAX_STORED_COMPARISON_NOTES = 2e3;
 var MIN_WAIT_MS_MULTIPLIER = 0.5;
 var MAX_WAIT_MS_MULTIPLIER = 3;
 var DEFAULT_WAIT_MS_MULTIPLIER = 1;
@@ -45,7 +48,7 @@ var DEFAULT_SETTINGS = Object.freeze({
   siteOrder: []
 });
 
-// src/shared/prompts/normalizers.ts
+// src/shared/prompts/normalizers/core.ts
 var VALID_HISTORY_SORTS = /* @__PURE__ */ new Set([
   "latest",
   "oldest",
@@ -612,6 +615,10 @@ async function readLocal(key, fallbackValue) {
 async function writeLocal(key, value) {
   await chrome.storage.local.set({ [key]: value });
 }
+function isStorageQuotaError(error) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /quota|QUOTA_BYTES|exceed/i.test(message);
+}
 
 // src/shared/prompts/broadcast-counter.ts
 async function getBroadcastCounter() {
@@ -817,12 +824,19 @@ async function getComparisonNotes() {
     LOCAL_STORAGE_KEYS.comparisonNotes,
     []
   );
-  return sortByDateDesc(
+  return capStoredComparisonNotes(sortByDateDesc(
     safeArray(rawValue).map(
       (entry, index) => normalizeComparisonNote(entry, {}, index)
     ),
     "updatedAt"
-  ).filter((entry) => entry.historyId > 0 && entry.serviceId && entry.responseText.trim());
+  ).filter((entry) => entry.historyId > 0 && entry.serviceId && entry.responseText.trim()));
+}
+function capStoredComparisonNotes(notes, limit = MAX_STORED_COMPARISON_NOTES) {
+  const normalizedLimit = Number.isFinite(Number(limit)) ? Math.max(1, Math.round(Number(limit))) : MAX_STORED_COMPARISON_NOTES;
+  return sortByDateDesc(
+    safeArray(notes),
+    "updatedAt"
+  ).slice(0, normalizedLimit);
 }
 async function getPromptExperiments() {
   const rawValue = await readLocal(
@@ -923,9 +937,13 @@ function buildHistoryEntry(entry) {
     trigger: normalizeExecutionTrigger(source.trigger)
   };
 }
+function capStoredPromptHistory(historyItems, limit = MAX_STORED_PROMPT_HISTORY) {
+  const normalizedLimit = Number.isFinite(Number(limit)) ? Math.max(1, Math.round(Number(limit))) : MAX_STORED_PROMPT_HISTORY;
+  return sortByDateDesc(safeArray(historyItems)).slice(0, normalizedLimit);
+}
 async function getStoredPromptHistory() {
   const rawHistory = await readLocal(LOCAL_STORAGE_KEYS.history, []);
-  return sortByDateDesc(
+  return capStoredPromptHistory(
     safeArray(rawHistory).map((item) => buildHistoryEntry(item))
   );
 }
@@ -939,11 +957,23 @@ async function getPromptHistory() {
   return applyHistoryVisibleLimit(history, historyLimit);
 }
 async function setPromptHistory(historyItems) {
-  const normalized = sortByDateDesc(
+  const normalized = capStoredPromptHistory(
     safeArray(historyItems).map((item) => buildHistoryEntry(item))
   );
-  await writeLocal(LOCAL_STORAGE_KEYS.history, normalized);
-  return normalized;
+  try {
+    await writeLocal(LOCAL_STORAGE_KEYS.history, normalized);
+    return normalized;
+  } catch (error) {
+    if (!isStorageQuotaError(error)) {
+      throw error;
+    }
+    const emergency = capStoredPromptHistory(
+      normalized,
+      EMERGENCY_STORED_PROMPT_HISTORY
+    );
+    await writeLocal(LOCAL_STORAGE_KEYS.history, emergency);
+    return emergency;
+  }
 }
 async function deletePromptHistoryItem(historyId) {
   const history = await getStoredPromptHistory();
@@ -1422,6 +1452,72 @@ function getConfiguredSupportedRoutes(site) {
   const fallbackRoute = normalizeRoutePrefix(site?.verifiedRoute);
   return fallbackRoute && fallbackRoute !== "/" ? [fallbackRoute] : [];
 }
+function splitSelectorList(selectorGroup) {
+  const source = typeof selectorGroup === "string" ? selectorGroup.trim() : "";
+  if (!source) {
+    return [];
+  }
+  const parts = [];
+  let current = "";
+  let bracketDepth = 0;
+  let parenDepth = 0;
+  let quote = null;
+  let escaping = false;
+  for (const character of source) {
+    current += character;
+    if (escaping) {
+      escaping = false;
+      continue;
+    }
+    if (character === "\\") {
+      escaping = true;
+      continue;
+    }
+    if (quote) {
+      if (character === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      quote = character;
+      continue;
+    }
+    if (character === "[") {
+      bracketDepth += 1;
+      continue;
+    }
+    if (character === "]") {
+      bracketDepth = Math.max(0, bracketDepth - 1);
+      continue;
+    }
+    if (character === "(") {
+      parenDepth += 1;
+      continue;
+    }
+    if (character === ")") {
+      parenDepth = Math.max(0, parenDepth - 1);
+      continue;
+    }
+    if (character === "," && bracketDepth === 0 && parenDepth === 0) {
+      current = current.slice(0, -1);
+      const normalized = current.trim();
+      if (normalized) {
+        parts.push(normalized);
+      }
+      current = "";
+    }
+  }
+  const trailing = current.trim();
+  if (trailing) {
+    parts.push(trailing);
+  }
+  return parts;
+}
+function normalizeSelectorEntries(selectors) {
+  const rawSelectors = Array.isArray(selectors) ? selectors : [selectors];
+  return rawSelectors.filter((selector) => typeof selector === "string" && Boolean(selector.trim())).flatMap((selector) => splitSelectorList(selector)).filter((selector, index, entries) => entries.indexOf(selector) === index);
+}
 
 // src/shared/sites/normalizers/site-records.ts
 var BUILT_IN_SITE_STYLE_LOOKUP = BUILT_IN_SITE_STYLE_MAP;
@@ -1766,6 +1862,72 @@ function pushFieldError(fieldErrors, field, message) {
   current.push(message);
   fieldErrors[field] = current;
 }
+function hasBalancedSelectorSyntax(selector) {
+  let bracketDepth = 0;
+  let parenDepth = 0;
+  let quote = null;
+  let escaping = false;
+  for (const character of selector) {
+    if (escaping) {
+      escaping = false;
+      continue;
+    }
+    if (character === "\\") {
+      escaping = true;
+      continue;
+    }
+    if (quote) {
+      if (character === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      quote = character;
+      continue;
+    }
+    if (character === "[") {
+      bracketDepth += 1;
+    } else if (character === "]") {
+      bracketDepth -= 1;
+    } else if (character === "(") {
+      parenDepth += 1;
+    } else if (character === ")") {
+      parenDepth -= 1;
+    }
+    if (bracketDepth < 0 || parenDepth < 0) {
+      return false;
+    }
+  }
+  return bracketDepth === 0 && parenDepth === 0 && quote === null && !escaping;
+}
+function isCssSelectorSyntaxValid(selector) {
+  const normalized = selector.trim();
+  if (!normalized || !hasBalancedSelectorSyntax(normalized)) {
+    return false;
+  }
+  const documentRef = globalThis.document;
+  if (!documentRef?.createDocumentFragment) {
+    return true;
+  }
+  try {
+    documentRef.createDocumentFragment().querySelector(normalized);
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+function validateSelectorSyntax(fieldErrors, field, selectors) {
+  const invalidSelectors = normalizeSelectorEntries(selectors).filter((selector) => !isCssSelectorSyntaxValid(selector));
+  if (invalidSelectors.length === 0) {
+    return;
+  }
+  pushFieldError(
+    fieldErrors,
+    field,
+    `Invalid CSS selector: ${invalidSelectors[0]}`
+  );
+}
 function validateSiteDraft(draft, { isBuiltIn = false } = {}) {
   const errors = [];
   const fieldErrors = {};
@@ -1783,6 +1945,8 @@ function validateSiteDraft(draft, { isBuiltIn = false } = {}) {
   }
   if (!inputSelector) {
     pushFieldError(fieldErrors, "inputSelector", "Input selector is required.");
+  } else {
+    validateSelectorSyntax(fieldErrors, "inputSelector", draft?.inputSelector);
   }
   if (!VALID_INPUT_TYPES.has(safeText2(draft?.inputType))) {
     pushFieldError(fieldErrors, "inputType", "Input type is invalid.");
@@ -1804,7 +1968,10 @@ function validateSiteDraft(draft, { isBuiltIn = false } = {}) {
   }
   if (safeText2(draft?.submitMethod) === "click" && !safeText2(draft?.submitSelector)) {
     pushFieldError(fieldErrors, "submitSelector", "Submit selector is required when using click submit.");
+  } else if (safeText2(draft?.submitSelector)) {
+    validateSelectorSyntax(fieldErrors, "submitSelector", draft?.submitSelector);
   }
+  validateSelectorSyntax(fieldErrors, "fallbackSelectors", draft?.fallbackSelectors);
   const aliasValidation = validateHostnameAliases(draft?.hostnameAliases);
   aliasValidation.errors.forEach((message) => pushFieldError(fieldErrors, "hostnameAliases", message));
   const rawSupportedRoutes = Array.isArray(draft?.supportedRoutes) ? draft.supportedRoutes : typeof draft?.supportedRoutes === "string" ? draft.supportedRoutes.split(/\r?\n/g) : [];
@@ -2456,8 +2623,10 @@ async function importPromptData(jsonString) {
   const importedCustomSites = safeArray(migrated?.customSites);
   const importedBuiltInSiteStates = safeObject(migrated?.builtInSiteStates);
   const importedBuiltInSiteOverrides = safeObject(migrated?.builtInSiteOverrides);
-  const importedComparisonNotes = safeArray(migrated?.comparisonNotes).map(
-    (entry, index) => normalizeComparisonNote(entry, {}, index)
+  const importedComparisonNotes = capStoredComparisonNotes(
+    safeArray(migrated?.comparisonNotes).map(
+      (entry, index) => normalizeComparisonNote(entry, {}, index)
+    )
   );
   const importedPromptExperiments = safeArray(migrated?.promptExperiments).map(
     (entry, index) => normalizePromptExperiment(entry, {}, index)
@@ -2468,13 +2637,14 @@ async function importPromptData(jsonString) {
   const importedServiceGroups = safeArray(migrated?.serviceGroups).map(
     (entry, index) => normalizeServiceGroup(entry, {}, index)
   );
-  const normalizedHistory = [];
+  const normalizedHistoryDraft = [];
   for (const item of sortByDateDesc(history)) {
-    normalizedHistory.push({
+    normalizedHistoryDraft.push({
       ...item,
-      id: ensureUniqueNumericId(normalizedHistory, Number(item.id))
+      id: ensureUniqueNumericId(normalizedHistoryDraft, Number(item.id))
     });
   }
+  const normalizedHistory = capStoredPromptHistory(normalizedHistoryDraft);
   const normalizedFavorites = [];
   for (const item of sortByDateDesc(favorites, "favoritedAt")) {
     normalizedFavorites.push({
@@ -6168,7 +6338,7 @@ function sortFavoriteItemsForDisplay(items, favoriteSort = "recentUsed") {
   return nextItems;
 }
 
-// src/popup/favorites/controller.ts
+// src/popup/favorites/controller/filters.ts
 var { favoritesList } = popupDom.favorites;
 function getUniqueFavoriteTags() {
   const tagSet = /* @__PURE__ */ new Set();
@@ -6221,6 +6391,26 @@ function filterFavoriteItems(items) {
   }
   return sortFavoriteItemsForDisplay(filtered, state.settings.favoriteSort);
 }
+
+// src/popup/favorites/controller/rendering.ts
+var { favoritesList: favoritesList2 } = popupDom.favorites;
+function renderFavoritesList() {
+  renderFavoritesFilterBar();
+  const items = filterFavoriteItems(state.favorites);
+  if (items.length === 0) {
+    favoritesList2.innerHTML = buildEmptyState(
+      state.favoritesSearch || state.favoritesTagFilter || state.favoritesFolderFilter ? t.noSearchResults : t.favoritesEmpty
+    );
+    return;
+  }
+  favoritesList2.innerHTML = items.map((item) => buildFavoriteItemMarkup(item, {
+    openMenuKey: state.openMenuKey,
+    runtimeSites: state.runtimeSites,
+    latestJob: getActiveFavoriteRunJobByFavoriteId(state.favoriteJobs, item.id) ?? getLatestFavoriteRunJobByFavoriteId(state.favoriteJobs, item.id)
+  })).join("");
+}
+
+// src/popup/favorites/controller.ts
 function createFavoritesController(deps) {
   const {
     switchTab: switchTab2,
@@ -6233,21 +6423,6 @@ function createFavoritesController(deps) {
   } = deps;
   function getFavoriteById3(favoriteId) {
     return state.favorites.find((entry) => String(entry.id) === String(favoriteId)) ?? null;
-  }
-  function renderFavoritesList2() {
-    renderFavoritesFilterBar();
-    const items = filterFavoriteItems(state.favorites);
-    if (items.length === 0) {
-      favoritesList.innerHTML = buildEmptyState(
-        state.favoritesSearch || state.favoritesTagFilter || state.favoritesFolderFilter ? t.noSearchResults : t.favoritesEmpty
-      );
-      return;
-    }
-    favoritesList.innerHTML = items.map((item) => buildFavoriteItemMarkup(item, {
-      openMenuKey: state.openMenuKey,
-      runtimeSites: state.runtimeSites,
-      latestJob: getActiveFavoriteRunJobByFavoriteId(state.favoriteJobs, item.id) ?? getLatestFavoriteRunJobByFavoriteId(state.favoriteJobs, item.id)
-    })).join("");
   }
   function setFavoriteTitleInState(favoriteId, title) {
     state.favorites = state.favorites.map(
@@ -6290,7 +6465,7 @@ function createFavoritesController(deps) {
       await deleteFavoriteItem(favoriteId);
       state.favorites = await getPromptFavorites();
       state.openMenuKey = null;
-      renderFavoritesList2();
+      renderFavoritesList();
       setStatus2(t.favoriteDeleted, "success");
       showAppToast2(t.favoriteDeleted, "info", 2200);
       return;
@@ -6300,14 +6475,14 @@ function createFavoritesController(deps) {
         await updateFavoriteMeta(favoriteId, { pinned: !item.pinned });
         state.favorites = await getPromptFavorites();
         state.openMenuKey = null;
-        renderFavoritesList2();
+        renderFavoritesList();
       }
       return;
     }
     if (action === "edit-favorite") {
       if (item) {
         state.openMenuKey = null;
-        renderFavoritesList2();
+        renderFavoritesList();
         openFavoriteEditor2(item);
       }
       return;
@@ -6319,14 +6494,14 @@ function createFavoritesController(deps) {
       await duplicateFavoriteItem(favoriteId, t.favoriteDuplicatePrefix);
       state.favorites = await getPromptFavorites();
       state.openMenuKey = null;
-      renderFavoritesList2();
+      renderFavoritesList();
       setStatus2(t.favoriteDuplicated, "success");
       showAppToast2(t.favoriteDuplicated, "success", 2200);
       return;
     }
     if (action === "run-favorite" && item) {
       await runFavoriteItem2(item);
-      renderFavoritesList2();
+      renderFavoritesList();
     }
   }
   function handleFavoriteFilterBarClick(event) {
@@ -6345,7 +6520,7 @@ function createFavoritesController(deps) {
       state.favoritesFolderFilter = state.favoritesFolderFilter === chip.dataset.filterFolder ? "" : chip.dataset.filterFolder;
       state.favoritesTagFilter = "";
     }
-    renderFavoritesList2();
+    renderFavoritesList();
   }
   function handleFavoritesListClick(event) {
     const target = event.target instanceof Element ? event.target : null;
@@ -6371,7 +6546,7 @@ function createFavoritesController(deps) {
       );
       if (item) {
         state.openMenuKey = null;
-        renderFavoritesList2();
+        renderFavoritesList();
         openFavoriteEditor2(item);
       }
       return;
@@ -6380,7 +6555,7 @@ function createFavoritesController(deps) {
     if (menuToggle) {
       const menuKey = menuToggle.dataset.toggleMenu ?? null;
       state.openMenuKey = state.openMenuKey === menuKey ? null : menuKey;
-      renderFavoritesList2();
+      renderFavoritesList();
       return;
     }
     const actionButton = target?.closest("[data-action][data-favorite-id]");
@@ -6402,7 +6577,7 @@ function createFavoritesController(deps) {
     }
     event.preventDefault();
     state.openMenuKey = `favorite:${item.dataset.favoriteId}`;
-    renderFavoritesList2();
+    renderFavoritesList();
   }
   function handleFavoritesListInput(event) {
     const target = event.target instanceof Element ? event.target : null;
@@ -6422,7 +6597,7 @@ function createFavoritesController(deps) {
   }
   return {
     getFavoriteById: getFavoriteById3,
-    renderFavoritesList: renderFavoritesList2,
+    renderFavoritesList,
     scheduleFavoriteTitleSave,
     handleFavoriteAction,
     handleFavoriteFilterBarClick,
@@ -6450,7 +6625,7 @@ function createHistoryController(deps) {
     loadPromptIntoComposer: loadPromptIntoComposer2,
     openResponsesModal: openResponsesModal2,
     openResendModal: openResendModal2,
-    renderFavoritesList: renderFavoritesList2,
+    renderFavoritesList: renderFavoritesList3,
     setStatus: setStatus2,
     showAppToast: showAppToast2
   } = deps;
@@ -6480,7 +6655,7 @@ function createHistoryController(deps) {
       await addFavoriteFromHistory(item);
       state.favorites = await getPromptFavorites();
       state.openMenuKey = null;
-      renderFavoritesList2();
+      renderFavoritesList3();
       renderHistoryList2();
       setStatus2(t.favoriteAdded, "success");
       showAppToast2(t.favoriteAdded, "success", 2200);
@@ -6934,6 +7109,9 @@ function createPopupServiceEditorController(deps) {
   function renderServicePermissionPreview2(draft = readServiceEditorDraft(), validation = null) {
     const aliasErrors = validation?.fieldErrors?.hostnameAliases ?? [];
     const supportedRouteErrors = validation?.fieldErrors?.supportedRoutes ?? [];
+    const inputSelectorErrors = validation?.fieldErrors?.inputSelector ?? [];
+    const submitSelectorErrors = validation?.fieldErrors?.submitSelector ?? [];
+    const fallbackSelectorErrors = validation?.fieldErrors?.fallbackSelectors ?? [];
     const aliasValidation = aliasErrors.length > 0 ? { valid: false, errors: aliasErrors } : validateHostnameAliases(draft.hostnameAliases);
     const hasAliasError = aliasValidation.errors.length > 0;
     serviceHostnameAliasesInput.setAttribute(
@@ -6943,6 +7121,18 @@ function createPopupServiceEditorController(deps) {
     serviceSupportedRoutesInput.setAttribute(
       "aria-invalid",
       String(supportedRouteErrors.length > 0)
+    );
+    serviceInputSelectorInput.setAttribute(
+      "aria-invalid",
+      String(inputSelectorErrors.length > 0)
+    );
+    serviceSubmitSelectorInput.setAttribute(
+      "aria-invalid",
+      String(submitSelectorErrors.length > 0)
+    );
+    serviceFallbackSelectorsInput.setAttribute(
+      "aria-invalid",
+      String(fallbackSelectorErrors.length > 0)
     );
     if (hasAliasError) {
       setServicePermissionPreview(aliasValidation.errors.join(" "), true);
@@ -7835,7 +8025,7 @@ function createPopupShell(deps) {
 // src/popup/app/shortcuts.ts
 var { toggleAllBtn: toggleAllBtn2 } = popupDom.compose;
 var { historyList: historyList2 } = popupDom.history;
-var { favoritesList: favoritesList2 } = popupDom.favorites;
+var { favoritesList: favoritesList3 } = popupDom.favorites;
 function createPopupShortcutController(deps) {
   function getPromptButtonsForActiveTab() {
     if (state.activeTab === "history") {
@@ -7843,7 +8033,7 @@ function createPopupShortcutController(deps) {
     }
     if (state.activeTab === "favorites") {
       return Array.from(
-        favoritesList2.querySelectorAll("[data-load-favorite], [data-edit-favorite]")
+        favoritesList3.querySelectorAll("[data-load-favorite], [data-edit-favorite]")
       );
     }
     return [];
@@ -8075,7 +8265,7 @@ function getErrorMessage(error, getUnknownErrorText2) {
 
 // src/popup/app/bootstrap/events/lists.ts
 var { historySearchInput: historySearchInput2, historySortSelect: historySortSelect2, historyList: historyList3 } = popupDom.history;
-var { favoritesSearchInput: favoritesSearchInput2, favoritesSortSelect: favoritesSortSelect2, favoritesList: favoritesList3 } = popupDom.favorites;
+var { favoritesSearchInput: favoritesSearchInput2, favoritesSortSelect: favoritesSortSelect2, favoritesList: favoritesList4 } = popupDom.favorites;
 function bindListEvents(deps) {
   historySearchInput2.addEventListener("input", (event) => {
     const target = getEventInput(event.target);
@@ -8134,16 +8324,16 @@ function bindListEvents(deps) {
   historyList3.addEventListener("contextmenu", (event) => {
     deps.lists.historyController.handleHistoryListContextMenu(event);
   });
-  favoritesList3.addEventListener("click", (event) => {
+  favoritesList4.addEventListener("click", (event) => {
     deps.lists.favoritesController.handleFavoritesListClick(event);
   });
-  favoritesList3.addEventListener("contextmenu", (event) => {
+  favoritesList4.addEventListener("contextmenu", (event) => {
     deps.lists.favoritesController.handleFavoritesListContextMenu(event);
   });
-  favoritesList3.addEventListener("input", (event) => {
+  favoritesList4.addEventListener("input", (event) => {
     deps.lists.favoritesController.handleFavoritesListInput(event);
   });
-  favoritesList3.addEventListener(
+  favoritesList4.addEventListener(
     "blur",
     (event) => {
       deps.lists.favoritesController.handleFavoritesListBlur(event);
@@ -8722,7 +8912,7 @@ function createPopupStorageController(deps) {
   };
 }
 
-// src/popup/app/bootstrap.ts
+// src/popup/app/bootstrap/app.ts
 var { promptInput: promptInput8 } = popupDom.compose;
 var {
   templateModal: templateModal2,
@@ -8765,10 +8955,10 @@ var renderTabLabels = () => void 0;
 var setCardStatesFromBroadcast = (_summary) => void 0;
 var renderManagedSites = () => void 0;
 var renderHistoryList = () => void 0;
-var renderFavoritesList = () => void 0;
+var renderFavoritesList2 = () => void 0;
 function renderLists() {
   renderHistoryList();
-  renderFavoritesList();
+  renderFavoritesList2();
 }
 var hideFavoriteModal = () => void 0;
 var hideTemplateModal = () => void 0;
@@ -8975,13 +9165,13 @@ var favoritesController = createFavoritesController({
   showAppToast,
   getUnknownErrorText
 });
-renderFavoritesList = favoritesController.renderFavoritesList;
+renderFavoritesList2 = favoritesController.renderFavoritesList;
 var historyController = createHistoryController({
   switchTab,
   loadPromptIntoComposer,
   openResponsesModal,
   openResendModal,
-  renderFavoritesList,
+  renderFavoritesList: renderFavoritesList2,
   setStatus,
   showAppToast
 });
@@ -9044,7 +9234,7 @@ async function init() {
       },
       lists: {
         renderHistoryList: () => renderHistoryList(),
-        renderFavoritesList: () => renderFavoritesList(),
+        renderFavoritesList: () => renderFavoritesList2(),
         renderLists,
         historyController,
         favoritesController

@@ -187,6 +187,11 @@ var LOCAL_STORAGE_KEYS = Object.freeze({
 var DEFAULT_HISTORY_LIMIT = 50;
 var MIN_HISTORY_LIMIT = 10;
 var MAX_HISTORY_LIMIT = 200;
+var MAX_STORED_PROMPT_HISTORY = 1e3;
+var EMERGENCY_STORED_PROMPT_HISTORY = 500;
+var MAX_STORED_COMPARISON_NOTES = 2e3;
+var EMERGENCY_STORED_COMPARISON_NOTES = 1e3;
+var MAX_AUTO_CAPTURED_RESPONSE_LENGTH = 2e4;
 var MIN_WAIT_MS_MULTIPLIER = 0.5;
 var MAX_WAIT_MS_MULTIPLIER = 3;
 var DEFAULT_WAIT_MS_MULTIPLIER = 1;
@@ -206,7 +211,7 @@ var DEFAULT_SETTINGS = Object.freeze({
   siteOrder: []
 });
 
-// src/shared/prompts/normalizers.ts
+// src/shared/prompts/normalizers/core.ts
 var VALID_HISTORY_SORTS = /* @__PURE__ */ new Set([
   "latest",
   "oldest",
@@ -756,6 +761,10 @@ async function readLocal(key, fallbackValue) {
 async function writeLocal(key, value) {
   await chrome.storage.local.set({ [key]: value });
 }
+function isStorageQuotaError(error) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /quota|QUOTA_BYTES|exceed/i.test(message);
+}
 
 // src/shared/prompts/broadcast-counter.ts
 async function getBroadcastCounter() {
@@ -869,22 +878,45 @@ async function getComparisonNotes() {
     LOCAL_STORAGE_KEYS.comparisonNotes,
     []
   );
-  return sortByDateDesc(
+  return capStoredComparisonNotes(sortByDateDesc(
     safeArray(rawValue).map(
       (entry, index) => normalizeComparisonNote(entry, {}, index)
     ),
     "updatedAt"
-  ).filter((entry) => entry.historyId > 0 && entry.serviceId && entry.responseText.trim());
+  ).filter((entry) => entry.historyId > 0 && entry.serviceId && entry.responseText.trim()));
+}
+function capStoredComparisonNotes(notes, limit = MAX_STORED_COMPARISON_NOTES) {
+  const normalizedLimit = Number.isFinite(Number(limit)) ? Math.max(1, Math.round(Number(limit))) : MAX_STORED_COMPARISON_NOTES;
+  return sortByDateDesc(
+    safeArray(notes),
+    "updatedAt"
+  ).slice(0, normalizedLimit);
+}
+function capAutoCapturedResponseText(value) {
+  const text = typeof value === "string" ? value : String(value ?? "");
+  return text.length > MAX_AUTO_CAPTURED_RESPONSE_LENGTH ? text.slice(0, MAX_AUTO_CAPTURED_RESPONSE_LENGTH) : text;
 }
 async function setComparisonNotes(value) {
-  const normalized = sortByDateDesc(
+  const normalized = capStoredComparisonNotes(sortByDateDesc(
     safeArray(value).map(
       (entry, index) => normalizeComparisonNote(entry, {}, index)
     ),
     "updatedAt"
-  ).filter((entry) => entry.historyId > 0 && entry.serviceId && entry.responseText.trim());
-  await writeLocal(LOCAL_STORAGE_KEYS.comparisonNotes, normalized);
-  return normalized;
+  ).filter((entry) => entry.historyId > 0 && entry.serviceId && entry.responseText.trim()));
+  try {
+    await writeLocal(LOCAL_STORAGE_KEYS.comparisonNotes, normalized);
+    return normalized;
+  } catch (error) {
+    if (!isStorageQuotaError(error)) {
+      throw error;
+    }
+    const emergency = capStoredComparisonNotes(
+      normalized,
+      EMERGENCY_STORED_COMPARISON_NOTES
+    );
+    await writeLocal(LOCAL_STORAGE_KEYS.comparisonNotes, emergency);
+    return emergency;
+  }
 }
 async function saveComparisonNote(value) {
   const current = await getComparisonNotes();
@@ -1092,18 +1124,34 @@ function buildHistoryEntry(entry) {
     trigger: normalizeExecutionTrigger(source.trigger)
   };
 }
+function capStoredPromptHistory(historyItems, limit = MAX_STORED_PROMPT_HISTORY) {
+  const normalizedLimit = Number.isFinite(Number(limit)) ? Math.max(1, Math.round(Number(limit))) : MAX_STORED_PROMPT_HISTORY;
+  return sortByDateDesc(safeArray(historyItems)).slice(0, normalizedLimit);
+}
 async function getStoredPromptHistory() {
   const rawHistory = await readLocal(LOCAL_STORAGE_KEYS.history, []);
-  return sortByDateDesc(
+  return capStoredPromptHistory(
     safeArray(rawHistory).map((item) => buildHistoryEntry(item))
   );
 }
 async function setPromptHistory(historyItems) {
-  const normalized = sortByDateDesc(
+  const normalized = capStoredPromptHistory(
     safeArray(historyItems).map((item) => buildHistoryEntry(item))
   );
-  await writeLocal(LOCAL_STORAGE_KEYS.history, normalized);
-  return normalized;
+  try {
+    await writeLocal(LOCAL_STORAGE_KEYS.history, normalized);
+    return normalized;
+  } catch (error) {
+    if (!isStorageQuotaError(error)) {
+      throw error;
+    }
+    const emergency = capStoredPromptHistory(
+      normalized,
+      EMERGENCY_STORED_PROMPT_HISTORY
+    );
+    await writeLocal(LOCAL_STORAGE_KEYS.history, emergency);
+    return emergency;
+  }
 }
 async function appendPromptHistory(entry) {
   const history = await getStoredPromptHistory();
@@ -1960,6 +2008,72 @@ function pushFieldError(fieldErrors, field, message) {
   current.push(message);
   fieldErrors[field] = current;
 }
+function hasBalancedSelectorSyntax(selector) {
+  let bracketDepth = 0;
+  let parenDepth = 0;
+  let quote = null;
+  let escaping = false;
+  for (const character of selector) {
+    if (escaping) {
+      escaping = false;
+      continue;
+    }
+    if (character === "\\") {
+      escaping = true;
+      continue;
+    }
+    if (quote) {
+      if (character === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      quote = character;
+      continue;
+    }
+    if (character === "[") {
+      bracketDepth += 1;
+    } else if (character === "]") {
+      bracketDepth -= 1;
+    } else if (character === "(") {
+      parenDepth += 1;
+    } else if (character === ")") {
+      parenDepth -= 1;
+    }
+    if (bracketDepth < 0 || parenDepth < 0) {
+      return false;
+    }
+  }
+  return bracketDepth === 0 && parenDepth === 0 && quote === null && !escaping;
+}
+function isCssSelectorSyntaxValid(selector) {
+  const normalized = selector.trim();
+  if (!normalized || !hasBalancedSelectorSyntax(normalized)) {
+    return false;
+  }
+  const documentRef = globalThis.document;
+  if (!documentRef?.createDocumentFragment) {
+    return true;
+  }
+  try {
+    documentRef.createDocumentFragment().querySelector(normalized);
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+function validateSelectorSyntax(fieldErrors, field, selectors) {
+  const invalidSelectors = normalizeSelectorEntries(selectors).filter((selector) => !isCssSelectorSyntaxValid(selector));
+  if (invalidSelectors.length === 0) {
+    return;
+  }
+  pushFieldError(
+    fieldErrors,
+    field,
+    `Invalid CSS selector: ${invalidSelectors[0]}`
+  );
+}
 function validateSiteDraft(draft, { isBuiltIn = false } = {}) {
   const errors = [];
   const fieldErrors = {};
@@ -1977,6 +2091,8 @@ function validateSiteDraft(draft, { isBuiltIn = false } = {}) {
   }
   if (!inputSelector) {
     pushFieldError(fieldErrors, "inputSelector", "Input selector is required.");
+  } else {
+    validateSelectorSyntax(fieldErrors, "inputSelector", draft?.inputSelector);
   }
   if (!VALID_INPUT_TYPES.has(safeText2(draft?.inputType))) {
     pushFieldError(fieldErrors, "inputType", "Input type is invalid.");
@@ -1998,7 +2114,10 @@ function validateSiteDraft(draft, { isBuiltIn = false } = {}) {
   }
   if (safeText2(draft?.submitMethod) === "click" && !safeText2(draft?.submitSelector)) {
     pushFieldError(fieldErrors, "submitSelector", "Submit selector is required when using click submit.");
+  } else if (safeText2(draft?.submitSelector)) {
+    validateSelectorSyntax(fieldErrors, "submitSelector", draft?.submitSelector);
   }
+  validateSelectorSyntax(fieldErrors, "fallbackSelectors", draft?.fallbackSelectors);
   const aliasValidation = validateHostnameAliases(draft?.hostnameAliases);
   aliasValidation.errors.forEach((message) => pushFieldError(fieldErrors, "hostnameAliases", message));
   const rawSupportedRoutes = Array.isArray(draft?.supportedRoutes) ? draft.supportedRoutes : typeof draft?.supportedRoutes === "string" ? draft.supportedRoutes.split(/\r?\n/g) : [];
@@ -5210,11 +5329,26 @@ function buildFallback(work, error) {
   };
   return typeof work.onError === "function" ? work.onError(error, fallback) : fallback;
 }
-function isTrustedSender(sender) {
-  if (sender?.tab?.id) {
-    return true;
+function getSenderKind(sender) {
+  const extensionOrigin = chrome.runtime.getURL("");
+  if (sender?.id === chrome.runtime.id && sender?.url?.startsWith(extensionOrigin)) {
+    return "extension";
   }
-  return sender?.id === chrome.runtime.id;
+  if (Number.isFinite(sender?.tab?.id)) {
+    return "content";
+  }
+  if (sender?.id === chrome.runtime.id) {
+    return "extension";
+  }
+  return null;
+}
+function isTrustedSender(sender, handler) {
+  const senderKind = getSenderKind(sender);
+  if (!senderKind) {
+    return false;
+  }
+  const policy = handler.senderPolicy ?? "extension";
+  return policy === "any" || policy === senderKind;
 }
 function respondWith(sendResponse, work, task) {
   void Promise.resolve().then(task).then((result) => {
@@ -5229,15 +5363,15 @@ function respondWith(sendResponse, work, task) {
 function registerRuntimeMessageRouter(handlers) {
   chrome.runtime.onMessage.addListener(
     (message, sender, sendResponse) => {
-      if (!isTrustedSender(sender)) {
-        return false;
-      }
       const action = message?.action;
       if (!action) {
         return false;
       }
       const handler = handlers[action];
       if (!handler) {
+        return false;
+      }
+      if (!isTrustedSender(sender, handler)) {
         return false;
       }
       if (handler.sync) {
@@ -5496,6 +5630,7 @@ function createBackgroundSessionStore() {
       ...payload,
       tabId,
       createdAt: Number(payload.createdAt) || Date.now(),
+      startedAt: Number(payload.startedAt) || void 0,
       injected: Boolean(payload.injected),
       status: payload.status || "pending",
       closeOnCancel: payload.closeOnCancel !== false
@@ -5780,10 +5915,12 @@ function buildRuntimeHandlers(deps) {
       errorLabel: "[AI Prompt Broadcaster] Broadcast handling failed."
     },
     "selector-check:init": {
+      senderPolicy: "any",
       run: (message) => deps.handleSelectorCheckInit(message),
       errorLabel: "[AI Prompt Broadcaster] Selector check init failed."
     },
     "selector-check:report": {
+      senderPolicy: "any",
       run: (message) => deps.handleSelectorCheckReport(message),
       errorLabel: "[AI Prompt Broadcaster] Selector check report failed."
     },
@@ -5792,12 +5929,15 @@ function buildRuntimeHandlers(deps) {
       errorLabel: "[AI Prompt Broadcaster] Service test run failed."
     },
     selectorFailed: {
+      senderPolicy: "any",
       run: (message) => deps.handleSelectorFailedMessage(message)
     },
     injectSuccess: {
+      senderPolicy: "any",
       run: (message) => deps.handleInjectSuccessMessage(message)
     },
     injectFallback: {
+      senderPolicy: "any",
       run: (message) => deps.handleInjectFallbackMessage(message)
     },
     uiToast: {
@@ -5840,16 +5980,20 @@ function buildRuntimeHandlers(deps) {
     },
     "selection:update": {
       sync: true,
+      senderPolicy: "any",
       run: (message, sender) => deps.handleSelectionUpdateMessage(message, sender)
     },
     "quickPalette:getState": {
+      senderPolicy: "any",
       run: () => deps.handleQuickPaletteGetState()
     },
     "quickPalette:execute": {
+      senderPolicy: "any",
       run: (message, sender) => deps.handleQuickPaletteExecuteMessage(message, sender)
     },
     "quickPalette:close": {
       sync: true,
+      senderPolicy: "any",
       run: () => ({ ok: true })
     },
     "service-health:get": {
@@ -5891,22 +6035,7 @@ function buildRuntimeHandlers(deps) {
   };
 }
 
-// src/background/app/bootstrap.ts
-var DEFAULT_SUBMIT_BUTTON_WAIT_TIMEOUT_MS = 5e3;
-var DEFAULT_SUBMIT_RETRY_COUNT = 1;
-var activeInjections = /* @__PURE__ */ new Set();
-var queuedInjectionTabIds = /* @__PURE__ */ new Set();
-var broadcastCompletionWaiters = /* @__PURE__ */ new Map();
-var selectionCache = /* @__PURE__ */ new Map();
-var suppressedCompletedBroadcastIds = /* @__PURE__ */ new Set();
-var contextMenuRefreshChain = Promise.resolve();
-var injectionProcessChain = Promise.resolve();
-var SCHEDULED_VARIABLE_BLOCKLIST2 = /* @__PURE__ */ new Set([
-  SYSTEM_TEMPLATE_VARIABLES.url,
-  SYSTEM_TEMPLATE_VARIABLES.title,
-  SYSTEM_TEMPLATE_VARIABLES.selection,
-  SYSTEM_TEMPLATE_VARIABLES.clipboard
-]);
+// src/background/app/comparison/capture.ts
 var COMPARISON_CAPTURE_SELECTORS = {
   chatgpt: [
     '[data-message-author-role="assistant"]',
@@ -5936,6 +6065,38 @@ var AUTO_RESPONSE_CAPTURE_TIMEOUT_MS = 45e3;
 var AUTO_RESPONSE_CAPTURE_INTERVAL_MS = 3e3;
 var AUTO_RESPONSE_CAPTURE_MIN_LENGTH = 20;
 var AUTO_RESPONSE_CAPTURE_MEANINGFUL_DELTA = 40;
+function normalizeCapturedResponseText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+function isPromptEcho(responseText, promptText) {
+  const response = normalizeCapturedResponseText(responseText).toLowerCase();
+  const prompt = normalizeCapturedResponseText(promptText).toLowerCase();
+  return Boolean(prompt) && (response === prompt || response.startsWith(prompt));
+}
+function shouldUpdateAutoCapturedResponse(existingText, nextText) {
+  const existing = normalizeCapturedResponseText(existingText);
+  const next = normalizeCapturedResponseText(nextText);
+  if (!next || existing === next || existing.includes(next)) {
+    return false;
+  }
+  if (!existing || next.includes(existing)) {
+    return true;
+  }
+  return Math.abs(next.length - existing.length) >= AUTO_RESPONSE_CAPTURE_MEANINGFUL_DELTA;
+}
+
+// src/background/app/bootstrap/context.ts
+function createBackgroundAppContext() {
+  return {
+    activeInjections: /* @__PURE__ */ new Set(),
+    queuedInjectionTabIds: /* @__PURE__ */ new Set(),
+    broadcastCompletionWaiters: /* @__PURE__ */ new Map(),
+    selectionCache: /* @__PURE__ */ new Map(),
+    suppressedCompletedBroadcastIds: /* @__PURE__ */ new Set()
+  };
+}
+
+// src/background/app/bootstrap/utils.ts
 function getI18nMessage(key, substitutions) {
   return chrome.i18n.getMessage(key, substitutions) || "";
 }
@@ -5959,6 +6120,24 @@ function buildChainRunId() {
 function getErrorMessage(error) {
   return error instanceof Error ? error.message : String(error);
 }
+function getBroadcastTriggerLabel(trigger) {
+  const normalized = typeof trigger === "string" ? trigger.trim() : "";
+  return normalized === "scheduled" || normalized === "palette" || normalized === "options" ? normalized : "popup";
+}
+
+// src/background/app/bootstrap/app.ts
+var DEFAULT_SUBMIT_BUTTON_WAIT_TIMEOUT_MS = 5e3;
+var DEFAULT_SUBMIT_RETRY_COUNT = 1;
+var backgroundAppContext = createBackgroundAppContext();
+var {
+  activeInjections,
+  queuedInjectionTabIds,
+  broadcastCompletionWaiters,
+  selectionCache,
+  suppressedCompletedBroadcastIds
+} = backgroundAppContext;
+var contextMenuRefreshChain = Promise.resolve();
+var injectionProcessChain = Promise.resolve();
 function registerBroadcastCompletionWaiter(broadcastId) {
   const normalizedBroadcastId = typeof broadcastId === "string" ? broadcastId.trim() : "";
   if (!normalizedBroadcastId) {
@@ -5991,10 +6170,6 @@ function resolveBroadcastCompletionWaiter(broadcastId, summary = null) {
   }
   existing.resolve(summary);
   broadcastCompletionWaiters.delete(normalizedBroadcastId);
-}
-function getBroadcastTriggerLabel(trigger) {
-  const normalized = typeof trigger === "string" ? trigger.trim() : "";
-  return normalized === "scheduled" || normalized === "palette" || normalized === "options" ? normalized : "popup";
 }
 var backgroundSessionStore = createBackgroundSessionStore();
 var {
@@ -6532,6 +6707,13 @@ async function recordBroadcastSiteResult(broadcastId, siteId, resultInput) {
       try {
         await effect();
       } catch (sideEffectError) {
+        if (label === "appendPromptHistory") {
+          await enqueueUiToast({
+            message: getI18nMessage("toast_prompt_history_save_failed") || "Broadcast finished, but prompt history could not be saved.",
+            type: "error",
+            duration: 7e3
+          });
+        }
         console.error("[AI Prompt Broadcaster] Broadcast completion side effect failed.", {
           broadcastId,
           siteId,
@@ -6575,6 +6757,11 @@ async function recordBroadcastSiteResult(broadcastId, siteId, resultInput) {
         });
         void autoCaptureBroadcastResponses(historyItem, completedRecord).catch((error) => {
           console.warn("[AI Prompt Broadcaster] Automatic response capture failed.", error);
+          void enqueueUiToast({
+            message: getI18nMessage("toast_auto_capture_save_failed") || "Automatic response capture could not be saved.",
+            type: "warning",
+            duration: 7e3
+          }).catch(() => void 0);
         });
       });
       await runSideEffect("restoreBroadcastFocus", async () => {
@@ -6931,7 +7118,7 @@ async function processPendingInjectionNow(tabId, tab) {
   }
   const pending = await getPendingInjections();
   const job = pending[String(tabId)];
-  if (!job || job.injected === true) {
+  if (!job || job.injected === true && job.status !== "injecting") {
     return;
   }
   const pendingBroadcasts = await getPendingBroadcasts();
@@ -6950,6 +7137,7 @@ async function processPendingInjectionNow(tabId, tab) {
     (current) => current ? {
       ...current,
       injected: true,
+      startedAt: Date.now(),
       status: "injecting"
     } : null
   );
@@ -7042,12 +7230,16 @@ async function reconcilePendingInjections() {
       await removePendingInjection(tabId);
       continue;
     }
-    const age = Date.now() - Number(job.createdAt || 0);
-    if (age > PENDING_TIMEOUT_MS) {
-      await handlePendingInjectionTimeout(tabId, job);
+    const createdAt = Number(job.createdAt || 0);
+    const startedAt = Number(job.startedAt || 0);
+    const createdAge = Date.now() - createdAt;
+    const injectingAge = startedAt > 0 ? Date.now() - startedAt : createdAge;
+    if (job.status === "injecting" && injectingAge > PENDING_TIMEOUT_MS) {
+      await handlePendingInjectionTimeout(tabId, job, "stale_injecting");
       continue;
     }
-    if (job.injected === true) {
+    if (createdAge > PENDING_TIMEOUT_MS) {
+      await handlePendingInjectionTimeout(tabId, job);
       continue;
     }
     try {
@@ -7382,25 +7574,6 @@ async function findComparisonCaptureTab(serviceId, explicitTabId) {
   }
   return null;
 }
-function normalizeCapturedResponseText(value) {
-  return String(value || "").replace(/\s+/g, " ").trim();
-}
-function isPromptEcho(responseText, promptText) {
-  const response = normalizeCapturedResponseText(responseText).toLowerCase();
-  const prompt = normalizeCapturedResponseText(promptText).toLowerCase();
-  return Boolean(prompt) && (response === prompt || response.startsWith(prompt));
-}
-function shouldUpdateAutoCapturedResponse(existingText, nextText) {
-  const existing = normalizeCapturedResponseText(existingText);
-  const next = normalizeCapturedResponseText(nextText);
-  if (!next || existing === next || existing.includes(next)) {
-    return false;
-  }
-  if (!existing || next.includes(existing)) {
-    return true;
-  }
-  return Math.abs(next.length - existing.length) >= AUTO_RESPONSE_CAPTURE_MEANINGFUL_DELTA;
-}
 async function captureVisibleAssistantResponse(tabId, serviceId, promptText = "") {
   const selectors = COMPARISON_CAPTURE_SELECTORS[serviceId] ?? [];
   if (selectors.length === 0) {
@@ -7457,18 +7630,19 @@ async function captureAssistantResponseWithRetry(tabId, serviceId, promptText) {
   return lastResponse;
 }
 async function saveAutoCapturedResponse(historyId, serviceId, responseText) {
+  const cappedResponseText = capAutoCapturedResponseText(responseText);
   const existingNotes = await getComparisonNotes();
   const existingAutoNote = existingNotes.find(
     (note) => Number(note.historyId) === Number(historyId) && note.serviceId === serviceId && note.captureMode === "auto"
   );
-  if (existingAutoNote && !shouldUpdateAutoCapturedResponse(existingAutoNote.responseText, responseText)) {
+  if (existingAutoNote && !shouldUpdateAutoCapturedResponse(existingAutoNote.responseText, cappedResponseText)) {
     return;
   }
   await saveComparisonNote({
     id: existingAutoNote?.id,
     historyId,
     serviceId,
-    responseText,
+    responseText: cappedResponseText,
     captureMode: "auto",
     tags: ["auto"]
   });

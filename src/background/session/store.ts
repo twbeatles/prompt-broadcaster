@@ -201,6 +201,7 @@ export function createBackgroundSessionStore() {
       ...payload,
       tabId,
       createdAt: Number(payload.createdAt) || Date.now(),
+      startedAt: Number(payload.startedAt) || undefined,
       injected: Boolean(payload.injected),
       status: payload.status || "pending",
       closeOnCancel: payload.closeOnCancel !== false,

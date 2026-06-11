@@ -1,0 +1,8 @@
+import { SYSTEM_TEMPLATE_VARIABLES } from "../../../shared/template";
+
+export const SCHEDULED_VARIABLE_BLOCKLIST = new Set([
+  SYSTEM_TEMPLATE_VARIABLES.url,
+  SYSTEM_TEMPLATE_VARIABLES.title,
+  SYSTEM_TEMPLATE_VARIABLES.selection,
+  SYSTEM_TEMPLATE_VARIABLES.clipboard,
+]);

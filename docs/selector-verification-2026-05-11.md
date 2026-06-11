@@ -7,6 +7,7 @@ This document separates automated selector audit evidence from logged-in canonic
 - Command: `npm run selector:audit`
 - Report: `output/selector-audit/2026-05-11T01-23-07-108Z.md`
 - Generated at: `2026-05-11T01:23:21.630Z`
+- Current built-in configuration: all 5 built-in services (ChatGPT, Gemini, Claude, Grok, Perplexity) use `input-and-conditional-submit` selector-check mode, so empty composer checks require the prompt surface and defer submit surface validation until after input.
 
 | Service | Route | Auth state | Prompt surface | Submit surface | Access challenge | Notes |
 | --- | --- | --- | --- | --- | --- | --- |

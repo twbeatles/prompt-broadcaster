@@ -96,10 +96,12 @@ export function buildRuntimeHandlers(
       errorLabel: "[AI Prompt Broadcaster] Broadcast handling failed.",
     },
     "selector-check:init": {
+      senderPolicy: "any",
       run: (message) => deps.handleSelectorCheckInit(message),
       errorLabel: "[AI Prompt Broadcaster] Selector check init failed.",
     },
     "selector-check:report": {
+      senderPolicy: "any",
       run: (message) => deps.handleSelectorCheckReport(message),
       errorLabel: "[AI Prompt Broadcaster] Selector check report failed.",
     },
@@ -108,12 +110,15 @@ export function buildRuntimeHandlers(
       errorLabel: "[AI Prompt Broadcaster] Service test run failed.",
     },
     selectorFailed: {
+      senderPolicy: "any",
       run: (message) => deps.handleSelectorFailedMessage(message),
     },
     injectSuccess: {
+      senderPolicy: "any",
       run: (message) => deps.handleInjectSuccessMessage(message),
     },
     injectFallback: {
+      senderPolicy: "any",
       run: (message) => deps.handleInjectFallbackMessage(message),
     },
     uiToast: {
@@ -156,16 +161,20 @@ export function buildRuntimeHandlers(
     },
     "selection:update": {
       sync: true,
+      senderPolicy: "any",
       run: (message, sender) => deps.handleSelectionUpdateMessage(message, sender),
     },
     "quickPalette:getState": {
+      senderPolicy: "any",
       run: () => deps.handleQuickPaletteGetState(),
     },
     "quickPalette:execute": {
+      senderPolicy: "any",
       run: (message, sender) => deps.handleQuickPaletteExecuteMessage(message, sender),
     },
     "quickPalette:close": {
       sync: true,
+      senderPolicy: "any",
       run: () => ({ ok: true }),
     },
     "service-health:get": {

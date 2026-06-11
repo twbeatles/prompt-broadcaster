@@ -22,8 +22,14 @@ prompt-broadcaster/
 │   │   ├── app/
 │   │   │   ├── bootstrap.ts
 │   │   │   ├── bootstrap/
+│   │   │   │   ├── app.ts
+│   │   │   │   ├── context.ts
 │   │   │   │   ├── runtime-events.ts
-│   │   │   │   └── tab-targets.ts
+│   │   │   │   ├── tab-targets.ts
+│   │   │   │   └── utils.ts
+│   │   │   ├── comparison/
+│   │   │   ├── experiments/
+│   │   │   ├── injection/
 │   │   │   ├── constants.ts
 │   │   │   └── injection-helpers.ts
 │   │   ├── commands/
@@ -62,6 +68,8 @@ prompt-broadcaster/
 │   │   ├── app/
 │   │   ├── core/
 │   │   ├── features/
+│   │   │   ├── experiments/
+│   │   │   └── services/
 │   │   ├── ui/
 │   │   └── main.ts
 │   ├── popup/
@@ -93,6 +101,7 @@ prompt-broadcaster/
 │   │   │       ├── rendering.ts
 │   │   │       └── types.ts
 │   │   ├── favorites/
+│   │   │   └── controller/
 │   │   ├── history/
 │   │   ├── overlays/
 │   │   ├── services/
@@ -108,6 +117,7 @@ prompt-broadcaster/
 │       ├── export/
 │       ├── i18n/
 │       ├── prompts/
+│       │   └── normalizers/
 │       ├── runtime-state/
 │       ├── sites/
 │       │   └── normalizers/
@@ -194,7 +204,9 @@ Responsibilities:
 - resolve tab routing, including reusable tabs, specific tab targets, and forced new tabs
 - open target tabs and track pending broadcasts
 - maintain action badge state, notifications, selector alerts, and popup reopen flow
+- keep the service-worker app body in `src/background/app/bootstrap/app.ts`, mutable runtime state in `context.ts`, and shared helpers in `utils.ts`
 - keep tab targeting and reusable-tab preflight rules split in `src/background/app/bootstrap/tab-targets.ts`
+- keep comparison capture selectors/helpers, experiment variable guards, and injection runtime types in `src/background/app/{comparison,experiments,injection}/`
 - run favorite execution workflows through `src/background/popup/favorites-workflow.ts`
 - keep favorite workflow entrypoints, queued-job execution, and user-facing status messages split under `src/background/popup/favorites-workflow/`
 - reconcile favorite schedules with `chrome.alarms`
@@ -220,7 +232,7 @@ Responsibilities:
 Popup helper boundaries:
 
 - `src/popup/app/dom.ts`: DOM registry
-- `src/popup/app/bootstrap/{composer,storage,favorite-intent,events/*}.ts`: popup bootstrap collaborators for compose flow, storage sync, favorite intents, and DOM/runtime event binding
+- `src/popup/app/bootstrap/{app,composer,storage,favorite-intent,events/*}.ts`: popup bootstrap collaborators for compose flow, storage sync, favorite intents, and DOM/runtime event binding
 - `src/popup/app/helpers.ts`, `sorting.ts`, `list-markup.ts`: pure formatting and markup helpers
 - `src/popup/app/shell.ts`: popup status, toast, tab-switch, draft-save, and composer shell helpers
 - `src/popup/app/i18n/{core,catalog,helpers}.ts`: popup copy catalog, Chrome i18n wrappers, and result-message helpers
@@ -229,6 +241,7 @@ Popup helper boundaries:
 - `src/popup/compose/send-flow/{card-state,broadcast-state,send-execution,types}.ts`: popup send execution, retry UI, and restored-broadcast state
 - `src/popup/compose/template-modal/{helpers,preparation,rendering,types}.ts`: template-variable preparation and modal rendering
 - `src/popup/favorites/favorite-editor.ts`: modal state, chain steps, schedule fields, favorite run/edit actions
+- `src/popup/favorites/controller/*`: favorite filter and list rendering helpers behind the stable controller facade
 - `src/popup/services/controller/{editor,managed-sites,types}.ts`: service-editor form state and managed-site list rendering
 - `src/popup/history/`, `src/popup/overlays/`, `src/popup/services/`: list interaction, modal/overlay coordination, and managed-site editing
 - `src/shared/chrome/messaging.ts`: timeout-safe runtime messaging helper shared by popup/options/content surfaces
@@ -252,6 +265,9 @@ Options helper boundaries:
 
 - `src/options/core/`: shared status, navigation, reload, and filter helpers
 - `src/options/features/`: dashboard, history, schedules, services, and settings sections
+- `src/options/features/experiments/*`: experiment draft parsing, preview rendering, action handling, and event binding
+- `src/options/features/services/*`: service health, service groups, ordering, rendering, and event binding
+- `src/options/app/i18n.ts`: stable i18n facade backed by `src/options/app/i18n/catalog.ts`
 - `src/options/features/dashboard-metrics.ts`: pure aggregation for summary cards, recent activity, next actions, usage share, recent daily counts, and failure reasons
 - `src/options/features/schedule-summary.ts`: pure scheduled-run summary helper
 - `src/options/ui/charts.ts`: chart rendering
@@ -341,6 +357,8 @@ Recent normalization work is split so the barrel file stays small:
 - `src/shared/sites/normalizers/core.ts`: primitive normalization helpers and origin/hostname derivation
 - `src/shared/sites/normalizers/ids.ts`: custom/imported site id derivation
 - `src/shared/sites/normalizers/site-records.ts`: built-in override repair plus runtime site-record assembly
+- `src/shared/prompts/normalizers.ts`: prompt normalizer compatibility facade
+- `src/shared/prompts/normalizers/*`: domain boundaries for core, history, favorites, experiments, and settings normalizer exports
 
 This merged view is used by popup, options, and background.
 

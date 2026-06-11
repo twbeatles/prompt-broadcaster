@@ -472,6 +472,28 @@ async function main() {
       }).valid,
       false,
     );
+    assert.equal(
+      module.validateSiteDraft({
+        ...validDraft,
+        inputSelector: "textarea[",
+      }).fieldErrors.inputSelector[0],
+      "Invalid CSS selector: textarea[",
+    );
+    assert.equal(
+      module.validateSiteDraft({
+        ...validDraft,
+        submitMethod: "click",
+        submitSelector: "button[",
+      }).fieldErrors.submitSelector[0],
+      "Invalid CSS selector: button[",
+    );
+    assert.equal(
+      module.validateSiteDraft({
+        ...validDraft,
+        fallbackSelectors: ["[data-fallback='ok']", "div("],
+      }).fieldErrors.fallbackSelectors[0],
+      "Invalid CSS selector: div(",
+    );
   });
 
   await runStep("selector alert signature ignores route-specific URLs for identical missing selectors", async () => {
@@ -567,11 +589,14 @@ async function main() {
 
   await browser.close();
 
-  await runStep("runtime router trusts only internal extension senders", async () => {
+  await runStep("runtime router enforces sender action allowlists", async () => {
     const listeners = [];
     const chromeMock = {
       runtime: {
         id: "ext-1",
+        getURL(path = "") {
+          return `chrome-extension://ext-1/${String(path ?? "").replace(/^\/+/, "")}`;
+        },
         onMessage: {
           addListener(listener) {
             listeners.push(listener);
@@ -581,6 +606,7 @@ async function main() {
     };
     const module = await loadBundledModule("src/background/messages/router.ts", chromeMock);
     let syncCalls = 0;
+    let contentCalls = 0;
     let asyncCalls = 0;
 
     module.registerRuntimeMessageRouter({
@@ -595,6 +621,14 @@ async function main() {
         run: async () => {
           asyncCalls += 1;
           return { ok: true, type: "async" };
+        },
+      },
+      contentPing: {
+        sync: true,
+        senderPolicy: "any",
+        run: () => {
+          contentCalls += 1;
+          return { ok: true, type: "content" };
         },
       },
     });
@@ -629,8 +663,31 @@ async function main() {
       }),
       false,
     );
+    assert.equal(syncCalls, 1);
+    assert.equal(contentResponse, null);
+
+    let extensionTabResponse = null;
+    assert.equal(
+      listener(
+        { action: "ping" },
+        { id: "ext-1", url: "chrome-extension://ext-1/options/options.html", tab: { id: 7 } },
+        (payload) => {
+          extensionTabResponse = payload;
+        },
+      ),
+      false,
+    );
     assert.equal(syncCalls, 2);
-    assert.deepEqual(contentResponse, { ok: true, type: "sync" });
+    assert.deepEqual(extensionTabResponse, { ok: true, type: "sync" });
+
+    assert.equal(
+      listener({ action: "contentPing" }, { tab: { id: 42 } }, (payload) => {
+        contentResponse = payload;
+      }),
+      false,
+    );
+    assert.equal(contentCalls, 1);
+    assert.deepEqual(contentResponse, { ok: true, type: "content" });
 
     assert.equal(
       listener({ action: "asyncPing" }, { id: "ext-1" }, () => {
@@ -639,6 +696,14 @@ async function main() {
       true,
     );
     await delay(20);
+    assert.equal(asyncCalls, 1);
+
+    assert.equal(
+      listener({ action: "asyncPing" }, { tab: { id: 42 } }, () => {
+        throw new Error("content sender should be blocked");
+      }),
+      false,
+    );
     assert.equal(asyncCalls, 1);
   });
 
@@ -2878,6 +2943,67 @@ async function main() {
     });
     assert.equal(pack.templates[0].id, "fav-a");
     assert.equal(pack.includeSensitiveDefaults, false);
+  });
+
+  await runStep("prompt storage caps and quota retry protect local data", async () => {
+    const chromeMock = createChromeMock();
+    const module = await loadBundledModule("src/shared/stores/prompt-store.ts", chromeMock);
+    const now = Date.now();
+    const historyItems = Array.from({ length: 1001 }, (_, index) => ({
+      id: index + 1,
+      text: `Prompt ${index + 1}`,
+      sentTo: ["chatgpt"],
+      createdAt: new Date(now + index).toISOString(),
+    }));
+
+    const storedHistory = await module.setPromptHistory(historyItems);
+    assert.equal(storedHistory.length, 1000);
+    assert.equal(storedHistory[0].id, 1001);
+    assert.equal(chromeMock.__getStorage().local.promptHistory.length, 1000);
+
+    const comparisonNotes = Array.from({ length: 2001 }, (_, index) => ({
+      id: `note-${index + 1}`,
+      historyId: index + 1,
+      serviceId: "chatgpt",
+      responseText: `Response ${index + 1}`,
+      updatedAt: new Date(now + index).toISOString(),
+    }));
+    const storedNotes = await module.setComparisonNotes(comparisonNotes);
+    assert.equal(storedNotes.length, 2000);
+    assert.equal(storedNotes[0].id, "note-2001");
+    assert.equal(chromeMock.__getStorage().local.comparisonNotes.length, 2000);
+
+    const originalSet = chromeMock.storage.local.set;
+    let quotaFailures = 0;
+    chromeMock.storage.local.set = async (nextValue) => {
+      if (Array.isArray(nextValue?.promptHistory) && nextValue.promptHistory.length > 500) {
+        quotaFailures += 1;
+        throw new Error("QUOTA_BYTES quota exceeded");
+      }
+      await originalSet(nextValue);
+    };
+
+    const emergencyHistory = await module.setPromptHistory(historyItems);
+    assert.equal(quotaFailures, 1);
+    assert.equal(emergencyHistory.length, 500);
+    assert.equal(chromeMock.__getStorage().local.promptHistory.length, 500);
+
+    chromeMock.storage.local.set = originalSet;
+    let noteQuotaFailures = 0;
+    chromeMock.storage.local.set = async (nextValue) => {
+      if (Array.isArray(nextValue?.comparisonNotes) && nextValue.comparisonNotes.length > 1000) {
+        noteQuotaFailures += 1;
+        throw new Error("QUOTA_BYTES quota exceeded");
+      }
+      await originalSet(nextValue);
+    };
+
+    const emergencyNotes = await module.setComparisonNotes(comparisonNotes);
+    assert.equal(noteQuotaFailures, 1);
+    assert.equal(emergencyNotes.length, 1000);
+    assert.equal(chromeMock.__getStorage().local.comparisonNotes.length, 1000);
+
+    assert.equal(module.capAutoCapturedResponseText("x".repeat(20001)).length, 20000);
   });
 
   await runStep("scheduled run summary ignores manual runs and preserves failure details", async () => {

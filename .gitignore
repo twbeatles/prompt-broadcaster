@@ -27,6 +27,9 @@
 .claude/
 .codex/
 
+# Local CodeGraph index
+.codegraph/
+
 # Editor settings
 .vscode/
 .idea/

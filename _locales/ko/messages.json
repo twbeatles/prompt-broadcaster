@@ -1950,6 +1950,12 @@
   "options_import_report_rejected_empty": {
     "message": "거부된 서비스가 없습니다."
   },
+  "toast_prompt_history_save_failed": {
+    "message": "브로드캐스트는 완료됐지만 프롬프트 히스토리를 저장하지 못했습니다."
+  },
+  "toast_auto_capture_save_failed": {
+    "message": "자동 응답 캡처를 저장하지 못했습니다."
+  },
   "result_code_submitted": {
     "message": "전송 완료"
   },

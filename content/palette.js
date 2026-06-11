@@ -86,7 +86,7 @@ var AIPromptBroadcasterQuickPaletteBundle = (() => {
     siteOrder: []
   });
 
-  // src/shared/prompts/normalizers.ts
+  // src/shared/prompts/normalizers/core.ts
   function safeText(value) {
     return typeof value === "string" ? value : "";
   }

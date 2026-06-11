@@ -7,6 +7,7 @@ import {
 } from "./constants";
 import { validateHostnameAliases } from "./hostname-aliases";
 import { safeText } from "./normalizers";
+import { normalizeSelectorEntries } from "./selector-utils";
 import { normalizeVerifiedAt } from "./verification";
 
 export interface SiteDraftValidationResult {
@@ -16,6 +17,7 @@ export interface SiteDraftValidationResult {
     | "name"
     | "url"
     | "inputSelector"
+    | "fallbackSelectors"
     | "inputType"
     | "submitMethod"
     | "submitSelector"
@@ -46,6 +48,7 @@ interface SiteDraftLike {
   name?: unknown;
   url?: unknown;
   inputSelector?: unknown;
+  fallbackSelectors?: unknown;
   inputType?: unknown;
   submitMethod?: unknown;
   submitSelector?: unknown;
@@ -54,6 +57,91 @@ interface SiteDraftLike {
   supportedRoutes?: unknown;
   verifiedAt?: unknown;
   verifiedAuthState?: unknown;
+}
+
+function hasBalancedSelectorSyntax(selector: string): boolean {
+  let bracketDepth = 0;
+  let parenDepth = 0;
+  let quote: "'" | "\"" | null = null;
+  let escaping = false;
+
+  for (const character of selector) {
+    if (escaping) {
+      escaping = false;
+      continue;
+    }
+
+    if (character === "\\") {
+      escaping = true;
+      continue;
+    }
+
+    if (quote) {
+      if (character === quote) {
+        quote = null;
+      }
+      continue;
+    }
+
+    if (character === "'" || character === "\"") {
+      quote = character;
+      continue;
+    }
+
+    if (character === "[") {
+      bracketDepth += 1;
+    } else if (character === "]") {
+      bracketDepth -= 1;
+    } else if (character === "(") {
+      parenDepth += 1;
+    } else if (character === ")") {
+      parenDepth -= 1;
+    }
+
+    if (bracketDepth < 0 || parenDepth < 0) {
+      return false;
+    }
+  }
+
+  return bracketDepth === 0 && parenDepth === 0 && quote === null && !escaping;
+}
+
+function isCssSelectorSyntaxValid(selector: string): boolean {
+  const normalized = selector.trim();
+  if (!normalized || !hasBalancedSelectorSyntax(normalized)) {
+    return false;
+  }
+
+  const documentRef = globalThis.document;
+  if (!documentRef?.createDocumentFragment) {
+    return true;
+  }
+
+  try {
+    documentRef.createDocumentFragment().querySelector(normalized);
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+function validateSelectorSyntax(
+  fieldErrors: SiteDraftValidationResult["fieldErrors"],
+  field: keyof SiteDraftValidationResult["fieldErrors"],
+  selectors: unknown,
+): void {
+  const invalidSelectors = normalizeSelectorEntries(selectors)
+    .filter((selector) => !isCssSelectorSyntaxValid(selector));
+
+  if (invalidSelectors.length === 0) {
+    return;
+  }
+
+  pushFieldError(
+    fieldErrors,
+    field,
+    `Invalid CSS selector: ${invalidSelectors[0]}`
+  );
 }
 
 export function validateSiteDraft(
@@ -80,6 +168,8 @@ export function validateSiteDraft(
 
   if (!inputSelector) {
     pushFieldError(fieldErrors, "inputSelector", "Input selector is required.");
+  } else {
+    validateSelectorSyntax(fieldErrors, "inputSelector", draft?.inputSelector);
   }
 
   if (!VALID_INPUT_TYPES.has(safeText(draft?.inputType) as never)) {
@@ -107,7 +197,11 @@ export function validateSiteDraft(
 
   if (safeText(draft?.submitMethod) === "click" && !safeText(draft?.submitSelector)) {
     pushFieldError(fieldErrors, "submitSelector", "Submit selector is required when using click submit.");
+  } else if (safeText(draft?.submitSelector)) {
+    validateSelectorSyntax(fieldErrors, "submitSelector", draft?.submitSelector);
   }
+
+  validateSelectorSyntax(fieldErrors, "fallbackSelectors", draft?.fallbackSelectors);
 
   const aliasValidation = validateHostnameAliases(draft?.hostnameAliases);
   aliasValidation.errors.forEach((message) => pushFieldError(fieldErrors, "hostnameAliases", message));

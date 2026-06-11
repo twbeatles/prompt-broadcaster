@@ -251,7 +251,7 @@ function hideToast(id) {
   removeToastElement(id);
 }
 
-// src/options/app/i18n.ts
+// src/options/app/i18n/catalog.ts
 var uiLanguage = chrome.i18n.getUILanguage().toLowerCase();
 var isKorean = uiLanguage === "ko" || uiLanguage.startsWith("ko-");
 var locale = isKorean ? "ko-KR" : "en-US";
@@ -545,6 +545,9 @@ var LOCAL_STORAGE_KEYS = Object.freeze({
 var DEFAULT_HISTORY_LIMIT = 50;
 var MIN_HISTORY_LIMIT = 10;
 var MAX_HISTORY_LIMIT = 200;
+var MAX_STORED_PROMPT_HISTORY = 1e3;
+var EMERGENCY_STORED_PROMPT_HISTORY = 500;
+var MAX_STORED_COMPARISON_NOTES = 2e3;
 var MIN_WAIT_MS_MULTIPLIER = 0.5;
 var MAX_WAIT_MS_MULTIPLIER = 3;
 var DEFAULT_WAIT_MS_MULTIPLIER = 1;
@@ -564,7 +567,7 @@ var DEFAULT_SETTINGS = Object.freeze({
   siteOrder: []
 });
 
-// src/shared/prompts/normalizers.ts
+// src/shared/prompts/normalizers/core.ts
 var VALID_HISTORY_SORTS = /* @__PURE__ */ new Set([
   "latest",
   "oldest",
@@ -1033,6 +1036,10 @@ async function readLocal(key, fallbackValue) {
 async function writeLocal(key, value) {
   await chrome.storage.local.set({ [key]: value });
 }
+function isStorageQuotaError(error) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /quota|QUOTA_BYTES|exceed/i.test(message);
+}
 
 // src/shared/prompts/broadcast-counter.ts
 async function getBroadcastCounter() {
@@ -1128,12 +1135,19 @@ async function getComparisonNotes() {
     LOCAL_STORAGE_KEYS.comparisonNotes,
     []
   );
-  return sortByDateDesc(
+  return capStoredComparisonNotes(sortByDateDesc(
     safeArray(rawValue).map(
       (entry, index) => normalizeComparisonNote(entry, {}, index)
     ),
     "updatedAt"
-  ).filter((entry) => entry.historyId > 0 && entry.serviceId && entry.responseText.trim());
+  ).filter((entry) => entry.historyId > 0 && entry.serviceId && entry.responseText.trim()));
+}
+function capStoredComparisonNotes(notes, limit = MAX_STORED_COMPARISON_NOTES) {
+  const normalizedLimit = Number.isFinite(Number(limit)) ? Math.max(1, Math.round(Number(limit))) : MAX_STORED_COMPARISON_NOTES;
+  return sortByDateDesc(
+    safeArray(notes),
+    "updatedAt"
+  ).slice(0, normalizedLimit);
 }
 async function getPromptExperiments() {
   const rawValue = await readLocal(
@@ -1308,9 +1322,13 @@ function buildHistoryEntry(entry) {
     trigger: normalizeExecutionTrigger(source.trigger)
   };
 }
+function capStoredPromptHistory(historyItems, limit = MAX_STORED_PROMPT_HISTORY) {
+  const normalizedLimit = Number.isFinite(Number(limit)) ? Math.max(1, Math.round(Number(limit))) : MAX_STORED_PROMPT_HISTORY;
+  return sortByDateDesc(safeArray(historyItems)).slice(0, normalizedLimit);
+}
 async function getStoredPromptHistory() {
   const rawHistory = await readLocal(LOCAL_STORAGE_KEYS.history, []);
-  return sortByDateDesc(
+  return capStoredPromptHistory(
     safeArray(rawHistory).map((item) => buildHistoryEntry(item))
   );
 }
@@ -1319,11 +1337,23 @@ function applyHistoryVisibleLimit(historyItems, historyLimit) {
   return safeArray(historyItems).slice(0, normalizedLimit);
 }
 async function setPromptHistory(historyItems) {
-  const normalized = sortByDateDesc(
+  const normalized = capStoredPromptHistory(
     safeArray(historyItems).map((item) => buildHistoryEntry(item))
   );
-  await writeLocal(LOCAL_STORAGE_KEYS.history, normalized);
-  return normalized;
+  try {
+    await writeLocal(LOCAL_STORAGE_KEYS.history, normalized);
+    return normalized;
+  } catch (error) {
+    if (!isStorageQuotaError(error)) {
+      throw error;
+    }
+    const emergency = capStoredPromptHistory(
+      normalized,
+      EMERGENCY_STORED_PROMPT_HISTORY
+    );
+    await writeLocal(LOCAL_STORAGE_KEYS.history, emergency);
+    return emergency;
+  }
 }
 async function deletePromptHistoryItemsByIds(historyIds) {
   const selectedIds = new Set(
@@ -1816,6 +1846,72 @@ function getConfiguredSupportedRoutes(site) {
   const fallbackRoute = normalizeRoutePrefix(site?.verifiedRoute);
   return fallbackRoute && fallbackRoute !== "/" ? [fallbackRoute] : [];
 }
+function splitSelectorList(selectorGroup) {
+  const source = typeof selectorGroup === "string" ? selectorGroup.trim() : "";
+  if (!source) {
+    return [];
+  }
+  const parts = [];
+  let current = "";
+  let bracketDepth = 0;
+  let parenDepth = 0;
+  let quote = null;
+  let escaping = false;
+  for (const character of source) {
+    current += character;
+    if (escaping) {
+      escaping = false;
+      continue;
+    }
+    if (character === "\\") {
+      escaping = true;
+      continue;
+    }
+    if (quote) {
+      if (character === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      quote = character;
+      continue;
+    }
+    if (character === "[") {
+      bracketDepth += 1;
+      continue;
+    }
+    if (character === "]") {
+      bracketDepth = Math.max(0, bracketDepth - 1);
+      continue;
+    }
+    if (character === "(") {
+      parenDepth += 1;
+      continue;
+    }
+    if (character === ")") {
+      parenDepth = Math.max(0, parenDepth - 1);
+      continue;
+    }
+    if (character === "," && bracketDepth === 0 && parenDepth === 0) {
+      current = current.slice(0, -1);
+      const normalized = current.trim();
+      if (normalized) {
+        parts.push(normalized);
+      }
+      current = "";
+    }
+  }
+  const trailing = current.trim();
+  if (trailing) {
+    parts.push(trailing);
+  }
+  return parts;
+}
+function normalizeSelectorEntries(selectors) {
+  const rawSelectors = Array.isArray(selectors) ? selectors : [selectors];
+  return rawSelectors.filter((selector) => typeof selector === "string" && Boolean(selector.trim())).flatMap((selector) => splitSelectorList(selector)).filter((selector, index, entries) => entries.indexOf(selector) === index);
+}
 
 // src/shared/sites/normalizers/site-records.ts
 var BUILT_IN_SITE_STYLE_LOOKUP = BUILT_IN_SITE_STYLE_MAP;
@@ -2168,6 +2264,72 @@ function pushFieldError(fieldErrors, field, message) {
   current.push(message);
   fieldErrors[field] = current;
 }
+function hasBalancedSelectorSyntax(selector) {
+  let bracketDepth = 0;
+  let parenDepth = 0;
+  let quote = null;
+  let escaping = false;
+  for (const character of selector) {
+    if (escaping) {
+      escaping = false;
+      continue;
+    }
+    if (character === "\\") {
+      escaping = true;
+      continue;
+    }
+    if (quote) {
+      if (character === quote) {
+        quote = null;
+      }
+      continue;
+    }
+    if (character === "'" || character === '"') {
+      quote = character;
+      continue;
+    }
+    if (character === "[") {
+      bracketDepth += 1;
+    } else if (character === "]") {
+      bracketDepth -= 1;
+    } else if (character === "(") {
+      parenDepth += 1;
+    } else if (character === ")") {
+      parenDepth -= 1;
+    }
+    if (bracketDepth < 0 || parenDepth < 0) {
+      return false;
+    }
+  }
+  return bracketDepth === 0 && parenDepth === 0 && quote === null && !escaping;
+}
+function isCssSelectorSyntaxValid(selector) {
+  const normalized = selector.trim();
+  if (!normalized || !hasBalancedSelectorSyntax(normalized)) {
+    return false;
+  }
+  const documentRef = globalThis.document;
+  if (!documentRef?.createDocumentFragment) {
+    return true;
+  }
+  try {
+    documentRef.createDocumentFragment().querySelector(normalized);
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+function validateSelectorSyntax(fieldErrors, field, selectors) {
+  const invalidSelectors = normalizeSelectorEntries(selectors).filter((selector) => !isCssSelectorSyntaxValid(selector));
+  if (invalidSelectors.length === 0) {
+    return;
+  }
+  pushFieldError(
+    fieldErrors,
+    field,
+    `Invalid CSS selector: ${invalidSelectors[0]}`
+  );
+}
 function validateSiteDraft(draft, { isBuiltIn = false } = {}) {
   const errors = [];
   const fieldErrors = {};
@@ -2185,6 +2347,8 @@ function validateSiteDraft(draft, { isBuiltIn = false } = {}) {
   }
   if (!inputSelector) {
     pushFieldError(fieldErrors, "inputSelector", "Input selector is required.");
+  } else {
+    validateSelectorSyntax(fieldErrors, "inputSelector", draft?.inputSelector);
   }
   if (!VALID_INPUT_TYPES.has(safeText2(draft?.inputType))) {
     pushFieldError(fieldErrors, "inputType", "Input type is invalid.");
@@ -2206,7 +2370,10 @@ function validateSiteDraft(draft, { isBuiltIn = false } = {}) {
   }
   if (safeText2(draft?.submitMethod) === "click" && !safeText2(draft?.submitSelector)) {
     pushFieldError(fieldErrors, "submitSelector", "Submit selector is required when using click submit.");
+  } else if (safeText2(draft?.submitSelector)) {
+    validateSelectorSyntax(fieldErrors, "submitSelector", draft?.submitSelector);
   }
+  validateSelectorSyntax(fieldErrors, "fallbackSelectors", draft?.fallbackSelectors);
   const aliasValidation = validateHostnameAliases(draft?.hostnameAliases);
   aliasValidation.errors.forEach((message) => pushFieldError(fieldErrors, "hostnameAliases", message));
   const rawSupportedRoutes = Array.isArray(draft?.supportedRoutes) ? draft.supportedRoutes : typeof draft?.supportedRoutes === "string" ? draft.supportedRoutes.split(/\r?\n/g) : [];
@@ -2842,8 +3009,10 @@ async function importPromptData(jsonString) {
   const importedCustomSites = safeArray(migrated?.customSites);
   const importedBuiltInSiteStates = safeObject(migrated?.builtInSiteStates);
   const importedBuiltInSiteOverrides = safeObject(migrated?.builtInSiteOverrides);
-  const importedComparisonNotes = safeArray(migrated?.comparisonNotes).map(
-    (entry, index) => normalizeComparisonNote(entry, {}, index)
+  const importedComparisonNotes = capStoredComparisonNotes(
+    safeArray(migrated?.comparisonNotes).map(
+      (entry, index) => normalizeComparisonNote(entry, {}, index)
+    )
   );
   const importedPromptExperiments = safeArray(migrated?.promptExperiments).map(
     (entry, index) => normalizePromptExperiment(entry, {}, index)
@@ -2854,13 +3023,14 @@ async function importPromptData(jsonString) {
   const importedServiceGroups = safeArray(migrated?.serviceGroups).map(
     (entry, index) => normalizeServiceGroup(entry, {}, index)
   );
-  const normalizedHistory = [];
+  const normalizedHistoryDraft = [];
   for (const item of sortByDateDesc(history)) {
-    normalizedHistory.push({
+    normalizedHistoryDraft.push({
       ...item,
-      id: ensureUniqueNumericId(normalizedHistory, Number(item.id))
+      id: ensureUniqueNumericId(normalizedHistoryDraft, Number(item.id))
     });
   }
+  const normalizedHistory = capStoredPromptHistory(normalizedHistoryDraft);
   const normalizedFavorites = [];
   for (const item of sortByDateDesc(favorites, "favoritedAt")) {
     normalizedFavorites.push({
@@ -4793,26 +4963,85 @@ function bindScheduleEvents({ reloadData }) {
   });
 }
 
-// src/options/core/service-filter.ts
-var { historyServiceFilter } = optionsDom.history;
-function renderServiceFilterOptions() {
-  historyServiceFilter.innerHTML = [
-    `<option value="all">${escapeHTML(t.history.allServices)}</option>`,
-    ...state.runtimeSites.map((site) => `<option value="${site.id}">${escapeHTML(site.name)}</option>`)
-  ].join("");
-  historyServiceFilter.value = state.filters.service;
-}
-
-// src/options/features/services.ts
+// src/options/features/services/dom.ts
 var {
   servicesGrid,
   servicesHealthCenter,
   servicesRefreshHealthBtn,
   serviceGroupTitle,
   serviceGroupSaveBtn,
-  serviceGroupsList
+  serviceGroupsList,
+  servicesOpenManagerBtn
 } = optionsDom.services;
-var { servicesOpenManagerBtn } = optionsDom.services;
+
+// src/options/features/services/groups.ts
+function renderServiceGroups() {
+  if (!serviceGroupsList) {
+    return;
+  }
+  if (!state.serviceGroups?.length) {
+    serviceGroupsList.innerHTML = `<div class="empty-state">${escapeHTML(t.services.groupEmpty)}</div>`;
+    return;
+  }
+  serviceGroupsList.innerHTML = state.serviceGroups.map((group) => {
+    const names = group.serviceIds.map((siteId) => state.runtimeSites.find((site) => site.id === siteId)?.name || siteId).join(", ");
+    return `
+      <article class="service-health-row">
+        <div>
+          <strong>${escapeHTML(group.title)}</strong>
+          <div class="helper">${escapeHTML(names || t.services.groupNoServices)}</div>
+        </div>
+        <div class="settings-actions">
+          <button class="btn ghost" type="button" data-group-select="${escapeHTML(group.id)}">${escapeHTML(t.services.groupCheckServices)}</button>
+          <button class="btn danger ghost" type="button" data-group-delete="${escapeHTML(group.id)}">${escapeHTML(t.services.groupDelete)}</button>
+        </div>
+      </article>
+    `;
+  }).join("");
+}
+async function saveCheckedServiceGroup() {
+  const selectedIds = [...servicesGrid.querySelectorAll("[data-service-group-select]:checked")].map((input) => input.dataset.serviceGroupSelect).filter(Boolean);
+  const title = serviceGroupTitle.value.trim() || `Group ${state.serviceGroups.length + 1}`;
+  if (selectedIds.length === 0) {
+    showAppToast(t.services.groupNeedsService, "warning", 2200);
+    return;
+  }
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const existing = state.serviceGroups.find((group) => group.title === title);
+  const nextGroup = {
+    ...existing ?? {},
+    id: existing?.id || `group-${Date.now()}`,
+    title,
+    serviceIds: selectedIds,
+    sortOrder: existing?.sortOrder ?? state.serviceGroups.length,
+    createdAt: existing?.createdAt || now,
+    updatedAt: now
+  };
+  state.serviceGroups = await setServiceGroups([
+    nextGroup,
+    ...state.serviceGroups.filter((group) => group.id !== nextGroup.id)
+  ]);
+  renderServiceGroups();
+  showAppToast(t.services.groupSaved, "success", 1600);
+}
+function selectServiceGroup(groupId) {
+  const group = state.serviceGroups.find((entry) => entry.id === groupId);
+  const selected = new Set(group?.serviceIds ?? []);
+  servicesGrid.querySelectorAll("[data-service-group-select]").forEach((input) => {
+    input.checked = selected.has(input.dataset.serviceGroupSelect);
+  });
+  if (group && serviceGroupTitle) {
+    serviceGroupTitle.value = group.title;
+  }
+}
+async function deleteServiceGroup(groupId) {
+  state.serviceGroups = state.serviceGroups.filter((entry) => entry.id !== groupId);
+  await setServiceGroups(state.serviceGroups);
+  renderServiceGroups();
+  showAppToast(t.services.groupDeleted, "success", 1600);
+}
+
+// src/options/features/services/health.ts
 function getHealthStatus(snapshot) {
   if (snapshot?.selectorWarning) {
     return { label: t.services.healthWarning, tone: "danger" };
@@ -4858,30 +5087,42 @@ function renderServiceHealthCenter() {
     `;
   }).join("");
 }
-function renderServiceGroups() {
-  if (!serviceGroupsList) {
-    return;
-  }
-  if (!state.serviceGroups?.length) {
-    serviceGroupsList.innerHTML = `<div class="empty-state">${escapeHTML(t.services.groupEmpty)}</div>`;
-    return;
-  }
-  serviceGroupsList.innerHTML = state.serviceGroups.map((group) => {
-    const names = group.serviceIds.map((siteId) => state.runtimeSites.find((site) => site.id === siteId)?.name || siteId).join(", ");
-    return `
-      <article class="service-health-row">
-        <div>
-          <strong>${escapeHTML(group.title)}</strong>
-          <div class="helper">${escapeHTML(names || t.services.groupNoServices)}</div>
-        </div>
-        <div class="settings-actions">
-          <button class="btn ghost" type="button" data-group-select="${escapeHTML(group.id)}">${escapeHTML(t.services.groupCheckServices)}</button>
-          <button class="btn danger ghost" type="button" data-group-delete="${escapeHTML(group.id)}">${escapeHTML(t.services.groupDelete)}</button>
-        </div>
-      </article>
-    `;
-  }).join("");
+async function refreshServiceHealth() {
+  const response = await sendRuntimeMessageWithTimeout({ action: "service-health:get" }, 5e3, {
+    ok: false,
+    snapshots: []
+  });
+  state.serviceHealthSnapshots = response?.snapshots ?? [];
+  renderServiceHealthCenter();
 }
+async function retryFailedService(serviceId) {
+  const failedEntry = state.history.find((entry) => entry.failedSiteIds?.includes(serviceId));
+  if (!failedEntry) {
+    showAppToast(t.services.retryNoFailed, "warning", 2200);
+    return;
+  }
+  const response = await sendRuntimeMessageWithTimeout({
+    action: "broadcast",
+    prompt: failedEntry.text,
+    sites: [serviceId]
+  }, 1e4);
+  if (!response?.ok) {
+    throw new Error(response?.error || "Retry could not be queued.");
+  }
+  showAppToast(t.services.retryQueued, "success", 1800);
+}
+
+// src/options/core/service-filter.ts
+var { historyServiceFilter } = optionsDom.history;
+function renderServiceFilterOptions() {
+  historyServiceFilter.innerHTML = [
+    `<option value="all">${escapeHTML(t.history.allServices)}</option>`,
+    ...state.runtimeSites.map((site) => `<option value="${site.id}">${escapeHTML(site.name)}</option>`)
+  ].join("");
+  historyServiceFilter.value = state.filters.service;
+}
+
+// src/options/features/services/rendering.ts
 function renderServicesSection() {
   servicesGrid.innerHTML = state.runtimeSites.map((site, index) => {
     const requestedEntries = state.history.filter((entry) => getRequestedServices(entry).includes(site.id));
@@ -4930,61 +5171,14 @@ function renderServicesSection() {
   renderServiceHealthCenter();
   renderServiceGroups();
 }
+
+// src/options/features/services/ordering.ts
 async function saveSiteWaitMs(siteId, waitMs) {
   await updateRuntimeSite(siteId, { waitMs: Number(waitMs) });
   state.runtimeSites = sortSitesByOrder(await getRuntimeSites(), state.settings.siteOrder);
   renderServiceFilterOptions();
   renderServicesSection();
   showAppToast(t.settings.waitSaved, "success", 1600);
-}
-async function refreshServiceHealth() {
-  const response = await sendRuntimeMessageWithTimeout({ action: "service-health:get" }, 5e3, {
-    ok: false,
-    snapshots: []
-  });
-  state.serviceHealthSnapshots = response?.snapshots ?? [];
-  renderServiceHealthCenter();
-}
-async function retryFailedService(serviceId) {
-  const failedEntry = state.history.find((entry) => entry.failedSiteIds?.includes(serviceId));
-  if (!failedEntry) {
-    showAppToast(t.services.retryNoFailed, "warning", 2200);
-    return;
-  }
-  const response = await sendRuntimeMessageWithTimeout({
-    action: "broadcast",
-    prompt: failedEntry.text,
-    sites: [serviceId]
-  }, 1e4);
-  if (!response?.ok) {
-    throw new Error(response?.error || "Retry could not be queued.");
-  }
-  showAppToast(t.services.retryQueued, "success", 1800);
-}
-async function saveCheckedServiceGroup() {
-  const selectedIds = [...servicesGrid.querySelectorAll("[data-service-group-select]:checked")].map((input) => input.dataset.serviceGroupSelect).filter(Boolean);
-  const title = serviceGroupTitle.value.trim() || `Group ${state.serviceGroups.length + 1}`;
-  if (selectedIds.length === 0) {
-    showAppToast(t.services.groupNeedsService, "warning", 2200);
-    return;
-  }
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const existing = state.serviceGroups.find((group) => group.title === title);
-  const nextGroup = {
-    ...existing ?? {},
-    id: existing?.id || `group-${Date.now()}`,
-    title,
-    serviceIds: selectedIds,
-    sortOrder: existing?.sortOrder ?? state.serviceGroups.length,
-    createdAt: existing?.createdAt || now,
-    updatedAt: now
-  };
-  state.serviceGroups = await setServiceGroups([
-    nextGroup,
-    ...state.serviceGroups.filter((group) => group.id !== nextGroup.id)
-  ]);
-  renderServiceGroups();
-  showAppToast(t.services.groupSaved, "success", 1600);
 }
 function moveRuntimeSite(siteId, direction) {
   const currentIndex = state.runtimeSites.findIndex((site) => site.id === siteId);
@@ -5016,6 +5210,8 @@ async function saveSiteOrder(siteId, direction) {
   setStatus(t.services.orderSaved, "success");
   showAppToast(t.services.orderSaved, "success", 1600);
 }
+
+// src/options/features/services/events.ts
 function bindServiceEvents() {
   servicesOpenManagerBtn.addEventListener("click", () => {
     const popupUrl = chrome.runtime.getURL("popup/popup.html#settings");
@@ -5075,22 +5271,11 @@ function bindServiceEvents() {
     const selectButton = event.target.closest("[data-group-select]");
     const deleteButton = event.target.closest("[data-group-delete]");
     if (selectButton) {
-      const group = state.serviceGroups.find((entry) => entry.id === selectButton.dataset.groupSelect);
-      const selected = new Set(group?.serviceIds ?? []);
-      servicesGrid.querySelectorAll("[data-service-group-select]").forEach((input) => {
-        input.checked = selected.has(input.dataset.serviceGroupSelect);
-      });
-      if (group && serviceGroupTitle) {
-        serviceGroupTitle.value = group.title;
-      }
+      selectServiceGroup(selectButton.dataset.groupSelect);
       return;
     }
     if (deleteButton) {
-      state.serviceGroups = state.serviceGroups.filter((entry) => entry.id !== deleteButton.dataset.groupDelete);
-      void setServiceGroups(state.serviceGroups).then(() => {
-        renderServiceGroups();
-        showAppToast(t.services.groupDeleted, "success", 1600);
-      });
+      void deleteServiceGroup(deleteButton.dataset.groupDelete);
     }
   });
   servicesGrid.addEventListener("input", (event) => {
@@ -5253,6 +5438,70 @@ function bindHistoryEvents() {
   });
 }
 
+// src/options/features/experiments/dom.ts
+var dom = optionsDom.experiments;
+
+// src/options/features/experiments/draft.ts
+function parseVariantBlocks() {
+  const raw = dom.experimentVariants?.value || "";
+  return raw.split(/\n---+\n/g).map((text, index) => ({
+    id: `variant-${index + 1}`,
+    title: `Variant ${index + 1}`,
+    text: text.trim()
+  })).filter((variant) => variant.text);
+}
+function parseVariableSets() {
+  const raw = dom.experimentVariables?.value.trim();
+  if (!raw) {
+    return [{ id: "vars-1", title: "Default", values: {} }];
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    const entries = Array.isArray(parsed) ? parsed : [parsed];
+    return entries.map((values, index) => ({
+      id: `vars-${index + 1}`,
+      title: `Variables ${index + 1}`,
+      values: values && typeof values === "object" && !Array.isArray(values) ? Object.fromEntries(
+        Object.entries(values).map(([key, value]) => [String(key), String(value ?? "")])
+      ) : {}
+    }));
+  } catch (_error) {
+    showAppToast(t.experiments.invalidVariables, "warning", 2600);
+    return [{ id: "vars-1", title: "Default", values: {} }];
+  }
+}
+function getSelectedTargetIds() {
+  return Array.from(
+    dom.experimentTargets?.querySelectorAll("[data-experiment-target]:checked") ?? []
+  ).map((input) => input.dataset.experimentTarget ?? "").filter(Boolean);
+}
+function buildDraftExperiment(existingId = null) {
+  return {
+    id: existingId || state.activeExperimentId || void 0,
+    title: dom.experimentTitle?.value.trim() || `Experiment ${state.promptExperiments.length + 1}`,
+    description: "",
+    variants: parseVariantBlocks(),
+    targetSiteIds: getSelectedTargetIds(),
+    variableSets: parseVariableSets()
+  };
+}
+function loadExperimentDraft(experiment) {
+  state.activeExperimentId = experiment.id;
+  if (dom.experimentTitle) {
+    dom.experimentTitle.value = experiment.title;
+  }
+  if (dom.experimentVariants) {
+    dom.experimentVariants.value = experiment.variants.map((variant) => variant.text).join("\n---\n");
+  }
+  if (dom.experimentVariables) {
+    dom.experimentVariables.value = JSON.stringify(
+      experiment.variableSets.map((set) => set.values),
+      null,
+      2
+    );
+  }
+}
+
 // src/shared/template/constants.ts
 var TEMPLATE_VARIABLE_PATTERN = /{{\s*([^{}]+?)\s*}}/g;
 var SYSTEM_TEMPLATE_VARIABLES = Object.freeze({
@@ -5358,51 +5607,7 @@ function renderTemplatePrompt(template, values = {}) {
   });
 }
 
-// src/options/features/experiments.ts
-var dom = optionsDom.experiments;
-function parseVariantBlocks() {
-  const raw = dom.experimentVariants?.value || "";
-  return raw.split(/\n---+\n/g).map((text, index) => ({
-    id: `variant-${index + 1}`,
-    title: `Variant ${index + 1}`,
-    text: text.trim()
-  })).filter((variant) => variant.text);
-}
-function parseVariableSets() {
-  const raw = dom.experimentVariables?.value.trim();
-  if (!raw) {
-    return [{ id: "vars-1", title: "Default", values: {} }];
-  }
-  try {
-    const parsed = JSON.parse(raw);
-    const entries = Array.isArray(parsed) ? parsed : [parsed];
-    return entries.map((values, index) => ({
-      id: `vars-${index + 1}`,
-      title: `Variables ${index + 1}`,
-      values: values && typeof values === "object" && !Array.isArray(values) ? Object.fromEntries(
-        Object.entries(values).map(([key, value]) => [String(key), String(value ?? "")])
-      ) : {}
-    }));
-  } catch (_error) {
-    showAppToast(t.experiments.invalidVariables, "warning", 2600);
-    return [{ id: "vars-1", title: "Default", values: {} }];
-  }
-}
-function getSelectedTargetIds() {
-  return Array.from(
-    dom.experimentTargets?.querySelectorAll("[data-experiment-target]:checked") ?? []
-  ).map((input) => input.dataset.experimentTarget ?? "").filter(Boolean);
-}
-function buildDraftExperiment(existingId = null) {
-  return {
-    id: existingId || state.activeExperimentId || void 0,
-    title: dom.experimentTitle?.value.trim() || `Experiment ${state.promptExperiments.length + 1}`,
-    description: "",
-    variants: parseVariantBlocks(),
-    targetSiteIds: getSelectedTargetIds(),
-    variableSets: parseVariableSets()
-  };
-}
+// src/options/features/experiments/preview.ts
 function buildPreviewItems(experiment) {
   return experiment.variants.flatMap(
     (variant) => experiment.variableSets.map((variableSet) => ({
@@ -5427,6 +5632,8 @@ function buildRunLimitMarkup(experiment) {
   );
   return `<div class="helper experiment-run-limit ${tone}">${escapeHTML(label)}</div>`;
 }
+
+// src/options/features/experiments/rendering.ts
 function renderExperimentTargets() {
   if (!dom.experimentTargets) {
     return;
@@ -5486,6 +5693,8 @@ function renderExperimentsSection() {
       </article>
     `).join("") : `<div class="panel empty-state">${escapeHTML(t.experiments.empty)}</div>`;
 }
+
+// src/options/features/experiments/actions.ts
 async function saveDraftExperiment() {
   const draft = buildDraftExperiment();
   if (!draft.variants.length || !draft.targetSiteIds.length) {
@@ -5562,20 +5771,7 @@ function loadExperiment(experimentId) {
   if (!experiment) {
     return;
   }
-  state.activeExperimentId = experiment.id;
-  if (dom.experimentTitle) {
-    dom.experimentTitle.value = experiment.title;
-  }
-  if (dom.experimentVariants) {
-    dom.experimentVariants.value = experiment.variants.map((variant) => variant.text).join("\n---\n");
-  }
-  if (dom.experimentVariables) {
-    dom.experimentVariables.value = JSON.stringify(
-      experiment.variableSets.map((set) => set.values),
-      null,
-      2
-    );
-  }
+  loadExperimentDraft(experiment);
   renderExperimentTargets();
   const selected = new Set(experiment.targetSiteIds);
   dom.experimentTargets?.querySelectorAll("[data-experiment-target]").forEach((input) => {
@@ -5583,6 +5779,8 @@ function loadExperiment(experimentId) {
   });
   renderPreview();
 }
+
+// src/options/features/experiments/events.ts
 function bindExperimentEvents() {
   dom.experimentPreview?.addEventListener("click", renderPreview);
   dom.experimentSave?.addEventListener("click", () => {

@@ -353,6 +353,7 @@ export interface PendingInjectionRecord {
   site: RuntimeSite;
   tabId?: number;
   createdAt: number;
+  startedAt?: number;
   injected: boolean;
   status: string;
   closeOnCancel?: boolean;

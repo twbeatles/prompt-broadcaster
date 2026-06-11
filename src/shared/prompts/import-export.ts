@@ -19,6 +19,7 @@ import {
   getPromptFavorites,
 } from "./favorites-store";
 import {
+  capStoredComparisonNotes,
   getComparisonNotes,
   getPromptExperiments,
   getServiceGroups,
@@ -26,6 +27,7 @@ import {
 } from "./advanced-store";
 import {
   buildHistoryEntry,
+  capStoredPromptHistory,
   getStoredPromptHistory,
 } from "./history-store";
 import {
@@ -378,8 +380,10 @@ export async function importPromptData(jsonString: string) {
   const importedCustomSites = safeArray(migrated?.customSites);
   const importedBuiltInSiteStates = safeObject(migrated?.builtInSiteStates);
   const importedBuiltInSiteOverrides = safeObject(migrated?.builtInSiteOverrides);
-  const importedComparisonNotes = safeArray(migrated?.comparisonNotes).map((entry, index) =>
-    normalizeComparisonNote(entry, {}, index),
+  const importedComparisonNotes = capStoredComparisonNotes(
+    safeArray(migrated?.comparisonNotes).map((entry, index) =>
+      normalizeComparisonNote(entry, {}, index),
+    ),
   );
   const importedPromptExperiments = safeArray(migrated?.promptExperiments).map((entry, index) =>
     normalizePromptExperiment(entry, {}, index),
@@ -390,13 +394,14 @@ export async function importPromptData(jsonString: string) {
   const importedServiceGroups = safeArray(migrated?.serviceGroups).map((entry, index) =>
     normalizeServiceGroup(entry, {}, index),
   );
-  const normalizedHistory: PromptHistoryItem[] = [];
+  const normalizedHistoryDraft: PromptHistoryItem[] = [];
   for (const item of sortByDateDesc(history)) {
-    normalizedHistory.push({
+    normalizedHistoryDraft.push({
       ...item,
-      id: ensureUniqueNumericId(normalizedHistory, Number(item.id)),
+      id: ensureUniqueNumericId(normalizedHistoryDraft, Number(item.id)),
     });
   }
+  const normalizedHistory = capStoredPromptHistory(normalizedHistoryDraft);
 
   const normalizedFavorites: FavoritePrompt[] = [];
   for (const item of sortByDateDesc(favorites, "favoritedAt")) {

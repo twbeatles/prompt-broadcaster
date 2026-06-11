@@ -63,7 +63,7 @@ To package a release zip:
 - `src/shared/chrome/messaging.ts`: timeout-safe runtime messaging helper for popup/options/content surfaces
 - `src/shared/runtime-state/`: last broadcast, UI toasts, selector warning state, and strategy stats
 - `src/shared/template/`: template detection and rendering
-- `src/popup/app/bootstrap.ts` + `src/popup/app/bootstrap/{composer,storage,favorite-intent,events/*}.ts`: popup orchestration, state restore, and event wiring
+- `src/popup/app/bootstrap.ts` + `src/popup/app/bootstrap/{app,composer,storage,favorite-intent,events/*}.ts`: popup orchestration, state restore, and event wiring
 - `src/popup/app/dom.ts`, `helpers.ts`, `sorting.ts`, `list-markup.ts`: popup DOM registry and pure UI helpers
 - `src/popup/app/i18n.ts` + `src/popup/app/i18n/{core,catalog,helpers}.ts`, `src/popup/app/state.ts`: popup state and localized copy helpers
 - `src/popup/app/rendering.ts` + `src/popup/app/rendering/{sort-controls,template-summary,tab-labels,site-panel}.ts`: popup rendering splits for tabs, lists, and site cards
@@ -73,13 +73,15 @@ To package a release zip:
 - `src/popup/compose/`: popup target selection, open-tab routing, template preview, and send-flow helpers
 - `src/popup/services/controller.ts` + `src/popup/services/controller/{editor,managed-sites,types}.ts`: popup service editor, permission preview, selector test, and managed-site rendering
 - `src/options/app/bootstrap.ts`: options orchestration and section wiring
+- `src/options/features/experiments/*`, `src/options/features/services/*`: options feature draft/render/event helpers behind stable facade exports
 - `src/options/core/`: shared status, navigation, data refresh, and filter helpers
 - `src/options/features/`: dashboard, history, schedules, services, and settings sections
 - `src/options/features/history/`, `settings/`, `schedules/`: nested section modules for rendering, actions, export/import, and modal flows
 - `src/options/features/dashboard-metrics.ts`: pure dashboard aggregation for the four summary cards, recent activity, actions, usage share, recent daily counts, and failures
 - `src/options/features/schedule-summary.ts`: pure scheduled-run summary helper used by options schedules UI
 - `src/options/ui/charts.ts`: chart rendering
-- `src/background/app/bootstrap.ts` + `src/background/app/bootstrap/{tab-targets,runtime-events}.ts`: service worker composition root plus tab-routing and listener-registration helpers
+- `src/background/app/bootstrap.ts` + `src/background/app/bootstrap/{app,context,utils,tab-targets,runtime-events}.ts`: service worker composition root plus app context, utilities, tab-routing, and listener-registration helpers
+- `src/background/app/{comparison,experiments,injection}/*`: background feature helpers for response capture, experiment variables, and injection runtime types
 - `src/background/runtime/`, `src/background/session/`, `src/background/tabs/`: runtime handler map, session-state mutation store, and normal-window/tab routing helpers
 - `src/background/commands/quick-palette.ts`: command handling and content-script injection for the page overlay
 - `src/background/context-menu/index.ts`: context-menu lifecycle
@@ -88,6 +90,7 @@ To package a release zip:
 - `src/background/popup/favorites-workflow.ts` + `src/background/popup/favorites-workflow/{entrypoints,run-jobs,messages}.ts`: favorite run, chain, and schedule workflow
 - `src/background/selection/runtime.ts`: active-tab selection helpers
 - `src/background/app/injection-helpers.ts`: timeout scaling, selector normalization, result mapping, adaptive strategy ordering
+- `src/shared/prompts/normalizers.ts` + `src/shared/prompts/normalizers/*`: prompt/history/favorite/experiment/settings normalizer facade and domain boundaries
 - `src/content/palette/`: shadow-root quick palette overlay split into `main.ts`, `state.ts`, `render.ts`, `events.ts`, and `runtime.ts`
 - `src/content/selector-checker/` and `src/content/selection/`: modular content helpers split by runtime, DOM, and reporting concerns
 - `scripts/qa-smoke.mjs` + `scripts/qa-smoke/`: local smoke runner and reusable fixtures/helpers
@@ -121,7 +124,7 @@ Favorite runs use the same popup-side context preparation for `{{url}}`, `{{titl
 - Default reuse behavior is stored in `appSettings.reuseExistingTabs` and can be changed from the popup or options page.
 - Specific-tab routing is strict. If the selected tab disappears or fails reusable-tab preflight, background records `tab_closed` for that site instead of silently downgrading to default/new-tab routing.
 - Matching hostname alone is not enough for reuse. Background also preflights the tab for non-auth/non-settings route, `supportedRoutes` allowlist match, visible editable prompt surface, and required submit controls.
-- `SelectorCheckMode` now supports `input-and-conditional-submit` for services whose submit button appears only after text entry. Reusable-tab preflight skips the empty-state submit check for that mode, while actual injection still waits through `submitPrompt()`.
+- `SelectorCheckMode` now supports `input-and-conditional-submit` for services whose submit button appears only after text entry. All 5 built-in services (ChatGPT, Gemini, Claude, Grok, Perplexity) use this mode. Reusable-tab preflight skips the empty-state submit check for that mode, while actual injection still waits through `submitPrompt()`.
 - Cancelling a broadcast only closes tabs opened for that broadcast. Reused tabs are preserved.
 
 ### Custom service permissions
@@ -134,7 +137,7 @@ Favorite runs use the same popup-side context preparation for `{{url}}`, `{{titl
 - Export/import v9 includes comparison notes, prompt experiments, template packs, and service groups. Imports from v8 and older payloads keep those collections empty when they are absent.
 - Runtime sites keep structured selector verification metadata: `verifiedAt`, `verifiedRoute`, `verifiedAuthState`, `verifiedLocale`, `verifiedVersion`, plus normalized `supportedRoutes`. Legacy `lastVerified` remains for compatibility and is derived from `verifiedAt` when present.
 - `{{counter}}` preview uses `current + 1`, but the stored counter only increments when at least one target site is successfully queued.
-- `appSettings.historyLimit` is now a default visible history cap only. Lower values hide older rows in popup/options without deleting stored history, and export/import still operate on the full stored history.
+- `appSettings.historyLimit` is now a default visible history cap only. Lower values hide older rows in popup/options without deleting stored history, and export/import still operate on the full stored history up to the 1000-entry storage hard cap.
 - History and last-broadcast records store structured `siteResults` (`SiteInjectionResult`) instead of plain status strings.
 - History and last-broadcast records also store `targetSnapshots` so retries and history replay reuse the original per-site resolved prompt and routing mode.
 - History replay should disable stale specific-tab snapshots in the resend modal instead of silently falling back to default routing.

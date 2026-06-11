@@ -1,4 +1,9 @@
-import { LOCAL_STORAGE_KEYS } from "./constants";
+import {
+  EMERGENCY_STORED_COMPARISON_NOTES,
+  LOCAL_STORAGE_KEYS,
+  MAX_AUTO_CAPTURED_RESPONSE_LENGTH,
+  MAX_STORED_COMPARISON_NOTES,
+} from "./constants";
 import { buildFavoriteEntry } from "./favorites-store";
 import {
   ensureUniqueStringId,
@@ -10,7 +15,7 @@ import {
   safeArray,
   sortByDateDesc,
 } from "./normalizers";
-import { readLocal, writeLocal } from "./storage";
+import { isStorageQuotaError, readLocal, writeLocal } from "./storage";
 import type {
   BroadcastComparisonNote,
   PromptExperiment,
@@ -36,25 +41,58 @@ export async function getComparisonNotes(): Promise<BroadcastComparisonNote[]> {
     LOCAL_STORAGE_KEYS.comparisonNotes,
     [],
   );
-  return sortByDateDesc(
+  return capStoredComparisonNotes(sortByDateDesc(
     safeArray(rawValue).map((entry, index) =>
       normalizeComparisonNote(entry, {}, index),
     ),
     "updatedAt",
-  ).filter((entry) => entry.historyId > 0 && entry.serviceId && entry.responseText.trim());
+  ).filter((entry) => entry.historyId > 0 && entry.serviceId && entry.responseText.trim()));
+}
+
+export function capStoredComparisonNotes(
+  notes: BroadcastComparisonNote[],
+  limit = MAX_STORED_COMPARISON_NOTES,
+): BroadcastComparisonNote[] {
+  const normalizedLimit = Number.isFinite(Number(limit))
+    ? Math.max(1, Math.round(Number(limit)))
+    : MAX_STORED_COMPARISON_NOTES;
+  return sortByDateDesc(
+    safeArray<BroadcastComparisonNote>(notes),
+    "updatedAt",
+  ).slice(0, normalizedLimit);
+}
+
+export function capAutoCapturedResponseText(value: unknown): string {
+  const text = typeof value === "string" ? value : String(value ?? "");
+  return text.length > MAX_AUTO_CAPTURED_RESPONSE_LENGTH
+    ? text.slice(0, MAX_AUTO_CAPTURED_RESPONSE_LENGTH)
+    : text;
 }
 
 export async function setComparisonNotes(
   value: unknown[],
 ): Promise<BroadcastComparisonNote[]> {
-  const normalized = sortByDateDesc(
+  const normalized = capStoredComparisonNotes(sortByDateDesc(
     safeArray(value).map((entry, index) =>
       normalizeComparisonNote(entry, {}, index),
     ),
     "updatedAt",
-  ).filter((entry) => entry.historyId > 0 && entry.serviceId && entry.responseText.trim());
-  await writeLocal(LOCAL_STORAGE_KEYS.comparisonNotes, normalized);
-  return normalized;
+  ).filter((entry) => entry.historyId > 0 && entry.serviceId && entry.responseText.trim()));
+  try {
+    await writeLocal(LOCAL_STORAGE_KEYS.comparisonNotes, normalized);
+    return normalized;
+  } catch (error) {
+    if (!isStorageQuotaError(error)) {
+      throw error;
+    }
+
+    const emergency = capStoredComparisonNotes(
+      normalized,
+      EMERGENCY_STORED_COMPARISON_NOTES,
+    );
+    await writeLocal(LOCAL_STORAGE_KEYS.comparisonNotes, emergency);
+    return emergency;
+  }
 }
 
 export async function saveComparisonNote(

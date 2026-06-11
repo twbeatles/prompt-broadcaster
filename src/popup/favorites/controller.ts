@@ -5,20 +5,10 @@ import {
   updateFavoriteMeta,
   updateFavoriteTitle,
 } from "../../shared/prompts";
-import {
-  getActiveFavoriteRunJobByFavoriteId,
-  getLatestFavoriteRunJobByFavoriteId,
-} from "../../shared/runtime-state";
 import type { FavoritePrompt } from "../../shared/types/models";
-import { popupDom } from "../app/dom";
-import { buildEmptyState, buildFavoriteItemMarkup } from "../app/list-markup";
-import { sortFavoriteItemsForDisplay } from "../app/sorting";
 import { state } from "../app/state";
-import { matchesFavoriteSearch } from "../../shared/prompts/search";
-import { msg, t } from "../app/i18n";
-import { escapeAttribute, escapeHtml } from "../app/helpers";
-
-const { favoritesList } = popupDom.favorites;
+import { t } from "../app/i18n";
+import { renderFavoritesList } from "./controller/rendering";
 
 interface FavoritesControllerDeps {
   switchTab: (tabId: "compose" | "history" | "favorites" | "settings") => void;
@@ -28,65 +18,6 @@ interface FavoritesControllerDeps {
   setStatus: (text: string, type?: string) => void;
   showAppToast: (input: string, type?: string, duration?: number) => void;
   getUnknownErrorText: () => string;
-}
-
-function getUniqueFavoriteTags(): string[] {
-  const tagSet = new Set<string>();
-  state.favorites.forEach((item) => {
-    (item.tags ?? []).forEach((tag) => tagSet.add(tag));
-  });
-  return [...tagSet].sort();
-}
-
-function getUniqueFavoriteFolders(): string[] {
-  const folderSet = new Set<string>();
-  state.favorites.forEach((item) => {
-    if (item.folder && item.folder.trim()) {
-      folderSet.add(item.folder.trim());
-    }
-  });
-  return [...folderSet].sort();
-}
-
-function renderFavoritesFilterBar(): void {
-  const tags = getUniqueFavoriteTags();
-  const folders = getUniqueFavoriteFolders();
-
-  if (tags.length === 0 && folders.length === 0) {
-    document.getElementById("favorites-filter-bar")?.remove();
-    return;
-  }
-
-  let bar = document.getElementById("favorites-filter-bar");
-  if (!bar) {
-    bar = document.createElement("div");
-    bar.id = "favorites-filter-bar";
-    bar.className = "favorites-filter-bar";
-    favoritesList.parentElement?.insertBefore(bar, favoritesList);
-  }
-
-  const allLabel = msg("popup_favorite_filter_all") || "All";
-  const activeTag = state.favoritesTagFilter;
-  const activeFolder = state.favoritesFolderFilter;
-
-  bar.innerHTML = `
-    <div class="filter-chips">
-      <button class="filter-chip${!activeTag && !activeFolder ? " active" : ""}" data-filter-all="favorites">${escapeHtml(allLabel)}</button>
-      ${folders.map((folder) => `<button class="filter-chip folder-chip${activeFolder === folder ? " active" : ""}" data-filter-folder="${escapeAttribute(folder)}">📁 ${escapeHtml(folder)}</button>`).join("")}
-      ${tags.map((tag) => `<button class="filter-chip tag-chip${activeTag === tag ? " active" : ""}" data-filter-tag="${escapeAttribute(tag)}">#${escapeHtml(tag)}</button>`).join("")}
-    </div>
-  `;
-}
-
-function filterFavoriteItems(items: FavoritePrompt[]): FavoritePrompt[] {
-  let filtered = items.filter((item) => matchesFavoriteSearch(item, state.favoritesSearch));
-  if (state.favoritesTagFilter) {
-    filtered = filtered.filter((item) => (item.tags ?? []).includes(state.favoritesTagFilter));
-  }
-  if (state.favoritesFolderFilter) {
-    filtered = filtered.filter((item) => (item.folder ?? "").trim() === state.favoritesFolderFilter);
-  }
-  return sortFavoriteItemsForDisplay(filtered, state.settings.favoriteSort);
 }
 
 export function createFavoritesController(deps: FavoritesControllerDeps) {
@@ -102,30 +33,6 @@ export function createFavoritesController(deps: FavoritesControllerDeps) {
 
   function getFavoriteById(favoriteId: string): FavoritePrompt | null {
     return state.favorites.find((entry) => String(entry.id) === String(favoriteId)) ?? null;
-  }
-
-  function renderFavoritesList(): void {
-    renderFavoritesFilterBar();
-    const items = filterFavoriteItems(state.favorites);
-
-    if (items.length === 0) {
-      favoritesList.innerHTML = buildEmptyState(
-        state.favoritesSearch || state.favoritesTagFilter || state.favoritesFolderFilter
-          ? t.noSearchResults
-          : t.favoritesEmpty,
-      );
-      return;
-    }
-
-    favoritesList.innerHTML = items
-        .map((item) => buildFavoriteItemMarkup(item, {
-          openMenuKey: state.openMenuKey,
-          runtimeSites: state.runtimeSites,
-          latestJob:
-            getActiveFavoriteRunJobByFavoriteId(state.favoriteJobs, item.id)
-            ?? getLatestFavoriteRunJobByFavoriteId(state.favoriteJobs, item.id),
-        }))
-        .join("");
   }
 
   function setFavoriteTitleInState(favoriteId: string, title: string): void {

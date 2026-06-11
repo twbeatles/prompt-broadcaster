@@ -14,6 +14,7 @@ interface RuntimeErrorFallback {
 
 export interface RuntimeHandler<TAction extends RuntimeAction> {
   sync?: boolean;
+  senderPolicy?: RuntimeSenderPolicy;
   run: (
     message: RuntimeMessageOf<TAction>,
     sender: chrome.runtime.MessageSender,
@@ -24,6 +25,8 @@ export interface RuntimeHandler<TAction extends RuntimeAction> {
     fallback: RuntimeErrorFallback,
   ) => RuntimeResponseOf<TAction>;
 }
+
+export type RuntimeSenderPolicy = "extension" | "content" | "any";
 
 export type RuntimeHandlerMap = {
   [TAction in RuntimeAction]?: RuntimeHandler<TAction>;
@@ -56,12 +59,36 @@ function buildFallback<TAction extends RuntimeAction>(
     : (fallback as RuntimeResponseOf<TAction>);
 }
 
-function isTrustedSender(sender: chrome.runtime.MessageSender): boolean {
-  if (sender?.tab?.id) {
-    return true;
+function getSenderKind(
+  sender: chrome.runtime.MessageSender,
+): "extension" | "content" | null {
+  const extensionOrigin = chrome.runtime.getURL("");
+  if (sender?.id === chrome.runtime.id && sender?.url?.startsWith(extensionOrigin)) {
+    return "extension";
   }
 
-  return sender?.id === chrome.runtime.id;
+  if (Number.isFinite(sender?.tab?.id)) {
+    return "content";
+  }
+
+  if (sender?.id === chrome.runtime.id) {
+    return "extension";
+  }
+
+  return null;
+}
+
+function isTrustedSender(
+  sender: chrome.runtime.MessageSender,
+  handler: RuntimeHandler<RuntimeAction>,
+): boolean {
+  const senderKind = getSenderKind(sender);
+  if (!senderKind) {
+    return false;
+  }
+
+  const policy = handler.senderPolicy ?? "extension";
+  return policy === "any" || policy === senderKind;
 }
 
 function respondWith<TAction extends RuntimeAction>(
@@ -91,10 +118,6 @@ export function registerRuntimeMessageRouter(
       sender,
       sendResponse,
     ): boolean => {
-      if (!isTrustedSender(sender)) {
-        return false;
-      }
-
       const action = message?.action as RuntimeAction | undefined;
       if (!action) {
         return false;
@@ -102,6 +125,10 @@ export function registerRuntimeMessageRouter(
 
       const handler = handlers[action] as RuntimeHandler<RuntimeAction> | undefined;
       if (!handler) {
+        return false;
+      }
+
+      if (!isTrustedSender(sender, handler)) {
         return false;
       }
 

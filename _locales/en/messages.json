@@ -1950,6 +1950,12 @@
   "options_import_report_rejected_empty": {
     "message": "No rejected services."
   },
+  "toast_prompt_history_save_failed": {
+    "message": "Broadcast finished, but prompt history could not be saved."
+  },
+  "toast_auto_capture_save_failed": {
+    "message": "Automatic response capture could not be saved."
+  },
   "result_code_submitted": {
     "message": "Submitted"
   },

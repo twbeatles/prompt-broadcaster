@@ -1,5 +1,9 @@
 import { ensureBroadcastTargetSnapshots } from "../broadcast/target-snapshots";
-import { LOCAL_STORAGE_KEYS } from "./constants";
+import {
+  EMERGENCY_STORED_PROMPT_HISTORY,
+  LOCAL_STORAGE_KEYS,
+  MAX_STORED_PROMPT_HISTORY,
+} from "./constants";
 import {
   ensureUniqueNumericId,
   normalizeExecutionTrigger,
@@ -13,7 +17,7 @@ import {
   sortByDateDesc,
 } from "./normalizers";
 import { getHistoryLimit } from "./settings-store";
-import { readLocal, writeLocal } from "./storage";
+import { isStorageQuotaError, readLocal, writeLocal } from "./storage";
 import type { PromptHistoryItem } from "../types/models";
 
 function asHistoryRecord(entry: unknown): Record<string, unknown> {
@@ -94,9 +98,19 @@ export function buildHistoryEntry(entry: unknown): PromptHistoryItem {
   };
 }
 
+export function capStoredPromptHistory(
+  historyItems: PromptHistoryItem[],
+  limit = MAX_STORED_PROMPT_HISTORY,
+): PromptHistoryItem[] {
+  const normalizedLimit = Number.isFinite(Number(limit))
+    ? Math.max(1, Math.round(Number(limit)))
+    : MAX_STORED_PROMPT_HISTORY;
+  return sortByDateDesc(safeArray<PromptHistoryItem>(historyItems)).slice(0, normalizedLimit);
+}
+
 export async function getStoredPromptHistory(): Promise<PromptHistoryItem[]> {
   const rawHistory = await readLocal(LOCAL_STORAGE_KEYS.history, []);
-  return sortByDateDesc(
+  return capStoredPromptHistory(
     safeArray(rawHistory).map((item) => buildHistoryEntry(item))
   );
 }
@@ -118,12 +132,25 @@ export async function getPromptHistory(): Promise<PromptHistoryItem[]> {
 }
 
 export async function setPromptHistory(historyItems: unknown[]): Promise<PromptHistoryItem[]> {
-  const normalized = sortByDateDesc(
+  const normalized = capStoredPromptHistory(
     safeArray(historyItems).map((item) => buildHistoryEntry(item))
   );
 
-  await writeLocal(LOCAL_STORAGE_KEYS.history, normalized);
-  return normalized;
+  try {
+    await writeLocal(LOCAL_STORAGE_KEYS.history, normalized);
+    return normalized;
+  } catch (error) {
+    if (!isStorageQuotaError(error)) {
+      throw error;
+    }
+
+    const emergency = capStoredPromptHistory(
+      normalized,
+      EMERGENCY_STORED_PROMPT_HISTORY,
+    );
+    await writeLocal(LOCAL_STORAGE_KEYS.history, emergency);
+    return emergency;
+  }
 }
 
 export async function appendPromptHistory(entry: unknown): Promise<PromptHistoryItem> {
