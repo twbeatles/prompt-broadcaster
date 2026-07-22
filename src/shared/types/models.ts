@@ -313,6 +313,8 @@ export interface PendingSelectorCheckRecord {
   count: number;
   firstSeenAt: number;
   lastSeenAt: number;
+  /** True after the miss streak has already been escalated in this session. */
+  promoted?: boolean;
 }
 
 export interface UiToastAction {

@@ -1,12 +1,14 @@
 export {
   normalizeBoolean,
   normalizeBroadcastCounter,
-  normalizeFavoriteSort,
   normalizeHistoryLimit,
-  normalizeHistorySort,
-  normalizeSettings,
   normalizeWaitMsMultiplier,
   safeArray,
   safeObject,
   safeText,
-} from "./core";
+} from "./primitives";
+export {
+  normalizeFavoriteSort,
+  normalizeHistorySort,
+} from "./enums";
+export { normalizeSettings } from "./settings-normalize";

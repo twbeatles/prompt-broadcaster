@@ -1,177 +1,3 @@
-// src/shared/template/constants.ts
-var TEMPLATE_VARIABLE_PATTERN = /{{\s*([^{}]+?)\s*}}/g;
-var SYSTEM_TEMPLATE_VARIABLES = Object.freeze({
-  date: "date",
-  time: "time",
-  weekday: "weekday",
-  clipboard: "clipboard",
-  url: "url",
-  title: "title",
-  selection: "selection",
-  counter: "counter",
-  random: "random"
-});
-var SYSTEM_TEMPLATE_DEFINITIONS = Object.freeze({
-  [SYSTEM_TEMPLATE_VARIABLES.date]: {
-    aliases: ["date", "날짜"],
-    labels: { ko: "날짜", en: "date" }
-  },
-  [SYSTEM_TEMPLATE_VARIABLES.time]: {
-    aliases: ["time", "시간"],
-    labels: { ko: "시간", en: "time" }
-  },
-  [SYSTEM_TEMPLATE_VARIABLES.weekday]: {
-    aliases: ["weekday", "요일"],
-    labels: { ko: "요일", en: "weekday" }
-  },
-  [SYSTEM_TEMPLATE_VARIABLES.clipboard]: {
-    aliases: ["clipboard", "클립보드"],
-    labels: { ko: "클립보드", en: "clipboard" }
-  },
-  [SYSTEM_TEMPLATE_VARIABLES.url]: {
-    aliases: ["url", "주소"],
-    labels: { ko: "현재 탭 URL", en: "current tab URL" }
-  },
-  [SYSTEM_TEMPLATE_VARIABLES.title]: {
-    aliases: ["title", "제목"],
-    labels: { ko: "현재 탭 제목", en: "current tab title" }
-  },
-  [SYSTEM_TEMPLATE_VARIABLES.selection]: {
-    aliases: ["selection", "선택"],
-    labels: { ko: "선택한 텍스트", en: "selected text" }
-  },
-  [SYSTEM_TEMPLATE_VARIABLES.counter]: {
-    aliases: ["counter", "카운터"],
-    labels: { ko: "카운터", en: "counter" }
-  },
-  [SYSTEM_TEMPLATE_VARIABLES.random]: {
-    aliases: ["random", "랜덤"],
-    labels: { ko: "랜덤 숫자", en: "random number" }
-  }
-});
-var SYSTEM_TEMPLATE_ALIAS_MAP = new Map(
-  Object.entries(SYSTEM_TEMPLATE_DEFINITIONS).flatMap(
-    ([canonicalName, definition]) => definition.aliases.map((alias) => [alias.toLowerCase(), canonicalName])
-  )
-);
-var SYSTEM_TEMPLATE_KEYS = new Set(Object.keys(SYSTEM_TEMPLATE_DEFINITIONS));
-var WEEKDAY_LOCALES = Object.freeze({
-  ko: "ko-KR",
-  en: "en-US"
-});
-
-// src/shared/template/normalize.ts
-function pad2(value) {
-  return String(value).padStart(2, "0");
-}
-function normalizeLocale(locale) {
-  return typeof locale === "string" && locale.toLowerCase().startsWith("ko") ? "ko" : "en";
-}
-function normalizeTemplateVariableName(value) {
-  return typeof value === "string" ? value.trim() : "";
-}
-function canonicalizeTemplateVariableName(value) {
-  const normalizedValue = normalizeTemplateVariableName(value);
-  if (!normalizedValue) {
-    return "";
-  }
-  return SYSTEM_TEMPLATE_ALIAS_MAP.get(normalizedValue.toLowerCase()) ?? normalizedValue;
-}
-function normalizeTemplateValueRecord(values = {}) {
-  if (!values || typeof values !== "object" || Array.isArray(values)) {
-    return {};
-  }
-  return Object.fromEntries(
-    Object.entries(values).map(([key, value]) => [
-      canonicalizeTemplateVariableName(key),
-      value
-    ])
-  );
-}
-
-// src/shared/template/detect.ts
-function detectTemplateVariables(template) {
-  const source = typeof template === "string" ? template : "";
-  const seen = /* @__PURE__ */ new Set();
-  const variables = [];
-  for (const match of source.matchAll(TEMPLATE_VARIABLE_PATTERN)) {
-    const canonicalName = canonicalizeTemplateVariableName(match[1]);
-    if (!canonicalName || seen.has(canonicalName)) {
-      continue;
-    }
-    seen.add(canonicalName);
-    variables.push({
-      name: canonicalName,
-      kind: SYSTEM_TEMPLATE_KEYS.has(canonicalName) ? "system" : "user"
-    });
-  }
-  return variables;
-}
-
-// src/shared/template/values.ts
-function buildSystemTemplateValues(now = /* @__PURE__ */ new Date(), options = {}) {
-  const date = now instanceof Date ? now : /* @__PURE__ */ new Date();
-  const locale = normalizeLocale(options?.locale);
-  const values = {
-    [SYSTEM_TEMPLATE_VARIABLES.date]: [
-      date.getFullYear(),
-      pad2(date.getMonth() + 1),
-      pad2(date.getDate())
-    ].join("-"),
-    [SYSTEM_TEMPLATE_VARIABLES.time]: `${pad2(date.getHours())}:${pad2(date.getMinutes())}`,
-    [SYSTEM_TEMPLATE_VARIABLES.weekday]: new Intl.DateTimeFormat(WEEKDAY_LOCALES[locale], {
-      weekday: locale === "ko" ? "short" : "long"
-    }).format(date),
-    [SYSTEM_TEMPLATE_VARIABLES.random]: String(Math.floor(Math.random() * 1e3) + 1)
-  };
-  if (options?.extra && typeof options.extra === "object") {
-    if (typeof options.extra.url === "string") {
-      values[SYSTEM_TEMPLATE_VARIABLES.url] = options.extra.url;
-    }
-    if (typeof options.extra.title === "string") {
-      values[SYSTEM_TEMPLATE_VARIABLES.title] = options.extra.title;
-    }
-    if (typeof options.extra.selection === "string") {
-      values[SYSTEM_TEMPLATE_VARIABLES.selection] = options.extra.selection;
-    }
-    if (typeof options.extra.counter === "string" || typeof options.extra.counter === "number") {
-      values[SYSTEM_TEMPLATE_VARIABLES.counter] = String(options.extra.counter);
-    }
-  }
-  return values;
-}
-
-// src/shared/template/render.ts
-function renderTemplatePrompt(template, values = {}) {
-  const source = typeof template === "string" ? template : "";
-  const normalizedValues = normalizeTemplateValueRecord(values);
-  return source.replace(TEMPLATE_VARIABLE_PATTERN, (_match, rawName) => {
-    const normalizedName = normalizeTemplateVariableName(rawName);
-    const canonicalName = canonicalizeTemplateVariableName(rawName);
-    if (!normalizedName) {
-      return "";
-    }
-    if (Object.prototype.hasOwnProperty.call(normalizedValues, canonicalName)) {
-      return String(normalizedValues[canonicalName] ?? "");
-    }
-    if (Object.prototype.hasOwnProperty.call(normalizedValues, normalizedName)) {
-      return String(normalizedValues[normalizedName] ?? "");
-    }
-    return `{{${normalizedName}}}`;
-  });
-}
-
-// src/shared/broadcast/resolution.ts
-function pickBroadcastTargetPrompt(target, fallbackPrompt = "") {
-  if (typeof target?.resolvedPrompt === "string") {
-    return target.resolvedPrompt;
-  }
-  if (typeof target?.promptOverride === "string" && target.promptOverride.trim()) {
-    return target.promptOverride.trim();
-  }
-  return String(fallbackPrompt ?? "");
-}
-
 // src/shared/prompts/constants.ts
 var LOCAL_STORAGE_KEYS = Object.freeze({
   history: "promptHistory",
@@ -211,60 +37,7 @@ var DEFAULT_SETTINGS = Object.freeze({
   siteOrder: []
 });
 
-// src/shared/prompts/normalizers/core.ts
-var VALID_HISTORY_SORTS = /* @__PURE__ */ new Set([
-  "latest",
-  "oldest",
-  "mostSuccess",
-  "mostFailure"
-]);
-var VALID_FAVORITE_SORTS = /* @__PURE__ */ new Set([
-  "recentUsed",
-  "usageCount",
-  "title",
-  "createdAt"
-]);
-var VALID_FAVORITE_MODES = /* @__PURE__ */ new Set(["single", "chain"]);
-var VALID_CAPTURE_MODES = /* @__PURE__ */ new Set([
-  "manual",
-  "selection",
-  "auto"
-]);
-var VALID_CHAIN_FAILURE_POLICIES = /* @__PURE__ */ new Set([
-  "stop",
-  "continue",
-  "retry-once"
-]);
-var VALID_BROADCAST_TARGET_MODES = /* @__PURE__ */ new Set([
-  "default",
-  "new",
-  "tab"
-]);
-var VALID_SCHEDULE_REPEATS = /* @__PURE__ */ new Set([
-  "none",
-  "daily",
-  "weekday",
-  "weekly"
-]);
-var VALID_EXECUTION_TRIGGERS = /* @__PURE__ */ new Set([
-  "popup",
-  "scheduled",
-  "palette",
-  "options"
-]);
-var VALID_RESULT_CODES = /* @__PURE__ */ new Set([
-  "submitted",
-  "selector_timeout",
-  "auth_required",
-  "submit_failed",
-  "strategy_exhausted",
-  "permission_denied",
-  "tab_create_failed",
-  "tab_closed",
-  "injection_timeout",
-  "cancelled",
-  "unexpected_error"
-]);
+// src/shared/prompts/normalizers/primitives.ts
 function safeText(value) {
   return typeof value === "string" ? value : "";
 }
@@ -339,6 +112,91 @@ function normalizeWaitMsMultiplier(value) {
   );
   return Math.round(clamped * 10) / 10;
 }
+function sortByDateDesc(items, field = "createdAt") {
+  return [...items].sort((left, right) => {
+    const leftRecord = left;
+    const rightRecord = right;
+    const leftTime = Date.parse(String(leftRecord[field] ?? "")) || 0;
+    const rightTime = Date.parse(String(rightRecord[field] ?? "")) || 0;
+    return rightTime - leftTime;
+  });
+}
+function ensureUniqueNumericId(items, preferredId) {
+  let candidate = Number.isFinite(preferredId) ? preferredId : Date.now();
+  const usedIds = new Set(items.map((item) => Number(item.id)));
+  while (usedIds.has(candidate)) {
+    candidate += 1;
+  }
+  return candidate;
+}
+function ensureUniqueStringId(items, preferredId) {
+  let candidate = typeof preferredId === "string" && preferredId.trim() ? preferredId.trim() : `fav-${Date.now()}`;
+  const usedIds = new Set(items.map((item) => String(item.id)));
+  while (usedIds.has(candidate)) {
+    candidate = `${candidate}-1`;
+  }
+  return candidate;
+}
+function normalizeTags(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return Array.from(
+    new Set(
+      value.map((tag) => safeText(tag).trim()).filter((tag) => tag.length > 0 && tag.length <= 30)
+    )
+  ).slice(0, 10);
+}
+function createStorageItemId(prefix, preferredId, fallbackIndex = 0) {
+  const trimmedId = safeText(preferredId).trim();
+  if (trimmedId) {
+    return trimmedId;
+  }
+  const safePrefix = safeText(prefix).trim() || "item";
+  return `${safePrefix}-${Date.now()}-${fallbackIndex}`;
+}
+
+// src/shared/prompts/normalizers/enums.ts
+var VALID_HISTORY_SORTS = /* @__PURE__ */ new Set([
+  "latest",
+  "oldest",
+  "mostSuccess",
+  "mostFailure"
+]);
+var VALID_FAVORITE_SORTS = /* @__PURE__ */ new Set([
+  "recentUsed",
+  "usageCount",
+  "title",
+  "createdAt"
+]);
+var VALID_FAVORITE_MODES = /* @__PURE__ */ new Set(["single", "chain"]);
+var VALID_CAPTURE_MODES = /* @__PURE__ */ new Set([
+  "manual",
+  "selection",
+  "auto"
+]);
+var VALID_CHAIN_FAILURE_POLICIES = /* @__PURE__ */ new Set([
+  "stop",
+  "continue",
+  "retry-once"
+]);
+var VALID_BROADCAST_TARGET_MODES = /* @__PURE__ */ new Set([
+  "default",
+  "new",
+  "tab"
+]);
+var VALID_SCHEDULE_REPEATS = /* @__PURE__ */ new Set([
+  "none",
+  "daily",
+  "weekday",
+  "weekly"
+]);
+var VALID_EXECUTION_TRIGGERS = /* @__PURE__ */ new Set([
+  "popup",
+  "scheduled",
+  "palette",
+  "options"
+]);
 function normalizeHistorySort(value) {
   return VALID_HISTORY_SORTS.has(value) ? value : DEFAULT_HISTORY_SORT;
 }
@@ -363,32 +221,21 @@ function normalizeScheduleRepeat(value) {
 function normalizeExecutionTrigger(value) {
   return VALID_EXECUTION_TRIGGERS.has(value) ? value : void 0;
 }
-function normalizeSettings(value) {
-  const settings = safeObject(value);
-  return {
-    historyLimit: normalizeHistoryLimit(settings.historyLimit),
-    autoClosePopup: normalizeBoolean(
-      settings.autoClosePopup,
-      DEFAULT_SETTINGS.autoClosePopup
-    ),
-    desktopNotifications: normalizeBoolean(
-      settings.desktopNotifications,
-      DEFAULT_SETTINGS.desktopNotifications
-    ),
-    reuseExistingTabs: normalizeBoolean(
-      settings.reuseExistingTabs,
-      DEFAULT_SETTINGS.reuseExistingTabs
-    ),
-    autoCaptureResponses: normalizeBoolean(
-      settings.autoCaptureResponses,
-      DEFAULT_SETTINGS.autoCaptureResponses
-    ),
-    waitMsMultiplier: normalizeWaitMsMultiplier(settings.waitMsMultiplier),
-    historySort: normalizeHistorySort(settings.historySort),
-    favoriteSort: normalizeFavoriteSort(settings.favoriteSort),
-    siteOrder: normalizeSiteIdList(settings.siteOrder)
-  };
-}
+
+// src/shared/prompts/normalizers/site-results.ts
+var VALID_RESULT_CODES = /* @__PURE__ */ new Set([
+  "submitted",
+  "selector_timeout",
+  "auth_required",
+  "submit_failed",
+  "strategy_exhausted",
+  "permission_denied",
+  "tab_create_failed",
+  "tab_closed",
+  "injection_timeout",
+  "cancelled",
+  "unexpected_error"
+]);
 function normalizeStatus(value) {
   return typeof value === "string" && value.trim() ? value.trim() : "submitted";
 }
@@ -472,49 +319,8 @@ function normalizeSiteResultsRecord(value) {
     Object.entries(value).map(([siteId, result]) => [safeText(siteId).trim(), normalizeSiteInjectionResult(result)]).filter(([siteId]) => Boolean(siteId))
   );
 }
-function sortByDateDesc(items, field = "createdAt") {
-  return [...items].sort((left, right) => {
-    const leftRecord = left;
-    const rightRecord = right;
-    const leftTime = Date.parse(String(leftRecord[field] ?? "")) || 0;
-    const rightTime = Date.parse(String(rightRecord[field] ?? "")) || 0;
-    return rightTime - leftTime;
-  });
-}
-function ensureUniqueNumericId(items, preferredId) {
-  let candidate = Number.isFinite(preferredId) ? preferredId : Date.now();
-  const usedIds = new Set(items.map((item) => Number(item.id)));
-  while (usedIds.has(candidate)) {
-    candidate += 1;
-  }
-  return candidate;
-}
-function ensureUniqueStringId(items, preferredId) {
-  let candidate = typeof preferredId === "string" && preferredId.trim() ? preferredId.trim() : `fav-${Date.now()}`;
-  const usedIds = new Set(items.map((item) => String(item.id)));
-  while (usedIds.has(candidate)) {
-    candidate = `${candidate}-1`;
-  }
-  return candidate;
-}
-function normalizeTags(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return Array.from(
-    new Set(
-      value.map((tag) => safeText(tag).trim()).filter((tag) => tag.length > 0 && tag.length <= 30)
-    )
-  ).slice(0, 10);
-}
-function createStorageItemId(prefix, preferredId, fallbackIndex = 0) {
-  const trimmedId = safeText(preferredId).trim();
-  if (trimmedId) {
-    return trimmedId;
-  }
-  const safePrefix = safeText(prefix).trim() || "item";
-  return `${safePrefix}-${Date.now()}-${fallbackIndex}`;
-}
+
+// src/shared/prompts/normalizers/entities.ts
 function normalizeComparisonNote(value, fallback = {}, index = 0) {
   const source = safeObject(value);
   const now = (/* @__PURE__ */ new Date()).toISOString();
@@ -672,85 +478,32 @@ function normalizeChainSteps(value, fallback = {}) {
   return [];
 }
 
-// src/shared/broadcast/target-snapshots.ts
-function normalizeTargetMode(value) {
-  if (value === "new" || value === "tab") {
-    return value;
-  }
-  return "default";
-}
-function normalizeTargetTabId(value) {
-  if (value === null || value === void 0 || value === "") {
-    return null;
-  }
-  const numericValue = Number(value);
-  return Number.isFinite(numericValue) ? numericValue : null;
-}
-function buildBroadcastTargetSnapshot(value) {
-  const siteId = safeText(value?.siteId).trim();
-  if (!siteId) {
-    return null;
-  }
+// src/shared/prompts/normalizers/settings-normalize.ts
+function normalizeSettings(value) {
+  const settings = safeObject(value);
   return {
-    siteId,
-    resolvedPrompt: safeText(value?.resolvedPrompt),
-    targetMode: normalizeTargetMode(value?.targetMode),
-    targetTabId: normalizeTargetTabId(value?.targetTabId)
+    historyLimit: normalizeHistoryLimit(settings.historyLimit),
+    autoClosePopup: normalizeBoolean(
+      settings.autoClosePopup,
+      DEFAULT_SETTINGS.autoClosePopup
+    ),
+    desktopNotifications: normalizeBoolean(
+      settings.desktopNotifications,
+      DEFAULT_SETTINGS.desktopNotifications
+    ),
+    reuseExistingTabs: normalizeBoolean(
+      settings.reuseExistingTabs,
+      DEFAULT_SETTINGS.reuseExistingTabs
+    ),
+    autoCaptureResponses: normalizeBoolean(
+      settings.autoCaptureResponses,
+      DEFAULT_SETTINGS.autoCaptureResponses
+    ),
+    waitMsMultiplier: normalizeWaitMsMultiplier(settings.waitMsMultiplier),
+    historySort: normalizeHistorySort(settings.historySort),
+    favoriteSort: normalizeFavoriteSort(settings.favoriteSort),
+    siteOrder: normalizeSiteIdList(settings.siteOrder)
   };
-}
-function normalizeBroadcastTargetSnapshots(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  const seenSiteIds = /* @__PURE__ */ new Set();
-  const snapshots = [];
-  value.forEach((entry) => {
-    const snapshot = buildBroadcastTargetSnapshot(
-      entry && typeof entry === "object" && !Array.isArray(entry) ? {
-        siteId: safeText(entry.siteId),
-        resolvedPrompt: safeText(entry.resolvedPrompt),
-        targetMode: entry.targetMode,
-        targetTabId: normalizeTargetTabId(entry.targetTabId)
-      } : null
-    );
-    if (!snapshot || seenSiteIds.has(snapshot.siteId)) {
-      return;
-    }
-    seenSiteIds.add(snapshot.siteId);
-    snapshots.push(snapshot);
-  });
-  return snapshots;
-}
-function buildFallbackTargetSnapshots(siteIds, prompt) {
-  return normalizeSiteIdList(siteIds).map((siteId) => ({
-    siteId,
-    resolvedPrompt: safeText(prompt),
-    targetMode: "default",
-    targetTabId: null
-  }));
-}
-function ensureBroadcastTargetSnapshots(snapshots, siteIds, prompt) {
-  const normalized = normalizeBroadcastTargetSnapshots(snapshots);
-  if (normalized.length > 0) {
-    return normalized;
-  }
-  return buildFallbackTargetSnapshots(siteIds, prompt);
-}
-function buildQueueTargetSnapshots(targets, fallbackPrompt) {
-  return (Array.isArray(targets) ? targets : []).map((target) => {
-    const siteId = safeText(target?.site?.id ?? target?.siteId).trim();
-    if (!siteId) {
-      return null;
-    }
-    const targetTabId = normalizeTargetTabId(target?.targetTabId);
-    const targetMode = targetTabId ? "tab" : target?.forceNewTab ? "new" : "default";
-    return {
-      siteId,
-      resolvedPrompt: safeText(target?.resolvedPrompt ?? fallbackPrompt),
-      targetMode,
-      targetTabId
-    };
-  }).filter((snapshot) => Boolean(snapshot));
 }
 
 // src/shared/prompts/storage.ts
@@ -1068,6 +821,87 @@ async function setServiceGroups(value) {
   return normalized;
 }
 
+// src/shared/broadcast/target-snapshots.ts
+function normalizeTargetMode(value) {
+  if (value === "new" || value === "tab") {
+    return value;
+  }
+  return "default";
+}
+function normalizeTargetTabId(value) {
+  if (value === null || value === void 0 || value === "") {
+    return null;
+  }
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : null;
+}
+function buildBroadcastTargetSnapshot(value) {
+  const siteId = safeText(value?.siteId).trim();
+  if (!siteId) {
+    return null;
+  }
+  return {
+    siteId,
+    resolvedPrompt: safeText(value?.resolvedPrompt),
+    targetMode: normalizeTargetMode(value?.targetMode),
+    targetTabId: normalizeTargetTabId(value?.targetTabId)
+  };
+}
+function normalizeBroadcastTargetSnapshots(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const seenSiteIds = /* @__PURE__ */ new Set();
+  const snapshots = [];
+  value.forEach((entry) => {
+    const snapshot = buildBroadcastTargetSnapshot(
+      entry && typeof entry === "object" && !Array.isArray(entry) ? {
+        siteId: safeText(entry.siteId),
+        resolvedPrompt: safeText(entry.resolvedPrompt),
+        targetMode: entry.targetMode,
+        targetTabId: normalizeTargetTabId(entry.targetTabId)
+      } : null
+    );
+    if (!snapshot || seenSiteIds.has(snapshot.siteId)) {
+      return;
+    }
+    seenSiteIds.add(snapshot.siteId);
+    snapshots.push(snapshot);
+  });
+  return snapshots;
+}
+function buildFallbackTargetSnapshots(siteIds, prompt) {
+  return normalizeSiteIdList(siteIds).map((siteId) => ({
+    siteId,
+    resolvedPrompt: safeText(prompt),
+    targetMode: "default",
+    targetTabId: null
+  }));
+}
+function ensureBroadcastTargetSnapshots(snapshots, siteIds, prompt) {
+  const normalized = normalizeBroadcastTargetSnapshots(snapshots);
+  if (normalized.length > 0) {
+    return normalized;
+  }
+  return buildFallbackTargetSnapshots(siteIds, prompt);
+}
+function buildQueueTargetSnapshots(targets, fallbackPrompt) {
+  return (Array.isArray(targets) ? targets : []).map((target) => {
+    const siteId = safeText(target?.site?.id ?? target?.siteId).trim();
+    if (!siteId) {
+      return null;
+    }
+    const targetTabId = normalizeTargetTabId(target?.targetTabId);
+    const targetMode = targetTabId ? "tab" : target?.forceNewTab ? "new" : "default";
+    return {
+      siteId,
+      resolvedPrompt: safeText(target?.resolvedPrompt ?? fallbackPrompt),
+      targetMode,
+      targetTabId
+    };
+  }).filter((snapshot) => Boolean(snapshot));
+}
+
 // src/shared/prompts/settings-store.ts
 async function getAppSettings() {
   const rawSettings = await readLocal(LOCAL_STORAGE_KEYS.settings, DEFAULT_SETTINGS);
@@ -1170,34 +1004,37 @@ var AI_SITES = Object.freeze([
     url: "https://chatgpt.com/",
     hostname: "chatgpt.com",
     supportedRoutes: [],
-    inputSelector: "#prompt-textarea, div#prompt-textarea[contenteditable='true'], textarea[aria-label*='chatgpt' i], textarea[aria-label*='채팅' i], textarea[placeholder*='ask' i]",
+    // Prefer ProseMirror / contenteditable surfaces first; legacy #prompt-textarea kept as fallback.
+    inputSelector: "div#prompt-textarea[contenteditable='true'], #prompt-textarea, div.ProseMirror[contenteditable='true'], textarea[aria-label*='chatgpt' i], textarea[aria-label*='채팅' i], textarea[placeholder*='ask' i]",
     fallbackSelectors: [
-      "#prompt-textarea",
       "div#prompt-textarea[contenteditable='true']",
+      "#prompt-textarea",
+      "div.ProseMirror[contenteditable='true']",
       "textarea[aria-label*='chatgpt' i]",
       "textarea[aria-label*='채팅' i]",
       "textarea[placeholder*='ask' i]",
       "textarea.wcDTda_fallbackTextarea",
-      "div.ProseMirror[contenteditable='true']",
       "div[contenteditable='true'][data-id='root']",
-      "main div[contenteditable='true']"
+      "main div[contenteditable='true']",
+      "div[contenteditable='true'][role='textbox']"
     ],
     inputType: "contenteditable",
-    submitSelector: "button[data-testid='send-button'], button[aria-label*='send' i], button[aria-label*='보내기' i]",
+    submitSelector: "button[data-testid='send-button'], button[data-testid='composer-send-button'], button[aria-label*='send' i], button[aria-label*='보내기' i]",
     submitMethod: "click",
     selectorCheckMode: "input-and-conditional-submit",
-    waitMs: 2e3,
+    waitMs: 2500,
     fallback: true,
-    lastVerified: "2026-05",
-    verifiedAt: "2026-05-10",
+    lastVerified: "2026-07",
+    verifiedAt: "2026-07-22",
     verifiedRoute: "/",
     verifiedAuthState: "logged-out",
     verifiedLocale: "ko",
-    verifiedVersion: "chatgpt-web-may-2026",
+    verifiedVersion: "chatgpt-web-jul-2026",
     authSelectors: [
       "form[action*='/auth']",
       "input[name='email']",
       "input[name='username']",
+      "button[data-testid='login-button']",
       "a[href*='cloudflare.com']",
       "#challenge-running",
       ".cf-browser-verification",
@@ -1212,30 +1049,36 @@ var AI_SITES = Object.freeze([
     url: "https://gemini.google.com/app",
     hostname: "gemini.google.com",
     supportedRoutes: ["/app"],
-    inputSelector: "div[contenteditable='true'][role='textbox'], div[aria-label*='Gemini' i][contenteditable='true'][role='textbox'], div.ql-editor.textarea.new-input-ui[contenteditable='true'], div.ql-editor[contenteditable='true'][role='textbox']",
+    // 2026-07-22 probe: ql-editor.textarea.new-input-ui, aria-label "Enter a prompt for Gemini"
+    inputSelector: "div.ql-editor.textarea.new-input-ui[contenteditable='true'], div[aria-label*='prompt for Gemini' i][contenteditable='true'][role='textbox'], div[aria-label*='Gemini' i][contenteditable='true'][role='textbox'], div[contenteditable='true'][role='textbox']",
     fallbackSelectors: [
-      "div[contenteditable='true'][role='textbox']",
-      "div[aria-label*='Gemini' i][contenteditable='true'][role='textbox']",
       "div.ql-editor.textarea.new-input-ui[contenteditable='true']",
       "div.ql-editor[contenteditable='true'][role='textbox']",
+      "div[aria-label*='prompt for Gemini' i][contenteditable='true'][role='textbox']",
+      "div[aria-label*='Gemini' i][contenteditable='true'][role='textbox']",
+      "div[aria-label*='Ask Gemini' i][contenteditable='true']",
+      "div[contenteditable='true'][role='textbox']",
+      "div[contenteditable='true'][data-placeholder*='Gemini' i]",
       "textarea, div[contenteditable='true']"
     ],
     inputType: "contenteditable",
-    submitSelector: "button.send-button, button[aria-label*='send' i], button[aria-label*='보내기' i], button[aria-label*='메시지 보내기' i], button[type='submit']",
+    submitSelector: "button.send-button, button[aria-label*='send' i], button[aria-label*='보내기' i], button[aria-label*='메시지 보내기' i], button[aria-label*='Submit' i], button[type='submit']",
     submitMethod: "click",
     selectorCheckMode: "input-and-conditional-submit",
     waitMs: 2500,
     fallback: true,
-    lastVerified: "2026-05",
-    verifiedAt: "2026-05-10",
+    lastVerified: "2026-07",
+    verifiedAt: "2026-07-22",
     verifiedRoute: "/app",
     verifiedAuthState: "logged-out",
-    verifiedLocale: "ko",
-    verifiedVersion: "gemini-app-may-2026",
+    verifiedLocale: "en-US",
+    verifiedVersion: "gemini-app-jul-2026",
     authSelectors: [
       "a[href*='accounts.google.com/ServiceLogin']",
       "a[aria-label*='로그인']",
       "a[aria-label*='sign in' i]",
+      "button[aria-label*='Sign in' i]",
+      "button[aria-label*='로그인' i]",
       "input[type='email']",
       "input[type='password']"
     ]
@@ -1246,26 +1089,28 @@ var AI_SITES = Object.freeze([
     url: "https://claude.ai/new",
     hostname: "claude.ai",
     supportedRoutes: ["/new"],
-    inputSelector: "div[contenteditable='true'][role='textbox'], div[contenteditable='true'][aria-label*='Claude' i], div[contenteditable='true'][aria-label*='prompt' i]",
+    inputSelector: "div[contenteditable='true'][role='textbox'], div[contenteditable='true'][aria-label*='Claude' i], div[contenteditable='true'][aria-label*='prompt' i], div.ProseMirror[contenteditable='true']",
     fallbackSelectors: [
       "div[contenteditable='true'][role='textbox']",
       "div[contenteditable='true'][aria-label*='Claude' i]",
       "div[contenteditable='true'][aria-label*='prompt' i]",
+      "div.ProseMirror[contenteditable='true']",
       "div[contenteditable='true']",
+      "fieldset div[contenteditable='true']",
       "textarea"
     ],
     inputType: "contenteditable",
-    submitSelector: "button[aria-label='Send message'], button[aria-label*='send' i], button[aria-label*='submit' i], button[aria-label*='보내' i], button[aria-label*='전송' i]",
+    submitSelector: "button[aria-label='Send message'], button[aria-label*='send message' i], button[aria-label*='send' i], button[aria-label*='submit' i], button[aria-label*='보내' i], button[aria-label*='전송' i]",
     submitMethod: "click",
     selectorCheckMode: "input-and-conditional-submit",
-    waitMs: 1500,
+    waitMs: 2e3,
     fallback: true,
-    lastVerified: "2026-05",
-    verifiedAt: "2026-05-10",
+    lastVerified: "2026-07",
+    verifiedAt: "2026-07-22",
     verifiedRoute: "/new",
     verifiedAuthState: "logged-out",
     verifiedLocale: "en-US",
-    verifiedVersion: "claude-web-may-2026",
+    verifiedVersion: "claude-web-jul-2026",
     authSelectors: [
       "input#email",
       "input[type='email']",
@@ -1285,11 +1130,15 @@ var AI_SITES = Object.freeze([
     url: "https://grok.com/",
     hostname: "grok.com",
     supportedRoutes: [],
-    inputSelector: "textarea[aria-label*='grok' i], textarea[placeholder*='help' i], textarea[placeholder*='무엇' i], textarea",
+    // 2026-07-22 probe: textarea aria-label "Grok에게…", placeholder "무엇을 알고 싶으세요?"
+    inputSelector: "textarea[aria-label*='grok' i], textarea[placeholder*='알고 싶' i], textarea[placeholder*='무엇' i], textarea[placeholder*='help' i], textarea[aria-label*='Ask' i]",
     fallbackSelectors: [
       "textarea[aria-label*='grok' i]",
-      "textarea[placeholder*='help' i]",
+      "textarea[placeholder*='알고 싶' i]",
       "textarea[placeholder*='무엇' i]",
+      "textarea[placeholder*='help' i]",
+      "textarea[aria-label*='Ask' i]",
+      "textarea:not([aria-hidden='true'])",
       "textarea",
       "div.tiptap.ProseMirror[contenteditable='true']",
       "div.ProseMirror[contenteditable='true'][translate='no']",
@@ -1301,17 +1150,20 @@ var AI_SITES = Object.freeze([
     selectorCheckMode: "input-and-conditional-submit",
     waitMs: 3e3,
     fallback: true,
-    lastVerified: "2026-05",
-    verifiedAt: "2026-05-10",
+    lastVerified: "2026-07",
+    verifiedAt: "2026-07-22",
     verifiedRoute: "/",
     verifiedAuthState: "logged-out",
     verifiedLocale: "ko",
-    verifiedVersion: "grok-web-may-2026",
+    verifiedVersion: "grok-web-jul-2026",
     authSelectors: [
       "input[autocomplete='username']",
       "input[type='password']",
       "a[href*='/sign-in']",
-      "a[href*='/login']"
+      "a[href*='/login']",
+      "button[aria-label*='Sign in' i]",
+      "button[aria-label*='Log in' i]",
+      "button[aria-label*='로그인' i]"
     ]
   },
   {
@@ -1321,11 +1173,12 @@ var AI_SITES = Object.freeze([
     hostname: "www.perplexity.ai",
     hostnameAliases: ["perplexity.ai"],
     supportedRoutes: [],
-    inputSelector: "#ask-input[data-lexical-editor='true'][role='textbox']",
+    inputSelector: "#ask-input[data-lexical-editor='true'][role='textbox'], div#ask-input[contenteditable='true'][role='textbox'], #ask-input[contenteditable='true']",
     fallbackSelectors: [
       "div#ask-input[data-lexical-editor='true'][role='textbox']",
       "div#ask-input[contenteditable='true'][role='textbox']",
       "#ask-input[contenteditable='true']",
+      "div[contenteditable='true'][data-lexical-editor='true']",
       "div[contenteditable='true'][role='textbox']",
       "textarea[aria-label*='Ask' i]",
       "textarea[placeholder*='Ask'][data-testid='search-input']",
@@ -1334,17 +1187,17 @@ var AI_SITES = Object.freeze([
       "textarea"
     ],
     inputType: "contenteditable",
-    submitSelector: "button[aria-label*='Submit'][type='submit'], button[type='submit'][aria-label*='검색'], button[aria-label*='submit' i], button[aria-label*='제출' i]",
+    submitSelector: "button[aria-label*='Submit'][type='submit'], button[type='submit'][aria-label*='검색'], button[aria-label*='submit' i], button[aria-label*='제출' i], button[aria-label*='Send' i]",
     submitMethod: "click",
     selectorCheckMode: "input-and-conditional-submit",
-    waitMs: 2e3,
+    waitMs: 2500,
     fallback: true,
-    lastVerified: "2026-05",
-    verifiedAt: "2026-05-10",
+    lastVerified: "2026-07",
+    verifiedAt: "2026-07-22",
     verifiedRoute: "/",
     verifiedAuthState: "soft-gated",
     verifiedLocale: "en-US",
-    verifiedVersion: "perplexity-web-may-2026",
+    verifiedVersion: "perplexity-web-jul-2026",
     authSelectors: [
       "input[type='email']",
       "input[type='password']",
@@ -2408,120 +2261,6 @@ function evaluatePromptExperimentRunLimit(experiment, confirmedLargeRun = false)
   };
 }
 
-// src/shared/broadcast/state.ts
-function clonePendingBroadcastRecord(record) {
-  return {
-    ...record,
-    siteIds: [...record.siteIds ?? []],
-    submittedSiteIds: [...record.submittedSiteIds ?? []],
-    failedSiteIds: [...record.failedSiteIds ?? []],
-    siteResults: { ...record.siteResults ?? {} },
-    targetSnapshots: ensureBroadcastTargetSnapshots(record.targetSnapshots, record.siteIds, record.prompt),
-    openedTabIds: [...record.openedTabIds ?? []],
-    targetTabIdsBySiteId: { ...record.targetTabIdsBySiteId ?? {} },
-    originFavoriteId: record.originFavoriteId ?? null,
-    chainRunId: record.chainRunId ?? null,
-    chainStepIndex: record.chainStepIndex === null || record.chainStepIndex === void 0 ? null : Number(record.chainStepIndex),
-    chainStepCount: record.chainStepCount === null || record.chainStepCount === void 0 ? null : Number(record.chainStepCount),
-    trigger: record.trigger
-  };
-}
-function summarizePendingBroadcastStatus(record) {
-  if (!record) {
-    return "idle";
-  }
-  if (record.completed < record.total) {
-    return "sending";
-  }
-  if ((record.submittedSiteIds ?? []).length === 0) {
-    return "failed";
-  }
-  if ((record.failedSiteIds ?? []).length > 0) {
-    return "partial";
-  }
-  return "submitted";
-}
-function buildPendingBroadcastSummary(record, overrides = {}, now = (/* @__PURE__ */ new Date()).toISOString()) {
-  const status = summarizePendingBroadcastStatus(record);
-  return {
-    broadcastId: record.id,
-    status,
-    prompt: record.prompt,
-    siteIds: [...record.siteIds ?? []],
-    total: Number(record.total ?? 0),
-    completed: Number(record.completed ?? 0),
-    submittedSiteIds: [...record.submittedSiteIds ?? []],
-    failedSiteIds: [...record.failedSiteIds ?? []],
-    siteResults: { ...record.siteResults ?? {} },
-    targetSnapshots: ensureBroadcastTargetSnapshots(record.targetSnapshots, record.siteIds, record.prompt),
-    startedAt: record.startedAt ?? now,
-    finishedAt: record.completed >= record.total && status !== "sending" ? now : "",
-    ...overrides
-  };
-}
-function getUnresolvedPendingBroadcastSiteIds(record) {
-  const siteResults = record?.siteResults ?? {};
-  return Array.isArray(record?.siteIds) ? record.siteIds.filter((siteId) => !siteResults?.[siteId]) : [];
-}
-function applyPendingBroadcastSiteResult(record, siteId, resultInput, now = (/* @__PURE__ */ new Date()).toISOString()) {
-  if (!record) {
-    return {
-      summary: null,
-      nextRecord: null,
-      completedRecord: null
-    };
-  }
-  const normalizedSiteId = typeof siteId === "string" ? siteId.trim() : "";
-  if (!normalizedSiteId) {
-    return {
-      summary: buildPendingBroadcastSummary(record, {}, now),
-      nextRecord: clonePendingBroadcastRecord(record),
-      completedRecord: null
-    };
-  }
-  if (record.siteResults?.[normalizedSiteId]) {
-    return {
-      summary: buildPendingBroadcastSummary(record, {}, now),
-      nextRecord: clonePendingBroadcastRecord(record),
-      completedRecord: null
-    };
-  }
-  const nextRecord = clonePendingBroadcastRecord(record);
-  const normalizedResult = typeof resultInput === "string" ? buildSiteInjectionResult(resultInput) : normalizeSiteInjectionResult(resultInput);
-  nextRecord.siteResults = {
-    ...nextRecord.siteResults ?? {},
-    [normalizedSiteId]: normalizedResult
-  };
-  nextRecord.completed = Object.keys(nextRecord.siteResults).length;
-  if (normalizeResultCode(normalizedResult.code) === "submitted") {
-    nextRecord.submittedSiteIds = Array.from(
-      /* @__PURE__ */ new Set([...nextRecord.submittedSiteIds ?? [], normalizedSiteId])
-    );
-  } else {
-    nextRecord.failedSiteIds = Array.from(
-      /* @__PURE__ */ new Set([...nextRecord.failedSiteIds ?? [], normalizedSiteId])
-    );
-  }
-  nextRecord.status = summarizePendingBroadcastStatus(nextRecord);
-  const summary = buildPendingBroadcastSummary(
-    nextRecord,
-    { finishedAt: nextRecord.status === "sending" ? "" : now },
-    now
-  );
-  if (nextRecord.completed >= nextRecord.total) {
-    return {
-      summary,
-      nextRecord: null,
-      completedRecord: nextRecord
-    };
-  }
-  return {
-    summary,
-    nextRecord,
-    completedRecord: null
-  };
-}
-
 // src/shared/runtime-state/constants.ts
 var LOCAL_RUNTIME_KEYS = Object.freeze({
   failedSelectors: "failedSelectors",
@@ -3062,6 +2801,162 @@ async function resetPersistedExtensionState(options = {}) {
   };
 }
 
+// src/background/broadcast/waiters.ts
+function createBroadcastWaiterRegistry(waiters) {
+  function register(broadcastId) {
+    const normalizedBroadcastId = typeof broadcastId === "string" ? broadcastId.trim() : "";
+    if (!normalizedBroadcastId) {
+      return Promise.resolve(null);
+    }
+    const existing = waiters.get(normalizedBroadcastId);
+    if (existing?.promise) {
+      return existing.promise;
+    }
+    let resolvePromise = null;
+    const promise = new Promise((resolve2) => {
+      resolvePromise = resolve2;
+    });
+    if (resolvePromise) {
+      waiters.set(normalizedBroadcastId, {
+        promise,
+        resolve: resolvePromise
+      });
+    }
+    return promise;
+  }
+  function resolve(broadcastId, summary = null) {
+    const normalizedBroadcastId = typeof broadcastId === "string" ? broadcastId.trim() : "";
+    if (!normalizedBroadcastId) {
+      return;
+    }
+    const existing = waiters.get(normalizedBroadcastId);
+    if (!existing?.resolve) {
+      return;
+    }
+    existing.resolve(summary);
+    waiters.delete(normalizedBroadcastId);
+  }
+  function has(broadcastId) {
+    const normalizedBroadcastId = typeof broadcastId === "string" ? broadcastId.trim() : "";
+    return normalizedBroadcastId ? waiters.has(normalizedBroadcastId) : false;
+  }
+  return { register, resolve, has };
+}
+
+// src/shared/broadcast/state.ts
+function clonePendingBroadcastRecord(record) {
+  return {
+    ...record,
+    siteIds: [...record.siteIds ?? []],
+    submittedSiteIds: [...record.submittedSiteIds ?? []],
+    failedSiteIds: [...record.failedSiteIds ?? []],
+    siteResults: { ...record.siteResults ?? {} },
+    targetSnapshots: ensureBroadcastTargetSnapshots(record.targetSnapshots, record.siteIds, record.prompt),
+    openedTabIds: [...record.openedTabIds ?? []],
+    targetTabIdsBySiteId: { ...record.targetTabIdsBySiteId ?? {} },
+    originFavoriteId: record.originFavoriteId ?? null,
+    chainRunId: record.chainRunId ?? null,
+    chainStepIndex: record.chainStepIndex === null || record.chainStepIndex === void 0 ? null : Number(record.chainStepIndex),
+    chainStepCount: record.chainStepCount === null || record.chainStepCount === void 0 ? null : Number(record.chainStepCount),
+    trigger: record.trigger
+  };
+}
+function summarizePendingBroadcastStatus(record) {
+  if (!record) {
+    return "idle";
+  }
+  if (record.completed < record.total) {
+    return "sending";
+  }
+  if ((record.submittedSiteIds ?? []).length === 0) {
+    return "failed";
+  }
+  if ((record.failedSiteIds ?? []).length > 0) {
+    return "partial";
+  }
+  return "submitted";
+}
+function buildPendingBroadcastSummary(record, overrides = {}, now = (/* @__PURE__ */ new Date()).toISOString()) {
+  const status = summarizePendingBroadcastStatus(record);
+  return {
+    broadcastId: record.id,
+    status,
+    prompt: record.prompt,
+    siteIds: [...record.siteIds ?? []],
+    total: Number(record.total ?? 0),
+    completed: Number(record.completed ?? 0),
+    submittedSiteIds: [...record.submittedSiteIds ?? []],
+    failedSiteIds: [...record.failedSiteIds ?? []],
+    siteResults: { ...record.siteResults ?? {} },
+    targetSnapshots: ensureBroadcastTargetSnapshots(record.targetSnapshots, record.siteIds, record.prompt),
+    startedAt: record.startedAt ?? now,
+    finishedAt: record.completed >= record.total && status !== "sending" ? now : "",
+    ...overrides
+  };
+}
+function getUnresolvedPendingBroadcastSiteIds(record) {
+  const siteResults = record?.siteResults ?? {};
+  return Array.isArray(record?.siteIds) ? record.siteIds.filter((siteId) => !siteResults?.[siteId]) : [];
+}
+function applyPendingBroadcastSiteResult(record, siteId, resultInput, now = (/* @__PURE__ */ new Date()).toISOString()) {
+  if (!record) {
+    return {
+      summary: null,
+      nextRecord: null,
+      completedRecord: null
+    };
+  }
+  const normalizedSiteId = typeof siteId === "string" ? siteId.trim() : "";
+  if (!normalizedSiteId) {
+    return {
+      summary: buildPendingBroadcastSummary(record, {}, now),
+      nextRecord: clonePendingBroadcastRecord(record),
+      completedRecord: null
+    };
+  }
+  if (record.siteResults?.[normalizedSiteId]) {
+    return {
+      summary: buildPendingBroadcastSummary(record, {}, now),
+      nextRecord: clonePendingBroadcastRecord(record),
+      completedRecord: null
+    };
+  }
+  const nextRecord = clonePendingBroadcastRecord(record);
+  const normalizedResult = typeof resultInput === "string" ? buildSiteInjectionResult(resultInput) : normalizeSiteInjectionResult(resultInput);
+  nextRecord.siteResults = {
+    ...nextRecord.siteResults ?? {},
+    [normalizedSiteId]: normalizedResult
+  };
+  nextRecord.completed = Object.keys(nextRecord.siteResults).length;
+  if (normalizeResultCode(normalizedResult.code) === "submitted") {
+    nextRecord.submittedSiteIds = Array.from(
+      /* @__PURE__ */ new Set([...nextRecord.submittedSiteIds ?? [], normalizedSiteId])
+    );
+  } else {
+    nextRecord.failedSiteIds = Array.from(
+      /* @__PURE__ */ new Set([...nextRecord.failedSiteIds ?? [], normalizedSiteId])
+    );
+  }
+  nextRecord.status = summarizePendingBroadcastStatus(nextRecord);
+  const summary = buildPendingBroadcastSummary(
+    nextRecord,
+    { finishedAt: nextRecord.status === "sending" ? "" : now },
+    now
+  );
+  if (nextRecord.completed >= nextRecord.total) {
+    return {
+      summary,
+      nextRecord: null,
+      completedRecord: nextRecord
+    };
+  }
+  return {
+    summary,
+    nextRecord,
+    completedRecord: null
+  };
+}
+
 // src/background/app/constants.ts
 var INJECTOR_SCRIPT_PATH = "content/injector.js";
 var PALETTE_SCRIPT_PATH = "content/palette.js";
@@ -3180,14 +3075,2321 @@ function buildInjectionConfig(site, runtimeOverrides = {}) {
   };
 }
 
+// src/background/broadcast/pending/controller.ts
+function createPendingBroadcastController(deps) {
+  const {
+    getI18nMessage: getI18nMessage2,
+    nowIso: nowIso2,
+    clonePlainValue: clonePlainValue3,
+    getBroadcastTriggerLabel: getBroadcastTriggerLabel2,
+    queueBackgroundStateMutation: queueBackgroundStateMutation2,
+    getPendingBroadcasts: getPendingBroadcasts2,
+    getPendingInjections: getPendingInjections2,
+    removePendingInjection: removePendingInjection2,
+    activeInjections: activeInjections2,
+    suppressedCompletedBroadcastIds: suppressedCompletedBroadcastIds2,
+    getFocusedTabContext: getFocusedTabContext2,
+    restoreFocusedTabContext: restoreFocusedTabContext2,
+    applyBadgeForBroadcast: applyBadgeForBroadcast2,
+    maybeCreateBroadcastNotification: maybeCreateBroadcastNotification2,
+    handleFavoriteBroadcastCompletion: handleFavoriteBroadcastCompletion2,
+    resolveBroadcastCompletionWaiter,
+    autoCaptureBroadcastResponses
+  } = deps;
+  async function syncLastBroadcast(summary) {
+    await setLastBroadcast(summary);
+    await applyBadgeForBroadcast2(summary);
+  }
+  function getBroadcastAgeMs(record) {
+    const startedAtMs = Date.parse(record?.startedAt ?? "");
+    return Number.isFinite(startedAtMs) ? Date.now() - startedAtMs : 0;
+  }
+  async function finalizeBroadcastSites(broadcastId, siteIds, status) {
+    let lastSummary = null;
+    for (const siteId of Array.isArray(siteIds) ? siteIds : []) {
+      lastSummary = await recordBroadcastSiteResult(broadcastId, siteId, status) ?? lastSummary;
+    }
+    return lastSummary;
+  }
+  async function closeTabQuietly(tabId) {
+    try {
+      await chrome.tabs.remove(tabId);
+    } catch (_error) {
+    }
+  }
+  async function restoreBroadcastFocus(record) {
+    if (!record) {
+      return;
+    }
+    await restoreFocusedTabContext2({
+      tabId: Number.isFinite(Number(record.originTabId)) ? Number(record.originTabId) : null,
+      windowId: Number.isFinite(Number(record.originWindowId)) ? Number(record.originWindowId) : null
+    });
+  }
+  async function createPendingBroadcast(prompt, targets, metadata = {}) {
+    const pendingInjections2 = await getPendingInjections2();
+    if (Object.keys(pendingInjections2).length > 0) {
+      console.warn("[AI Prompt Broadcaster] Starting a new broadcast while pending tabs still exist.", pendingInjections2);
+    }
+    const originContext = await getFocusedTabContext2();
+    const sites = Array.isArray(targets) ? targets.map((target) => target.site).filter(Boolean) : [];
+    const broadcastId = typeof crypto?.randomUUID === "function" ? crypto.randomUUID() : `broadcast-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const record = {
+      id: broadcastId,
+      prompt,
+      siteIds: sites.map((site) => site.id),
+      total: sites.length,
+      completed: 0,
+      submittedSiteIds: [],
+      failedSiteIds: [],
+      siteResults: {},
+      targetSnapshots: buildQueueTargetSnapshots(targets, prompt),
+      startedAt: nowIso2(),
+      status: "sending",
+      originTabId: originContext?.tabId ?? null,
+      originWindowId: originContext?.windowId ?? null,
+      openedTabIds: [],
+      targetTabIdsBySiteId: {},
+      originFavoriteId: typeof metadata.originFavoriteId === "string" && metadata.originFavoriteId.trim() ? metadata.originFavoriteId.trim() : null,
+      chainRunId: typeof metadata.chainRunId === "string" && metadata.chainRunId.trim() ? metadata.chainRunId.trim() : null,
+      chainStepIndex: Number.isFinite(Number(metadata.chainStepIndex)) ? Math.max(0, Math.round(Number(metadata.chainStepIndex))) : null,
+      chainStepCount: Number.isFinite(Number(metadata.chainStepCount)) ? Math.max(0, Math.round(Number(metadata.chainStepCount))) : null,
+      experimentRunId: typeof metadata.experimentRunId === "string" && metadata.experimentRunId.trim() ? metadata.experimentRunId.trim() : null,
+      trigger: getBroadcastTriggerLabel2(metadata.trigger)
+    };
+    await queueBackgroundStateMutation2((state) => {
+      state.pendingBroadcasts[broadcastId] = record;
+      return clonePlainValue3(record);
+    });
+    await syncLastBroadcast(buildPendingBroadcastSummary(record, { finishedAt: "" }, nowIso2()));
+    return record;
+  }
+  async function recordBroadcastSiteResult(broadcastId, siteId, resultInput) {
+    const result = typeof resultInput === "string" ? buildSiteResult(resultInput) : buildSiteResult(resultInput?.code ?? resultInput, resultInput ?? {});
+    try {
+      const mutationResult = await queueBackgroundStateMutation2((state) => {
+        const record = state.pendingBroadcasts[broadcastId];
+        if (!record) {
+          return {
+            summary: null,
+            completedRecord: null
+          };
+        }
+        if (record.siteResults?.[siteId]) {
+          return {
+            summary: buildPendingBroadcastSummary(record, {}, nowIso2()),
+            completedRecord: null
+          };
+        }
+        const mutation = applyPendingBroadcastSiteResult(record, siteId, result, nowIso2());
+        if (mutation.nextRecord) {
+          state.pendingBroadcasts[broadcastId] = mutation.nextRecord;
+        } else {
+          delete state.pendingBroadcasts[broadcastId];
+        }
+        return {
+          summary: mutation.summary,
+          completedRecord: mutation.completedRecord ? clonePlainValue3(mutation.completedRecord) : null
+        };
+      });
+      if (!mutationResult?.summary) {
+        return null;
+      }
+      const { summary, completedRecord } = mutationResult;
+      const runSideEffect = async (label, effect) => {
+        try {
+          await effect();
+        } catch (sideEffectError) {
+          if (label === "appendPromptHistory") {
+            await enqueueUiToast({
+              message: getI18nMessage2("toast_prompt_history_save_failed") || "Broadcast finished, but prompt history could not be saved.",
+              type: "error",
+              duration: 7e3
+            });
+          }
+          console.error("[AI Prompt Broadcaster] Broadcast completion side effect failed.", {
+            broadcastId,
+            siteId,
+            result,
+            label,
+            sideEffectError
+          });
+        }
+      };
+      if (completedRecord) {
+        const suppressCompletionEffects = suppressedCompletedBroadcastIds2.has(broadcastId);
+        suppressedCompletedBroadcastIds2.delete(broadcastId);
+        await runSideEffect("syncLastBroadcast", async () => {
+          await syncLastBroadcast(summary);
+        });
+        await runSideEffect("handleFavoriteBroadcastCompletion", async () => {
+          await handleFavoriteBroadcastCompletion2(summary);
+        });
+        resolveBroadcastCompletionWaiter(broadcastId, summary);
+        if (suppressCompletionEffects) {
+          return summary;
+        }
+        await runSideEffect("appendPromptHistory", async () => {
+          const historyItem = await appendPromptHistory({
+            id: Date.now(),
+            text: completedRecord.prompt,
+            requestedSiteIds: completedRecord.siteIds,
+            submittedSiteIds: completedRecord.submittedSiteIds,
+            failedSiteIds: completedRecord.failedSiteIds,
+            sentTo: completedRecord.submittedSiteIds,
+            createdAt: completedRecord.startedAt,
+            status: summary.status,
+            siteResults: completedRecord.siteResults,
+            targetSnapshots: completedRecord.targetSnapshots,
+            originFavoriteId: completedRecord.originFavoriteId ?? null,
+            chainRunId: completedRecord.chainRunId ?? null,
+            chainStepIndex: completedRecord.chainStepIndex ?? null,
+            chainStepCount: completedRecord.chainStepCount ?? null,
+            experimentRunId: completedRecord.experimentRunId ?? null,
+            trigger: completedRecord.trigger ?? "popup"
+          });
+          void autoCaptureBroadcastResponses(historyItem, completedRecord).catch((error) => {
+            console.warn("[AI Prompt Broadcaster] Automatic response capture failed.", error);
+            void enqueueUiToast({
+              message: getI18nMessage2("toast_auto_capture_save_failed") || "Automatic response capture could not be saved.",
+              type: "warning",
+              duration: 7e3
+            }).catch(() => void 0);
+          });
+        });
+        await runSideEffect("restoreBroadcastFocus", async () => {
+          await restoreBroadcastFocus(completedRecord);
+        });
+        await runSideEffect("maybeCreateBroadcastNotification", async () => {
+          await maybeCreateBroadcastNotification2(summary);
+        });
+      } else {
+        await runSideEffect("syncLastBroadcast", async () => {
+          await syncLastBroadcast(summary);
+        });
+      }
+      return summary;
+    } catch (error) {
+      console.error("[AI Prompt Broadcaster] Failed to record broadcast site result.", {
+        broadcastId,
+        siteId,
+        result,
+        error
+      });
+      return null;
+    }
+  }
+  async function cancelBroadcast(broadcastId, reason = "cancelled") {
+    const normalizedBroadcastId = typeof broadcastId === "string" ? broadcastId.trim() : "";
+    if (!normalizedBroadcastId) {
+      return null;
+    }
+    const pendingBroadcastsBeforeCancel = await getPendingBroadcasts2();
+    const recordBeforeCancel = pendingBroadcastsBeforeCancel[normalizedBroadcastId] ?? null;
+    const pendingInjections2 = await getPendingInjections2();
+    const matchingJobs = Object.entries(pendingInjections2).filter(
+      ([, job]) => job?.broadcastId === normalizedBroadcastId
+    );
+    const pendingSiteIds = /* @__PURE__ */ new Set();
+    const tabsToClose = new Set(
+      Array.isArray(recordBeforeCancel?.openedTabIds) ? recordBeforeCancel.openedTabIds.map((tabId) => Number(tabId)).filter((tabId) => Number.isFinite(tabId)) : []
+    );
+    for (const [tabIdKey, job] of matchingJobs) {
+      const tabId = Number(tabIdKey);
+      if (job?.siteId) {
+        pendingSiteIds.add(job.siteId);
+      }
+      await removePendingInjection2(tabId);
+      activeInjections2.delete(tabId);
+      if (job?.closeOnCancel !== false && Number.isFinite(tabId)) {
+        tabsToClose.add(tabId);
+      }
+    }
+    let lastSummary = null;
+    lastSummary = await finalizeBroadcastSites(
+      normalizedBroadcastId,
+      [...pendingSiteIds],
+      buildSiteResult(reason === "reset" ? "cancelled" : reason)
+    ) ?? lastSummary;
+    const refreshedPendingBroadcasts = await getPendingBroadcasts2();
+    const record = refreshedPendingBroadcasts[normalizedBroadcastId];
+    const unresolvedSiteIds = getUnresolvedPendingBroadcastSiteIds(record).filter((siteId) => !pendingSiteIds.has(siteId));
+    lastSummary = await finalizeBroadcastSites(
+      normalizedBroadcastId,
+      unresolvedSiteIds,
+      buildSiteResult(reason === "reset" ? "cancelled" : reason)
+    ) ?? lastSummary;
+    await Promise.all([...tabsToClose].map(async (tabId) => closeTabQuietly(Number(tabId))));
+    await restoreBroadcastFocus(recordBeforeCancel);
+    const fallbackSummary = await getLastBroadcast();
+    const summary = lastSummary ?? fallbackSummary;
+    if (reason !== "reset") {
+      await enqueueUiToast({
+        message: getI18nMessage2("toast_broadcast_cancelled") || "Broadcast cancelled.",
+        type: "warning",
+        duration: 5e3,
+        meta: {
+          broadcastId: normalizedBroadcastId,
+          reason
+        }
+      });
+    }
+    resolveBroadcastCompletionWaiter(normalizedBroadcastId, summary ?? null);
+    return summary;
+  }
+  async function reconcilePendingBroadcasts() {
+    const pendingBroadcasts2 = await getPendingBroadcasts2();
+    const pendingInjections2 = await getPendingInjections2();
+    const jobsByBroadcastId = /* @__PURE__ */ new Map();
+    for (const [tabIdKey, job] of Object.entries(pendingInjections2)) {
+      if (!job?.broadcastId) {
+        continue;
+      }
+      const current = jobsByBroadcastId.get(job.broadcastId) ?? [];
+      current.push([tabIdKey, job]);
+      jobsByBroadcastId.set(job.broadcastId, current);
+    }
+    for (const [broadcastId, record] of Object.entries(pendingBroadcasts2)) {
+      const unresolvedSiteIds = getUnresolvedPendingBroadcastSiteIds(record);
+      if (unresolvedSiteIds.length === 0) {
+        continue;
+      }
+      const relatedJobs = jobsByBroadcastId.get(broadcastId) ?? [];
+      if (relatedJobs.length === 0) {
+        await finalizeBroadcastSites(broadcastId, unresolvedSiteIds, "broadcast_stale");
+        continue;
+      }
+      if (getBroadcastAgeMs(record) <= PENDING_TIMEOUT_MS) {
+        continue;
+      }
+      for (const [tabIdKey] of relatedJobs) {
+        const tabId = Number(tabIdKey);
+        await removePendingInjection2(tabId);
+        activeInjections2.delete(tabId);
+        await closeTabQuietly(tabId);
+      }
+      await finalizeBroadcastSites(broadcastId, unresolvedSiteIds, "injection_timeout");
+    }
+  }
+  return {
+    syncLastBroadcast,
+    createPendingBroadcast,
+    recordBroadcastSiteResult,
+    finalizeBroadcastSites,
+    cancelBroadcast,
+    reconcilePendingBroadcasts,
+    closeTabQuietly,
+    restoreBroadcastFocus,
+    getBroadcastAgeMs
+  };
+}
+
+// src/shared/template/constants.ts
+var TEMPLATE_VARIABLE_PATTERN = /{{\s*([^{}]+?)\s*}}/g;
+var SYSTEM_TEMPLATE_VARIABLES = Object.freeze({
+  date: "date",
+  time: "time",
+  weekday: "weekday",
+  clipboard: "clipboard",
+  url: "url",
+  title: "title",
+  selection: "selection",
+  counter: "counter",
+  random: "random"
+});
+var SYSTEM_TEMPLATE_DEFINITIONS = Object.freeze({
+  [SYSTEM_TEMPLATE_VARIABLES.date]: {
+    aliases: ["date", "날짜"],
+    labels: { ko: "날짜", en: "date" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.time]: {
+    aliases: ["time", "시간"],
+    labels: { ko: "시간", en: "time" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.weekday]: {
+    aliases: ["weekday", "요일"],
+    labels: { ko: "요일", en: "weekday" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.clipboard]: {
+    aliases: ["clipboard", "클립보드"],
+    labels: { ko: "클립보드", en: "clipboard" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.url]: {
+    aliases: ["url", "주소"],
+    labels: { ko: "현재 탭 URL", en: "current tab URL" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.title]: {
+    aliases: ["title", "제목"],
+    labels: { ko: "현재 탭 제목", en: "current tab title" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.selection]: {
+    aliases: ["selection", "선택"],
+    labels: { ko: "선택한 텍스트", en: "selected text" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.counter]: {
+    aliases: ["counter", "카운터"],
+    labels: { ko: "카운터", en: "counter" }
+  },
+  [SYSTEM_TEMPLATE_VARIABLES.random]: {
+    aliases: ["random", "랜덤"],
+    labels: { ko: "랜덤 숫자", en: "random number" }
+  }
+});
+var SYSTEM_TEMPLATE_ALIAS_MAP = new Map(
+  Object.entries(SYSTEM_TEMPLATE_DEFINITIONS).flatMap(
+    ([canonicalName, definition]) => definition.aliases.map((alias) => [alias.toLowerCase(), canonicalName])
+  )
+);
+var SYSTEM_TEMPLATE_KEYS = new Set(Object.keys(SYSTEM_TEMPLATE_DEFINITIONS));
+var WEEKDAY_LOCALES = Object.freeze({
+  ko: "ko-KR",
+  en: "en-US"
+});
+
+// src/shared/template/normalize.ts
+function pad2(value) {
+  return String(value).padStart(2, "0");
+}
+function normalizeLocale(locale) {
+  return typeof locale === "string" && locale.toLowerCase().startsWith("ko") ? "ko" : "en";
+}
+function normalizeTemplateVariableName(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+function canonicalizeTemplateVariableName(value) {
+  const normalizedValue = normalizeTemplateVariableName(value);
+  if (!normalizedValue) {
+    return "";
+  }
+  return SYSTEM_TEMPLATE_ALIAS_MAP.get(normalizedValue.toLowerCase()) ?? normalizedValue;
+}
+function normalizeTemplateValueRecord(values = {}) {
+  if (!values || typeof values !== "object" || Array.isArray(values)) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(values).map(([key, value]) => [
+      canonicalizeTemplateVariableName(key),
+      value
+    ])
+  );
+}
+
+// src/shared/template/detect.ts
+function detectTemplateVariables(template) {
+  const source = typeof template === "string" ? template : "";
+  const seen = /* @__PURE__ */ new Set();
+  const variables = [];
+  for (const match of source.matchAll(TEMPLATE_VARIABLE_PATTERN)) {
+    const canonicalName = canonicalizeTemplateVariableName(match[1]);
+    if (!canonicalName || seen.has(canonicalName)) {
+      continue;
+    }
+    seen.add(canonicalName);
+    variables.push({
+      name: canonicalName,
+      kind: SYSTEM_TEMPLATE_KEYS.has(canonicalName) ? "system" : "user"
+    });
+  }
+  return variables;
+}
+
+// src/shared/template/values.ts
+function buildSystemTemplateValues(now = /* @__PURE__ */ new Date(), options = {}) {
+  const date = now instanceof Date ? now : /* @__PURE__ */ new Date();
+  const locale = normalizeLocale(options?.locale);
+  const values = {
+    [SYSTEM_TEMPLATE_VARIABLES.date]: [
+      date.getFullYear(),
+      pad2(date.getMonth() + 1),
+      pad2(date.getDate())
+    ].join("-"),
+    [SYSTEM_TEMPLATE_VARIABLES.time]: `${pad2(date.getHours())}:${pad2(date.getMinutes())}`,
+    [SYSTEM_TEMPLATE_VARIABLES.weekday]: new Intl.DateTimeFormat(WEEKDAY_LOCALES[locale], {
+      weekday: locale === "ko" ? "short" : "long"
+    }).format(date),
+    [SYSTEM_TEMPLATE_VARIABLES.random]: String(Math.floor(Math.random() * 1e3) + 1)
+  };
+  if (options?.extra && typeof options.extra === "object") {
+    if (typeof options.extra.url === "string") {
+      values[SYSTEM_TEMPLATE_VARIABLES.url] = options.extra.url;
+    }
+    if (typeof options.extra.title === "string") {
+      values[SYSTEM_TEMPLATE_VARIABLES.title] = options.extra.title;
+    }
+    if (typeof options.extra.selection === "string") {
+      values[SYSTEM_TEMPLATE_VARIABLES.selection] = options.extra.selection;
+    }
+    if (typeof options.extra.counter === "string" || typeof options.extra.counter === "number") {
+      values[SYSTEM_TEMPLATE_VARIABLES.counter] = String(options.extra.counter);
+    }
+  }
+  return values;
+}
+
+// src/shared/template/render.ts
+function renderTemplatePrompt(template, values = {}) {
+  const source = typeof template === "string" ? template : "";
+  const normalizedValues = normalizeTemplateValueRecord(values);
+  return source.replace(TEMPLATE_VARIABLE_PATTERN, (_match, rawName) => {
+    const normalizedName = normalizeTemplateVariableName(rawName);
+    const canonicalName = canonicalizeTemplateVariableName(rawName);
+    if (!normalizedName) {
+      return "";
+    }
+    if (Object.prototype.hasOwnProperty.call(normalizedValues, canonicalName)) {
+      return String(normalizedValues[canonicalName] ?? "");
+    }
+    if (Object.prototype.hasOwnProperty.call(normalizedValues, normalizedName)) {
+      return String(normalizedValues[normalizedName] ?? "");
+    }
+    return `{{${normalizedName}}}`;
+  });
+}
+
+// src/shared/broadcast/resolution.ts
+function pickBroadcastTargetPrompt(target, fallbackPrompt = "") {
+  if (typeof target?.resolvedPrompt === "string") {
+    return target.resolvedPrompt;
+  }
+  if (typeof target?.promptOverride === "string" && target.promptOverride.trim()) {
+    return target.promptOverride.trim();
+  }
+  return String(fallbackPrompt ?? "");
+}
+
+// src/background/broadcast/queue.ts
+function createBroadcastQueue(deps) {
+  const {
+    getI18nMessage: getI18nMessage2,
+    normalizePrompt: normalizePrompt3,
+    clonePlainValue: clonePlainValue3,
+    queueBackgroundStateMutation: queueBackgroundStateMutation2,
+    getPendingBroadcasts: getPendingBroadcasts2,
+    createPendingBroadcast,
+    registerBroadcastCompletionWaiter,
+    reconcilePendingBroadcasts,
+    resolveSelectedTargets: resolveSelectedTargets2,
+    findReusableTabsForSites: findReusableTabsForSites2,
+    getExplicitReusableTabForTarget: getExplicitReusableTabForTarget2,
+    buildSelectedTabUnavailableMessage: buildSelectedTabUnavailableMessage2,
+    getSitePermissionPatterns: getSitePermissionPatterns3,
+    isCustomSitePermissionGranted: isCustomSitePermissionGranted2,
+    addPendingInjection: addPendingInjection2,
+    queuePendingInjection,
+    recordBroadcastSiteResult,
+    closeTabQuietly
+  } = deps;
+  async function queueResolvedBroadcastRequest(prompt, selectedTargets, metadata = {}) {
+    const selectedSites = selectedTargets.map((target) => target.site);
+    let queuedSiteCount = 0;
+    const broadcast = await createPendingBroadcast(prompt, selectedTargets, metadata);
+    registerBroadcastCompletionWaiter(broadcast.id);
+    const settings = await getAppSettings();
+    const createdTabSiteIds = [];
+    const reusedTabSiteIds = [];
+    const failedTabSiteIds = [];
+    const reusableTabsBySiteId = settings.reuseExistingTabs ? await findReusableTabsForSites2(selectedSites, {
+      windowId: broadcast.originWindowId,
+      excludeTabId: broadcast.originTabId
+    }) : /* @__PURE__ */ new Map();
+    for (const target of selectedTargets) {
+      const site = target.site;
+      try {
+        const pendingBeforeCreate = await getPendingBroadcasts2();
+        if (!pendingBeforeCreate[broadcast.id]) {
+          continue;
+        }
+        if (site.isCustom && getSitePermissionPatterns3(site).length > 0) {
+          const granted = await isCustomSitePermissionGranted2(site);
+          if (!granted) {
+            failedTabSiteIds.push(site.id);
+            await recordBroadcastSiteResult(broadcast.id, site.id, "permission_denied");
+            await enqueueUiToast({
+              message: getI18nMessage2("toast_service_permission_denied", [site.name]) || `${site.name} host permission was not granted.`,
+              type: "error",
+              duration: 5e3
+            });
+            continue;
+          }
+        }
+        const explicitTab = await getExplicitReusableTabForTarget2(target);
+        if (explicitTab.requested && !explicitTab.tab) {
+          failedTabSiteIds.push(site.id);
+          await recordBroadcastSiteResult(broadcast.id, site.id, buildSiteResult("tab_closed", {
+            message: explicitTab.message ?? buildSelectedTabUnavailableMessage2(site.name, target.targetTabId)
+          }));
+          continue;
+        }
+        const reusableTab = explicitTab.tab ?? (!target.forceNewTab && settings.reuseExistingTabs ? reusableTabsBySiteId.get(site.id) ?? null : null);
+        const targetTab = reusableTab ?? await chrome.tabs.create({
+          url: site.url,
+          active: false
+        });
+        if (!targetTab?.id) {
+          throw new Error("Tab was queued without a valid id.");
+        }
+        const pendingAfterCreate = await getPendingBroadcasts2();
+        if (!pendingAfterCreate[broadcast.id]) {
+          if (!reusableTab) {
+            await closeTabQuietly(targetTab.id);
+          }
+          continue;
+        }
+        await addPendingInjection2(targetTab.id, {
+          broadcastId: broadcast.id,
+          siteId: site.id,
+          prompt: pickBroadcastTargetPrompt(target, prompt),
+          site,
+          injected: false,
+          status: "pending",
+          createdAt: Date.now(),
+          closeOnCancel: !reusableTab
+        });
+        await queueBackgroundStateMutation2((state) => {
+          const record = state.pendingBroadcasts[broadcast.id];
+          if (!record) {
+            return null;
+          }
+          record.targetTabIdsBySiteId = {
+            ...record.targetTabIdsBySiteId ?? {},
+            [site.id]: targetTab.id
+          };
+          if (!reusableTab) {
+            record.openedTabIds = Array.from(
+              /* @__PURE__ */ new Set([...Array.isArray(record.openedTabIds) ? record.openedTabIds : [], targetTab.id])
+            );
+          }
+          state.pendingBroadcasts[broadcast.id] = record;
+          return clonePlainValue3(record.targetTabIdsBySiteId);
+        });
+        queuedSiteCount += 1;
+        if (reusableTab) {
+          reusedTabSiteIds.push(site.id);
+        } else {
+          createdTabSiteIds.push(site.id);
+        }
+        void queuePendingInjection(targetTab.id, targetTab);
+      } catch (error) {
+        console.error("[AI Prompt Broadcaster] Failed to create broadcast tab.", {
+          site,
+          error
+        });
+        failedTabSiteIds.push(site.id);
+        await recordBroadcastSiteResult(broadcast.id, site.id, "tab_create_failed");
+      }
+    }
+    if (queuedSiteCount > 0) {
+      await queueBackgroundStateMutation2(async () => {
+        const currentCounter = await getBroadcastCounter();
+        await setBroadcastCounter(currentCounter + 1);
+        return currentCounter + 1;
+      });
+    }
+    return {
+      ok: queuedSiteCount > 0,
+      createdSiteCount: queuedSiteCount,
+      queuedSiteCount,
+      requestedSiteCount: selectedSites.length,
+      createdTabSiteIds,
+      reusedTabSiteIds,
+      failedTabSiteIds,
+      broadcastId: broadcast.id,
+      error: queuedSiteCount > 0 ? void 0 : "No tabs could be queued."
+    };
+  }
+  async function queueBroadcastRequest(prompt, siteRefs, metadata = {}) {
+    await reconcilePendingBroadcasts();
+    const normalizedPrompt = normalizePrompt3(prompt).trim();
+    const selectedTargets = await resolveSelectedTargets2(siteRefs);
+    const selectedSites = selectedTargets.map((target) => target.site);
+    if (!normalizedPrompt) {
+      throw new Error("Prompt is required.");
+    }
+    if (selectedSites.length === 0) {
+      throw new Error("At least one target site is required.");
+    }
+    return queueResolvedBroadcastRequest(normalizedPrompt, selectedTargets, metadata);
+  }
+  async function handleBroadcastMessage(message) {
+    return queueBroadcastRequest(message?.prompt, message?.sites, {
+      trigger: "popup"
+    });
+  }
+  return {
+    queueResolvedBroadcastRequest,
+    queueBroadcastRequest,
+    handleBroadcastMessage
+  };
+}
+
+// src/background/app/comparison/capture.ts
+var COMPARISON_CAPTURE_SELECTORS = {
+  chatgpt: [
+    '[data-message-author-role="assistant"]',
+    'article [data-message-author-role="assistant"]'
+  ],
+  gemini: [
+    "message-content",
+    ".model-response-text",
+    "[data-response-index] message-content"
+  ],
+  claude: [
+    '[data-testid="conversation-turn-assistant"]',
+    '[data-testid*="assistant" i]',
+    ".font-claude-message"
+  ],
+  grok: [
+    '[data-testid*="message" i] [class*="markdown" i]',
+    '[data-testid*="answer" i]'
+  ],
+  perplexity: [
+    '[data-testid*="answer" i]',
+    '[data-testid*="thread-answer" i]',
+    "main .prose"
+  ]
+};
+var AUTO_RESPONSE_CAPTURE_TIMEOUT_MS = 45e3;
+var AUTO_RESPONSE_CAPTURE_INTERVAL_MS = 3e3;
+var AUTO_RESPONSE_CAPTURE_MIN_LENGTH = 20;
+var AUTO_RESPONSE_CAPTURE_MEANINGFUL_DELTA = 40;
+function normalizeCapturedResponseText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+function isPromptEcho(responseText, promptText) {
+  const response = normalizeCapturedResponseText(responseText).toLowerCase();
+  const prompt = normalizeCapturedResponseText(promptText).toLowerCase();
+  return Boolean(prompt) && (response === prompt || response.startsWith(prompt));
+}
+function shouldUpdateAutoCapturedResponse(existingText, nextText) {
+  const existing = normalizeCapturedResponseText(existingText);
+  const next = normalizeCapturedResponseText(nextText);
+  if (!next || existing === next || existing.includes(next)) {
+    return false;
+  }
+  if (!existing || next.includes(existing)) {
+    return true;
+  }
+  return Math.abs(next.length - existing.length) >= AUTO_RESPONSE_CAPTURE_MEANINGFUL_DELTA;
+}
+
+// src/background/comparison/handlers/controller.ts
+function createComparisonHandlers(deps) {
+  const { sleep: sleep2, selectionCache: selectionCache2, getSiteForUrl: getSiteForUrl2 } = deps;
+  async function handleComparisonNoteList(message) {
+    const historyId = Number(message?.historyId);
+    const notes = await getComparisonNotes();
+    return {
+      ok: true,
+      notes: Number.isFinite(historyId) ? notes.filter((entry) => Number(entry.historyId) === historyId) : notes
+    };
+  }
+  async function handleComparisonNoteSave(message) {
+    const note = await saveComparisonNote(message?.note ?? {});
+    return {
+      ok: true,
+      note
+    };
+  }
+  async function handleComparisonNoteDelete(message) {
+    const notes = await deleteComparisonNote(message?.noteId ?? "");
+    return {
+      ok: true,
+      notes
+    };
+  }
+  async function resolveContextMenuComparisonTarget(siteId) {
+    const [history, activeContext] = await Promise.all([
+      getStoredPromptHistory(),
+      getActiveComparisonContext()
+    ]);
+    if (activeContext?.serviceId !== siteId) {
+      return null;
+    }
+    const activeHistory = history.find((entry) => Number(entry.id) === activeContext.historyId);
+    if (activeHistory?.requestedSiteIds?.includes(siteId)) {
+      return {
+        historyId: activeHistory.id
+      };
+    }
+    return null;
+  }
+  async function handleContextMenuComparisonNote(selectedText, tab) {
+    const responseText = (selectedText || (tab?.id ? selectionCache2.get(tab.id) : "") || "").trim();
+    if (!responseText) {
+      return;
+    }
+    const [history, site] = await Promise.all([
+      getStoredPromptHistory(),
+      getSiteForUrl2(tab?.url ?? "")
+    ]);
+    if (history.length === 0 || !site?.id) {
+      await enqueueUiToast({
+        message: "Open a supported service tab and keep at least one history item before saving a comparison note.",
+        type: "warning",
+        duration: 5e3
+      });
+      return;
+    }
+    const target = await resolveContextMenuComparisonTarget(site.id);
+    if (!target) {
+      await enqueueUiToast({
+        message: `${site.name} is not the active comparison target. Open the matching history item first.`,
+        type: "warning",
+        duration: 5e3
+      });
+      return;
+    }
+    await saveComparisonNote({
+      historyId: target.historyId,
+      serviceId: site.id,
+      responseText,
+      captureMode: "selection",
+      tags: ["selection"]
+    });
+    await enqueueUiToast({
+      message: `${site.name} response saved to the active comparison note.`,
+      type: "success",
+      duration: 3500
+    });
+  }
+  async function findComparisonCaptureTab(serviceId, explicitTabId) {
+    if (Number.isFinite(Number(explicitTabId))) {
+      try {
+        return await chrome.tabs.get(Number(explicitTabId));
+      } catch (_error) {
+        return null;
+      }
+    }
+    const activeTabs = await chrome.tabs.query({
+      active: true,
+      lastFocusedWindow: true
+    }).catch(() => []);
+    for (const tab of activeTabs) {
+      const site = await getSiteForUrl2(tab.url ?? "");
+      if (site?.id === serviceId) {
+        return tab;
+      }
+    }
+    const allTabs = await chrome.tabs.query({}).catch(() => []);
+    for (const tab of allTabs) {
+      const site = await getSiteForUrl2(tab.url ?? "");
+      if (site?.id === serviceId) {
+        return tab;
+      }
+    }
+    return null;
+  }
+  async function captureVisibleAssistantResponse(tabId, serviceId, promptText = "") {
+    const selectors = COMPARISON_CAPTURE_SELECTORS[serviceId] ?? [];
+    if (selectors.length === 0) {
+      return "";
+    }
+    const [result] = await chrome.scripting.executeScript({
+      target: { tabId },
+      args: [selectors],
+      func: (assistantSelectors) => {
+        const isVisible = (element) => {
+          const rect = element.getBoundingClientRect();
+          const style = window.getComputedStyle(element);
+          return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+        };
+        const isAssistantCandidate = (element) => {
+          const role = element.getAttribute("role") || "";
+          const editable = element.getAttribute("contenteditable") || "";
+          return role.toLowerCase() !== "textbox" && editable.toLowerCase() !== "true";
+        };
+        const getText = (element) => (element.textContent || "").replace(/\s+/g, " ").trim();
+        const seen = /* @__PURE__ */ new Set();
+        const candidates = assistantSelectors.flatMap((selector) => Array.from(document.querySelectorAll(selector))).filter((element) => {
+          if (seen.has(element)) {
+            return false;
+          }
+          seen.add(element);
+          return true;
+        }).filter(isVisible).filter(isAssistantCandidate).map((element) => ({
+          text: getText(element),
+          top: element.getBoundingClientRect().top
+        })).filter((entry) => entry.text.length >= 20).sort((left, right) => right.top - left.top);
+        return candidates[0]?.text ?? "";
+      }
+    });
+    const responseText = typeof result?.result === "string" ? result.result : "";
+    if (normalizeCapturedResponseText(responseText).length < AUTO_RESPONSE_CAPTURE_MIN_LENGTH || isPromptEcho(responseText, promptText)) {
+      return "";
+    }
+    return responseText;
+  }
+  async function captureAssistantResponseWithRetry(tabId, serviceId, promptText) {
+    const deadline = Date.now() + AUTO_RESPONSE_CAPTURE_TIMEOUT_MS;
+    let lastResponse = "";
+    while (Date.now() <= deadline) {
+      const responseText = await captureVisibleAssistantResponse(tabId, serviceId, promptText).catch(() => "");
+      if (responseText) {
+        if (lastResponse && normalizeCapturedResponseText(lastResponse) === normalizeCapturedResponseText(responseText)) {
+          return responseText;
+        }
+        lastResponse = responseText;
+      }
+      await sleep2(AUTO_RESPONSE_CAPTURE_INTERVAL_MS);
+    }
+    return lastResponse;
+  }
+  async function saveAutoCapturedResponse(historyId, serviceId, responseText) {
+    const cappedResponseText = capAutoCapturedResponseText(responseText);
+    const existingNotes = await getComparisonNotes();
+    const existingAutoNote = existingNotes.find(
+      (note) => Number(note.historyId) === Number(historyId) && note.serviceId === serviceId && note.captureMode === "auto"
+    );
+    if (existingAutoNote && !shouldUpdateAutoCapturedResponse(existingAutoNote.responseText, cappedResponseText)) {
+      return;
+    }
+    await saveComparisonNote({
+      id: existingAutoNote?.id,
+      historyId,
+      serviceId,
+      responseText: cappedResponseText,
+      captureMode: "auto",
+      tags: ["auto"]
+    });
+  }
+  async function autoCaptureBroadcastResponses(historyItem, completedRecord) {
+    const settings = await getAppSettings();
+    if (!settings.autoCaptureResponses) {
+      return;
+    }
+    const submittedSiteIds = Array.isArray(completedRecord.submittedSiteIds) ? completedRecord.submittedSiteIds : [];
+    for (const serviceId of submittedSiteIds) {
+      const tabId = Number(completedRecord.targetTabIdsBySiteId?.[serviceId]);
+      const tab = await findComparisonCaptureTab(serviceId, Number.isFinite(tabId) ? tabId : null);
+      if (!tab?.id) {
+        continue;
+      }
+      const responseText = await captureAssistantResponseWithRetry(tab.id, serviceId, historyItem.text);
+      if (!responseText.trim()) {
+        continue;
+      }
+      await saveAutoCapturedResponse(Number(historyItem.id), serviceId, responseText);
+    }
+  }
+  async function handleComparisonCaptureStart(message) {
+    const historyId = Math.max(0, Math.round(Number(message?.historyId)));
+    const serviceId = typeof message?.serviceId === "string" ? message.serviceId.trim() : "";
+    if (!historyId || !serviceId) {
+      return {
+        ok: false,
+        captured: false,
+        error: "historyId and serviceId are required."
+      };
+    }
+    const tab = await findComparisonCaptureTab(serviceId, message?.tabId ?? null);
+    if (!tab?.id) {
+      return {
+        ok: true,
+        captured: false,
+        message: "Open the service tab and run capture again when the response is visible."
+      };
+    }
+    const history = await getStoredPromptHistory();
+    const historyItem = history.find((entry) => Number(entry.id) === historyId);
+    const responseText = await captureVisibleAssistantResponse(tab.id, serviceId, historyItem?.text ?? "").catch(() => "");
+    if (!responseText.trim()) {
+      return {
+        ok: true,
+        captured: false,
+        message: "No visible assistant response was found. Use manual paste or select response text from the service tab."
+      };
+    }
+    await saveAutoCapturedResponse(historyId, serviceId, responseText);
+    const notes = await getComparisonNotes();
+    const note = notes.find(
+      (entry) => Number(entry.historyId) === Number(historyId) && entry.serviceId === serviceId && entry.captureMode === "auto"
+    ) ?? null;
+    return {
+      ok: true,
+      note: note ?? void 0,
+      captured: true
+    };
+  }
+  return {
+    handleComparisonNoteList,
+    handleComparisonNoteSave,
+    handleComparisonNoteDelete,
+    resolveContextMenuComparisonTarget,
+    handleContextMenuComparisonNote,
+    findComparisonCaptureTab,
+    captureVisibleAssistantResponse,
+    captureAssistantResponseWithRetry,
+    saveAutoCapturedResponse,
+    autoCaptureBroadcastResponses,
+    handleComparisonCaptureStart
+  };
+}
+
+// src/background/experiments/handlers.ts
+function createExperimentHandlers(deps) {
+  const { nowIso: nowIso2, queueBroadcastRequest } = deps;
+  function buildExperimentRunId() {
+    return typeof crypto?.randomUUID === "function" ? crypto.randomUUID() : `experiment-run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+  async function handleExperimentSave(message) {
+    const experiment = await savePromptExperiment(message?.experiment ?? {});
+    return {
+      ok: true,
+      experiment
+    };
+  }
+  async function handleExperimentDelete(message) {
+    const experiments2 = await deletePromptExperiment(message?.experimentId ?? "");
+    return {
+      ok: true,
+      experiments: experiments2
+    };
+  }
+  async function handleExperimentRun(message) {
+    const experiments2 = await getPromptExperiments();
+    const experiment = experiments2.find((entry) => entry.id === message?.experimentId);
+    if (!experiment) {
+      return {
+        ok: false,
+        experiment: null,
+        queuedCount: 0,
+        broadcastIds: [],
+        preview: [],
+        error: "Experiment not found."
+      };
+    }
+    const targetSiteIds = normalizeSiteIdList(experiment.targetSiteIds);
+    const variants = experiment.variants.filter((variant) => variant.text.trim());
+    const variableSets = experiment.variableSets.length > 0 ? experiment.variableSets : [{ id: "default", title: "Default", values: {} }];
+    const preview = variants.flatMap(
+      (variant) => variableSets.map((variableSet) => ({
+        variantId: variant.id,
+        variableSetId: variableSet.id,
+        targetSiteIds,
+        prompt: renderTemplatePrompt(variant.text, variableSet.values ?? {})
+      }))
+    );
+    if (targetSiteIds.length === 0 || preview.length === 0) {
+      return {
+        ok: false,
+        experiment,
+        queuedCount: 0,
+        broadcastIds: [],
+        preview,
+        error: "Experiment requires at least one variant and one target service."
+      };
+    }
+    const limitResult = evaluatePromptExperimentRunLimit(
+      {
+        variants,
+        variableSets,
+        targetSiteIds
+      },
+      message?.confirmedLargeRun === true
+    );
+    if (limitResult.reason === "hard_limit") {
+      return {
+        ok: false,
+        experiment,
+        queuedCount: 0,
+        broadcastIds: [],
+        preview,
+        error: `Experiment has ${limitResult.broadcastCount} broadcasts. Split it into batches of ${EXPERIMENT_HARD_BROADCAST_LIMIT} or fewer.`
+      };
+    }
+    if (limitResult.reason === "confirmation_required") {
+      return {
+        ok: false,
+        experiment,
+        queuedCount: 0,
+        broadcastIds: [],
+        preview,
+        error: `Experiment has ${limitResult.broadcastCount} broadcasts. Confirm the large run before queuing more than ${EXPERIMENT_SOFT_BROADCAST_LIMIT}.`
+      };
+    }
+    const runId = buildExperimentRunId();
+    const broadcastIds = [];
+    for (const item of preview) {
+      const response = await queueBroadcastRequest(
+        item.prompt,
+        item.targetSiteIds.map((siteId) => ({ id: siteId })),
+        {
+          trigger: "options",
+          experimentRunId: runId
+        }
+      );
+      if (response?.broadcastId) {
+        broadcastIds.push(response.broadcastId);
+      }
+    }
+    const updatedExperiment = await appendPromptExperimentRun(experiment.id, {
+      id: runId,
+      variantId: preview.length === 1 ? preview[0].variantId : "mixed",
+      variableSetId: preview.length === 1 ? preview[0].variableSetId : "mixed",
+      targetSiteIds,
+      broadcastIds,
+      createdAt: nowIso2()
+    });
+    return {
+      ok: broadcastIds.length > 0,
+      experiment: updatedExperiment ?? experiment,
+      runId,
+      queuedCount: broadcastIds.length,
+      broadcastIds,
+      preview,
+      error: broadcastIds.length > 0 ? void 0 : "No experiment broadcasts were queued."
+    };
+  }
+  return {
+    buildExperimentRunId,
+    handleExperimentSave,
+    handleExperimentDelete,
+    handleExperimentRun
+  };
+}
+
+// src/background/injection/execute.ts
+async function injectIntoTab(tabId, prompt, site, runtimeOverrides = {}) {
+  const config = buildInjectionConfig(site, runtimeOverrides);
+  if (site?.id === "perplexity") {
+    const promptSelectors = normalizeSelectorEntries([
+      config?.inputSelector,
+      ...Array.isArray(config?.fallbackSelectors) ? config.fallbackSelectors : []
+    ]);
+    const [executionResult2] = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: async (injectedPrompt, injectedConfig, injectedSelectors) => {
+        const sleep2 = (ms) => new Promise((resolve) => window.setTimeout(resolve, Math.max(Number(ms) || 0, 0)));
+        const normalizeText4 = (value) => String(value ?? "").replace(/\u00A0/g, " ").replace(/[\u200B-\u200D\uFEFF]/g, "").replace(/\r\n?/g, "\n").trim();
+        const isVisible = (element2) => {
+          if (!(element2 instanceof HTMLElement) && !(element2 instanceof SVGElement)) {
+            return true;
+          }
+          const style = window.getComputedStyle(element2);
+          if (element2 instanceof HTMLElement && element2.hidden || element2.getAttribute("hidden") !== null || element2.getAttribute("aria-hidden") === "true" || style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse") {
+            return false;
+          }
+          return element2.getClientRects().length > 0;
+        };
+        const isEditable = (element2) => {
+          if (element2 instanceof HTMLInputElement || element2 instanceof HTMLTextAreaElement) {
+            return !element2.readOnly;
+          }
+          return element2 instanceof HTMLElement ? element2.isContentEditable : false;
+        };
+        const findPromptMatch = () => {
+          for (const selector2 of Array.isArray(injectedSelectors) ? injectedSelectors : []) {
+            const candidates = Array.from(document.querySelectorAll(selector2));
+            const element2 = candidates.find((candidate) => isVisible(candidate) && isEditable(candidate));
+            if (element2) {
+              return { element: element2, selector: selector2 };
+            }
+          }
+          return null;
+        };
+        const waitForPromptMatch = async (timeoutMs) => {
+          const deadline = performance.now() + Math.max(Number(timeoutMs) || 0, 0);
+          while (performance.now() <= deadline) {
+            const match2 = findPromptMatch();
+            if (match2) {
+              return match2;
+            }
+            await sleep2(150);
+          }
+          return null;
+        };
+        const placeCaretAtEnd = (element2) => {
+          if (!(element2 instanceof HTMLElement)) {
+            return;
+          }
+          const selection = window.getSelection();
+          if (!selection) {
+            return;
+          }
+          const range = document.createRange();
+          range.selectNodeContents(element2);
+          range.collapse(false);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        };
+        const selectAllEditableContents = (element2) => {
+          if (!(element2 instanceof HTMLElement)) {
+            return;
+          }
+          element2.focus();
+          const selection = window.getSelection();
+          if (!selection) {
+            document.execCommand("selectAll", false);
+            return;
+          }
+          const range = document.createRange();
+          range.selectNodeContents(element2);
+          selection.removeAllRanges();
+          selection.addRange(range);
+        };
+        const buildParagraphNode = (text) => ({
+          children: text ? [
+            {
+              detail: 0,
+              format: 0,
+              mode: "normal",
+              style: "",
+              text,
+              type: "text",
+              version: 1
+            }
+          ] : [],
+          direction: null,
+          format: "",
+          indent: 0,
+          type: "paragraph",
+          version: 1,
+          textFormat: 0,
+          textStyle: ""
+        });
+        const setLexicalText = (element2, nextPrompt) => {
+          if (!(element2 instanceof HTMLElement)) {
+            return false;
+          }
+          const editor = element2.__lexicalEditor;
+          if (!editor || typeof editor.parseEditorState !== "function" || typeof editor.setEditorState !== "function") {
+            return false;
+          }
+          const paragraphs = String(nextPrompt ?? "").split(/\n/g).map((line) => buildParagraphNode(line));
+          const editorStateJson = {
+            root: {
+              children: paragraphs.length > 0 ? paragraphs : [buildParagraphNode("")],
+              direction: null,
+              format: "",
+              indent: 0,
+              type: "root",
+              version: 1
+            }
+          };
+          const nextState = editor.parseEditorState(JSON.stringify(editorStateJson));
+          editor.setEditorState(nextState);
+          if (typeof editor.focus === "function") {
+            editor.focus();
+          } else {
+            element2.focus();
+          }
+          placeCaretAtEnd(element2);
+          return normalizeText4(element2.innerText ?? element2.textContent ?? "") === normalizeText4(nextPrompt);
+        };
+        if ((Number(injectedConfig?.waitMs) || 0) > 0) {
+          await sleep2(injectedConfig.waitMs);
+        }
+        const startedAt = performance.now();
+        const match = await waitForPromptMatch(Math.max((Number(injectedConfig?.waitMs) || 0) + 6e3, 8e3));
+        if (!match?.element) {
+          return { status: "selector_timeout", attempts: [] };
+        }
+        const { element, selector } = match;
+        let strategy = "mainWorldExecCommand";
+        let injected = false;
+        const attempts = [];
+        if (element instanceof HTMLElement && element.dataset.lexicalEditor === "true") {
+          injected = setLexicalText(element, injectedPrompt);
+          strategy = "mainWorldLexical";
+          attempts.push({ name: strategy, success: injected });
+        }
+        if (!injected && element instanceof HTMLElement) {
+          element.focus();
+          selectAllEditableContents(element);
+          const inserted = document.execCommand("insertText", false, injectedPrompt);
+          injected = Boolean(inserted) || normalizeText4(element.innerText ?? element.textContent ?? "") === normalizeText4(injectedPrompt);
+          attempts.push({ name: "mainWorldExecCommand", success: injected });
+        }
+        if (!injected) {
+          return { status: "strategy_exhausted", selector, strategy, attempts };
+        }
+        return {
+          status: "injected",
+          selector,
+          strategy,
+          inputType: "contenteditable",
+          elapsedMs: Math.round(performance.now() - startedAt),
+          attempts
+        };
+      },
+      args: [prompt, config, promptSelectors]
+    });
+    const injectionResult = executionResult2?.result ?? null;
+    if (!injectionResult || injectionResult.status !== "injected") {
+      return injectionResult;
+    }
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: [INJECTOR_SCRIPT_PATH]
+    });
+    const [submitExecutionResult] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: async (injectedConfig) => {
+        const submitter = globalThis.__aiPromptBroadcasterSubmitPrompt;
+        if (typeof submitter !== "function") {
+          throw new Error("submitPrompt entry point is not available in the tab context.");
+        }
+        return submitter(injectedConfig);
+      },
+      args: [config]
+    });
+    const submitResult = submitExecutionResult?.result ?? null;
+    if (submitResult?.status === "submitted") {
+      return {
+        ...submitResult,
+        selector: injectionResult.selector ?? submitResult.selector,
+        strategy: injectionResult.strategy ?? submitResult.strategy,
+        inputType: injectionResult.inputType ?? submitResult.inputType,
+        elapsedMs: injectionResult.elapsedMs ?? submitResult.elapsedMs,
+        attempts: injectionResult.attempts ?? submitResult.attempts ?? []
+      };
+    }
+    return {
+      ...submitResult ?? injectionResult,
+      selector: injectionResult?.selector ?? submitResult?.selector,
+      strategy: injectionResult?.strategy ?? submitResult?.strategy,
+      inputType: injectionResult?.inputType ?? submitResult?.inputType,
+      elapsedMs: injectionResult?.elapsedMs ?? submitResult?.elapsedMs,
+      attempts: injectionResult?.attempts ?? submitResult?.attempts ?? []
+    };
+  }
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    files: [INJECTOR_SCRIPT_PATH]
+  });
+  const [executionResult] = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: async (injectedPrompt, injectedConfig) => {
+      const injector = globalThis.__aiPromptBroadcasterInjectPrompt;
+      if (typeof injector !== "function") {
+        throw new Error("injectPrompt entry point is not available in the tab context.");
+      }
+      return injector(injectedPrompt, injectedConfig);
+    },
+    args: [prompt, config]
+  });
+  return executionResult?.result ?? null;
+}
+
+// src/background/injection/pending.ts
+var DEFAULT_SUBMIT_BUTTON_WAIT_TIMEOUT_MS = 5e3;
+var DEFAULT_SUBMIT_RETRY_COUNT = 1;
+function createPendingInjectionController(deps) {
+  const {
+    getI18nMessage: getI18nMessage2,
+    getErrorMessage: getErrorMessage2,
+    sleep: sleep2,
+    activeInjections: activeInjections2,
+    queuedInjectionTabIds: queuedInjectionTabIds2,
+    getPendingInjections: getPendingInjections2,
+    getPendingBroadcasts: getPendingBroadcasts2,
+    updatePendingInjection: updatePendingInjection2,
+    removePendingInjection: removePendingInjection2,
+    recordBroadcastSiteResult,
+    waitForTabInteractionReady: waitForTabInteractionReady2,
+    isSameSiteOrigin: isSameSiteOrigin3
+  } = deps;
+  let injectionProcessChain = Promise.resolve();
+  function queuePendingInjection(tabId, tab) {
+    if (!Number.isFinite(Number(tabId))) {
+      return injectionProcessChain;
+    }
+    if (activeInjections2.has(tabId) || queuedInjectionTabIds2.has(tabId)) {
+      return injectionProcessChain;
+    }
+    queuedInjectionTabIds2.add(tabId);
+    injectionProcessChain = injectionProcessChain.catch(() => void 0).then(async () => {
+      try {
+        await processPendingInjectionNow(tabId, tab);
+      } finally {
+        queuedInjectionTabIds2.delete(tabId);
+      }
+    }).catch((error) => {
+      console.error("[AI Prompt Broadcaster] Queued injection processing failed.", {
+        tabId,
+        error
+      });
+      queuedInjectionTabIds2.delete(tabId);
+    });
+    return injectionProcessChain;
+  }
+  async function handlePendingInjectionTimeout(tabId, job, reason = "timeout") {
+    const siteName = job?.site?.name ?? job?.siteId ?? "AI service";
+    await recordBroadcastSiteResult(job.broadcastId, job.siteId, buildSiteResult("injection_timeout"));
+    await removePendingInjection2(tabId);
+    activeInjections2.delete(tabId);
+    await enqueueUiToast({
+      message: getI18nMessage2("toast_injection_timeout", [siteName]) || `${siteName} injection timed out.`,
+      type: "warning",
+      duration: 5e3,
+      meta: { reason }
+    });
+  }
+  async function processPendingInjectionNow(tabId, tab) {
+    if (activeInjections2.has(tabId)) {
+      return;
+    }
+    const pending = await getPendingInjections2();
+    const job = pending[String(tabId)];
+    if (!job || job.injected === true && job.status !== "injecting") {
+      return;
+    }
+    const pendingBroadcasts2 = await getPendingBroadcasts2();
+    if (!pendingBroadcasts2[job.broadcastId]) {
+      await removePendingInjection2(tabId);
+      activeInjections2.delete(tabId);
+      return;
+    }
+    if (Date.now() - Number(job.createdAt || 0) > PENDING_TIMEOUT_MS) {
+      await handlePendingInjectionTimeout(tabId, job);
+      return;
+    }
+    activeInjections2.add(tabId);
+    await updatePendingInjection2(
+      tabId,
+      (current) => current ? {
+        ...current,
+        injected: true,
+        startedAt: Date.now(),
+        status: "injecting"
+      } : null
+    );
+    try {
+      const settings = await getAppSettings();
+      const waitMsMultiplier = Number(settings?.waitMsMultiplier) || 1;
+      const strategyStats = await getStrategyStats();
+      const runtimeOverrides = {
+        waitMsMultiplier,
+        strategyOrder: buildPreferredStrategyOrder(job.siteId, strategyStats),
+        submitTimeoutMs: scaleTimeout(DEFAULT_SUBMIT_BUTTON_WAIT_TIMEOUT_MS, waitMsMultiplier),
+        submitRetryCount: DEFAULT_SUBMIT_RETRY_COUNT
+      };
+      const ready = await waitForTabInteractionReady2(tabId, scaleTimeout(TAB_LOAD_READY_TIMEOUT_MS, waitMsMultiplier));
+      if (!ready) {
+        await handlePendingInjectionTimeout(tabId, job, "tab_not_ready");
+        return;
+      }
+      const currentTab = await chrome.tabs.get(tabId);
+      const currentUrl = currentTab?.url ?? "";
+      try {
+        if (Number.isFinite(currentTab?.windowId)) {
+          await chrome.windows.update(currentTab.windowId, { focused: true });
+        }
+        await chrome.tabs.update(tabId, { active: true });
+        await sleep2(300);
+      } catch (activateError) {
+        console.warn("[AI Prompt Broadcaster] Failed to activate tab before injection.", {
+          tabId,
+          activateError
+        });
+      }
+      if (!isSameSiteOrigin3(currentUrl, job.site)) {
+        await recordBroadcastSiteResult(job.broadcastId, job.siteId, buildSiteResult("auth_required"));
+        await enqueueUiToast({
+          message: getI18nMessage2("toast_login_required", [job.site.name]) || `${job.site.name} requires login before sending.`,
+          type: "warning",
+          duration: 5e3
+        });
+        return;
+      }
+      const result = await injectIntoTab(tabId, job.prompt, job.site, {
+        ...runtimeOverrides,
+        waitMs: scaleTimeout(Number(job.site?.waitMs) || 0, waitMsMultiplier)
+      });
+      if (Array.isArray(result?.attempts) && result.attempts.length > 0) {
+        await recordStrategyAttempts(job.siteId, result.attempts);
+      }
+      const finalCode = normalizeResultCode(result?.status);
+      if (finalCode === "submitted") {
+        await sleep2(TAB_POST_SUBMIT_SETTLE_MS);
+      }
+      await recordBroadcastSiteResult(job.broadcastId, job.siteId, buildSiteResult(finalCode, {
+        message: result?.error ?? "",
+        strategy: result?.strategy,
+        elapsedMs: result?.elapsedMs,
+        attempts: result?.attempts
+      }));
+      if (finalCode === "auth_required") {
+        await enqueueUiToast({
+          message: getI18nMessage2("toast_login_required", [job.site.name]) || `${job.site.name} requires login before sending.`,
+          type: "warning",
+          duration: 5e3
+        });
+      }
+    } catch (error) {
+      console.error("[AI Prompt Broadcaster] Failed to inject prompt after tab load.", {
+        tabId,
+        error
+      });
+      await recordBroadcastSiteResult(job.broadcastId, job.siteId, buildSiteResult("unexpected_error", {
+        message: getErrorMessage2(error)
+      }));
+      await enqueueUiToast({
+        message: getI18nMessage2("toast_injection_failed", [job.site.name]) || `${job.site.name} automatic injection failed.`,
+        type: "error",
+        duration: 5e3
+      });
+    } finally {
+      await removePendingInjection2(tabId);
+      activeInjections2.delete(tabId);
+    }
+  }
+  async function reconcilePendingInjections() {
+    const pending = await getPendingInjections2();
+    const entries = Object.entries(pending);
+    for (const [tabIdKey, job] of entries) {
+      const tabId = Number(tabIdKey);
+      if (!Number.isFinite(tabId) || !job) {
+        await removePendingInjection2(tabId);
+        continue;
+      }
+      const createdAt = Number(job.createdAt || 0);
+      const startedAt = Number(job.startedAt || 0);
+      const createdAge = Date.now() - createdAt;
+      const injectingAge = startedAt > 0 ? Date.now() - startedAt : createdAge;
+      if (job.status === "injecting" && injectingAge > PENDING_TIMEOUT_MS) {
+        await handlePendingInjectionTimeout(tabId, job, "stale_injecting");
+        continue;
+      }
+      if (createdAge > PENDING_TIMEOUT_MS) {
+        await handlePendingInjectionTimeout(tabId, job);
+        continue;
+      }
+      try {
+        const tab = await chrome.tabs.get(tabId);
+        if (tab?.status === "complete") {
+          await queuePendingInjection(tabId, tab);
+        }
+      } catch (_error) {
+        await recordBroadcastSiteResult(job.broadcastId, job.siteId, "tab_closed");
+        await removePendingInjection2(tabId);
+        activeInjections2.delete(tabId);
+      }
+    }
+  }
+  return {
+    queuePendingInjection,
+    processPendingInjectionNow,
+    handlePendingInjectionTimeout,
+    reconcilePendingInjections
+  };
+}
+
+// src/background/lifecycle/service-worker.ts
+function createServiceWorkerLifecycle(deps) {
+  const {
+    getErrorMessage: getErrorMessage2,
+    reconcilePendingInjections,
+    reconcilePendingBroadcasts,
+    reconcileFavoriteRunJobs: reconcileFavoriteRunJobs2,
+    reconcileFavoriteSchedules: reconcileFavoriteSchedules2,
+    cancelBroadcast,
+    getPendingBroadcasts: getPendingBroadcasts2,
+    getPendingInjections: getPendingInjections2,
+    suppressedCompletedBroadcastIds: suppressedCompletedBroadcastIds2,
+    closeTabQuietly,
+    activeInjections: activeInjections2,
+    queuedInjectionTabIds: queuedInjectionTabIds2,
+    selectionCache: selectionCache2,
+    resetRememberedState: resetRememberedState2,
+    queueBackgroundStateMutation: queueBackgroundStateMutation2,
+    clearBadge: clearBadge2,
+    getPreferredNormalWindowId: getPreferredNormalWindowId2,
+    getOpenAiTabsForWindow: getOpenAiTabsForWindow2,
+    getPreferredNormalActiveTab: getPreferredNormalActiveTab2,
+    isInjectableTabUrl: isInjectableTabUrl3,
+    getSelectedTextFromTab: getSelectedTextFromTab2
+  } = deps;
+  async function ensureReconcileAlarm() {
+    try {
+      chrome.alarms.create(RECONCILE_ALARM, {
+        periodInMinutes: KEEPALIVE_PERIOD_MINUTES
+      });
+    } catch (error) {
+      console.error("[AI Prompt Broadcaster] Failed to create reconcile alarm.", error);
+    }
+  }
+  async function initializeServiceWorker() {
+    await ensureReconcileAlarm();
+    await reconcilePendingInjections();
+    await reconcilePendingBroadcasts();
+    await reconcileFavoriteRunJobs2();
+    await reconcileFavoriteSchedules2();
+  }
+  async function handlePopupOpened() {
+    await reconcilePendingBroadcasts();
+    const lastBroadcast = await getLastBroadcast();
+    if (!lastBroadcast || lastBroadcast.status !== "sending") {
+      await clearBadge2();
+    }
+    return {
+      ok: true,
+      lastBroadcast
+    };
+  }
+  async function handleGetOpenAiTabsMessage(message) {
+    const windowId = await getPreferredNormalWindowId2(message?.windowId ?? null);
+    const tabs = await getOpenAiTabsForWindow2(windowId);
+    return {
+      ok: true,
+      windowId,
+      tabs
+    };
+  }
+  async function handleCancelBroadcastMessage(message) {
+    const summary = await cancelBroadcast(message?.broadcastId ?? "", "cancelled");
+    return {
+      ok: Boolean(summary),
+      summary
+    };
+  }
+  async function resetAllExtensionData() {
+    await reconcilePendingBroadcasts();
+    const pendingBroadcasts2 = await getPendingBroadcasts2();
+    for (const broadcastId of Object.keys(pendingBroadcasts2)) {
+      suppressedCompletedBroadcastIds2.add(broadcastId);
+      await cancelBroadcast(broadcastId, "reset");
+    }
+    const remainingInjections = await getPendingInjections2();
+    await Promise.all(
+      Object.entries(remainingInjections).map(async ([tabIdKey, job]) => {
+        if (job?.closeOnCancel === false) {
+          return;
+        }
+        await closeTabQuietly(Number(tabIdKey));
+      })
+    );
+    activeInjections2.clear();
+    queuedInjectionTabIds2.clear();
+    selectionCache2.clear();
+    resetRememberedState2();
+    const alarms = await chrome.alarms.getAll().catch(() => []);
+    await Promise.all(
+      alarms.filter((alarm) => alarm.name.startsWith("apb-favorite-job:")).map((alarm) => chrome.alarms.clear(alarm.name).catch(() => false))
+    );
+    await queueBackgroundStateMutation2((state) => {
+      state.pendingInjections = {};
+      state.pendingBroadcasts = {};
+      state.pendingSelectorChecks = {};
+      state.selectorAlerts = {};
+      return true;
+    });
+    await resetPersistedExtensionState({
+      additionalSessionKeys: [
+        PENDING_INJECTIONS_KEY,
+        PENDING_BROADCASTS_KEY,
+        PENDING_SELECTOR_CHECKS_KEY,
+        SELECTOR_ALERTS_KEY
+      ],
+      clearAlarmName: BADGE_CLEAR_ALARM
+    });
+    await clearBadge2();
+    return { ok: true };
+  }
+  async function handleGetActiveTabContext() {
+    try {
+      const activeTab = await getPreferredNormalActiveTab2();
+      const url = typeof activeTab?.url === "string" ? activeTab.url : "";
+      const title = typeof activeTab?.title === "string" ? activeTab.title : "";
+      if (!isInjectableTabUrl3(url)) {
+        return { ok: true, url: "", title: "", selection: "" };
+      }
+      let selection = "";
+      if (activeTab?.id) {
+        selection = await getSelectedTextFromTab2(activeTab.id).catch(() => "");
+      }
+      return { ok: true, url, title, selection };
+    } catch (error) {
+      console.error("[AI Prompt Broadcaster] Failed to read active tab context.", error);
+      return { ok: false, url: "", title: "", selection: "" };
+    }
+  }
+  return {
+    ensureReconcileAlarm,
+    initializeServiceWorker,
+    handlePopupOpened,
+    handleGetOpenAiTabsMessage,
+    handleCancelBroadcastMessage,
+    resetAllExtensionData,
+    handleGetActiveTabContext
+  };
+}
+
+// src/background/messages/selector-handlers.ts
+function createSelectorHandlers(deps) {
+  const {
+    getI18nMessage: getI18nMessage2,
+    getSiteForUrl: getSiteForUrl2,
+    getSiteById: getSiteById2,
+    clearPendingSelectorChecksForSiteId: clearPendingSelectorChecksForSiteId2,
+    registerPendingSelectorCheckReport: registerPendingSelectorCheckReport2,
+    maybeCreateSelectorNotification: maybeCreateSelectorNotification2
+  } = deps;
+  async function handleSelectorCheckInit(message) {
+    const site = await getSiteForUrl2(message?.url ?? "");
+    if (!site) {
+      return { ok: true, site: null };
+    }
+    return {
+      ok: true,
+      site: buildInjectionConfig(site)
+    };
+  }
+  async function handleSelectorCheckReport(message) {
+    if ((message?.status === "ok" || message?.status === "auth_page" || message?.status === "skipped") && message?.siteId) {
+      await clearPendingSelectorChecksForSiteId2(message.siteId);
+      await clearFailedSelector(message.siteId);
+      return { ok: true };
+    }
+    if (message?.status !== "selector_missing") {
+      return { ok: true };
+    }
+    const missing = Array.isArray(message?.missing) ? message.missing : [];
+    if (missing.length === 0) {
+      return { ok: true };
+    }
+    const report = {
+      siteId: message.siteId ?? "unknown",
+      siteName: message.siteName ?? "AI service",
+      pageUrl: message.pageUrl ?? "",
+      missing
+    };
+    const pendingResult = await registerPendingSelectorCheckReport2(report);
+    if (!pendingResult?.promoted) {
+      return { ok: true };
+    }
+    await maybeCreateSelectorNotification2(report, { source: "selector-checker" });
+    await markFailedSelector(
+      message.siteId ?? "unknown",
+      missing[0]?.selector ?? "",
+      "selector-checker"
+    );
+    return { ok: true };
+  }
+  async function handleSelectorFailedMessage(message) {
+    const payload = message ?? {};
+    const serviceId = payload.serviceId ?? "";
+    const selector = payload.selector ?? "";
+    const site = await getSiteById2(serviceId);
+    await clearPendingSelectorChecksForSiteId2(serviceId);
+    await maybeCreateSelectorNotification2(
+      {
+        siteId: serviceId || "unknown",
+        siteName: site?.name || serviceId || "AI service",
+        pageUrl: "",
+        missing: [
+          {
+            field: "inputSelector",
+            selector
+          }
+        ]
+      },
+      { source: "injector" }
+    );
+    await markFailedSelector(serviceId, selector, "injector");
+    await enqueueUiToast({
+      message: getI18nMessage2("toast_selector_failed", [site?.name ?? serviceId]) || `${site?.name ?? serviceId} selector was not found.`,
+      type: "error",
+      duration: 1e4
+    });
+    return { ok: true };
+  }
+  async function handleInjectSuccessMessage(message) {
+    const payload = message ?? {};
+    if (payload.serviceId) {
+      await clearPendingSelectorChecksForSiteId2(payload.serviceId);
+      await clearFailedSelector(payload.serviceId);
+    }
+    return { ok: true };
+  }
+  async function handleInjectFallbackMessage(message) {
+    const payload = message ?? {};
+    const serviceId = payload.serviceId ?? "";
+    const site = await getSiteById2(serviceId);
+    const copied = Boolean(payload.copied);
+    await enqueueUiToast({
+      message: copied ? getI18nMessage2("toast_inject_fallback_copied", [site?.name ?? serviceId]) || `${site?.name ?? serviceId} prompt copied to clipboard. Paste it manually and send.` : getI18nMessage2("toast_inject_fallback_manual", [site?.name ?? serviceId]) || `${site?.name ?? serviceId} automatic injection failed. Paste the prompt manually and send.`,
+      type: "warning",
+      duration: 5e3
+    });
+    return { ok: true };
+  }
+  async function handleUiToastMessage(message) {
+    const payload = message ?? {};
+    await enqueueUiToast(payload.toast ?? {});
+    return { ok: true };
+  }
+  return {
+    handleSelectorCheckInit,
+    handleSelectorCheckReport,
+    handleSelectorFailedMessage,
+    handleInjectSuccessMessage,
+    handleInjectFallbackMessage,
+    handleUiToastMessage
+  };
+}
+
+// src/background/messages/template-packs.ts
+function createTemplatePackHandlers(deps) {
+  const { nowIso: nowIso2 } = deps;
+  function stripFavoriteSensitiveDefaults(favorite, includeSensitiveDefaults) {
+    if (includeSensitiveDefaults) {
+      return favorite;
+    }
+    return {
+      ...favorite,
+      templateDefaults: {},
+      steps: favorite.steps.map((step) => ({
+        ...step,
+        templateDefaults: {}
+      }))
+    };
+  }
+  async function handleTemplatePackExport(message) {
+    const favorites = await getPromptFavorites();
+    const selectedIds = normalizeSiteIdList(message?.favoriteIds);
+    const includeSensitiveDefaults = message?.includeSensitiveDefaults !== false;
+    const selectedFavorites = (selectedIds.length > 0 ? favorites.filter((favorite) => selectedIds.includes(favorite.id)) : favorites).map((favorite) => stripFavoriteSensitiveDefaults(favorite, includeSensitiveDefaults));
+    const pack = await saveTemplatePack({
+      title: message?.title || `Template Pack ${(/* @__PURE__ */ new Date()).toLocaleDateString()}`,
+      description: "",
+      favoriteIds: selectedFavorites.map((favorite) => favorite.id),
+      templates: selectedFavorites,
+      includeSensitiveDefaults
+    });
+    return {
+      ok: true,
+      pack
+    };
+  }
+  async function handleTemplatePackImport(message) {
+    const pack = await saveTemplatePack(message?.pack ?? {});
+    const currentFavorites = await getPromptFavorites();
+    const importedFavoriteIds = [];
+    const skippedFavoriteIds = [];
+    const nextFavorites = [...currentFavorites];
+    for (const template of pack.templates) {
+      const normalizedTemplate = buildFavoriteEntry(template);
+      const exactDuplicate = nextFavorites.find(
+        (favorite) => favorite.title === normalizedTemplate.title && favorite.text === normalizedTemplate.text
+      );
+      if (exactDuplicate) {
+        skippedFavoriteIds.push(normalizedTemplate.id);
+        continue;
+      }
+      const importedFavorite = {
+        ...normalizedTemplate,
+        id: ensureUniqueStringId(nextFavorites, normalizedTemplate.id),
+        favoritedAt: nowIso2(),
+        createdAt: normalizedTemplate.createdAt || nowIso2(),
+        usageCount: 0,
+        lastUsedAt: null
+      };
+      nextFavorites.unshift(importedFavorite);
+      importedFavoriteIds.push(importedFavorite.id);
+    }
+    if (importedFavoriteIds.length > 0) {
+      await setPromptFavorites(nextFavorites);
+    }
+    return {
+      ok: true,
+      pack,
+      importedFavoriteIds,
+      skippedFavoriteIds
+    };
+  }
+  async function handleServiceGroupsUpdate(message) {
+    const groups = await setServiceGroups(message?.groups ?? []);
+    return {
+      ok: true,
+      groups
+    };
+  }
+  return {
+    stripFavoriteSensitiveDefaults,
+    handleTemplatePackExport,
+    handleTemplatePackImport,
+    handleServiceGroupsUpdate
+  };
+}
+
+// src/background/service-test/probe.ts
+async function runServiceTestOnTab(tabId, draft) {
+  const probeText = "__apb_probe__";
+  const submitRequirement = buildSubmitRequirement(draft);
+  const [result] = await chrome.scripting.executeScript({
+    target: { tabId },
+    func: async (siteDraft, nextProbeText, nextSubmitRequirement) => {
+      function isElementVisible(element) {
+        if (!(element instanceof HTMLElement) && !(element instanceof SVGElement)) {
+          return true;
+        }
+        const style = window.getComputedStyle(element);
+        if (element instanceof HTMLElement && element.hidden || element.getAttribute("hidden") !== null || element.getAttribute("aria-hidden") === "true" || style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse") {
+          return false;
+        }
+        return element.getClientRects().length > 0;
+      }
+      function findElementsDeep(selector, root = document, seen = /* @__PURE__ */ new Set(), matches = []) {
+        if (!selector || typeof selector !== "string") {
+          return matches;
+        }
+        if (typeof root.querySelectorAll === "function") {
+          for (const element of Array.from(root.querySelectorAll(selector))) {
+            if (!seen.has(element)) {
+              seen.add(element);
+              matches.push(element);
+            }
+          }
+        }
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+        let current = walker.currentNode;
+        while (current) {
+          if (current instanceof Element && current.shadowRoot) {
+            findElementsDeep(selector, current.shadowRoot, seen, matches);
+          }
+          current = walker.nextNode();
+        }
+        return matches;
+      }
+      function findBestMatch(selectors, options = {}) {
+        for (const selector of selectors) {
+          const matches = findElementsDeep(selector);
+          const visible = options.visibleOnly ? matches.filter((element) => isElementVisible(element)) : matches;
+          const target = visible[0] ?? matches[0] ?? null;
+          if (target) {
+            return { element: target, selector };
+          }
+        }
+        return { element: null, selector: selectors[0] ?? "" };
+      }
+      function detectInputType(element) {
+        if (element instanceof HTMLTextAreaElement) {
+          return "textarea";
+        }
+        if (element instanceof HTMLInputElement) {
+          return "input";
+        }
+        return element instanceof HTMLElement && element.isContentEditable ? "contenteditable" : "";
+      }
+      function highlightElement(element, color) {
+        if (!(element instanceof HTMLElement) && !(element instanceof SVGElement)) {
+          return;
+        }
+        const previousOutline = element.style.outline;
+        const previousOutlineOffset = element.style.outlineOffset;
+        element.style.outline = `3px solid ${color}`;
+        element.style.outlineOffset = "2px";
+        window.setTimeout(() => {
+          element.style.outline = previousOutline;
+          element.style.outlineOffset = previousOutlineOffset;
+        }, 1800);
+      }
+      function snapshotElementValue(element) {
+        if (element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement) {
+          return {
+            type: "value",
+            value: element.value
+          };
+        }
+        if (element instanceof HTMLElement && element.isContentEditable) {
+          return {
+            type: "html",
+            html: element.innerHTML
+          };
+        }
+        return {
+          type: "text",
+          text: element.textContent ?? ""
+        };
+      }
+      function restoreElementValue(element, snapshot) {
+        if (!snapshot) {
+          return;
+        }
+        if (snapshot.type === "value" && (element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement)) {
+          element.value = snapshot.value ?? "";
+        } else if (snapshot.type === "html" && element instanceof HTMLElement) {
+          element.innerHTML = snapshot.html ?? "";
+        } else if (snapshot.type === "text" && element instanceof HTMLElement) {
+          element.textContent = snapshot.text ?? "";
+        }
+        element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "" }));
+        element.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      function applyProbeText(element, probeText2) {
+        if (element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement) {
+          element.focus();
+          element.value = probeText2;
+        } else if (element instanceof HTMLElement && element.isContentEditable) {
+          element.focus();
+          element.textContent = probeText2;
+        } else {
+          throw new Error("Editable target was not found.");
+        }
+        element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: probeText2 }));
+        element.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      async function waitForVisibleSelector(selector, timeoutMs = 1800) {
+        const startedAt = Date.now();
+        while (Date.now() - startedAt <= timeoutMs) {
+          const match = findBestMatch([selector], { visibleOnly: true });
+          if (match.element) {
+            return match;
+          }
+          await new Promise((resolve) => window.setTimeout(resolve, 120));
+        }
+        return findBestMatch([selector], { visibleOnly: true });
+      }
+      try {
+        const selectors = [
+          siteDraft.inputSelector,
+          ...Array.isArray(siteDraft.fallbackSelectors) ? siteDraft.fallbackSelectors : []
+        ].filter((selector) => typeof selector === "string" && selector.trim());
+        const inputMatch = findBestMatch(selectors, { visibleOnly: true });
+        if (!inputMatch.element) {
+          return {
+            ok: true,
+            input: {
+              found: false,
+              selector: inputMatch.selector,
+              actualType: "",
+              expectedType: siteDraft.inputType ?? ""
+            },
+            submit: {
+              status: "skipped"
+            }
+          };
+        }
+        highlightElement(inputMatch.element, "#facc15");
+        const actualInputType = detectInputType(inputMatch.element);
+        const inputTypeMatches = actualInputType === String(siteDraft.inputType ?? "");
+        const response = {
+          ok: true,
+          input: {
+            found: true,
+            selector: inputMatch.selector,
+            actualType: actualInputType,
+            expectedType: String(siteDraft.inputType ?? ""),
+            typeMatches: inputTypeMatches
+          },
+          submit: {
+            status: "skipped"
+          }
+        };
+        if (String(siteDraft.submitMethod) !== "click" || nextSubmitRequirement !== "required" && nextSubmitRequirement !== "conditional") {
+          response.submit = {
+            status: "skipped",
+            method: String(siteDraft.submitMethod ?? "enter")
+          };
+          return response;
+        }
+        const snapshot = snapshotElementValue(inputMatch.element);
+        try {
+          applyProbeText(inputMatch.element, nextProbeText);
+          const submitMatch = await waitForVisibleSelector(String(siteDraft.submitSelector ?? ""));
+          if (submitMatch.element) {
+            highlightElement(submitMatch.element, "#34d399");
+          }
+          response.submit = {
+            status: submitMatch.element ? "ok" : "missing",
+            selector: submitMatch.selector
+          };
+        } finally {
+          restoreElementValue(inputMatch.element, snapshot);
+        }
+        return response;
+      } catch (error) {
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error)
+        };
+      }
+    },
+    args: [draft, probeText, submitRequirement]
+  });
+  return result?.result ?? {
+    ok: false,
+    error: "Selector test returned no result."
+  };
+}
+
+// src/background/service-test/handler.ts
+function createServiceTestHandler(deps) {
+  const { getErrorMessage: getErrorMessage2, getPreferredInjectableNormalTab: getPreferredInjectableNormalTab2 } = deps;
+  async function handleServiceTestRun(message) {
+    const draft = message?.draft ?? {};
+    const selectorErrors = [];
+    if (!String(draft?.inputSelector ?? "").trim()) {
+      selectorErrors.push("Input selector is required.");
+    }
+    if (!["textarea", "contenteditable", "input"].includes(String(draft?.inputType ?? ""))) {
+      selectorErrors.push("Input type is invalid.");
+    }
+    if (!["click", "enter", "shift+enter"].includes(String(draft?.submitMethod ?? ""))) {
+      selectorErrors.push("Submit method is invalid.");
+    }
+    if (String(draft?.submitMethod ?? "") === "click" && !String(draft?.submitSelector ?? "").trim()) {
+      selectorErrors.push("Submit selector is required when using click submit.");
+    }
+    if (selectorErrors.length > 0) {
+      return {
+        ok: false,
+        reason: "validation_failed",
+        error: selectorErrors.join(" ")
+      };
+    }
+    const preferredTab = await getPreferredInjectableNormalTab2();
+    if (!preferredTab?.ok) {
+      return {
+        ok: false,
+        reason: preferredTab?.reason ?? "no_tab"
+      };
+    }
+    try {
+      const tab = preferredTab.tab;
+      const tabId = tab?.id;
+      if (typeof tabId !== "number" || !tab) {
+        return {
+          ok: false,
+          reason: "no_tab"
+        };
+      }
+      const result = await runServiceTestOnTab(tabId, draft);
+      if (!result.ok) {
+        return result;
+      }
+      return {
+        ...result,
+        tabId,
+        tabUrl: tab.url ?? ""
+      };
+    } catch (error) {
+      console.error("[AI Prompt Broadcaster] Service test failed.", error);
+      return {
+        ok: false,
+        reason: "error",
+        error: getErrorMessage2(error)
+      };
+    }
+  }
+  return { handleServiceTestRun, runServiceTestOnTab };
+}
+
+// src/background/sites/health.ts
+async function handleServiceHealthGet() {
+  const [sites, history, failedSelectors, strategyStats] = await Promise.all([
+    getRuntimeSites(),
+    getStoredPromptHistory(),
+    getFailedSelectors(),
+    getStrategyStats()
+  ]);
+  const failedSelectorBySite = new Map(
+    failedSelectors.map((entry) => [entry.serviceId, entry])
+  );
+  const snapshots = sites.map((site) => {
+    let lastSuccessAt = null;
+    let lastFailureAt = null;
+    let lastFailureCode = null;
+    let successCount = 0;
+    let failureCount = 0;
+    for (const item of history) {
+      const result = item.siteResults?.[site.id];
+      if (!result && !item.requestedSiteIds?.includes(site.id)) {
+        continue;
+      }
+      if (result?.code === "submitted" || item.submittedSiteIds?.includes(site.id)) {
+        successCount += 1;
+        if (!lastSuccessAt) {
+          lastSuccessAt = item.createdAt;
+        }
+        continue;
+      }
+      failureCount += 1;
+      if (!lastFailureAt) {
+        lastFailureAt = item.createdAt;
+        lastFailureCode = result?.code ?? "unexpected_error";
+      }
+    }
+    const siteStrategyStats = strategyStats[site.id] ?? {};
+    const preferredStrategy = Object.entries(siteStrategyStats).sort(
+      ([, left], [, right]) => right.success - right.fail - (left.success - left.fail)
+    )[0]?.[0] ?? null;
+    return {
+      serviceId: site.id,
+      serviceName: site.name,
+      enabled: site.enabled,
+      lastSuccessAt,
+      lastFailureAt,
+      lastFailureCode,
+      selectorWarning: failedSelectorBySite.get(site.id) ?? null,
+      preferredStrategy,
+      successCount,
+      failureCount,
+      verification: {
+        lastVerified: site.lastVerified,
+        verifiedAt: site.verifiedAt,
+        verifiedRoute: site.verifiedRoute,
+        verifiedAuthState: site.verifiedAuthState,
+        verifiedLocale: site.verifiedLocale,
+        verifiedVersion: site.verifiedVersion
+      }
+    };
+  });
+  return {
+    ok: true,
+    snapshots
+  };
+}
+
+// src/background/ui/badge.ts
+function createBadgeController() {
+  async function clearBadge2() {
+    try {
+      await chrome.action.setBadgeText({ text: "" });
+    } catch (error) {
+      console.error("[AI Prompt Broadcaster] Failed to clear badge.", error);
+    }
+  }
+  async function applyBadgeForBroadcast2(summary) {
+    try {
+      if (!summary || summary.status === "idle") {
+        await clearBadge2();
+        return;
+      }
+      if (summary.status === "sending") {
+        await chrome.action.setBadgeBackgroundColor({ color: "#d97706" });
+        await chrome.action.setBadgeText({ text: "..." });
+        return;
+      }
+      if (summary.status === "failed" || summary.status === "partial") {
+        await chrome.action.setBadgeBackgroundColor({ color: "#b53b3b" });
+        await chrome.action.setBadgeText({ text: "!" });
+        return;
+      }
+      await chrome.action.setBadgeBackgroundColor({ color: "#1f8f5f" });
+      await chrome.action.setBadgeText({ text: "✓" });
+      chrome.alarms.create(BADGE_CLEAR_ALARM, {
+        when: Date.now() + BADGE_CLEAR_DELAY_MS
+      });
+    } catch (error) {
+      console.error("[AI Prompt Broadcaster] Failed to apply badge state.", error);
+    }
+  }
+  return {
+    clearBadge: clearBadge2,
+    applyBadgeForBroadcast: applyBadgeForBroadcast2
+  };
+}
+
 // src/background/app/selector-alerts.ts
+var SELECTOR_ALERT_PROMOTE_THRESHOLD = 3;
+var SELECTOR_NOTIFY_COOLDOWN_MS = 60 * 60 * 1e3;
 function normalizeText2(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 function buildSelectorAlertSignature(report) {
-  const siteId = normalizeText2(report?.siteId) || "unknown";
-  const missingEntries = (Array.isArray(report?.missing) ? report.missing : []).map((entry) => `${normalizeText2(entry?.field)}:${normalizeText2(entry?.selector)}`).filter((entry) => entry !== ":").sort();
-  return [siteId, ...missingEntries].join("|");
+  return normalizeText2(report?.siteId) || "unknown";
+}
+function shouldAllowSelectorNotification(lastNotifiedAt, nowMs = Date.now(), cooldownMs = SELECTOR_NOTIFY_COOLDOWN_MS) {
+  const last = Number(lastNotifiedAt);
+  if (!Number.isFinite(last) || last <= 0) {
+    return true;
+  }
+  return nowMs - last >= Math.max(0, Number(cooldownMs) || 0);
+}
+
+// src/background/ui/notifications.ts
+function createNotificationService(deps) {
+  async function maybeCreateSelectorNotification2(report, options = {}) {
+    try {
+      if (options.source === "selector-checker") {
+        return;
+      }
+      const settings = await getAppSettings();
+      if (!settings.desktopNotifications) {
+        return;
+      }
+      const signature = buildSelectorAlertSignature(report);
+      const cooldownMs = Number.isFinite(Number(options.cooldownMs)) && Number(options.cooldownMs) >= 0 ? Number(options.cooldownMs) : SELECTOR_NOTIFY_COOLDOWN_MS;
+      const nowMs = Date.now();
+      const shouldNotify = await deps.queueBackgroundStateMutation((state) => {
+        const selectorAlerts = state.selectorAlerts ?? {};
+        const lastNotifiedAt = selectorAlerts[signature];
+        if (!shouldAllowSelectorNotification(lastNotifiedAt, nowMs, cooldownMs)) {
+          return false;
+        }
+        selectorAlerts[signature] = nowMs;
+        state.selectorAlerts = selectorAlerts;
+        return true;
+      });
+      if (!shouldNotify) {
+        return;
+      }
+      await chrome.notifications.create(`selector-changed-${report.siteId}`, {
+        type: "basic",
+        iconUrl: chrome.runtime.getURL(NOTIFICATION_ICON_PATH),
+        title: deps.getI18nMessage("notification_selector_title", [report.siteName]) || `${report.siteName} input check needed`,
+        message: deps.getI18nMessage("notification_selector_message", [report.siteName]) || `${report.siteName} input box was not found. Complete login or security checks, then try again.`
+      });
+    } catch (error) {
+      console.error("[AI Prompt Broadcaster] Failed to create selector notification.", {
+        report,
+        error
+      });
+    }
+  }
+  async function maybeCreateBroadcastNotification2(summary) {
+    try {
+      const settings = await getAppSettings();
+      if (!settings.desktopNotifications) {
+        return;
+      }
+      const successCount = (summary.submittedSiteIds ?? []).length;
+      const failedSiteIds = [...summary.failedSiteIds ?? []];
+      const failedCount = failedSiteIds.length;
+      const failedNames = (await Promise.all(
+        failedSiteIds.map(
+          async (siteId) => (await deps.getSiteById(siteId))?.name ?? siteId
+        )
+      )).filter(Boolean);
+      let title = deps.getI18nMessage("notification_broadcast_title_success") || "AI Broadcaster";
+      let message = "";
+      if (summary.status === "failed") {
+        title = deps.getI18nMessage("notification_broadcast_title_failed") || "AI Broadcaster";
+        message = deps.getI18nMessage("notification_broadcast_message_failed") || "Broadcast failed. Check each tab for details.";
+      } else if (summary.status === "partial") {
+        title = deps.getI18nMessage("notification_broadcast_title_partial") || "AI Broadcaster";
+        message = deps.getI18nMessage("notification_broadcast_message_partial_named", [
+          String(successCount),
+          String(failedCount),
+          failedNames.join(", ")
+        ]) || `${successCount} succeeded, ${failedCount} failed (${failedNames.join(", ")})`;
+      } else {
+        title = deps.getI18nMessage("notification_broadcast_title_success") || "AI Broadcaster";
+        message = deps.getI18nMessage("notification_broadcast_message_success_named", [
+          String(successCount)
+        ]) || `${successCount} service(s) completed`;
+      }
+      await chrome.notifications.create(`broadcast-complete-${Date.now()}`, {
+        type: "basic",
+        iconUrl: chrome.runtime.getURL(NOTIFICATION_ICON_PATH),
+        title,
+        message
+      });
+    } catch (error) {
+      console.error(
+        "[AI Prompt Broadcaster] Failed to create broadcast notification.",
+        error
+      );
+    }
+  }
+  return {
+    maybeCreateSelectorNotification: maybeCreateSelectorNotification2,
+    maybeCreateBroadcastNotification: maybeCreateBroadcastNotification2
+  };
 }
 
 // src/shared/sites/reuse-preflight.ts
@@ -3217,7 +5419,58 @@ function evaluateReusableTabSnapshot(snapshot) {
   return { ok: true };
 }
 
-// src/background/app/bootstrap/tab-targets.ts
+// src/background/app/bootstrap/tab-targets/site-origin.ts
+function isInjectableTabUrl(urlString) {
+  try {
+    const url = new URL(urlString);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch (_error) {
+    return false;
+  }
+}
+function getAllowedSiteHostnames(site) {
+  const siteUrl = typeof site?.url === "string" ? site.url : "";
+  return new Set(
+    [
+      site?.hostname,
+      ...Array.isArray(site?.hostnameAliases) ? site.hostnameAliases : [],
+      isInjectableTabUrl(siteUrl) ? new URL(siteUrl).hostname : ""
+    ].filter(
+      (entry) => typeof entry === "string" && entry.trim().length > 0
+    ).map((entry) => entry.trim().toLowerCase())
+  );
+}
+function getSitePermissionPatterns(site) {
+  return Array.isArray(site?.permissionPatterns) ? site.permissionPatterns.filter(
+    (pattern) => typeof pattern === "string" && pattern.trim()
+  ) : [];
+}
+function isSameSiteOrigin(tabUrl, site) {
+  try {
+    const hostname = new URL(tabUrl).hostname.toLowerCase();
+    return getAllowedSiteHostnames(site).has(hostname);
+  } catch (error) {
+    console.error("[AI Prompt Broadcaster] Failed to compare site origin.", {
+      tabUrl,
+      site,
+      error
+    });
+    return false;
+  }
+}
+function normalizeTargetTabId2(value) {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : null;
+}
+function scoreReusableTabForSite(tab, site) {
+  const tabUrl = typeof tab?.url === "string" ? tab.url : "";
+  const siteUrl = typeof site?.url === "string" ? site.url : "";
+  const exactUrlMatch = Boolean(siteUrl && tabUrl.startsWith(siteUrl));
+  const activePenalty = tab?.active ? 10 : 0;
+  return (exactUrlMatch ? 0 : 5) + activePenalty;
+}
+
+// src/background/app/bootstrap/tab-targets/index.ts
 function createBackgroundTabTargetResolver(deps) {
   let runtimeSiteLookupCache = null;
   function cacheRuntimeSites(sites) {
@@ -3236,10 +5489,6 @@ function createBackgroundTabTargetResolver(deps) {
     }
     return runtimeSiteLookupCache ?? /* @__PURE__ */ new Map();
   }
-  function normalizeTargetTabId2(value) {
-    const numericValue = Number(value);
-    return Number.isFinite(numericValue) ? numericValue : null;
-  }
   function buildSelectedTabUnavailableMessage2(siteName, tabId) {
     const label = siteName || "AI service";
     if (Number.isFinite(Number(tabId))) {
@@ -3249,44 +5498,6 @@ function createBackgroundTabTargetResolver(deps) {
       ]) || `${label} selected tab #${String(tabId)} is unavailable.`;
     }
     return deps.getI18nMessage("toast_selected_tab_unavailable", [label]) || `${label} selected tab is unavailable.`;
-  }
-  function isInjectableTabUrl2(urlString) {
-    try {
-      const url = new URL(urlString);
-      return url.protocol === "http:" || url.protocol === "https:";
-    } catch (_error) {
-      return false;
-    }
-  }
-  function getAllowedSiteHostnames(site) {
-    const siteUrl = typeof site?.url === "string" ? site.url : "";
-    return new Set(
-      [
-        site?.hostname,
-        ...Array.isArray(site?.hostnameAliases) ? site.hostnameAliases : [],
-        isInjectableTabUrl2(siteUrl) ? new URL(siteUrl).hostname : ""
-      ].filter(
-        (entry) => typeof entry === "string" && entry.trim().length > 0
-      ).map((entry) => entry.trim().toLowerCase())
-    );
-  }
-  function getSitePermissionPatterns2(site) {
-    return Array.isArray(site?.permissionPatterns) ? site.permissionPatterns.filter(
-      (pattern) => typeof pattern === "string" && pattern.trim()
-    ) : [];
-  }
-  function isSameSiteOrigin2(tabUrl, site) {
-    try {
-      const hostname = new URL(tabUrl).hostname.toLowerCase();
-      return getAllowedSiteHostnames(site).has(hostname);
-    } catch (error) {
-      console.error("[AI Prompt Broadcaster] Failed to compare site origin.", {
-        tabUrl,
-        site,
-        error
-      });
-      return false;
-    }
   }
   async function getSiteById2(siteId) {
     const siteLookup = await getRuntimeSiteLookup();
@@ -3440,16 +5651,16 @@ function createBackgroundTabTargetResolver(deps) {
   async function isReusableTabForSite2(tab, site) {
     const tabId = tab.id;
     const tabUrl = typeof tab.url === "string" ? tab.url : "";
-    if (typeof tabId !== "number" || !isInjectableTabUrl2(tabUrl)) {
+    if (typeof tabId !== "number" || !isInjectableTabUrl(tabUrl)) {
       return false;
     }
-    if (!isSameSiteOrigin2(tabUrl, site)) {
+    if (!isSameSiteOrigin(tabUrl, site)) {
       return false;
     }
     return runReusableTabPreflight(tabId, site);
   }
   async function isCustomSitePermissionGranted2(site) {
-    const permissionPatterns = getSitePermissionPatterns2(site);
+    const permissionPatterns = getSitePermissionPatterns(site);
     if (!site?.isCustom || permissionPatterns.length === 0) {
       return true;
     }
@@ -3468,25 +5679,18 @@ function createBackgroundTabTargetResolver(deps) {
       return false;
     }
   }
-  function scoreReusableTabForSite(tab, site) {
-    const tabUrl = typeof tab?.url === "string" ? tab.url : "";
-    const siteUrl = typeof site?.url === "string" ? site.url : "";
-    const exactUrlMatch = Boolean(siteUrl && tabUrl.startsWith(siteUrl));
-    const activePenalty = tab?.active ? 10 : 0;
-    return (exactUrlMatch ? 0 : 5) + activePenalty;
-  }
   async function findReusableTabsForSites2(sites, options = {}) {
     const windowId = Number(options?.windowId);
     if (!Number.isFinite(windowId)) {
       return /* @__PURE__ */ new Map();
     }
     try {
-      const [tabs, pendingInjections] = await Promise.all([
+      const [tabs, pendingInjections2] = await Promise.all([
         chrome.tabs.query({ windowId }),
         deps.getPendingInjections()
       ]);
       const excludedTabIds = new Set(
-        Object.keys(pendingInjections).map((tabId) => Number(tabId)).filter((tabId) => Number.isFinite(tabId))
+        Object.keys(pendingInjections2).map((tabId) => Number(tabId)).filter((tabId) => Number.isFinite(tabId))
       );
       if (Number.isFinite(Number(options?.excludeTabId))) {
         excludedTabIds.add(Number(options.excludeTabId));
@@ -3500,10 +5704,10 @@ function createBackgroundTabTargetResolver(deps) {
           if (typeof candidateId !== "number" || usedTabIds.has(candidateId) || excludedTabIds.has(candidateId)) {
             return false;
           }
-          if (!isInjectableTabUrl2(candidateUrl)) {
+          if (!isInjectableTabUrl(candidateUrl)) {
             return false;
           }
-          return isSameSiteOrigin2(candidateUrl, site);
+          return isSameSiteOrigin(candidateUrl, site);
         }).sort(
           (left, right) => scoreReusableTabForSite(left, site) - scoreReusableTabForSite(right, site)
         );
@@ -3544,7 +5748,7 @@ function createBackgroundTabTargetResolver(deps) {
     }
     try {
       const tab = await chrome.tabs.get(targetTabId);
-      if (!tab?.id || !isInjectableTabUrl2(tab?.url ?? "")) {
+      if (!tab?.id || !isInjectableTabUrl(tab?.url ?? "")) {
         return {
           requested: true,
           tab: null,
@@ -3585,7 +5789,7 @@ function createBackgroundTabTargetResolver(deps) {
       };
     }
     const tabUrl = typeof tab.url === "string" ? tab.url : "";
-    if (!isInjectableTabUrl2(tabUrl)) {
+    if (!isInjectableTabUrl(tabUrl)) {
       return {
         ok: false,
         reason: "invalid_tab",
@@ -3602,10 +5806,10 @@ function createBackgroundTabTargetResolver(deps) {
     getSiteForUrl: getSiteForUrl2,
     resolveSelectedTargets: resolveSelectedTargets2,
     buildSelectedTabUnavailableMessage: buildSelectedTabUnavailableMessage2,
-    isInjectableTabUrl: isInjectableTabUrl2,
+    isInjectableTabUrl,
     getAllowedSiteHostnames,
-    getSitePermissionPatterns: getSitePermissionPatterns2,
-    isSameSiteOrigin: isSameSiteOrigin2,
+    getSitePermissionPatterns,
+    isSameSiteOrigin,
     isReusableTabForSite: isReusableTabForSite2,
     isCustomSitePermissionGranted: isCustomSitePermissionGranted2,
     findReusableTabsForSites: findReusableTabsForSites2,
@@ -3758,6 +5962,46 @@ function registerBackgroundChromeEvents(deps) {
   void deps.initializeServiceWorker();
 }
 
+// src/background/app/bootstrap/context.ts
+function createBackgroundAppContext() {
+  return {
+    activeInjections: /* @__PURE__ */ new Set(),
+    queuedInjectionTabIds: /* @__PURE__ */ new Set(),
+    broadcastCompletionWaiters: /* @__PURE__ */ new Map(),
+    selectionCache: /* @__PURE__ */ new Map(),
+    suppressedCompletedBroadcastIds: /* @__PURE__ */ new Set()
+  };
+}
+
+// src/background/app/bootstrap/utils.ts
+function getI18nMessage(key, substitutions) {
+  return chrome.i18n.getMessage(key, substitutions) || "";
+}
+function nowIso() {
+  return (/* @__PURE__ */ new Date()).toISOString();
+}
+function sleep(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, Number.isFinite(ms) ? ms : 0);
+  });
+}
+function clonePlainValue(value) {
+  return value ? JSON.parse(JSON.stringify(value)) : value;
+}
+function normalizePrompt2(value) {
+  return typeof value === "string" ? value : "";
+}
+function buildChainRunId() {
+  return typeof crypto?.randomUUID === "function" ? crypto.randomUUID() : `chain-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+function getErrorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+function getBroadcastTriggerLabel(trigger) {
+  const normalized = typeof trigger === "string" ? trigger.trim() : "";
+  return normalized === "scheduled" || normalized === "palette" || normalized === "options" ? normalized : "popup";
+}
+
 // src/background/popup/launcher.ts
 async function storePromptForPopup(prompt) {
   try {
@@ -3866,14 +6110,14 @@ async function ensurePaletteScript(tabId) {
 function createQuickPaletteCommand(deps) {
   const {
     getPreferredNormalActiveTab: getPreferredNormalActiveTab2,
-    isInjectableTabUrl: isInjectableTabUrl2,
+    isInjectableTabUrl: isInjectableTabUrl3,
     openPopupWithPrompt: openPopupWithPrompt2
   } = deps;
   return {
     async handleQuickPaletteCommand() {
       try {
         const activeTab = await getPreferredNormalActiveTab2();
-        if (!activeTab?.id || !isInjectableTabUrl2(activeTab.url ?? "")) {
+        if (!activeTab?.id || !isInjectableTabUrl3(activeTab.url ?? "")) {
           await openPopupWithPrompt2("");
           return;
         }
@@ -3936,7 +6180,7 @@ function createSelectionRuntime(deps) {
   const {
     selectionCache: selectionCache2,
     getSiteForUrl: getSiteForUrl2,
-    isInjectableTabUrl: isInjectableTabUrl2,
+    isInjectableTabUrl: isInjectableTabUrl3,
     isCustomSitePermissionGranted: isCustomSitePermissionGranted2
   } = deps;
   return {
@@ -3962,7 +6206,7 @@ function createSelectionRuntime(deps) {
     },
     async maybeInjectDynamicSelectorChecker(tabId, tab) {
       const tabUrl = typeof tab?.url === "string" ? tab.url : "";
-      if (!tabId || !isInjectableTabUrl2(tabUrl)) {
+      if (!tabId || !isInjectableTabUrl3(tabUrl)) {
         return false;
       }
       const site = await getSiteForUrl2(tabUrl);
@@ -4025,23 +6269,23 @@ function createContextMenuController(deps) {
   const {
     getI18nMessage: getI18nMessage2,
     getEnabledRuntimeSites: getEnabledRuntimeSites2,
-    getSitePermissionPatterns: getSitePermissionPatterns2,
+    getSitePermissionPatterns: getSitePermissionPatterns3,
     openPopupWithPrompt: openPopupWithPrompt2,
     getSelectedTextFromTab: getSelectedTextFromTab2,
-    isInjectableTabUrl: isInjectableTabUrl2,
-    handleBroadcastMessage: handleBroadcastMessage2,
+    isInjectableTabUrl: isInjectableTabUrl3,
+    handleBroadcastMessage,
     getContextMenuRefreshChain,
     setContextMenuRefreshChain
   } = deps;
   async function getPermittedSites(sites) {
     const allowedSites = await Promise.all(
       sites.map(async (site) => {
-        if (!site.isCustom || getSitePermissionPatterns2(site).length === 0) {
+        if (!site.isCustom || getSitePermissionPatterns3(site).length === 0) {
           return site;
         }
         try {
           const granted = await chrome.permissions.contains({
-            origins: getSitePermissionPatterns2(site)
+            origins: getSitePermissionPatterns3(site)
           });
           return granted ? site : null;
         } catch (error) {
@@ -4112,7 +6356,7 @@ function createContextMenuController(deps) {
       return;
     }
     try {
-      await handleBroadcastMessage2({
+      await handleBroadcastMessage({
         action: "broadcast",
         prompt,
         sites: siteIds
@@ -4130,7 +6374,7 @@ function createContextMenuController(deps) {
         active: true,
         lastFocusedWindow: true
       });
-      if (!activeTab?.id || !isInjectableTabUrl2(activeTab.url ?? "")) {
+      if (!activeTab?.id || !isInjectableTabUrl3(activeTab.url ?? "")) {
         await openPopupWithPrompt2("");
         return;
       }
@@ -4157,7 +6401,7 @@ function createFavoriteExecutionContextTools(deps) {
   const {
     rememberNormalTab: rememberNormalTab2,
     getPreferredNormalActiveTab: getPreferredNormalActiveTab2,
-    isInjectableTabUrl: isInjectableTabUrl2,
+    isInjectableTabUrl: isInjectableTabUrl3,
     getSelectedTextFromTab: getSelectedTextFromTab2
   } = deps;
   const createEmptyExecutionContext = () => ({
@@ -4202,7 +6446,7 @@ function createFavoriteExecutionContextTools(deps) {
   }
   async function getExecutionTabContextFromSender(sender) {
     const senderTab = sender?.tab;
-    if (senderTab && Number.isFinite(senderTab.id) && isInjectableTabUrl2(senderTab.url ?? "")) {
+    if (senderTab && Number.isFinite(senderTab.id) && isInjectableTabUrl3(senderTab.url ?? "")) {
       const senderTabId = Number(senderTab.id);
       await rememberNormalTab2(senderTab).catch(() => null);
       return {
@@ -4215,7 +6459,7 @@ function createFavoriteExecutionContextTools(deps) {
       };
     }
     const activeTab = await getPreferredNormalActiveTab2();
-    if (!activeTab?.id || !isInjectableTabUrl2(activeTab?.url ?? "")) {
+    if (!activeTab?.id || !isInjectableTabUrl3(activeTab?.url ?? "")) {
       return createEmptyExecutionContext();
     }
     return {
@@ -4439,7 +6683,7 @@ function createFavoriteTemplateResolutionTools(deps) {
   };
 }
 
-// src/background/popup/favorites-workflow/entrypoints.ts
+// src/background/popup/favorites-workflow/entrypoints/handlers.ts
 function createFavoriteWorkflowEntryPoints(deps) {
   async function maybeCreateFavoriteFailureNotification(favorite, message) {
     const settings = await getAppSettings().catch(() => null);
@@ -4828,7 +7072,7 @@ function queueFavoriteExecution(task) {
   return resultPromise;
 }
 
-// src/background/popup/favorites-workflow/run-jobs.ts
+// src/background/popup/favorites-workflow/run-jobs/handlers.ts
 function createFavoriteRunJobHandlers(deps) {
   async function mutateFavoriteRunJob(jobId, updater) {
     return updateFavoriteRunJobs((jobs) => {
@@ -5211,12 +7455,12 @@ function createFavoriteWorkflow(deps) {
     getI18nMessage: getI18nMessage2,
     rememberNormalTab: rememberNormalTab2,
     getPreferredNormalActiveTab: getPreferredNormalActiveTab2,
-    isInjectableTabUrl: isInjectableTabUrl2,
+    isInjectableTabUrl: isInjectableTabUrl3,
     getSelectedTextFromTab: getSelectedTextFromTab2,
     openPopupWithPrompt: openPopupWithPrompt2,
     nowIso: nowIso2,
     buildChainRunId: buildChainRunId2,
-    queueBroadcastRequest: queueBroadcastRequest2
+    queueBroadcastRequest
   } = deps;
   const messages = createFavoriteWorkflowMessages(getI18nMessage2);
   const {
@@ -5227,7 +7471,7 @@ function createFavoriteWorkflow(deps) {
   } = createFavoriteExecutionContextTools({
     rememberNormalTab: rememberNormalTab2,
     getPreferredNormalActiveTab: getPreferredNormalActiveTab2,
-    isInjectableTabUrl: isInjectableTabUrl2,
+    isInjectableTabUrl: isInjectableTabUrl3,
     getSelectedTextFromTab: getSelectedTextFromTab2
   });
   const {
@@ -5275,7 +7519,7 @@ function createFavoriteWorkflow(deps) {
     buildChainRunId: buildChainRunId2,
     previewFavoriteText,
     buildFavoriteStepPrompt,
-    queueBroadcastRequest: queueBroadcastRequest2,
+    queueBroadcastRequest,
     createFavoriteFailureHistory,
     ...messages
   });
@@ -5432,7 +7676,8 @@ function clonePendingRecords(records) {
         missing: Array.isArray(value?.missing) ? value.missing.map((entry) => normalizeText3(entry)).filter(Boolean) : [],
         count: Number.isFinite(count) ? Math.max(1, Math.round(count)) : 1,
         firstSeenAt: Number.isFinite(firstSeenAt) ? firstSeenAt : fallbackNow,
-        lastSeenAt: Number.isFinite(lastSeenAt) ? lastSeenAt : fallbackNow
+        lastSeenAt: Number.isFinite(lastSeenAt) ? lastSeenAt : fallbackNow,
+        promoted: Boolean(value?.promoted)
       };
       return accumulator;
     },
@@ -5450,7 +7695,7 @@ function clearPendingSelectorChecksForService(records, serviceId) {
     )
   );
 }
-function registerPendingSelectorCheck(records, report, nowMs = Date.now()) {
+function registerPendingSelectorCheck(records, report, nowMs = Date.now(), promoteThreshold = SELECTOR_ALERT_PROMOTE_THRESHOLD) {
   const siteId = normalizeText3(report?.siteId) || "unknown";
   const missingEntries = normalizeMissingEntries(report?.missing);
   const signature = buildSelectorAlertSignature({
@@ -5459,41 +7704,51 @@ function registerPendingSelectorCheck(records, report, nowMs = Date.now()) {
   });
   const next = clonePendingRecords(records);
   const existing = next[signature];
+  const threshold = Math.max(2, Math.round(Number(promoteThreshold) || SELECTOR_ALERT_PROMOTE_THRESHOLD));
+  const missingLabels = missingEntries.map(
+    (entry) => entry.field ? `${entry.field}:${entry.selector}` : entry.selector
+  );
   if (existing && normalizeText3(existing.serviceId) === siteId) {
-    const promotedRecord = {
+    const nextCount = Math.max(1, Math.round(Number(existing.count) || 1) + 1);
+    const alreadyPromoted = Boolean(existing.promoted);
+    const shouldPromote2 = !alreadyPromoted && nextCount >= threshold;
+    const updatedRecord = {
       ...existing,
-      count: Math.max(2, Math.round(Number(existing.count) || 1) + 1),
-      lastSeenAt: nowMs
+      missing: missingLabels.length > 0 ? missingLabels : existing.missing,
+      count: nextCount,
+      lastSeenAt: nowMs,
+      promoted: alreadyPromoted || shouldPromote2
     };
-    delete next[signature];
+    next[signature] = updatedRecord;
     return {
       next,
       signature,
-      promoted: true,
-      record: promotedRecord
+      promoted: shouldPromote2,
+      record: updatedRecord
     };
   }
+  const initialCount = 1;
+  const shouldPromote = initialCount >= threshold;
   const record = {
     serviceId: siteId,
     signature,
-    missing: missingEntries.map(
-      (entry) => entry.field ? `${entry.field}:${entry.selector}` : entry.selector
-    ),
-    count: 1,
+    missing: missingLabels,
+    count: initialCount,
     firstSeenAt: nowMs,
-    lastSeenAt: nowMs
+    lastSeenAt: nowMs,
+    promoted: shouldPromote
   };
   next[signature] = record;
   return {
     next,
     signature,
-    promoted: false,
+    promoted: shouldPromote,
     record
   };
 }
 
 // src/background/session/store.ts
-function clonePlainValue(value) {
+function clonePlainValue2(value) {
   return value ? JSON.parse(JSON.stringify(value)) : value;
 }
 function createBackgroundSessionStore() {
@@ -5516,16 +7771,16 @@ function createBackgroundSessionStore() {
         PENDING_SELECTOR_CHECKS_KEY,
         SELECTOR_ALERTS_KEY
       ]);
-      sessionState.pendingInjections = clonePlainValue(
+      sessionState.pendingInjections = clonePlainValue2(
         result[PENDING_INJECTIONS_KEY] ?? {}
       ) ?? {};
-      sessionState.pendingBroadcasts = clonePlainValue(
+      sessionState.pendingBroadcasts = clonePlainValue2(
         result[PENDING_BROADCASTS_KEY] ?? {}
       ) ?? {};
-      sessionState.pendingSelectorChecks = clonePlainValue(
+      sessionState.pendingSelectorChecks = clonePlainValue2(
         result[PENDING_SELECTOR_CHECKS_KEY] ?? {}
       ) ?? {};
-      sessionState.selectorAlerts = clonePlainValue(
+      sessionState.selectorAlerts = clonePlainValue2(
         result[SELECTOR_ALERTS_KEY] ?? {}
       ) ?? {};
     } catch (error) {
@@ -5561,32 +7816,32 @@ function createBackgroundSessionStore() {
   }
   async function getPendingInjections2() {
     await ensureLoaded();
-    return clonePlainValue(sessionState.pendingInjections) ?? {};
+    return clonePlainValue2(sessionState.pendingInjections) ?? {};
   }
-  function setPendingInjections2(value) {
+  function setPendingInjections(value) {
     return mutate((state) => {
-      state.pendingInjections = clonePlainValue(value) ?? {};
-      return clonePlainValue(state.pendingInjections) ?? {};
+      state.pendingInjections = clonePlainValue2(value) ?? {};
+      return clonePlainValue2(state.pendingInjections) ?? {};
     });
   }
   async function getPendingBroadcasts2() {
     await ensureLoaded();
-    return clonePlainValue(sessionState.pendingBroadcasts) ?? {};
+    return clonePlainValue2(sessionState.pendingBroadcasts) ?? {};
   }
-  function setPendingBroadcasts2(value) {
+  function setPendingBroadcasts(value) {
     return mutate((state) => {
-      state.pendingBroadcasts = clonePlainValue(value) ?? {};
-      return clonePlainValue(state.pendingBroadcasts) ?? {};
+      state.pendingBroadcasts = clonePlainValue2(value) ?? {};
+      return clonePlainValue2(state.pendingBroadcasts) ?? {};
     });
   }
-  async function getSelectorAlerts2() {
+  async function getSelectorAlerts() {
     await ensureLoaded();
-    return clonePlainValue(sessionState.selectorAlerts) ?? {};
+    return clonePlainValue2(sessionState.selectorAlerts) ?? {};
   }
-  function setSelectorAlerts2(value) {
+  function setSelectorAlerts(value) {
     return mutate((state) => {
-      state.selectorAlerts = clonePlainValue(value) ?? {};
-      return clonePlainValue(state.selectorAlerts) ?? {};
+      state.selectorAlerts = clonePlainValue2(value) ?? {};
+      return clonePlainValue2(state.selectorAlerts) ?? {};
     });
   }
   function clearPendingSelectorChecksForSiteId2(serviceId) {
@@ -5598,7 +7853,7 @@ function createBackgroundSessionStore() {
         state.pendingSelectorChecks,
         serviceId
       );
-      return clonePlainValue(state.pendingSelectorChecks) ?? {};
+      return clonePlainValue2(state.pendingSelectorChecks) ?? {};
     });
   }
   function registerPendingSelectorCheckReport2(report) {
@@ -5608,21 +7863,21 @@ function createBackgroundSessionStore() {
         report
       );
       state.pendingSelectorChecks = result.next;
-      return clonePlainValue(result) ?? result;
+      return clonePlainValue2(result) ?? result;
     });
   }
   function updatePendingInjection2(tabId, updater) {
     return mutate((state) => {
       const pending = state.pendingInjections ?? {};
       const current = pending[String(tabId)];
-      const nextValue = typeof updater === "function" ? updater(clonePlainValue(current) ?? null) : updater;
+      const nextValue = typeof updater === "function" ? updater(clonePlainValue2(current) ?? null) : updater;
       if (nextValue) {
         pending[String(tabId)] = nextValue;
       } else {
         delete pending[String(tabId)];
       }
       state.pendingInjections = pending;
-      return clonePlainValue(nextValue) ?? null;
+      return clonePlainValue2(nextValue) ?? null;
     });
   }
   function addPendingInjection2(tabId, payload) {
@@ -5643,11 +7898,11 @@ function createBackgroundSessionStore() {
     mutate,
     waitForIdle,
     getPendingInjections: getPendingInjections2,
-    setPendingInjections: setPendingInjections2,
+    setPendingInjections,
     getPendingBroadcasts: getPendingBroadcasts2,
-    setPendingBroadcasts: setPendingBroadcasts2,
-    getSelectorAlerts: getSelectorAlerts2,
-    setSelectorAlerts: setSelectorAlerts2,
+    setPendingBroadcasts,
+    getSelectorAlerts,
+    setSelectorAlerts,
     clearPendingSelectorChecksForSiteId: clearPendingSelectorChecksForSiteId2,
     registerPendingSelectorCheckReport: registerPendingSelectorCheckReport2,
     updatePendingInjection: updatePendingInjection2,
@@ -5660,8 +7915,8 @@ function createBackgroundSessionStore() {
 function createBackgroundTabsRuntime(deps) {
   const {
     getRuntimeSites: getRuntimeSites2,
-    isInjectableTabUrl: isInjectableTabUrl2,
-    isSameSiteOrigin: isSameSiteOrigin2,
+    isInjectableTabUrl: isInjectableTabUrl3,
+    isSameSiteOrigin: isSameSiteOrigin3,
     isReusableTabForSite: isReusableTabForSite2
   } = deps;
   let lastNormalWindowId = null;
@@ -5854,10 +8109,10 @@ function createBackgroundTabsRuntime(deps) {
       ]);
       const openTabs = await Promise.all(
         tabs.map(async (tab) => {
-          if (!Number.isFinite(tab?.id) || !isInjectableTabUrl2(tab?.url ?? "")) {
+          if (!Number.isFinite(tab?.id) || !isInjectableTabUrl3(tab?.url ?? "")) {
             return null;
           }
-          const site = runtimeSites.find((entry) => isSameSiteOrigin2(tab.url ?? "", entry));
+          const site = runtimeSites.find((entry) => isSameSiteOrigin3(tab.url ?? "", entry));
           if (!site) {
             return null;
           }
@@ -6035,99 +8290,7 @@ function buildRuntimeHandlers(deps) {
   };
 }
 
-// src/background/app/comparison/capture.ts
-var COMPARISON_CAPTURE_SELECTORS = {
-  chatgpt: [
-    '[data-message-author-role="assistant"]',
-    'article [data-message-author-role="assistant"]'
-  ],
-  gemini: [
-    "message-content",
-    ".model-response-text",
-    "[data-response-index] message-content"
-  ],
-  claude: [
-    '[data-testid="conversation-turn-assistant"]',
-    '[data-testid*="assistant" i]',
-    ".font-claude-message"
-  ],
-  grok: [
-    '[data-testid*="message" i] [class*="markdown" i]',
-    '[data-testid*="answer" i]'
-  ],
-  perplexity: [
-    '[data-testid*="answer" i]',
-    '[data-testid*="thread-answer" i]',
-    "main .prose"
-  ]
-};
-var AUTO_RESPONSE_CAPTURE_TIMEOUT_MS = 45e3;
-var AUTO_RESPONSE_CAPTURE_INTERVAL_MS = 3e3;
-var AUTO_RESPONSE_CAPTURE_MIN_LENGTH = 20;
-var AUTO_RESPONSE_CAPTURE_MEANINGFUL_DELTA = 40;
-function normalizeCapturedResponseText(value) {
-  return String(value || "").replace(/\s+/g, " ").trim();
-}
-function isPromptEcho(responseText, promptText) {
-  const response = normalizeCapturedResponseText(responseText).toLowerCase();
-  const prompt = normalizeCapturedResponseText(promptText).toLowerCase();
-  return Boolean(prompt) && (response === prompt || response.startsWith(prompt));
-}
-function shouldUpdateAutoCapturedResponse(existingText, nextText) {
-  const existing = normalizeCapturedResponseText(existingText);
-  const next = normalizeCapturedResponseText(nextText);
-  if (!next || existing === next || existing.includes(next)) {
-    return false;
-  }
-  if (!existing || next.includes(existing)) {
-    return true;
-  }
-  return Math.abs(next.length - existing.length) >= AUTO_RESPONSE_CAPTURE_MEANINGFUL_DELTA;
-}
-
-// src/background/app/bootstrap/context.ts
-function createBackgroundAppContext() {
-  return {
-    activeInjections: /* @__PURE__ */ new Set(),
-    queuedInjectionTabIds: /* @__PURE__ */ new Set(),
-    broadcastCompletionWaiters: /* @__PURE__ */ new Map(),
-    selectionCache: /* @__PURE__ */ new Map(),
-    suppressedCompletedBroadcastIds: /* @__PURE__ */ new Set()
-  };
-}
-
-// src/background/app/bootstrap/utils.ts
-function getI18nMessage(key, substitutions) {
-  return chrome.i18n.getMessage(key, substitutions) || "";
-}
-function nowIso() {
-  return (/* @__PURE__ */ new Date()).toISOString();
-}
-function sleep(ms) {
-  return new Promise((resolve) => {
-    setTimeout(resolve, Number.isFinite(ms) ? ms : 0);
-  });
-}
-function clonePlainValue2(value) {
-  return value ? JSON.parse(JSON.stringify(value)) : value;
-}
-function normalizePrompt2(value) {
-  return typeof value === "string" ? value : "";
-}
-function buildChainRunId() {
-  return typeof crypto?.randomUUID === "function" ? crypto.randomUUID() : `chain-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-function getErrorMessage(error) {
-  return error instanceof Error ? error.message : String(error);
-}
-function getBroadcastTriggerLabel(trigger) {
-  const normalized = typeof trigger === "string" ? trigger.trim() : "";
-  return normalized === "scheduled" || normalized === "palette" || normalized === "options" ? normalized : "popup";
-}
-
 // src/background/app/bootstrap/app.ts
-var DEFAULT_SUBMIT_BUTTON_WAIT_TIMEOUT_MS = 5e3;
-var DEFAULT_SUBMIT_RETRY_COUNT = 1;
 var backgroundAppContext = createBackgroundAppContext();
 var {
   activeInjections,
@@ -6137,56 +8300,35 @@ var {
   suppressedCompletedBroadcastIds
 } = backgroundAppContext;
 var contextMenuRefreshChain = Promise.resolve();
-var injectionProcessChain = Promise.resolve();
-function registerBroadcastCompletionWaiter(broadcastId) {
-  const normalizedBroadcastId = typeof broadcastId === "string" ? broadcastId.trim() : "";
-  if (!normalizedBroadcastId) {
-    return Promise.resolve(null);
-  }
-  const existing = broadcastCompletionWaiters.get(normalizedBroadcastId);
-  if (existing?.promise) {
-    return existing.promise;
-  }
-  let resolvePromise = null;
-  const promise = new Promise((resolve) => {
-    resolvePromise = resolve;
-  });
-  if (resolvePromise) {
-    broadcastCompletionWaiters.set(normalizedBroadcastId, {
-      promise,
-      resolve: resolvePromise
-    });
-  }
-  return promise;
-}
-function resolveBroadcastCompletionWaiter(broadcastId, summary = null) {
-  const normalizedBroadcastId = typeof broadcastId === "string" ? broadcastId.trim() : "";
-  if (!normalizedBroadcastId) {
-    return;
-  }
-  const existing = broadcastCompletionWaiters.get(normalizedBroadcastId);
-  if (!existing?.resolve) {
-    return;
-  }
-  existing.resolve(summary);
-  broadcastCompletionWaiters.delete(normalizedBroadcastId);
-}
+var broadcastWaiters = createBroadcastWaiterRegistry(broadcastCompletionWaiters);
+var { clearBadge, applyBadgeForBroadcast } = createBadgeController();
 var backgroundSessionStore = createBackgroundSessionStore();
 var {
   mutate: queueBackgroundStateMutation,
-  waitForIdle: waitForBackgroundStateSettled,
   getPendingInjections,
-  setPendingInjections,
   getPendingBroadcasts,
-  setPendingBroadcasts,
-  getSelectorAlerts,
-  setSelectorAlerts,
   clearPendingSelectorChecksForSiteId,
   registerPendingSelectorCheckReport,
   updatePendingInjection,
   addPendingInjection,
   removePendingInjection
 } = backgroundSessionStore;
+var deferred = {
+  queueBroadcastRequest: (async () => {
+    throw new Error("queueBroadcastRequest is not initialized.");
+  }),
+  handleBroadcastMessage: (async () => {
+    throw new Error("handleBroadcastMessage is not initialized.");
+  }),
+  recordBroadcastSiteResult: (async () => null),
+  autoCaptureBroadcastResponses: (async () => void 0),
+  handleFavoriteBroadcastCompletion: (async () => void 0),
+  reconcilePendingBroadcasts: async () => void 0,
+  cancelBroadcast: (async () => null),
+  closeTabQuietly: async (_tabId) => void 0,
+  queuePendingInjection: (async () => void 0),
+  reconcilePendingInjections: async () => void 0
+};
 var getPreferredNormalActiveTab = async () => null;
 var backgroundTabTargetResolver = createBackgroundTabTargetResolver({
   getRuntimeSites,
@@ -6199,9 +8341,9 @@ var {
   getSiteForUrl,
   resolveSelectedTargets,
   buildSelectedTabUnavailableMessage,
-  isInjectableTabUrl,
-  getSitePermissionPatterns,
-  isSameSiteOrigin,
+  isInjectableTabUrl: isInjectableTabUrl2,
+  getSitePermissionPatterns: getSitePermissionPatterns2,
+  isSameSiteOrigin: isSameSiteOrigin2,
   isReusableTabForSite,
   isCustomSitePermissionGranted,
   findReusableTabsForSites,
@@ -6210,8 +8352,8 @@ var {
 } = backgroundTabTargetResolver;
 var backgroundTabsRuntime = createBackgroundTabsRuntime({
   getRuntimeSites,
-  isInjectableTabUrl,
-  isSameSiteOrigin,
+  isInjectableTabUrl: isInjectableTabUrl2,
+  isSameSiteOrigin: isSameSiteOrigin2,
   isReusableTabForSite
 });
 var rememberNormalTab = backgroundTabsRuntime.rememberNormalTab;
@@ -6223,55 +8365,14 @@ var restoreFocusedTabContext = backgroundTabsRuntime.restoreFocusedTabContext;
 var getOpenAiTabsForWindow = backgroundTabsRuntime.getOpenAiTabsForWindow;
 var clearRememberedTab = backgroundTabsRuntime.clearRememberedTab;
 var resetRememberedState = backgroundTabsRuntime.resetRememberedState;
-function queuePendingInjection(tabId, tab) {
-  if (!Number.isFinite(Number(tabId))) {
-    return injectionProcessChain;
-  }
-  if (activeInjections.has(tabId) || queuedInjectionTabIds.has(tabId)) {
-    return injectionProcessChain;
-  }
-  queuedInjectionTabIds.add(tabId);
-  injectionProcessChain = injectionProcessChain.catch(() => void 0).then(async () => {
-    try {
-      await processPendingInjectionNow(tabId, tab);
-    } finally {
-      queuedInjectionTabIds.delete(tabId);
-    }
-  }).catch((error) => {
-    console.error("[AI Prompt Broadcaster] Queued injection processing failed.", {
-      tabId,
-      error
-    });
-    queuedInjectionTabIds.delete(tabId);
-  });
-  return injectionProcessChain;
-}
-function getBroadcastAgeMs(record) {
-  const startedAtMs = Date.parse(record?.startedAt ?? "");
-  return Number.isFinite(startedAtMs) ? Date.now() - startedAtMs : 0;
-}
-async function finalizeBroadcastSites(broadcastId, siteIds, status) {
-  let lastSummary = null;
-  for (const siteId of Array.isArray(siteIds) ? siteIds : []) {
-    lastSummary = await recordBroadcastSiteResult(broadcastId, siteId, status) ?? lastSummary;
-  }
-  return lastSummary;
-}
-async function closeTabQuietly(tabId) {
-  try {
-    await chrome.tabs.remove(tabId);
-  } catch (_error) {
-  }
-}
-async function restoreBroadcastFocus(record) {
-  if (!record) {
-    return;
-  }
-  await restoreFocusedTabContext({
-    tabId: Number.isFinite(Number(record.originTabId)) ? Number(record.originTabId) : null,
-    windowId: Number.isFinite(Number(record.originWindowId)) ? Number(record.originWindowId) : null
-  });
-}
+var {
+  maybeCreateSelectorNotification,
+  maybeCreateBroadcastNotification
+} = createNotificationService({
+  getI18nMessage,
+  queueBackgroundStateMutation,
+  getSiteById
+});
 var { openPopupWithPrompt, openOnboardingPage } = createPopupLauncher();
 var {
   getSelectedTextFromTab,
@@ -6280,12 +8381,12 @@ var {
 } = createSelectionRuntime({
   selectionCache,
   getSiteForUrl,
-  isInjectableTabUrl,
+  isInjectableTabUrl: isInjectableTabUrl2,
   isCustomSitePermissionGranted
 });
 var { handleQuickPaletteCommand } = createQuickPaletteCommand({
   getPreferredNormalActiveTab,
-  isInjectableTabUrl,
+  isInjectableTabUrl: isInjectableTabUrl2,
   openPopupWithPrompt
 });
 var {
@@ -6296,18 +8397,17 @@ var {
 } = createContextMenuController({
   getI18nMessage,
   getEnabledRuntimeSites,
-  getSitePermissionPatterns,
+  getSitePermissionPatterns: getSitePermissionPatterns2,
   openPopupWithPrompt,
   getSelectedTextFromTab,
-  isInjectableTabUrl,
-  handleBroadcastMessage,
+  isInjectableTabUrl: isInjectableTabUrl2,
+  handleBroadcastMessage: (message) => deferred.handleBroadcastMessage(message),
   getContextMenuRefreshChain: () => contextMenuRefreshChain,
   setContextMenuRefreshChain: (value) => {
     contextMenuRefreshChain = value;
   }
 });
 var {
-  buildScheduleAlarmName: buildScheduleAlarmName2,
   parseScheduleAlarmFavoriteId: parseScheduleAlarmFavoriteId2,
   reconcileFavoriteRunJobs,
   reconcileFavoriteSchedules,
@@ -6323,1823 +8423,138 @@ var {
   getI18nMessage,
   rememberNormalTab,
   getPreferredNormalActiveTab,
-  isInjectableTabUrl,
+  isInjectableTabUrl: isInjectableTabUrl2,
   getSelectedTextFromTab,
   openPopupWithPrompt,
   nowIso,
   buildChainRunId,
-  queueBroadcastRequest
+  queueBroadcastRequest: (prompt, sites, metadata) => deferred.queueBroadcastRequest(prompt, sites, metadata)
 });
-async function runServiceTestOnTab(tabId, draft) {
-  const probeText = "__apb_probe__";
-  const submitRequirement = buildSubmitRequirement(draft);
-  const [result] = await chrome.scripting.executeScript({
-    target: { tabId },
-    func: async (siteDraft, nextProbeText, nextSubmitRequirement) => {
-      function isElementVisible(element) {
-        if (!(element instanceof HTMLElement) && !(element instanceof SVGElement)) {
-          return true;
-        }
-        const style = window.getComputedStyle(element);
-        if (element instanceof HTMLElement && element.hidden || element.getAttribute("hidden") !== null || element.getAttribute("aria-hidden") === "true" || style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse") {
-          return false;
-        }
-        return element.getClientRects().length > 0;
-      }
-      function findElementsDeep(selector, root = document, seen = /* @__PURE__ */ new Set(), matches = []) {
-        if (!selector || typeof selector !== "string") {
-          return matches;
-        }
-        if (typeof root.querySelectorAll === "function") {
-          for (const element of Array.from(root.querySelectorAll(selector))) {
-            if (!seen.has(element)) {
-              seen.add(element);
-              matches.push(element);
-            }
-          }
-        }
-        const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
-        let current = walker.currentNode;
-        while (current) {
-          if (current instanceof Element && current.shadowRoot) {
-            findElementsDeep(selector, current.shadowRoot, seen, matches);
-          }
-          current = walker.nextNode();
-        }
-        return matches;
-      }
-      function findBestMatch(selectors, options = {}) {
-        for (const selector of selectors) {
-          const matches = findElementsDeep(selector);
-          const visible = options.visibleOnly ? matches.filter((element) => isElementVisible(element)) : matches;
-          const target = visible[0] ?? matches[0] ?? null;
-          if (target) {
-            return { element: target, selector };
-          }
-        }
-        return { element: null, selector: selectors[0] ?? "" };
-      }
-      function detectInputType(element) {
-        if (element instanceof HTMLTextAreaElement) {
-          return "textarea";
-        }
-        if (element instanceof HTMLInputElement) {
-          return "input";
-        }
-        return element instanceof HTMLElement && element.isContentEditable ? "contenteditable" : "";
-      }
-      function highlightElement(element, color) {
-        if (!(element instanceof HTMLElement) && !(element instanceof SVGElement)) {
-          return;
-        }
-        const previousOutline = element.style.outline;
-        const previousOutlineOffset = element.style.outlineOffset;
-        element.style.outline = `3px solid ${color}`;
-        element.style.outlineOffset = "2px";
-        window.setTimeout(() => {
-          element.style.outline = previousOutline;
-          element.style.outlineOffset = previousOutlineOffset;
-        }, 1800);
-      }
-      function snapshotElementValue(element) {
-        if (element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement) {
-          return {
-            type: "value",
-            value: element.value
-          };
-        }
-        if (element instanceof HTMLElement && element.isContentEditable) {
-          return {
-            type: "html",
-            html: element.innerHTML
-          };
-        }
-        return {
-          type: "text",
-          text: element.textContent ?? ""
-        };
-      }
-      function restoreElementValue(element, snapshot) {
-        if (!snapshot) {
-          return;
-        }
-        if (snapshot.type === "value" && (element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement)) {
-          element.value = snapshot.value ?? "";
-        } else if (snapshot.type === "html" && element instanceof HTMLElement) {
-          element.innerHTML = snapshot.html ?? "";
-        } else if (snapshot.type === "text" && element instanceof HTMLElement) {
-          element.textContent = snapshot.text ?? "";
-        }
-        element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: "" }));
-        element.dispatchEvent(new Event("change", { bubbles: true }));
-      }
-      function applyProbeText(element, probeText2) {
-        if (element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement) {
-          element.focus();
-          element.value = probeText2;
-        } else if (element instanceof HTMLElement && element.isContentEditable) {
-          element.focus();
-          element.textContent = probeText2;
-        } else {
-          throw new Error("Editable target was not found.");
-        }
-        element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: probeText2 }));
-        element.dispatchEvent(new Event("change", { bubbles: true }));
-      }
-      async function waitForVisibleSelector(selector, timeoutMs = 1800) {
-        const startedAt = Date.now();
-        while (Date.now() - startedAt <= timeoutMs) {
-          const match = findBestMatch([selector], { visibleOnly: true });
-          if (match.element) {
-            return match;
-          }
-          await new Promise((resolve) => window.setTimeout(resolve, 120));
-        }
-        return findBestMatch([selector], { visibleOnly: true });
-      }
-      try {
-        const selectors = [
-          siteDraft.inputSelector,
-          ...Array.isArray(siteDraft.fallbackSelectors) ? siteDraft.fallbackSelectors : []
-        ].filter((selector) => typeof selector === "string" && selector.trim());
-        const inputMatch = findBestMatch(selectors, { visibleOnly: true });
-        if (!inputMatch.element) {
-          return {
-            ok: true,
-            input: {
-              found: false,
-              selector: inputMatch.selector,
-              actualType: "",
-              expectedType: siteDraft.inputType ?? ""
-            },
-            submit: {
-              status: "skipped"
-            }
-          };
-        }
-        highlightElement(inputMatch.element, "#facc15");
-        const actualInputType = detectInputType(inputMatch.element);
-        const inputTypeMatches = actualInputType === String(siteDraft.inputType ?? "");
-        const response = {
-          ok: true,
-          input: {
-            found: true,
-            selector: inputMatch.selector,
-            actualType: actualInputType,
-            expectedType: String(siteDraft.inputType ?? ""),
-            typeMatches: inputTypeMatches
-          },
-          submit: {
-            status: "skipped"
-          }
-        };
-        if (String(siteDraft.submitMethod) !== "click" || nextSubmitRequirement !== "required" && nextSubmitRequirement !== "conditional") {
-          response.submit = {
-            status: "skipped",
-            method: String(siteDraft.submitMethod ?? "enter")
-          };
-          return response;
-        }
-        const snapshot = snapshotElementValue(inputMatch.element);
-        try {
-          applyProbeText(inputMatch.element, nextProbeText);
-          const submitMatch = await waitForVisibleSelector(String(siteDraft.submitSelector ?? ""));
-          if (submitMatch.element) {
-            highlightElement(submitMatch.element, "#34d399");
-          }
-          response.submit = {
-            status: submitMatch.element ? "ok" : "missing",
-            selector: submitMatch.selector
-          };
-        } finally {
-          restoreElementValue(inputMatch.element, snapshot);
-        }
-        return response;
-      } catch (error) {
-        return {
-          ok: false,
-          error: error instanceof Error ? error.message : String(error)
-        };
-      }
-    },
-    args: [draft, probeText, submitRequirement]
-  });
-  return result?.result ?? {
-    ok: false,
-    error: "Selector test returned no result."
-  };
-}
-async function clearBadge() {
-  try {
-    await chrome.action.setBadgeText({ text: "" });
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to clear badge.", error);
-  }
-}
-async function applyBadgeForBroadcast(summary) {
-  try {
-    if (!summary || summary.status === "idle") {
-      await clearBadge();
-      return;
-    }
-    if (summary.status === "sending") {
-      await chrome.action.setBadgeBackgroundColor({ color: "#d97706" });
-      await chrome.action.setBadgeText({ text: "..." });
-      return;
-    }
-    if (summary.status === "failed" || summary.status === "partial") {
-      await chrome.action.setBadgeBackgroundColor({ color: "#b53b3b" });
-      await chrome.action.setBadgeText({ text: "!" });
-      return;
-    }
-    await chrome.action.setBadgeBackgroundColor({ color: "#1f8f5f" });
-    await chrome.action.setBadgeText({ text: "✓" });
-    chrome.alarms.create(BADGE_CLEAR_ALARM, {
-      when: Date.now() + BADGE_CLEAR_DELAY_MS
-    });
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to apply badge state.", error);
-  }
-}
-async function syncLastBroadcast(summary) {
-  await setLastBroadcast(summary);
-  await applyBadgeForBroadcast(summary);
-}
-async function createPendingBroadcast(prompt, targets, metadata = {}) {
-  const pendingInjections = await getPendingInjections();
-  if (Object.keys(pendingInjections).length > 0) {
-    console.warn("[AI Prompt Broadcaster] Starting a new broadcast while pending tabs still exist.", pendingInjections);
-  }
-  const originContext = await getFocusedTabContext();
-  const sites = Array.isArray(targets) ? targets.map((target) => target.site).filter(Boolean) : [];
-  const broadcastId = typeof crypto?.randomUUID === "function" ? crypto.randomUUID() : `broadcast-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const record = {
-    id: broadcastId,
-    prompt,
-    siteIds: sites.map((site) => site.id),
-    total: sites.length,
-    completed: 0,
-    submittedSiteIds: [],
-    failedSiteIds: [],
-    siteResults: {},
-    targetSnapshots: buildQueueTargetSnapshots(targets, prompt),
-    startedAt: nowIso(),
-    status: "sending",
-    originTabId: originContext?.tabId ?? null,
-    originWindowId: originContext?.windowId ?? null,
-    openedTabIds: [],
-    targetTabIdsBySiteId: {},
-    originFavoriteId: typeof metadata.originFavoriteId === "string" && metadata.originFavoriteId.trim() ? metadata.originFavoriteId.trim() : null,
-    chainRunId: typeof metadata.chainRunId === "string" && metadata.chainRunId.trim() ? metadata.chainRunId.trim() : null,
-    chainStepIndex: Number.isFinite(Number(metadata.chainStepIndex)) ? Math.max(0, Math.round(Number(metadata.chainStepIndex))) : null,
-    chainStepCount: Number.isFinite(Number(metadata.chainStepCount)) ? Math.max(0, Math.round(Number(metadata.chainStepCount))) : null,
-    experimentRunId: typeof metadata.experimentRunId === "string" && metadata.experimentRunId.trim() ? metadata.experimentRunId.trim() : null,
-    trigger: getBroadcastTriggerLabel(metadata.trigger)
-  };
-  await queueBackgroundStateMutation((state) => {
-    state.pendingBroadcasts[broadcastId] = record;
-    return clonePlainValue2(record);
-  });
-  await syncLastBroadcast(buildPendingBroadcastSummary(record, { finishedAt: "" }, nowIso()));
-  return record;
-}
-async function maybeCreateSelectorNotification(report) {
-  try {
-    const settings = await getAppSettings();
-    if (!settings.desktopNotifications) {
-      return;
-    }
-    const signature = buildSelectorAlertSignature(report);
-    const shouldNotify = await queueBackgroundStateMutation((state) => {
-      const selectorAlerts = state.selectorAlerts ?? {};
-      if (selectorAlerts[signature]) {
-        return false;
-      }
-      selectorAlerts[signature] = Date.now();
-      state.selectorAlerts = selectorAlerts;
-      return true;
-    });
-    if (!shouldNotify) {
-      return;
-    }
-    await chrome.notifications.create(`selector-changed-${report.siteId}`, {
-      type: "basic",
-      iconUrl: chrome.runtime.getURL(NOTIFICATION_ICON_PATH),
-      title: getI18nMessage("notification_selector_title", [report.siteName]) || `${report.siteName} input check needed`,
-      message: getI18nMessage("notification_selector_message", [report.siteName]) || `${report.siteName} input box was not found. Complete login or security checks, then try again.`
-    });
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to create selector notification.", {
-      report,
-      error
-    });
-  }
-}
-async function maybeCreateBroadcastNotification(summary) {
-  try {
-    const settings = await getAppSettings();
-    if (!settings.desktopNotifications) {
-      return;
-    }
-    const successCount = (summary.submittedSiteIds ?? []).length;
-    const failedSiteIds = [...summary.failedSiteIds ?? []];
-    const failedCount = failedSiteIds.length;
-    const failedNames = (await Promise.all(failedSiteIds.map(async (siteId) => (await getSiteById(siteId))?.name ?? siteId))).filter(Boolean);
-    let title = getI18nMessage("notification_broadcast_title_success") || "AI Broadcaster";
-    let message = "";
-    if (summary.status === "failed") {
-      title = getI18nMessage("notification_broadcast_title_failed") || "AI Broadcaster";
-      message = getI18nMessage("notification_broadcast_message_failed") || "Broadcast failed. Check each tab for details.";
-    } else if (summary.status === "partial") {
-      title = getI18nMessage("notification_broadcast_title_partial") || "AI Broadcaster";
-      message = getI18nMessage("notification_broadcast_message_partial_named", [
-        String(successCount),
-        String(failedCount),
-        failedNames.join(", ")
-      ]) || `${successCount} succeeded, ${failedCount} failed (${failedNames.join(", ")})`;
-    } else {
-      title = getI18nMessage("notification_broadcast_title_success") || "AI Broadcaster";
-      message = getI18nMessage("notification_broadcast_message_success_named", [String(successCount)]) || `${successCount} service(s) completed`;
-    }
-    await chrome.notifications.create(`broadcast-complete-${Date.now()}`, {
-      type: "basic",
-      iconUrl: chrome.runtime.getURL(NOTIFICATION_ICON_PATH),
-      title,
-      message
-    });
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to create broadcast notification.", error);
-  }
-}
-async function recordBroadcastSiteResult(broadcastId, siteId, resultInput) {
-  const result = typeof resultInput === "string" ? buildSiteResult(resultInput) : buildSiteResult(resultInput?.code ?? resultInput, resultInput ?? {});
-  try {
-    const mutationResult = await queueBackgroundStateMutation((state) => {
-      const record = state.pendingBroadcasts[broadcastId];
-      if (!record) {
-        return {
-          summary: null,
-          completedRecord: null
-        };
-      }
-      if (record.siteResults?.[siteId]) {
-        return {
-          summary: buildPendingBroadcastSummary(record, {}, nowIso()),
-          completedRecord: null
-        };
-      }
-      const mutation = applyPendingBroadcastSiteResult(record, siteId, result, nowIso());
-      if (mutation.nextRecord) {
-        state.pendingBroadcasts[broadcastId] = mutation.nextRecord;
-      } else {
-        delete state.pendingBroadcasts[broadcastId];
-      }
-      return {
-        summary: mutation.summary,
-        completedRecord: mutation.completedRecord ? clonePlainValue2(mutation.completedRecord) : null
-      };
-    });
-    if (!mutationResult?.summary) {
-      return null;
-    }
-    const { summary, completedRecord } = mutationResult;
-    const runSideEffect = async (label, effect) => {
-      try {
-        await effect();
-      } catch (sideEffectError) {
-        if (label === "appendPromptHistory") {
-          await enqueueUiToast({
-            message: getI18nMessage("toast_prompt_history_save_failed") || "Broadcast finished, but prompt history could not be saved.",
-            type: "error",
-            duration: 7e3
-          });
-        }
-        console.error("[AI Prompt Broadcaster] Broadcast completion side effect failed.", {
-          broadcastId,
-          siteId,
-          result,
-          label,
-          sideEffectError
-        });
-      }
-    };
-    if (completedRecord) {
-      const suppressCompletionEffects = suppressedCompletedBroadcastIds.has(broadcastId);
-      suppressedCompletedBroadcastIds.delete(broadcastId);
-      await runSideEffect("syncLastBroadcast", async () => {
-        await syncLastBroadcast(summary);
-      });
-      await runSideEffect("handleFavoriteBroadcastCompletion", async () => {
-        await handleFavoriteBroadcastCompletion(summary);
-      });
-      resolveBroadcastCompletionWaiter(broadcastId, summary);
-      if (suppressCompletionEffects) {
-        return summary;
-      }
-      await runSideEffect("appendPromptHistory", async () => {
-        const historyItem = await appendPromptHistory({
-          id: Date.now(),
-          text: completedRecord.prompt,
-          requestedSiteIds: completedRecord.siteIds,
-          submittedSiteIds: completedRecord.submittedSiteIds,
-          failedSiteIds: completedRecord.failedSiteIds,
-          sentTo: completedRecord.submittedSiteIds,
-          createdAt: completedRecord.startedAt,
-          status: summary.status,
-          siteResults: completedRecord.siteResults,
-          targetSnapshots: completedRecord.targetSnapshots,
-          originFavoriteId: completedRecord.originFavoriteId ?? null,
-          chainRunId: completedRecord.chainRunId ?? null,
-          chainStepIndex: completedRecord.chainStepIndex ?? null,
-          chainStepCount: completedRecord.chainStepCount ?? null,
-          experimentRunId: completedRecord.experimentRunId ?? null,
-          trigger: completedRecord.trigger ?? "popup"
-        });
-        void autoCaptureBroadcastResponses(historyItem, completedRecord).catch((error) => {
-          console.warn("[AI Prompt Broadcaster] Automatic response capture failed.", error);
-          void enqueueUiToast({
-            message: getI18nMessage("toast_auto_capture_save_failed") || "Automatic response capture could not be saved.",
-            type: "warning",
-            duration: 7e3
-          }).catch(() => void 0);
-        });
-      });
-      await runSideEffect("restoreBroadcastFocus", async () => {
-        await restoreBroadcastFocus(completedRecord);
-      });
-      await runSideEffect("maybeCreateBroadcastNotification", async () => {
-        await maybeCreateBroadcastNotification(summary);
-      });
-    } else {
-      await runSideEffect("syncLastBroadcast", async () => {
-        await syncLastBroadcast(summary);
-      });
-    }
-    return summary;
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to record broadcast site result.", {
-      broadcastId,
-      siteId,
-      result,
-      error
-    });
-    return null;
-  }
-}
-async function cancelBroadcast(broadcastId, reason = "cancelled") {
-  const normalizedBroadcastId = typeof broadcastId === "string" ? broadcastId.trim() : "";
-  if (!normalizedBroadcastId) {
-    return null;
-  }
-  const pendingBroadcastsBeforeCancel = await getPendingBroadcasts();
-  const recordBeforeCancel = pendingBroadcastsBeforeCancel[normalizedBroadcastId] ?? null;
-  const pendingInjections = await getPendingInjections();
-  const matchingJobs = Object.entries(pendingInjections).filter(
-    ([, job]) => job?.broadcastId === normalizedBroadcastId
-  );
-  const pendingSiteIds = /* @__PURE__ */ new Set();
-  const tabsToClose = new Set(
-    Array.isArray(recordBeforeCancel?.openedTabIds) ? recordBeforeCancel.openedTabIds.map((tabId) => Number(tabId)).filter((tabId) => Number.isFinite(tabId)) : []
-  );
-  for (const [tabIdKey, job] of matchingJobs) {
-    const tabId = Number(tabIdKey);
-    if (job?.siteId) {
-      pendingSiteIds.add(job.siteId);
-    }
-    await removePendingInjection(tabId);
-    activeInjections.delete(tabId);
-    if (job?.closeOnCancel !== false && Number.isFinite(tabId)) {
-      tabsToClose.add(tabId);
-    }
-  }
-  let lastSummary = null;
-  lastSummary = await finalizeBroadcastSites(
-    normalizedBroadcastId,
-    [...pendingSiteIds],
-    buildSiteResult(reason === "reset" ? "cancelled" : reason)
-  ) ?? lastSummary;
-  const refreshedPendingBroadcasts = await getPendingBroadcasts();
-  const record = refreshedPendingBroadcasts[normalizedBroadcastId];
-  const unresolvedSiteIds = getUnresolvedPendingBroadcastSiteIds(record).filter((siteId) => !pendingSiteIds.has(siteId));
-  lastSummary = await finalizeBroadcastSites(
-    normalizedBroadcastId,
-    unresolvedSiteIds,
-    buildSiteResult(reason === "reset" ? "cancelled" : reason)
-  ) ?? lastSummary;
-  await Promise.all([...tabsToClose].map(async (tabId) => closeTabQuietly(Number(tabId))));
-  await restoreBroadcastFocus(recordBeforeCancel);
-  const fallbackSummary = await getLastBroadcast();
-  const summary = lastSummary ?? fallbackSummary;
-  if (reason !== "reset") {
-    await enqueueUiToast({
-      message: getI18nMessage("toast_broadcast_cancelled") || "Broadcast cancelled.",
-      type: "warning",
-      duration: 5e3,
-      meta: {
-        broadcastId: normalizedBroadcastId,
-        reason
-      }
-    });
-  }
-  resolveBroadcastCompletionWaiter(normalizedBroadcastId, summary ?? null);
-  return summary;
-}
-async function reconcilePendingBroadcasts() {
-  const pendingBroadcasts = await getPendingBroadcasts();
-  const pendingInjections = await getPendingInjections();
-  const jobsByBroadcastId = /* @__PURE__ */ new Map();
-  for (const [tabIdKey, job] of Object.entries(pendingInjections)) {
-    if (!job?.broadcastId) {
-      continue;
-    }
-    const current = jobsByBroadcastId.get(job.broadcastId) ?? [];
-    current.push([tabIdKey, job]);
-    jobsByBroadcastId.set(job.broadcastId, current);
-  }
-  for (const [broadcastId, record] of Object.entries(pendingBroadcasts)) {
-    const unresolvedSiteIds = getUnresolvedPendingBroadcastSiteIds(record);
-    if (unresolvedSiteIds.length === 0) {
-      continue;
-    }
-    const relatedJobs = jobsByBroadcastId.get(broadcastId) ?? [];
-    if (relatedJobs.length === 0) {
-      await finalizeBroadcastSites(broadcastId, unresolvedSiteIds, "broadcast_stale");
-      continue;
-    }
-    if (getBroadcastAgeMs(record) <= PENDING_TIMEOUT_MS) {
-      continue;
-    }
-    for (const [tabIdKey] of relatedJobs) {
-      const tabId = Number(tabIdKey);
-      await removePendingInjection(tabId);
-      activeInjections.delete(tabId);
-      await closeTabQuietly(tabId);
-    }
-    await finalizeBroadcastSites(broadcastId, unresolvedSiteIds, "injection_timeout");
-  }
-}
-async function injectIntoTab(tabId, prompt, site, runtimeOverrides = {}) {
-  const config = buildInjectionConfig(site, runtimeOverrides);
-  if (site?.id === "perplexity") {
-    const promptSelectors = normalizeSelectorEntries([
-      config?.inputSelector,
-      ...Array.isArray(config?.fallbackSelectors) ? config.fallbackSelectors : []
-    ]);
-    const [executionResult2] = await chrome.scripting.executeScript({
-      target: { tabId },
-      world: "MAIN",
-      func: async (injectedPrompt, injectedConfig, injectedSelectors) => {
-        const sleep2 = (ms) => new Promise((resolve) => window.setTimeout(resolve, Math.max(Number(ms) || 0, 0)));
-        const normalizeText4 = (value) => String(value ?? "").replace(/\u00A0/g, " ").replace(/[\u200B-\u200D\uFEFF]/g, "").replace(/\r\n?/g, "\n").trim();
-        const isVisible = (element2) => {
-          if (!(element2 instanceof HTMLElement) && !(element2 instanceof SVGElement)) {
-            return true;
-          }
-          const style = window.getComputedStyle(element2);
-          if (element2 instanceof HTMLElement && element2.hidden || element2.getAttribute("hidden") !== null || element2.getAttribute("aria-hidden") === "true" || style.display === "none" || style.visibility === "hidden" || style.visibility === "collapse") {
-            return false;
-          }
-          return element2.getClientRects().length > 0;
-        };
-        const isEditable = (element2) => {
-          if (element2 instanceof HTMLInputElement || element2 instanceof HTMLTextAreaElement) {
-            return !element2.readOnly;
-          }
-          return element2 instanceof HTMLElement ? element2.isContentEditable : false;
-        };
-        const findPromptMatch = () => {
-          for (const selector2 of Array.isArray(injectedSelectors) ? injectedSelectors : []) {
-            const candidates = Array.from(document.querySelectorAll(selector2));
-            const element2 = candidates.find((candidate) => isVisible(candidate) && isEditable(candidate));
-            if (element2) {
-              return { element: element2, selector: selector2 };
-            }
-          }
-          return null;
-        };
-        const waitForPromptMatch = async (timeoutMs) => {
-          const deadline = performance.now() + Math.max(Number(timeoutMs) || 0, 0);
-          while (performance.now() <= deadline) {
-            const match2 = findPromptMatch();
-            if (match2) {
-              return match2;
-            }
-            await sleep2(150);
-          }
-          return null;
-        };
-        const placeCaretAtEnd = (element2) => {
-          if (!(element2 instanceof HTMLElement)) {
-            return;
-          }
-          const selection = window.getSelection();
-          if (!selection) {
-            return;
-          }
-          const range = document.createRange();
-          range.selectNodeContents(element2);
-          range.collapse(false);
-          selection.removeAllRanges();
-          selection.addRange(range);
-        };
-        const selectAllEditableContents = (element2) => {
-          if (!(element2 instanceof HTMLElement)) {
-            return;
-          }
-          element2.focus();
-          const selection = window.getSelection();
-          if (!selection) {
-            document.execCommand("selectAll", false);
-            return;
-          }
-          const range = document.createRange();
-          range.selectNodeContents(element2);
-          selection.removeAllRanges();
-          selection.addRange(range);
-        };
-        const buildParagraphNode = (text) => ({
-          children: text ? [
-            {
-              detail: 0,
-              format: 0,
-              mode: "normal",
-              style: "",
-              text,
-              type: "text",
-              version: 1
-            }
-          ] : [],
-          direction: null,
-          format: "",
-          indent: 0,
-          type: "paragraph",
-          version: 1,
-          textFormat: 0,
-          textStyle: ""
-        });
-        const setLexicalText = (element2, nextPrompt) => {
-          if (!(element2 instanceof HTMLElement)) {
-            return false;
-          }
-          const editor = element2.__lexicalEditor;
-          if (!editor || typeof editor.parseEditorState !== "function" || typeof editor.setEditorState !== "function") {
-            return false;
-          }
-          const paragraphs = String(nextPrompt ?? "").split(/\n/g).map((line) => buildParagraphNode(line));
-          const editorStateJson = {
-            root: {
-              children: paragraphs.length > 0 ? paragraphs : [buildParagraphNode("")],
-              direction: null,
-              format: "",
-              indent: 0,
-              type: "root",
-              version: 1
-            }
-          };
-          const nextState = editor.parseEditorState(JSON.stringify(editorStateJson));
-          editor.setEditorState(nextState);
-          if (typeof editor.focus === "function") {
-            editor.focus();
-          } else {
-            element2.focus();
-          }
-          placeCaretAtEnd(element2);
-          return normalizeText4(element2.innerText ?? element2.textContent ?? "") === normalizeText4(nextPrompt);
-        };
-        if ((Number(injectedConfig?.waitMs) || 0) > 0) {
-          await sleep2(injectedConfig.waitMs);
-        }
-        const startedAt = performance.now();
-        const match = await waitForPromptMatch(Math.max((Number(injectedConfig?.waitMs) || 0) + 6e3, 8e3));
-        if (!match?.element) {
-          return { status: "selector_timeout", attempts: [] };
-        }
-        const { element, selector } = match;
-        let strategy = "mainWorldExecCommand";
-        let injected = false;
-        const attempts = [];
-        if (element instanceof HTMLElement && element.dataset.lexicalEditor === "true") {
-          injected = setLexicalText(element, injectedPrompt);
-          strategy = "mainWorldLexical";
-          attempts.push({ name: strategy, success: injected });
-        }
-        if (!injected && element instanceof HTMLElement) {
-          element.focus();
-          selectAllEditableContents(element);
-          const inserted = document.execCommand("insertText", false, injectedPrompt);
-          injected = Boolean(inserted) || normalizeText4(element.innerText ?? element.textContent ?? "") === normalizeText4(injectedPrompt);
-          attempts.push({ name: "mainWorldExecCommand", success: injected });
-        }
-        if (!injected) {
-          return { status: "strategy_exhausted", selector, strategy, attempts };
-        }
-        return {
-          status: "injected",
-          selector,
-          strategy,
-          inputType: "contenteditable",
-          elapsedMs: Math.round(performance.now() - startedAt),
-          attempts
-        };
-      },
-      args: [prompt, config, promptSelectors]
-    });
-    const injectionResult = executionResult2?.result ?? null;
-    if (!injectionResult || injectionResult.status !== "injected") {
-      return injectionResult;
-    }
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: [INJECTOR_SCRIPT_PATH]
-    });
-    const [submitExecutionResult] = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: async (injectedConfig) => {
-        const submitter = globalThis.__aiPromptBroadcasterSubmitPrompt;
-        if (typeof submitter !== "function") {
-          throw new Error("submitPrompt entry point is not available in the tab context.");
-        }
-        return submitter(injectedConfig);
-      },
-      args: [config]
-    });
-    const submitResult = submitExecutionResult?.result ?? null;
-    if (submitResult?.status === "submitted") {
-      return {
-        ...submitResult,
-        selector: injectionResult.selector ?? submitResult.selector,
-        strategy: injectionResult.strategy ?? submitResult.strategy,
-        inputType: injectionResult.inputType ?? submitResult.inputType,
-        elapsedMs: injectionResult.elapsedMs ?? submitResult.elapsedMs,
-        attempts: injectionResult.attempts ?? submitResult.attempts ?? []
-      };
-    }
-    return {
-      ...submitResult ?? injectionResult,
-      selector: injectionResult?.selector ?? submitResult?.selector,
-      strategy: injectionResult?.strategy ?? submitResult?.strategy,
-      inputType: injectionResult?.inputType ?? submitResult?.inputType,
-      elapsedMs: injectionResult?.elapsedMs ?? submitResult?.elapsedMs,
-      attempts: injectionResult?.attempts ?? submitResult?.attempts ?? []
-    };
-  }
-  await chrome.scripting.executeScript({
-    target: { tabId },
-    files: [INJECTOR_SCRIPT_PATH]
-  });
-  const [executionResult] = await chrome.scripting.executeScript({
-    target: { tabId },
-    func: async (injectedPrompt, injectedConfig) => {
-      const injector = globalThis.__aiPromptBroadcasterInjectPrompt;
-      if (typeof injector !== "function") {
-        throw new Error("injectPrompt entry point is not available in the tab context.");
-      }
-      return injector(injectedPrompt, injectedConfig);
-    },
-    args: [prompt, config]
-  });
-  return executionResult?.result ?? null;
-}
-async function handlePendingInjectionTimeout(tabId, job, reason = "timeout") {
-  const siteName = job?.site?.name ?? job?.siteId ?? "AI service";
-  await recordBroadcastSiteResult(job.broadcastId, job.siteId, buildSiteResult("injection_timeout"));
-  await removePendingInjection(tabId);
-  activeInjections.delete(tabId);
-  await enqueueUiToast({
-    message: getI18nMessage("toast_injection_timeout", [siteName]) || `${siteName} injection timed out.`,
-    type: "warning",
-    duration: 5e3,
-    meta: { reason }
-  });
-}
-async function processPendingInjectionNow(tabId, tab) {
-  if (activeInjections.has(tabId)) {
-    return;
-  }
-  const pending = await getPendingInjections();
-  const job = pending[String(tabId)];
-  if (!job || job.injected === true && job.status !== "injecting") {
-    return;
-  }
-  const pendingBroadcasts = await getPendingBroadcasts();
-  if (!pendingBroadcasts[job.broadcastId]) {
-    await removePendingInjection(tabId);
-    activeInjections.delete(tabId);
-    return;
-  }
-  if (Date.now() - Number(job.createdAt || 0) > PENDING_TIMEOUT_MS) {
-    await handlePendingInjectionTimeout(tabId, job);
-    return;
-  }
-  activeInjections.add(tabId);
-  await updatePendingInjection(
-    tabId,
-    (current) => current ? {
-      ...current,
-      injected: true,
-      startedAt: Date.now(),
-      status: "injecting"
-    } : null
-  );
-  try {
-    const settings = await getAppSettings();
-    const waitMsMultiplier = Number(settings?.waitMsMultiplier) || 1;
-    const strategyStats = await getStrategyStats();
-    const runtimeOverrides = {
-      waitMsMultiplier,
-      strategyOrder: buildPreferredStrategyOrder(job.siteId, strategyStats),
-      submitTimeoutMs: scaleTimeout(DEFAULT_SUBMIT_BUTTON_WAIT_TIMEOUT_MS, waitMsMultiplier),
-      submitRetryCount: DEFAULT_SUBMIT_RETRY_COUNT
-    };
-    const ready = await waitForTabInteractionReady(tabId, scaleTimeout(TAB_LOAD_READY_TIMEOUT_MS, waitMsMultiplier));
-    if (!ready) {
-      await handlePendingInjectionTimeout(tabId, job, "tab_not_ready");
-      return;
-    }
-    const currentTab = await chrome.tabs.get(tabId);
-    const currentUrl = currentTab?.url ?? "";
-    try {
-      if (Number.isFinite(currentTab?.windowId)) {
-        await chrome.windows.update(currentTab.windowId, { focused: true });
-      }
-      await chrome.tabs.update(tabId, { active: true });
-      await sleep(300);
-    } catch (activateError) {
-      console.warn("[AI Prompt Broadcaster] Failed to activate tab before injection.", {
-        tabId,
-        activateError
-      });
-    }
-    if (!isSameSiteOrigin(currentUrl, job.site)) {
-      await recordBroadcastSiteResult(job.broadcastId, job.siteId, buildSiteResult("auth_required"));
-      await enqueueUiToast({
-        message: getI18nMessage("toast_login_required", [job.site.name]) || `${job.site.name} requires login before sending.`,
-        type: "warning",
-        duration: 5e3
-      });
-      return;
-    }
-    const result = await injectIntoTab(tabId, job.prompt, job.site, {
-      ...runtimeOverrides,
-      waitMs: scaleTimeout(Number(job.site?.waitMs) || 0, waitMsMultiplier)
-    });
-    if (Array.isArray(result?.attempts) && result.attempts.length > 0) {
-      await recordStrategyAttempts(job.siteId, result.attempts);
-    }
-    const finalCode = normalizeResultCode(result?.status);
-    if (finalCode === "submitted") {
-      await sleep(TAB_POST_SUBMIT_SETTLE_MS);
-    }
-    await recordBroadcastSiteResult(job.broadcastId, job.siteId, buildSiteResult(finalCode, {
-      message: result?.error ?? "",
-      strategy: result?.strategy,
-      elapsedMs: result?.elapsedMs,
-      attempts: result?.attempts
-    }));
-    if (finalCode === "auth_required") {
-      await enqueueUiToast({
-        message: getI18nMessage("toast_login_required", [job.site.name]) || `${job.site.name} requires login before sending.`,
-        type: "warning",
-        duration: 5e3
-      });
-    }
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to inject prompt after tab load.", {
-      tabId,
-      error
-    });
-    await recordBroadcastSiteResult(job.broadcastId, job.siteId, buildSiteResult("unexpected_error", {
-      message: getErrorMessage(error)
-    }));
-    await enqueueUiToast({
-      message: getI18nMessage("toast_injection_failed", [job.site.name]) || `${job.site.name} automatic injection failed.`,
-      type: "error",
-      duration: 5e3
-    });
-  } finally {
-    await removePendingInjection(tabId);
-    activeInjections.delete(tabId);
-  }
-}
-async function reconcilePendingInjections() {
-  const pending = await getPendingInjections();
-  const entries = Object.entries(pending);
-  for (const [tabIdKey, job] of entries) {
-    const tabId = Number(tabIdKey);
-    if (!Number.isFinite(tabId) || !job) {
-      await removePendingInjection(tabId);
-      continue;
-    }
-    const createdAt = Number(job.createdAt || 0);
-    const startedAt = Number(job.startedAt || 0);
-    const createdAge = Date.now() - createdAt;
-    const injectingAge = startedAt > 0 ? Date.now() - startedAt : createdAge;
-    if (job.status === "injecting" && injectingAge > PENDING_TIMEOUT_MS) {
-      await handlePendingInjectionTimeout(tabId, job, "stale_injecting");
-      continue;
-    }
-    if (createdAge > PENDING_TIMEOUT_MS) {
-      await handlePendingInjectionTimeout(tabId, job);
-      continue;
-    }
-    try {
-      const tab = await chrome.tabs.get(tabId);
-      if (tab?.status === "complete") {
-        await queuePendingInjection(tabId, tab);
-      }
-    } catch (_error) {
-      await recordBroadcastSiteResult(job.broadcastId, job.siteId, "tab_closed");
-      await removePendingInjection(tabId);
-      activeInjections.delete(tabId);
-    }
-  }
-}
-async function ensureReconcileAlarm() {
-  try {
-    chrome.alarms.create(RECONCILE_ALARM, {
-      periodInMinutes: KEEPALIVE_PERIOD_MINUTES
-    });
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to create reconcile alarm.", error);
-  }
-}
-async function initializeServiceWorker() {
-  await ensureReconcileAlarm();
-  await reconcilePendingInjections();
-  await reconcilePendingBroadcasts();
-  await reconcileFavoriteRunJobs();
-  await reconcileFavoriteSchedules();
-}
-async function queueResolvedBroadcastRequest(prompt, selectedTargets, metadata = {}) {
-  const selectedSites = selectedTargets.map((target) => target.site);
-  let queuedSiteCount = 0;
-  const broadcast = await createPendingBroadcast(prompt, selectedTargets, metadata);
-  registerBroadcastCompletionWaiter(broadcast.id);
-  const settings = await getAppSettings();
-  const createdTabSiteIds = [];
-  const reusedTabSiteIds = [];
-  const failedTabSiteIds = [];
-  const reusableTabsBySiteId = settings.reuseExistingTabs ? await findReusableTabsForSites(selectedSites, {
-    windowId: broadcast.originWindowId,
-    excludeTabId: broadcast.originTabId
-  }) : /* @__PURE__ */ new Map();
-  for (const target of selectedTargets) {
-    const site = target.site;
-    try {
-      const pendingBeforeCreate = await getPendingBroadcasts();
-      if (!pendingBeforeCreate[broadcast.id]) {
-        continue;
-      }
-      if (site.isCustom && getSitePermissionPatterns(site).length > 0) {
-        const granted = await isCustomSitePermissionGranted(site);
-        if (!granted) {
-          failedTabSiteIds.push(site.id);
-          await recordBroadcastSiteResult(broadcast.id, site.id, "permission_denied");
-          await enqueueUiToast({
-            message: getI18nMessage("toast_service_permission_denied", [site.name]) || `${site.name} host permission was not granted.`,
-            type: "error",
-            duration: 5e3
-          });
-          continue;
-        }
-      }
-      const explicitTab = await getExplicitReusableTabForTarget(target);
-      if (explicitTab.requested && !explicitTab.tab) {
-        failedTabSiteIds.push(site.id);
-        await recordBroadcastSiteResult(broadcast.id, site.id, buildSiteResult("tab_closed", {
-          message: explicitTab.message ?? buildSelectedTabUnavailableMessage(site.name, target.targetTabId)
-        }));
-        continue;
-      }
-      const reusableTab = explicitTab.tab ?? (!target.forceNewTab && settings.reuseExistingTabs ? reusableTabsBySiteId.get(site.id) ?? null : null);
-      const targetTab = reusableTab ?? await chrome.tabs.create({
-        url: site.url,
-        active: false
-      });
-      if (!targetTab?.id) {
-        throw new Error("Tab was queued without a valid id.");
-      }
-      const pendingAfterCreate = await getPendingBroadcasts();
-      if (!pendingAfterCreate[broadcast.id]) {
-        if (!reusableTab) {
-          await closeTabQuietly(targetTab.id);
-        }
-        continue;
-      }
-      await addPendingInjection(targetTab.id, {
-        broadcastId: broadcast.id,
-        siteId: site.id,
-        prompt: pickBroadcastTargetPrompt(target, prompt),
-        site,
-        injected: false,
-        status: "pending",
-        createdAt: Date.now(),
-        closeOnCancel: !reusableTab
-      });
-      await queueBackgroundStateMutation((state) => {
-        const record = state.pendingBroadcasts[broadcast.id];
-        if (!record) {
-          return null;
-        }
-        record.targetTabIdsBySiteId = {
-          ...record.targetTabIdsBySiteId ?? {},
-          [site.id]: targetTab.id
-        };
-        if (!reusableTab) {
-          record.openedTabIds = Array.from(
-            /* @__PURE__ */ new Set([...Array.isArray(record.openedTabIds) ? record.openedTabIds : [], targetTab.id])
-          );
-        }
-        state.pendingBroadcasts[broadcast.id] = record;
-        return clonePlainValue2(record.targetTabIdsBySiteId);
-      });
-      queuedSiteCount += 1;
-      if (reusableTab) {
-        reusedTabSiteIds.push(site.id);
-      } else {
-        createdTabSiteIds.push(site.id);
-      }
-      void queuePendingInjection(targetTab.id, targetTab);
-    } catch (error) {
-      console.error("[AI Prompt Broadcaster] Failed to create broadcast tab.", {
-        site,
-        error
-      });
-      failedTabSiteIds.push(site.id);
-      await recordBroadcastSiteResult(broadcast.id, site.id, "tab_create_failed");
-    }
-  }
-  if (queuedSiteCount > 0) {
-    await queueBackgroundStateMutation(async () => {
-      const currentCounter = await getBroadcastCounter();
-      await setBroadcastCounter(currentCounter + 1);
-      return currentCounter + 1;
-    });
-  }
-  return {
-    ok: queuedSiteCount > 0,
-    createdSiteCount: queuedSiteCount,
-    queuedSiteCount,
-    requestedSiteCount: selectedSites.length,
-    createdTabSiteIds,
-    reusedTabSiteIds,
-    failedTabSiteIds,
-    broadcastId: broadcast.id,
-    error: queuedSiteCount > 0 ? void 0 : "No tabs could be queued."
-  };
-}
-async function queueBroadcastRequest(prompt, siteRefs, metadata = {}) {
-  await reconcilePendingBroadcasts();
-  const normalizedPrompt = normalizePrompt2(prompt).trim();
-  const selectedTargets = await resolveSelectedTargets(siteRefs);
-  const selectedSites = selectedTargets.map((target) => target.site);
-  if (!normalizedPrompt) {
-    throw new Error("Prompt is required.");
-  }
-  if (selectedSites.length === 0) {
-    throw new Error("At least one target site is required.");
-  }
-  return queueResolvedBroadcastRequest(normalizedPrompt, selectedTargets, metadata);
-}
-async function handleBroadcastMessage(message) {
-  return queueBroadcastRequest(message?.prompt, message?.sites, {
-    trigger: "popup"
-  });
-}
-async function handleServiceHealthGet() {
-  const [sites, history, failedSelectors, strategyStats] = await Promise.all([
-    getRuntimeSites(),
-    getStoredPromptHistory(),
-    getFailedSelectors(),
-    getStrategyStats()
-  ]);
-  const failedSelectorBySite = new Map(
-    failedSelectors.map((entry) => [entry.serviceId, entry])
-  );
-  const snapshots = sites.map((site) => {
-    let lastSuccessAt = null;
-    let lastFailureAt = null;
-    let lastFailureCode = null;
-    let successCount = 0;
-    let failureCount = 0;
-    for (const item of history) {
-      const result = item.siteResults?.[site.id];
-      if (!result && !item.requestedSiteIds?.includes(site.id)) {
-        continue;
-      }
-      if (result?.code === "submitted" || item.submittedSiteIds?.includes(site.id)) {
-        successCount += 1;
-        if (!lastSuccessAt) {
-          lastSuccessAt = item.createdAt;
-        }
-        continue;
-      }
-      failureCount += 1;
-      if (!lastFailureAt) {
-        lastFailureAt = item.createdAt;
-        lastFailureCode = result?.code ?? "unexpected_error";
-      }
-    }
-    const siteStrategyStats = strategyStats[site.id] ?? {};
-    const preferredStrategy = Object.entries(siteStrategyStats).sort(
-      ([, left], [, right]) => right.success - right.fail - (left.success - left.fail)
-    )[0]?.[0] ?? null;
-    return {
-      serviceId: site.id,
-      serviceName: site.name,
-      enabled: site.enabled,
-      lastSuccessAt,
-      lastFailureAt,
-      lastFailureCode,
-      selectorWarning: failedSelectorBySite.get(site.id) ?? null,
-      preferredStrategy,
-      successCount,
-      failureCount,
-      verification: {
-        lastVerified: site.lastVerified,
-        verifiedAt: site.verifiedAt,
-        verifiedRoute: site.verifiedRoute,
-        verifiedAuthState: site.verifiedAuthState,
-        verifiedLocale: site.verifiedLocale,
-        verifiedVersion: site.verifiedVersion
-      }
-    };
-  });
-  return {
-    ok: true,
-    snapshots
-  };
-}
-async function handleComparisonNoteList(message) {
-  const historyId = Number(message?.historyId);
-  const notes = await getComparisonNotes();
-  return {
-    ok: true,
-    notes: Number.isFinite(historyId) ? notes.filter((entry) => Number(entry.historyId) === historyId) : notes
-  };
-}
-async function handleComparisonNoteSave(message) {
-  const note = await saveComparisonNote(message?.note ?? {});
-  return {
-    ok: true,
-    note
-  };
-}
-async function handleComparisonNoteDelete(message) {
-  const notes = await deleteComparisonNote(message?.noteId ?? "");
-  return {
-    ok: true,
-    notes
-  };
-}
-async function resolveContextMenuComparisonTarget(siteId) {
-  const [history, activeContext] = await Promise.all([
-    getStoredPromptHistory(),
-    getActiveComparisonContext()
-  ]);
-  if (activeContext?.serviceId !== siteId) {
-    return null;
-  }
-  const activeHistory = history.find((entry) => Number(entry.id) === activeContext.historyId);
-  if (activeHistory?.requestedSiteIds?.includes(siteId)) {
-    return {
-      historyId: activeHistory.id
-    };
-  }
-  return null;
-}
-async function handleContextMenuComparisonNote(selectedText, tab) {
-  const responseText = (selectedText || (tab?.id ? selectionCache.get(tab.id) : "") || "").trim();
-  if (!responseText) {
-    return;
-  }
-  const [history, site] = await Promise.all([
-    getStoredPromptHistory(),
-    getSiteForUrl(tab?.url ?? "")
-  ]);
-  if (history.length === 0 || !site?.id) {
-    await enqueueUiToast({
-      message: "Open a supported service tab and keep at least one history item before saving a comparison note.",
-      type: "warning",
-      duration: 5e3
-    });
-    return;
-  }
-  const target = await resolveContextMenuComparisonTarget(site.id);
-  if (!target) {
-    await enqueueUiToast({
-      message: `${site.name} is not the active comparison target. Open the matching history item first.`,
-      type: "warning",
-      duration: 5e3
-    });
-    return;
-  }
-  await saveComparisonNote({
-    historyId: target.historyId,
-    serviceId: site.id,
-    responseText,
-    captureMode: "selection",
-    tags: ["selection"]
-  });
-  await enqueueUiToast({
-    message: `${site.name} response saved to the active comparison note.`,
-    type: "success",
-    duration: 3500
-  });
-}
-async function findComparisonCaptureTab(serviceId, explicitTabId) {
-  if (Number.isFinite(Number(explicitTabId))) {
-    try {
-      return await chrome.tabs.get(Number(explicitTabId));
-    } catch (_error) {
-      return null;
-    }
-  }
-  const activeTabs = await chrome.tabs.query({
-    active: true,
-    lastFocusedWindow: true
-  }).catch(() => []);
-  for (const tab of activeTabs) {
-    const site = await getSiteForUrl(tab.url ?? "");
-    if (site?.id === serviceId) {
-      return tab;
-    }
-  }
-  const allTabs = await chrome.tabs.query({}).catch(() => []);
-  for (const tab of allTabs) {
-    const site = await getSiteForUrl(tab.url ?? "");
-    if (site?.id === serviceId) {
-      return tab;
-    }
-  }
-  return null;
-}
-async function captureVisibleAssistantResponse(tabId, serviceId, promptText = "") {
-  const selectors = COMPARISON_CAPTURE_SELECTORS[serviceId] ?? [];
-  if (selectors.length === 0) {
-    return "";
-  }
-  const [result] = await chrome.scripting.executeScript({
-    target: { tabId },
-    args: [selectors],
-    func: (assistantSelectors) => {
-      const isVisible = (element) => {
-        const rect = element.getBoundingClientRect();
-        const style = window.getComputedStyle(element);
-        return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none";
-      };
-      const isAssistantCandidate = (element) => {
-        const role = element.getAttribute("role") || "";
-        const editable = element.getAttribute("contenteditable") || "";
-        return role.toLowerCase() !== "textbox" && editable.toLowerCase() !== "true";
-      };
-      const getText = (element) => (element.textContent || "").replace(/\s+/g, " ").trim();
-      const seen = /* @__PURE__ */ new Set();
-      const candidates = assistantSelectors.flatMap((selector) => Array.from(document.querySelectorAll(selector))).filter((element) => {
-        if (seen.has(element)) {
-          return false;
-        }
-        seen.add(element);
-        return true;
-      }).filter(isVisible).filter(isAssistantCandidate).map((element) => ({
-        text: getText(element),
-        top: element.getBoundingClientRect().top
-      })).filter((entry) => entry.text.length >= 20).sort((left, right) => right.top - left.top);
-      return candidates[0]?.text ?? "";
-    }
-  });
-  const responseText = typeof result?.result === "string" ? result.result : "";
-  if (normalizeCapturedResponseText(responseText).length < AUTO_RESPONSE_CAPTURE_MIN_LENGTH || isPromptEcho(responseText, promptText)) {
-    return "";
-  }
-  return responseText;
-}
-async function captureAssistantResponseWithRetry(tabId, serviceId, promptText) {
-  const deadline = Date.now() + AUTO_RESPONSE_CAPTURE_TIMEOUT_MS;
-  let lastResponse = "";
-  while (Date.now() <= deadline) {
-    const responseText = await captureVisibleAssistantResponse(tabId, serviceId, promptText).catch(() => "");
-    if (responseText) {
-      if (lastResponse && normalizeCapturedResponseText(lastResponse) === normalizeCapturedResponseText(responseText)) {
-        return responseText;
-      }
-      lastResponse = responseText;
-    }
-    await sleep(AUTO_RESPONSE_CAPTURE_INTERVAL_MS);
-  }
-  return lastResponse;
-}
-async function saveAutoCapturedResponse(historyId, serviceId, responseText) {
-  const cappedResponseText = capAutoCapturedResponseText(responseText);
-  const existingNotes = await getComparisonNotes();
-  const existingAutoNote = existingNotes.find(
-    (note) => Number(note.historyId) === Number(historyId) && note.serviceId === serviceId && note.captureMode === "auto"
-  );
-  if (existingAutoNote && !shouldUpdateAutoCapturedResponse(existingAutoNote.responseText, cappedResponseText)) {
-    return;
-  }
-  await saveComparisonNote({
-    id: existingAutoNote?.id,
-    historyId,
-    serviceId,
-    responseText: cappedResponseText,
-    captureMode: "auto",
-    tags: ["auto"]
-  });
-}
-async function autoCaptureBroadcastResponses(historyItem, completedRecord) {
-  const settings = await getAppSettings();
-  if (!settings.autoCaptureResponses) {
-    return;
-  }
-  const submittedSiteIds = Array.isArray(completedRecord.submittedSiteIds) ? completedRecord.submittedSiteIds : [];
-  for (const serviceId of submittedSiteIds) {
-    const tabId = Number(completedRecord.targetTabIdsBySiteId?.[serviceId]);
-    const tab = await findComparisonCaptureTab(serviceId, Number.isFinite(tabId) ? tabId : null);
-    if (!tab?.id) {
-      continue;
-    }
-    const responseText = await captureAssistantResponseWithRetry(tab.id, serviceId, historyItem.text);
-    if (!responseText.trim()) {
-      continue;
-    }
-    await saveAutoCapturedResponse(Number(historyItem.id), serviceId, responseText);
-  }
-}
-async function handleComparisonCaptureStart(message) {
-  const historyId = Math.max(0, Math.round(Number(message?.historyId)));
-  const serviceId = typeof message?.serviceId === "string" ? message.serviceId.trim() : "";
-  if (!historyId || !serviceId) {
-    return {
-      ok: false,
-      captured: false,
-      error: "historyId and serviceId are required."
-    };
-  }
-  const tab = await findComparisonCaptureTab(serviceId, message?.tabId ?? null);
-  if (!tab?.id) {
-    return {
-      ok: true,
-      captured: false,
-      message: "Open the service tab and run capture again when the response is visible."
-    };
-  }
-  const history = await getStoredPromptHistory();
-  const historyItem = history.find((entry) => Number(entry.id) === historyId);
-  const responseText = await captureVisibleAssistantResponse(tab.id, serviceId, historyItem?.text ?? "").catch(() => "");
-  if (!responseText.trim()) {
-    return {
-      ok: true,
-      captured: false,
-      message: "No visible assistant response was found. Use manual paste or select response text from the service tab."
-    };
-  }
-  await saveAutoCapturedResponse(historyId, serviceId, responseText);
-  const notes = await getComparisonNotes();
-  const note = notes.find(
-    (entry) => Number(entry.historyId) === Number(historyId) && entry.serviceId === serviceId && entry.captureMode === "auto"
-  ) ?? null;
-  return {
-    ok: true,
-    note: note ?? void 0,
-    captured: true
-  };
-}
-function buildExperimentRunId() {
-  return typeof crypto?.randomUUID === "function" ? crypto.randomUUID() : `experiment-run-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-async function handleExperimentSave(message) {
-  const experiment = await savePromptExperiment(message?.experiment ?? {});
-  return {
-    ok: true,
-    experiment
-  };
-}
-async function handleExperimentDelete(message) {
-  const experiments = await deletePromptExperiment(message?.experimentId ?? "");
-  return {
-    ok: true,
-    experiments
-  };
-}
-async function handleExperimentRun(message) {
-  const experiments = await getPromptExperiments();
-  const experiment = experiments.find((entry) => entry.id === message?.experimentId);
-  if (!experiment) {
-    return {
-      ok: false,
-      experiment: null,
-      queuedCount: 0,
-      broadcastIds: [],
-      preview: [],
-      error: "Experiment not found."
-    };
-  }
-  const targetSiteIds = normalizeSiteIdList(experiment.targetSiteIds);
-  const variants = experiment.variants.filter((variant) => variant.text.trim());
-  const variableSets = experiment.variableSets.length > 0 ? experiment.variableSets : [{ id: "default", title: "Default", values: {} }];
-  const preview = variants.flatMap(
-    (variant) => variableSets.map((variableSet) => ({
-      variantId: variant.id,
-      variableSetId: variableSet.id,
-      targetSiteIds,
-      prompt: renderTemplatePrompt(variant.text, variableSet.values ?? {})
-    }))
-  );
-  if (targetSiteIds.length === 0 || preview.length === 0) {
-    return {
-      ok: false,
-      experiment,
-      queuedCount: 0,
-      broadcastIds: [],
-      preview,
-      error: "Experiment requires at least one variant and one target service."
-    };
-  }
-  const limitResult = evaluatePromptExperimentRunLimit(
-    {
-      variants,
-      variableSets,
-      targetSiteIds
-    },
-    message?.confirmedLargeRun === true
-  );
-  if (limitResult.reason === "hard_limit") {
-    return {
-      ok: false,
-      experiment,
-      queuedCount: 0,
-      broadcastIds: [],
-      preview,
-      error: `Experiment has ${limitResult.broadcastCount} broadcasts. Split it into batches of ${EXPERIMENT_HARD_BROADCAST_LIMIT} or fewer.`
-    };
-  }
-  if (limitResult.reason === "confirmation_required") {
-    return {
-      ok: false,
-      experiment,
-      queuedCount: 0,
-      broadcastIds: [],
-      preview,
-      error: `Experiment has ${limitResult.broadcastCount} broadcasts. Confirm the large run before queuing more than ${EXPERIMENT_SOFT_BROADCAST_LIMIT}.`
-    };
-  }
-  const runId = buildExperimentRunId();
-  const broadcastIds = [];
-  for (const item of preview) {
-    const response = await queueBroadcastRequest(
-      item.prompt,
-      item.targetSiteIds.map((siteId) => ({ id: siteId })),
-      {
-        trigger: "options",
-        experimentRunId: runId
-      }
-    );
-    if (response?.broadcastId) {
-      broadcastIds.push(response.broadcastId);
-    }
-  }
-  const updatedExperiment = await appendPromptExperimentRun(experiment.id, {
-    id: runId,
-    variantId: preview.length === 1 ? preview[0].variantId : "mixed",
-    variableSetId: preview.length === 1 ? preview[0].variableSetId : "mixed",
-    targetSiteIds,
-    broadcastIds,
-    createdAt: nowIso()
-  });
-  return {
-    ok: broadcastIds.length > 0,
-    experiment: updatedExperiment ?? experiment,
-    runId,
-    queuedCount: broadcastIds.length,
-    broadcastIds,
-    preview,
-    error: broadcastIds.length > 0 ? void 0 : "No experiment broadcasts were queued."
-  };
-}
-function stripFavoriteSensitiveDefaults(favorite, includeSensitiveDefaults) {
-  if (includeSensitiveDefaults) {
-    return favorite;
-  }
-  return {
-    ...favorite,
-    templateDefaults: {},
-    steps: favorite.steps.map((step) => ({
-      ...step,
-      templateDefaults: {}
-    }))
-  };
-}
-async function handleTemplatePackExport(message) {
-  const favorites = await getPromptFavorites();
-  const selectedIds = normalizeSiteIdList(message?.favoriteIds);
-  const includeSensitiveDefaults = message?.includeSensitiveDefaults !== false;
-  const selectedFavorites = (selectedIds.length > 0 ? favorites.filter((favorite) => selectedIds.includes(favorite.id)) : favorites).map((favorite) => stripFavoriteSensitiveDefaults(favorite, includeSensitiveDefaults));
-  const pack = await saveTemplatePack({
-    title: message?.title || `Template Pack ${(/* @__PURE__ */ new Date()).toLocaleDateString()}`,
-    description: "",
-    favoriteIds: selectedFavorites.map((favorite) => favorite.id),
-    templates: selectedFavorites,
-    includeSensitiveDefaults
-  });
-  return {
-    ok: true,
-    pack
-  };
-}
-async function handleTemplatePackImport(message) {
-  const pack = await saveTemplatePack(message?.pack ?? {});
-  const currentFavorites = await getPromptFavorites();
-  const importedFavoriteIds = [];
-  const skippedFavoriteIds = [];
-  const nextFavorites = [...currentFavorites];
-  for (const template of pack.templates) {
-    const normalizedTemplate = buildFavoriteEntry(template);
-    const exactDuplicate = nextFavorites.find(
-      (favorite) => favorite.title === normalizedTemplate.title && favorite.text === normalizedTemplate.text
-    );
-    if (exactDuplicate) {
-      skippedFavoriteIds.push(normalizedTemplate.id);
-      continue;
-    }
-    const importedFavorite = {
-      ...normalizedTemplate,
-      id: ensureUniqueStringId(nextFavorites, normalizedTemplate.id),
-      favoritedAt: nowIso(),
-      createdAt: normalizedTemplate.createdAt || nowIso(),
-      usageCount: 0,
-      lastUsedAt: null
-    };
-    nextFavorites.unshift(importedFavorite);
-    importedFavoriteIds.push(importedFavorite.id);
-  }
-  if (importedFavoriteIds.length > 0) {
-    await setPromptFavorites(nextFavorites);
-  }
-  return {
-    ok: true,
-    pack,
-    importedFavoriteIds,
-    skippedFavoriteIds
-  };
-}
-async function handleServiceGroupsUpdate(message) {
-  const groups = await setServiceGroups(message?.groups ?? []);
-  return {
-    ok: true,
-    groups
-  };
-}
-async function handleSelectorCheckInit(message) {
-  const site = await getSiteForUrl(message?.url ?? "");
-  if (!site) {
-    return { ok: true, site: null };
-  }
-  return {
-    ok: true,
-    site: buildInjectionConfig(site)
-  };
-}
-async function handleSelectorCheckReport(message) {
-  if ((message?.status === "ok" || message?.status === "auth_page" || message?.status === "skipped") && message?.siteId) {
-    await clearPendingSelectorChecksForSiteId(message.siteId);
-    await clearFailedSelector(message.siteId);
-    return { ok: true };
-  }
-  if (message?.status !== "selector_missing") {
-    return { ok: true };
-  }
-  const missing = Array.isArray(message?.missing) ? message.missing : [];
-  if (missing.length === 0) {
-    return { ok: true };
-  }
-  const report = {
-    siteId: message.siteId ?? "unknown",
-    siteName: message.siteName ?? "AI service",
-    pageUrl: message.pageUrl ?? "",
-    missing
-  };
-  const pendingResult = await registerPendingSelectorCheckReport(report);
-  if (!pendingResult?.promoted) {
-    return { ok: true };
-  }
-  await maybeCreateSelectorNotification(report);
-  await markFailedSelector(
-    message.siteId ?? "unknown",
-    missing[0]?.selector ?? "",
-    "selector-checker"
-  );
-  return { ok: true };
-}
-async function handleSelectorFailedMessage(message) {
-  const payload = message ?? {};
-  const serviceId = payload.serviceId ?? "";
-  const selector = payload.selector ?? "";
-  const site = await getSiteById(serviceId);
-  await clearPendingSelectorChecksForSiteId(serviceId);
-  await maybeCreateSelectorNotification({
-    siteId: serviceId || "unknown",
-    siteName: site?.name || serviceId || "AI service",
-    pageUrl: "",
-    missing: [
-      {
-        field: "inputSelector",
-        selector
-      }
-    ]
-  });
-  await markFailedSelector(serviceId, selector, "injector");
-  await enqueueUiToast({
-    message: getI18nMessage("toast_selector_failed", [site?.name ?? serviceId]) || `${site?.name ?? serviceId} selector was not found.`,
-    type: "error",
-    duration: -1
-  });
-  return { ok: true };
-}
-async function handleInjectSuccessMessage(message) {
-  const payload = message ?? {};
-  if (payload.serviceId) {
-    await clearPendingSelectorChecksForSiteId(payload.serviceId);
-    await clearFailedSelector(payload.serviceId);
-  }
-  return { ok: true };
-}
-async function handleInjectFallbackMessage(message) {
-  const payload = message ?? {};
-  const serviceId = payload.serviceId ?? "";
-  const site = await getSiteById(serviceId);
-  const copied = Boolean(payload.copied);
-  await enqueueUiToast({
-    message: copied ? getI18nMessage("toast_inject_fallback_copied", [site?.name ?? serviceId]) || `${site?.name ?? serviceId} prompt copied to clipboard. Paste it manually and send.` : getI18nMessage("toast_inject_fallback_manual", [site?.name ?? serviceId]) || `${site?.name ?? serviceId} automatic injection failed. Paste the prompt manually and send.`,
-    type: "warning",
-    duration: 5e3
-  });
-  return { ok: true };
-}
-async function handleUiToastMessage(message) {
-  const payload = message ?? {};
-  await enqueueUiToast(payload.toast ?? {});
-  return { ok: true };
-}
-async function handlePopupOpened() {
-  await reconcilePendingBroadcasts();
-  const lastBroadcast = await getLastBroadcast();
-  if (!lastBroadcast || lastBroadcast.status !== "sending") {
-    await clearBadge();
-  }
-  return {
-    ok: true,
-    lastBroadcast
-  };
-}
-async function handleGetOpenAiTabsMessage(message) {
-  const windowId = await getPreferredNormalWindowId(message?.windowId ?? null);
-  const tabs = await getOpenAiTabsForWindow(windowId);
-  return {
-    ok: true,
-    windowId,
-    tabs
-  };
-}
-async function handleCancelBroadcastMessage(message) {
-  const summary = await cancelBroadcast(message?.broadcastId ?? "", "cancelled");
-  return {
-    ok: Boolean(summary),
-    summary
-  };
-}
-async function resetAllExtensionData() {
-  await reconcilePendingBroadcasts();
-  const pendingBroadcasts = await getPendingBroadcasts();
-  for (const broadcastId of Object.keys(pendingBroadcasts)) {
-    suppressedCompletedBroadcastIds.add(broadcastId);
-    await cancelBroadcast(broadcastId, "reset");
-  }
-  const remainingInjections = await getPendingInjections();
-  await Promise.all(
-    Object.entries(remainingInjections).map(async ([tabIdKey, job]) => {
-      if (job?.closeOnCancel === false) {
-        return;
-      }
-      await closeTabQuietly(Number(tabIdKey));
-    })
-  );
-  activeInjections.clear();
-  queuedInjectionTabIds.clear();
-  selectionCache.clear();
-  resetRememberedState();
-  const alarms = await chrome.alarms.getAll().catch(() => []);
-  await Promise.all(
-    alarms.filter((alarm) => alarm.name.startsWith("apb-favorite-job:")).map((alarm) => chrome.alarms.clear(alarm.name).catch(() => false))
-  );
-  await queueBackgroundStateMutation((state) => {
-    state.pendingInjections = {};
-    state.pendingBroadcasts = {};
-    state.pendingSelectorChecks = {};
-    state.selectorAlerts = {};
-    return true;
-  });
-  await resetPersistedExtensionState({
-    additionalSessionKeys: [
-      PENDING_INJECTIONS_KEY,
-      PENDING_BROADCASTS_KEY,
-      PENDING_SELECTOR_CHECKS_KEY,
-      SELECTOR_ALERTS_KEY
-    ],
-    clearAlarmName: BADGE_CLEAR_ALARM
-  });
-  await clearBadge();
-  return { ok: true };
-}
-async function handleGetActiveTabContext() {
-  try {
-    const activeTab = await getPreferredNormalActiveTab();
-    const url = typeof activeTab?.url === "string" ? activeTab.url : "";
-    const title = typeof activeTab?.title === "string" ? activeTab.title : "";
-    if (!isInjectableTabUrl(url)) {
-      return { ok: true, url: "", title: "", selection: "" };
-    }
-    let selection = "";
-    if (activeTab?.id) {
-      selection = await getSelectedTextFromTab(activeTab.id).catch(() => "");
-    }
-    return { ok: true, url, title, selection };
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Failed to read active tab context.", error);
-    return { ok: false, url: "", title: "", selection: "" };
-  }
-}
-async function handleServiceTestRun(message) {
-  const draft = message?.draft ?? {};
-  const selectorErrors = [];
-  if (!String(draft?.inputSelector ?? "").trim()) {
-    selectorErrors.push("Input selector is required.");
-  }
-  if (!["textarea", "contenteditable", "input"].includes(String(draft?.inputType ?? ""))) {
-    selectorErrors.push("Input type is invalid.");
-  }
-  if (!["click", "enter", "shift+enter"].includes(String(draft?.submitMethod ?? ""))) {
-    selectorErrors.push("Submit method is invalid.");
-  }
-  if (String(draft?.submitMethod ?? "") === "click" && !String(draft?.submitSelector ?? "").trim()) {
-    selectorErrors.push("Submit selector is required when using click submit.");
-  }
-  if (selectorErrors.length > 0) {
-    return {
-      ok: false,
-      reason: "validation_failed",
-      error: selectorErrors.join(" ")
-    };
-  }
-  const preferredTab = await getPreferredInjectableNormalTab();
-  if (!preferredTab?.ok) {
-    return {
-      ok: false,
-      reason: preferredTab?.reason ?? "no_tab"
-    };
-  }
-  try {
-    const tabId = preferredTab.tab.id;
-    if (typeof tabId !== "number") {
-      return {
-        ok: false,
-        reason: "no_tab"
-      };
-    }
-    const result = await runServiceTestOnTab(tabId, draft);
-    if (!result.ok) {
-      return result;
-    }
-    return {
-      ...result,
-      tabId,
-      tabUrl: preferredTab.tab.url ?? ""
-    };
-  } catch (error) {
-    console.error("[AI Prompt Broadcaster] Service test failed.", error);
-    return {
-      ok: false,
-      reason: "error",
-      error: getErrorMessage(error)
-    };
-  }
-}
+deferred.handleFavoriteBroadcastCompletion = handleFavoriteBroadcastCompletion;
+var comparison = createComparisonHandlers({
+  sleep,
+  selectionCache,
+  getSiteForUrl
+});
+deferred.autoCaptureBroadcastResponses = comparison.autoCaptureBroadcastResponses;
+var experiments = createExperimentHandlers({
+  nowIso,
+  queueBroadcastRequest: (prompt, sites, metadata) => deferred.queueBroadcastRequest(prompt, sites, metadata)
+});
+var templatePacks = createTemplatePackHandlers({ nowIso });
+var pendingBroadcasts = createPendingBroadcastController({
+  getI18nMessage,
+  nowIso,
+  clonePlainValue,
+  getBroadcastTriggerLabel,
+  queueBackgroundStateMutation,
+  getPendingBroadcasts,
+  getPendingInjections,
+  removePendingInjection,
+  activeInjections,
+  suppressedCompletedBroadcastIds,
+  getFocusedTabContext,
+  restoreFocusedTabContext,
+  applyBadgeForBroadcast,
+  maybeCreateBroadcastNotification,
+  handleFavoriteBroadcastCompletion: (summary) => deferred.handleFavoriteBroadcastCompletion(summary),
+  resolveBroadcastCompletionWaiter: broadcastWaiters.resolve,
+  autoCaptureBroadcastResponses: (historyItem, completedRecord) => deferred.autoCaptureBroadcastResponses(historyItem, completedRecord)
+});
+deferred.recordBroadcastSiteResult = pendingBroadcasts.recordBroadcastSiteResult;
+deferred.reconcilePendingBroadcasts = pendingBroadcasts.reconcilePendingBroadcasts;
+deferred.cancelBroadcast = pendingBroadcasts.cancelBroadcast;
+deferred.closeTabQuietly = pendingBroadcasts.closeTabQuietly;
+var pendingInjections = createPendingInjectionController({
+  getI18nMessage,
+  getErrorMessage,
+  sleep,
+  activeInjections,
+  queuedInjectionTabIds,
+  getPendingInjections,
+  getPendingBroadcasts,
+  updatePendingInjection,
+  removePendingInjection,
+  recordBroadcastSiteResult: (broadcastId, siteId, resultInput) => deferred.recordBroadcastSiteResult(broadcastId, siteId, resultInput),
+  waitForTabInteractionReady,
+  isSameSiteOrigin: isSameSiteOrigin2
+});
+deferred.queuePendingInjection = pendingInjections.queuePendingInjection;
+deferred.reconcilePendingInjections = pendingInjections.reconcilePendingInjections;
+var broadcastQueue = createBroadcastQueue({
+  getI18nMessage,
+  normalizePrompt: normalizePrompt2,
+  clonePlainValue,
+  queueBackgroundStateMutation,
+  getPendingBroadcasts,
+  createPendingBroadcast: pendingBroadcasts.createPendingBroadcast,
+  registerBroadcastCompletionWaiter: broadcastWaiters.register,
+  reconcilePendingBroadcasts: () => deferred.reconcilePendingBroadcasts(),
+  resolveSelectedTargets,
+  findReusableTabsForSites,
+  getExplicitReusableTabForTarget,
+  buildSelectedTabUnavailableMessage: (siteName, tabId) => buildSelectedTabUnavailableMessage(siteName, tabId ?? null),
+  getSitePermissionPatterns: getSitePermissionPatterns2,
+  isCustomSitePermissionGranted,
+  addPendingInjection,
+  queuePendingInjection: (tabId, tab) => deferred.queuePendingInjection(tabId, tab),
+  recordBroadcastSiteResult: (broadcastId, siteId, resultInput) => deferred.recordBroadcastSiteResult(broadcastId, siteId, resultInput),
+  closeTabQuietly: (tabId) => deferred.closeTabQuietly(tabId)
+});
+deferred.queueBroadcastRequest = broadcastQueue.queueBroadcastRequest;
+deferred.handleBroadcastMessage = broadcastQueue.handleBroadcastMessage;
+var selectorHandlers = createSelectorHandlers({
+  getI18nMessage,
+  getSiteForUrl,
+  getSiteById,
+  clearPendingSelectorChecksForSiteId,
+  registerPendingSelectorCheckReport,
+  maybeCreateSelectorNotification
+});
+var serviceTest = createServiceTestHandler({
+  getErrorMessage,
+  getPreferredInjectableNormalTab
+});
+var lifecycle = createServiceWorkerLifecycle({
+  getI18nMessage,
+  getErrorMessage,
+  reconcilePendingInjections: () => deferred.reconcilePendingInjections(),
+  reconcilePendingBroadcasts: () => deferred.reconcilePendingBroadcasts(),
+  reconcileFavoriteRunJobs,
+  reconcileFavoriteSchedules,
+  cancelBroadcast: (broadcastId, reason) => deferred.cancelBroadcast(broadcastId, reason),
+  getPendingBroadcasts,
+  getPendingInjections,
+  suppressedCompletedBroadcastIds,
+  closeTabQuietly: (tabId) => deferred.closeTabQuietly(tabId),
+  activeInjections,
+  queuedInjectionTabIds,
+  selectionCache,
+  resetRememberedState,
+  queueBackgroundStateMutation,
+  clearBadge,
+  getPreferredNormalWindowId,
+  getOpenAiTabsForWindow,
+  getPreferredNormalActiveTab,
+  isInjectableTabUrl: isInjectableTabUrl2,
+  getSelectedTextFromTab
+});
 registerRuntimeMessageRouter(buildRuntimeHandlers({
-  handleBroadcastMessage,
-  handleSelectorCheckInit,
-  handleSelectorCheckReport,
-  handleServiceTestRun,
-  handleSelectorFailedMessage,
-  handleInjectSuccessMessage,
-  handleInjectFallbackMessage,
-  handleUiToastMessage,
-  handlePopupOpened,
-  handleGetOpenAiTabsMessage,
-  handleCancelBroadcastMessage,
+  handleBroadcastMessage: (message) => deferred.handleBroadcastMessage(message),
+  handleSelectorCheckInit: selectorHandlers.handleSelectorCheckInit,
+  handleSelectorCheckReport: selectorHandlers.handleSelectorCheckReport,
+  handleServiceTestRun: serviceTest.handleServiceTestRun,
+  handleSelectorFailedMessage: selectorHandlers.handleSelectorFailedMessage,
+  handleInjectSuccessMessage: selectorHandlers.handleInjectSuccessMessage,
+  handleInjectFallbackMessage: selectorHandlers.handleInjectFallbackMessage,
+  handleUiToastMessage: selectorHandlers.handleUiToastMessage,
+  handlePopupOpened: lifecycle.handlePopupOpened,
+  handleGetOpenAiTabsMessage: lifecycle.handleGetOpenAiTabsMessage,
+  handleCancelBroadcastMessage: lifecycle.handleCancelBroadcastMessage,
   handleFavoriteRunMessage,
   handleFavoriteOpenEditorMessage,
-  resetAllExtensionData,
-  handleGetActiveTabContext,
+  resetAllExtensionData: lifecycle.resetAllExtensionData,
+  handleGetActiveTabContext: lifecycle.handleGetActiveTabContext,
   handleGetBroadcastCounter: async () => ({
     ok: true,
     counter: await getBroadcastCounter()
@@ -8157,38 +8572,38 @@ registerRuntimeMessageRouter(buildRuntimeHandlers({
   },
   handleQuickPaletteExecuteMessage,
   handleServiceHealthGet,
-  handleComparisonNoteList,
-  handleComparisonNoteSave,
-  handleComparisonNoteDelete,
-  handleComparisonCaptureStart,
-  handleExperimentSave,
-  handleExperimentDelete,
-  handleExperimentRun,
-  handleTemplatePackExport,
-  handleTemplatePackImport,
-  handleServiceGroupsUpdate
+  handleComparisonNoteList: comparison.handleComparisonNoteList,
+  handleComparisonNoteSave: comparison.handleComparisonNoteSave,
+  handleComparisonNoteDelete: comparison.handleComparisonNoteDelete,
+  handleComparisonCaptureStart: comparison.handleComparisonCaptureStart,
+  handleExperimentSave: experiments.handleExperimentSave,
+  handleExperimentDelete: experiments.handleExperimentDelete,
+  handleExperimentRun: experiments.handleExperimentRun,
+  handleTemplatePackExport: templatePacks.handleTemplatePackExport,
+  handleTemplatePackImport: templatePacks.handleTemplatePackImport,
+  handleServiceGroupsUpdate: templatePacks.handleServiceGroupsUpdate
 }));
 registerBackgroundChromeEvents({
   createContextMenus,
-  initializeServiceWorker,
+  initializeServiceWorker: lifecycle.initializeServiceWorker,
   markOnboardingPending: () => setOnboardingCompleted(false),
   openOnboardingPage,
   handleCaptureSelectedTextCommand,
   handleQuickPaletteCommand,
   getContextMenuTargetSiteIds,
   handleContextMenuBroadcast,
-  handleContextMenuComparisonNote,
+  handleContextMenuComparisonNote: comparison.handleContextMenuComparisonNote,
   selectionCache,
   maybeInjectDynamicSelectorChecker,
-  queuePendingInjection,
+  queuePendingInjection: (tabId, tab) => deferred.queuePendingInjection(tabId, tab),
   rememberNormalTab,
   clearRememberedTab,
   getPendingInjections,
-  recordBroadcastSiteResult,
+  recordBroadcastSiteResult: (broadcastId, siteId, status) => deferred.recordBroadcastSiteResult(broadcastId, siteId, status),
   removePendingInjection,
   activeInjections,
   clearBadge,
-  reconcilePendingInjections,
+  reconcilePendingInjections: () => deferred.reconcilePendingInjections(),
   handleFavoriteRunJobAlarm,
   parseScheduleAlarmFavoriteId: parseScheduleAlarmFavoriteId2,
   handleFavoriteScheduleAlarm,

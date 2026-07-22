@@ -154,6 +154,23 @@ prompt-broadcaster/
 └── dist/
 ```
 
+## Background Service Worker Layout (v1.1)
+
+The background entrypoint stays thin and wires feature modules:
+
+| Area | Path | Responsibility |
+|---|---|---|
+| Composition root | `src/background/app/bootstrap/app.ts` | Dependency wiring, deferred ports, router registration |
+| Broadcast | `src/background/broadcast/` | Pending broadcasts, queueing, completion waiters |
+| Injection | `src/background/injection/` | Tab inject + pending injection processing |
+| Comparison | `src/background/comparison/` | Notes + auto capture handlers |
+| Experiments | `src/background/experiments/` | Experiment save/run |
+| Lifecycle | `src/background/lifecycle/` | SW init, reset, popup/open-tabs helpers |
+| Messages | `src/background/messages/` | Router + selector/template-pack handlers |
+| Favorites workflow | `src/background/popup/favorites-workflow/` | Run jobs, entrypoints, schedules |
+| UI | `src/background/ui/` | Badge + desktop notifications |
+| Shared normalizers | `src/shared/prompts/normalizers/` | primitives / enums / site-results / entities |
+
 ## Build Pipeline
 
 ### Tooling
@@ -204,9 +221,9 @@ Responsibilities:
 - resolve tab routing, including reusable tabs, specific tab targets, and forced new tabs
 - open target tabs and track pending broadcasts
 - maintain action badge state, notifications, selector alerts, and popup reopen flow
-- keep the service-worker app body in `src/background/app/bootstrap/app.ts`, mutable runtime state in `context.ts`, and shared helpers in `utils.ts`
-- keep tab targeting and reusable-tab preflight rules split in `src/background/app/bootstrap/tab-targets.ts`
-- keep comparison capture selectors/helpers, experiment variable guards, and injection runtime types in `src/background/app/{comparison,experiments,injection}/`
+- keep the service-worker app body as a composition root in `src/background/app/bootstrap/app.ts`, mutable runtime state in `context.ts`, and shared helpers in `utils.ts`
+- keep tab targeting and reusable-tab preflight rules in `src/background/app/bootstrap/tab-targets/` (`site-origin`, `types`, factory `index`)
+- keep comparison capture selectors/helpers, experiment variable guards, and injection runtime types in `src/background/app/{comparison,experiments,injection}/` plus feature controllers under `src/background/{broadcast,injection,comparison,lifecycle,ui}/`
 - run favorite execution workflows through `src/background/popup/favorites-workflow.ts`
 - keep favorite workflow entrypoints, queued-job execution, and user-facing status messages split under `src/background/popup/favorites-workflow/`
 - reconcile favorite schedules with `chrome.alarms`

@@ -567,60 +567,7 @@ var DEFAULT_SETTINGS = Object.freeze({
   siteOrder: []
 });
 
-// src/shared/prompts/normalizers/core.ts
-var VALID_HISTORY_SORTS = /* @__PURE__ */ new Set([
-  "latest",
-  "oldest",
-  "mostSuccess",
-  "mostFailure"
-]);
-var VALID_FAVORITE_SORTS = /* @__PURE__ */ new Set([
-  "recentUsed",
-  "usageCount",
-  "title",
-  "createdAt"
-]);
-var VALID_FAVORITE_MODES = /* @__PURE__ */ new Set(["single", "chain"]);
-var VALID_CAPTURE_MODES = /* @__PURE__ */ new Set([
-  "manual",
-  "selection",
-  "auto"
-]);
-var VALID_CHAIN_FAILURE_POLICIES = /* @__PURE__ */ new Set([
-  "stop",
-  "continue",
-  "retry-once"
-]);
-var VALID_BROADCAST_TARGET_MODES = /* @__PURE__ */ new Set([
-  "default",
-  "new",
-  "tab"
-]);
-var VALID_SCHEDULE_REPEATS = /* @__PURE__ */ new Set([
-  "none",
-  "daily",
-  "weekday",
-  "weekly"
-]);
-var VALID_EXECUTION_TRIGGERS = /* @__PURE__ */ new Set([
-  "popup",
-  "scheduled",
-  "palette",
-  "options"
-]);
-var VALID_RESULT_CODES = /* @__PURE__ */ new Set([
-  "submitted",
-  "selector_timeout",
-  "auth_required",
-  "submit_failed",
-  "strategy_exhausted",
-  "permission_denied",
-  "tab_create_failed",
-  "tab_closed",
-  "injection_timeout",
-  "cancelled",
-  "unexpected_error"
-]);
+// src/shared/prompts/normalizers/primitives.ts
 function safeText(value) {
   return typeof value === "string" ? value : "";
 }
@@ -695,6 +642,91 @@ function normalizeWaitMsMultiplier(value) {
   );
   return Math.round(clamped * 10) / 10;
 }
+function sortByDateDesc(items, field = "createdAt") {
+  return [...items].sort((left, right) => {
+    const leftRecord = left;
+    const rightRecord = right;
+    const leftTime = Date.parse(String(leftRecord[field] ?? "")) || 0;
+    const rightTime = Date.parse(String(rightRecord[field] ?? "")) || 0;
+    return rightTime - leftTime;
+  });
+}
+function ensureUniqueNumericId(items, preferredId) {
+  let candidate = Number.isFinite(preferredId) ? preferredId : Date.now();
+  const usedIds = new Set(items.map((item) => Number(item.id)));
+  while (usedIds.has(candidate)) {
+    candidate += 1;
+  }
+  return candidate;
+}
+function ensureUniqueStringId(items, preferredId) {
+  let candidate = typeof preferredId === "string" && preferredId.trim() ? preferredId.trim() : `fav-${Date.now()}`;
+  const usedIds = new Set(items.map((item) => String(item.id)));
+  while (usedIds.has(candidate)) {
+    candidate = `${candidate}-1`;
+  }
+  return candidate;
+}
+function normalizeTags(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return Array.from(
+    new Set(
+      value.map((tag) => safeText(tag).trim()).filter((tag) => tag.length > 0 && tag.length <= 30)
+    )
+  ).slice(0, 10);
+}
+function createStorageItemId(prefix, preferredId, fallbackIndex = 0) {
+  const trimmedId = safeText(preferredId).trim();
+  if (trimmedId) {
+    return trimmedId;
+  }
+  const safePrefix = safeText(prefix).trim() || "item";
+  return `${safePrefix}-${Date.now()}-${fallbackIndex}`;
+}
+
+// src/shared/prompts/normalizers/enums.ts
+var VALID_HISTORY_SORTS = /* @__PURE__ */ new Set([
+  "latest",
+  "oldest",
+  "mostSuccess",
+  "mostFailure"
+]);
+var VALID_FAVORITE_SORTS = /* @__PURE__ */ new Set([
+  "recentUsed",
+  "usageCount",
+  "title",
+  "createdAt"
+]);
+var VALID_FAVORITE_MODES = /* @__PURE__ */ new Set(["single", "chain"]);
+var VALID_CAPTURE_MODES = /* @__PURE__ */ new Set([
+  "manual",
+  "selection",
+  "auto"
+]);
+var VALID_CHAIN_FAILURE_POLICIES = /* @__PURE__ */ new Set([
+  "stop",
+  "continue",
+  "retry-once"
+]);
+var VALID_BROADCAST_TARGET_MODES = /* @__PURE__ */ new Set([
+  "default",
+  "new",
+  "tab"
+]);
+var VALID_SCHEDULE_REPEATS = /* @__PURE__ */ new Set([
+  "none",
+  "daily",
+  "weekday",
+  "weekly"
+]);
+var VALID_EXECUTION_TRIGGERS = /* @__PURE__ */ new Set([
+  "popup",
+  "scheduled",
+  "palette",
+  "options"
+]);
 function normalizeHistorySort(value) {
   return VALID_HISTORY_SORTS.has(value) ? value : DEFAULT_HISTORY_SORT;
 }
@@ -719,32 +751,21 @@ function normalizeScheduleRepeat(value) {
 function normalizeExecutionTrigger(value) {
   return VALID_EXECUTION_TRIGGERS.has(value) ? value : void 0;
 }
-function normalizeSettings(value) {
-  const settings = safeObject(value);
-  return {
-    historyLimit: normalizeHistoryLimit(settings.historyLimit),
-    autoClosePopup: normalizeBoolean(
-      settings.autoClosePopup,
-      DEFAULT_SETTINGS.autoClosePopup
-    ),
-    desktopNotifications: normalizeBoolean(
-      settings.desktopNotifications,
-      DEFAULT_SETTINGS.desktopNotifications
-    ),
-    reuseExistingTabs: normalizeBoolean(
-      settings.reuseExistingTabs,
-      DEFAULT_SETTINGS.reuseExistingTabs
-    ),
-    autoCaptureResponses: normalizeBoolean(
-      settings.autoCaptureResponses,
-      DEFAULT_SETTINGS.autoCaptureResponses
-    ),
-    waitMsMultiplier: normalizeWaitMsMultiplier(settings.waitMsMultiplier),
-    historySort: normalizeHistorySort(settings.historySort),
-    favoriteSort: normalizeFavoriteSort(settings.favoriteSort),
-    siteOrder: normalizeSiteIdList(settings.siteOrder)
-  };
-}
+
+// src/shared/prompts/normalizers/site-results.ts
+var VALID_RESULT_CODES = /* @__PURE__ */ new Set([
+  "submitted",
+  "selector_timeout",
+  "auth_required",
+  "submit_failed",
+  "strategy_exhausted",
+  "permission_denied",
+  "tab_create_failed",
+  "tab_closed",
+  "injection_timeout",
+  "cancelled",
+  "unexpected_error"
+]);
 function normalizeStatus(value) {
   return typeof value === "string" && value.trim() ? value.trim() : "submitted";
 }
@@ -828,49 +849,8 @@ function normalizeSiteResultsRecord(value) {
     Object.entries(value).map(([siteId, result]) => [safeText(siteId).trim(), normalizeSiteInjectionResult(result)]).filter(([siteId]) => Boolean(siteId))
   );
 }
-function sortByDateDesc(items, field = "createdAt") {
-  return [...items].sort((left, right) => {
-    const leftRecord = left;
-    const rightRecord = right;
-    const leftTime = Date.parse(String(leftRecord[field] ?? "")) || 0;
-    const rightTime = Date.parse(String(rightRecord[field] ?? "")) || 0;
-    return rightTime - leftTime;
-  });
-}
-function ensureUniqueNumericId(items, preferredId) {
-  let candidate = Number.isFinite(preferredId) ? preferredId : Date.now();
-  const usedIds = new Set(items.map((item) => Number(item.id)));
-  while (usedIds.has(candidate)) {
-    candidate += 1;
-  }
-  return candidate;
-}
-function ensureUniqueStringId(items, preferredId) {
-  let candidate = typeof preferredId === "string" && preferredId.trim() ? preferredId.trim() : `fav-${Date.now()}`;
-  const usedIds = new Set(items.map((item) => String(item.id)));
-  while (usedIds.has(candidate)) {
-    candidate = `${candidate}-1`;
-  }
-  return candidate;
-}
-function normalizeTags(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return Array.from(
-    new Set(
-      value.map((tag) => safeText(tag).trim()).filter((tag) => tag.length > 0 && tag.length <= 30)
-    )
-  ).slice(0, 10);
-}
-function createStorageItemId(prefix, preferredId, fallbackIndex = 0) {
-  const trimmedId = safeText(preferredId).trim();
-  if (trimmedId) {
-    return trimmedId;
-  }
-  const safePrefix = safeText(prefix).trim() || "item";
-  return `${safePrefix}-${Date.now()}-${fallbackIndex}`;
-}
+
+// src/shared/prompts/normalizers/entities.ts
 function normalizeComparisonNote(value, fallback = {}, index = 0) {
   const source = safeObject(value);
   const now = (/* @__PURE__ */ new Date()).toISOString();
@@ -1026,6 +1006,34 @@ function normalizeChainSteps(value, fallback = {}) {
     return [normalizeChainStep(fallback, fallback, 0)];
   }
   return [];
+}
+
+// src/shared/prompts/normalizers/settings-normalize.ts
+function normalizeSettings(value) {
+  const settings = safeObject(value);
+  return {
+    historyLimit: normalizeHistoryLimit(settings.historyLimit),
+    autoClosePopup: normalizeBoolean(
+      settings.autoClosePopup,
+      DEFAULT_SETTINGS.autoClosePopup
+    ),
+    desktopNotifications: normalizeBoolean(
+      settings.desktopNotifications,
+      DEFAULT_SETTINGS.desktopNotifications
+    ),
+    reuseExistingTabs: normalizeBoolean(
+      settings.reuseExistingTabs,
+      DEFAULT_SETTINGS.reuseExistingTabs
+    ),
+    autoCaptureResponses: normalizeBoolean(
+      settings.autoCaptureResponses,
+      DEFAULT_SETTINGS.autoCaptureResponses
+    ),
+    waitMsMultiplier: normalizeWaitMsMultiplier(settings.waitMsMultiplier),
+    historySort: normalizeHistorySort(settings.historySort),
+    favoriteSort: normalizeFavoriteSort(settings.favoriteSort),
+    siteOrder: normalizeSiteIdList(settings.siteOrder)
+  };
 }
 
 // src/shared/prompts/storage.ts
@@ -1387,34 +1395,37 @@ var AI_SITES = Object.freeze([
     url: "https://chatgpt.com/",
     hostname: "chatgpt.com",
     supportedRoutes: [],
-    inputSelector: "#prompt-textarea, div#prompt-textarea[contenteditable='true'], textarea[aria-label*='chatgpt' i], textarea[aria-label*='채팅' i], textarea[placeholder*='ask' i]",
+    // Prefer ProseMirror / contenteditable surfaces first; legacy #prompt-textarea kept as fallback.
+    inputSelector: "div#prompt-textarea[contenteditable='true'], #prompt-textarea, div.ProseMirror[contenteditable='true'], textarea[aria-label*='chatgpt' i], textarea[aria-label*='채팅' i], textarea[placeholder*='ask' i]",
     fallbackSelectors: [
-      "#prompt-textarea",
       "div#prompt-textarea[contenteditable='true']",
+      "#prompt-textarea",
+      "div.ProseMirror[contenteditable='true']",
       "textarea[aria-label*='chatgpt' i]",
       "textarea[aria-label*='채팅' i]",
       "textarea[placeholder*='ask' i]",
       "textarea.wcDTda_fallbackTextarea",
-      "div.ProseMirror[contenteditable='true']",
       "div[contenteditable='true'][data-id='root']",
-      "main div[contenteditable='true']"
+      "main div[contenteditable='true']",
+      "div[contenteditable='true'][role='textbox']"
     ],
     inputType: "contenteditable",
-    submitSelector: "button[data-testid='send-button'], button[aria-label*='send' i], button[aria-label*='보내기' i]",
+    submitSelector: "button[data-testid='send-button'], button[data-testid='composer-send-button'], button[aria-label*='send' i], button[aria-label*='보내기' i]",
     submitMethod: "click",
     selectorCheckMode: "input-and-conditional-submit",
-    waitMs: 2e3,
+    waitMs: 2500,
     fallback: true,
-    lastVerified: "2026-05",
-    verifiedAt: "2026-05-10",
+    lastVerified: "2026-07",
+    verifiedAt: "2026-07-22",
     verifiedRoute: "/",
     verifiedAuthState: "logged-out",
     verifiedLocale: "ko",
-    verifiedVersion: "chatgpt-web-may-2026",
+    verifiedVersion: "chatgpt-web-jul-2026",
     authSelectors: [
       "form[action*='/auth']",
       "input[name='email']",
       "input[name='username']",
+      "button[data-testid='login-button']",
       "a[href*='cloudflare.com']",
       "#challenge-running",
       ".cf-browser-verification",
@@ -1429,30 +1440,36 @@ var AI_SITES = Object.freeze([
     url: "https://gemini.google.com/app",
     hostname: "gemini.google.com",
     supportedRoutes: ["/app"],
-    inputSelector: "div[contenteditable='true'][role='textbox'], div[aria-label*='Gemini' i][contenteditable='true'][role='textbox'], div.ql-editor.textarea.new-input-ui[contenteditable='true'], div.ql-editor[contenteditable='true'][role='textbox']",
+    // 2026-07-22 probe: ql-editor.textarea.new-input-ui, aria-label "Enter a prompt for Gemini"
+    inputSelector: "div.ql-editor.textarea.new-input-ui[contenteditable='true'], div[aria-label*='prompt for Gemini' i][contenteditable='true'][role='textbox'], div[aria-label*='Gemini' i][contenteditable='true'][role='textbox'], div[contenteditable='true'][role='textbox']",
     fallbackSelectors: [
-      "div[contenteditable='true'][role='textbox']",
-      "div[aria-label*='Gemini' i][contenteditable='true'][role='textbox']",
       "div.ql-editor.textarea.new-input-ui[contenteditable='true']",
       "div.ql-editor[contenteditable='true'][role='textbox']",
+      "div[aria-label*='prompt for Gemini' i][contenteditable='true'][role='textbox']",
+      "div[aria-label*='Gemini' i][contenteditable='true'][role='textbox']",
+      "div[aria-label*='Ask Gemini' i][contenteditable='true']",
+      "div[contenteditable='true'][role='textbox']",
+      "div[contenteditable='true'][data-placeholder*='Gemini' i]",
       "textarea, div[contenteditable='true']"
     ],
     inputType: "contenteditable",
-    submitSelector: "button.send-button, button[aria-label*='send' i], button[aria-label*='보내기' i], button[aria-label*='메시지 보내기' i], button[type='submit']",
+    submitSelector: "button.send-button, button[aria-label*='send' i], button[aria-label*='보내기' i], button[aria-label*='메시지 보내기' i], button[aria-label*='Submit' i], button[type='submit']",
     submitMethod: "click",
     selectorCheckMode: "input-and-conditional-submit",
     waitMs: 2500,
     fallback: true,
-    lastVerified: "2026-05",
-    verifiedAt: "2026-05-10",
+    lastVerified: "2026-07",
+    verifiedAt: "2026-07-22",
     verifiedRoute: "/app",
     verifiedAuthState: "logged-out",
-    verifiedLocale: "ko",
-    verifiedVersion: "gemini-app-may-2026",
+    verifiedLocale: "en-US",
+    verifiedVersion: "gemini-app-jul-2026",
     authSelectors: [
       "a[href*='accounts.google.com/ServiceLogin']",
       "a[aria-label*='로그인']",
       "a[aria-label*='sign in' i]",
+      "button[aria-label*='Sign in' i]",
+      "button[aria-label*='로그인' i]",
       "input[type='email']",
       "input[type='password']"
     ]
@@ -1463,26 +1480,28 @@ var AI_SITES = Object.freeze([
     url: "https://claude.ai/new",
     hostname: "claude.ai",
     supportedRoutes: ["/new"],
-    inputSelector: "div[contenteditable='true'][role='textbox'], div[contenteditable='true'][aria-label*='Claude' i], div[contenteditable='true'][aria-label*='prompt' i]",
+    inputSelector: "div[contenteditable='true'][role='textbox'], div[contenteditable='true'][aria-label*='Claude' i], div[contenteditable='true'][aria-label*='prompt' i], div.ProseMirror[contenteditable='true']",
     fallbackSelectors: [
       "div[contenteditable='true'][role='textbox']",
       "div[contenteditable='true'][aria-label*='Claude' i]",
       "div[contenteditable='true'][aria-label*='prompt' i]",
+      "div.ProseMirror[contenteditable='true']",
       "div[contenteditable='true']",
+      "fieldset div[contenteditable='true']",
       "textarea"
     ],
     inputType: "contenteditable",
-    submitSelector: "button[aria-label='Send message'], button[aria-label*='send' i], button[aria-label*='submit' i], button[aria-label*='보내' i], button[aria-label*='전송' i]",
+    submitSelector: "button[aria-label='Send message'], button[aria-label*='send message' i], button[aria-label*='send' i], button[aria-label*='submit' i], button[aria-label*='보내' i], button[aria-label*='전송' i]",
     submitMethod: "click",
     selectorCheckMode: "input-and-conditional-submit",
-    waitMs: 1500,
+    waitMs: 2e3,
     fallback: true,
-    lastVerified: "2026-05",
-    verifiedAt: "2026-05-10",
+    lastVerified: "2026-07",
+    verifiedAt: "2026-07-22",
     verifiedRoute: "/new",
     verifiedAuthState: "logged-out",
     verifiedLocale: "en-US",
-    verifiedVersion: "claude-web-may-2026",
+    verifiedVersion: "claude-web-jul-2026",
     authSelectors: [
       "input#email",
       "input[type='email']",
@@ -1502,11 +1521,15 @@ var AI_SITES = Object.freeze([
     url: "https://grok.com/",
     hostname: "grok.com",
     supportedRoutes: [],
-    inputSelector: "textarea[aria-label*='grok' i], textarea[placeholder*='help' i], textarea[placeholder*='무엇' i], textarea",
+    // 2026-07-22 probe: textarea aria-label "Grok에게…", placeholder "무엇을 알고 싶으세요?"
+    inputSelector: "textarea[aria-label*='grok' i], textarea[placeholder*='알고 싶' i], textarea[placeholder*='무엇' i], textarea[placeholder*='help' i], textarea[aria-label*='Ask' i]",
     fallbackSelectors: [
       "textarea[aria-label*='grok' i]",
-      "textarea[placeholder*='help' i]",
+      "textarea[placeholder*='알고 싶' i]",
       "textarea[placeholder*='무엇' i]",
+      "textarea[placeholder*='help' i]",
+      "textarea[aria-label*='Ask' i]",
+      "textarea:not([aria-hidden='true'])",
       "textarea",
       "div.tiptap.ProseMirror[contenteditable='true']",
       "div.ProseMirror[contenteditable='true'][translate='no']",
@@ -1518,17 +1541,20 @@ var AI_SITES = Object.freeze([
     selectorCheckMode: "input-and-conditional-submit",
     waitMs: 3e3,
     fallback: true,
-    lastVerified: "2026-05",
-    verifiedAt: "2026-05-10",
+    lastVerified: "2026-07",
+    verifiedAt: "2026-07-22",
     verifiedRoute: "/",
     verifiedAuthState: "logged-out",
     verifiedLocale: "ko",
-    verifiedVersion: "grok-web-may-2026",
+    verifiedVersion: "grok-web-jul-2026",
     authSelectors: [
       "input[autocomplete='username']",
       "input[type='password']",
       "a[href*='/sign-in']",
-      "a[href*='/login']"
+      "a[href*='/login']",
+      "button[aria-label*='Sign in' i]",
+      "button[aria-label*='Log in' i]",
+      "button[aria-label*='로그인' i]"
     ]
   },
   {
@@ -1538,11 +1564,12 @@ var AI_SITES = Object.freeze([
     hostname: "www.perplexity.ai",
     hostnameAliases: ["perplexity.ai"],
     supportedRoutes: [],
-    inputSelector: "#ask-input[data-lexical-editor='true'][role='textbox']",
+    inputSelector: "#ask-input[data-lexical-editor='true'][role='textbox'], div#ask-input[contenteditable='true'][role='textbox'], #ask-input[contenteditable='true']",
     fallbackSelectors: [
       "div#ask-input[data-lexical-editor='true'][role='textbox']",
       "div#ask-input[contenteditable='true'][role='textbox']",
       "#ask-input[contenteditable='true']",
+      "div[contenteditable='true'][data-lexical-editor='true']",
       "div[contenteditable='true'][role='textbox']",
       "textarea[aria-label*='Ask' i]",
       "textarea[placeholder*='Ask'][data-testid='search-input']",
@@ -1551,17 +1578,17 @@ var AI_SITES = Object.freeze([
       "textarea"
     ],
     inputType: "contenteditable",
-    submitSelector: "button[aria-label*='Submit'][type='submit'], button[type='submit'][aria-label*='검색'], button[aria-label*='submit' i], button[aria-label*='제출' i]",
+    submitSelector: "button[aria-label*='Submit'][type='submit'], button[type='submit'][aria-label*='검색'], button[aria-label*='submit' i], button[aria-label*='제출' i], button[aria-label*='Send' i]",
     submitMethod: "click",
     selectorCheckMode: "input-and-conditional-submit",
-    waitMs: 2e3,
+    waitMs: 2500,
     fallback: true,
-    lastVerified: "2026-05",
-    verifiedAt: "2026-05-10",
+    lastVerified: "2026-07",
+    verifiedAt: "2026-07-22",
     verifiedRoute: "/",
     verifiedAuthState: "soft-gated",
     verifiedLocale: "en-US",
-    verifiedVersion: "perplexity-web-may-2026",
+    verifiedVersion: "perplexity-web-jul-2026",
     authSelectors: [
       "input[type='email']",
       "input[type='password']",
@@ -2752,80 +2779,10 @@ async function getTemplateVariableCache() {
   return normalizeTemplateDefaults(rawCache);
 }
 
-// src/shared/prompts/import-export.ts
+// src/shared/prompts/import-export/migrations.ts
 var CURRENT_EXPORT_VERSION = 9;
 function asImportPayload(value) {
   return safeObject(value);
-}
-function createImportSummary(targetVersion, sourceVersion, importedCustomSites, customSiteImport, builtInStateImport, builtInOverrideImport) {
-  return {
-    version: targetVersion,
-    migratedFromVersion: sourceVersion,
-    customSites: {
-      importedCount: importedCustomSites.length,
-      acceptedIds: customSiteImport.acceptedSites.map((site) => site.id),
-      acceptedNames: customSiteImport.acceptedSites.map((site) => site.name),
-      rejected: customSiteImport.rejectedSites,
-      rewrittenIds: customSiteImport.rewrittenIds,
-      deniedOrigins: customSiteImport.deniedOrigins
-    },
-    builtInSiteStates: {
-      appliedIds: builtInStateImport.appliedIds,
-      droppedIds: builtInStateImport.droppedIds
-    },
-    builtInSiteOverrides: {
-      appliedIds: builtInOverrideImport.appliedIds,
-      droppedIds: builtInOverrideImport.droppedIds,
-      adjustedIds: builtInOverrideImport.adjustedIds
-    }
-  };
-}
-function createImportPermissionDeniedError(importSummary) {
-  const error = new Error("Import failed.");
-  return Object.assign(error, {
-    code: "import_permission_denied",
-    importSummary
-  });
-}
-async function repairImportedCustomSitesWithPermissions(rawSites) {
-  const repaired = repairImportedCustomSites(rawSites);
-  const requestedOrigins = /* @__PURE__ */ new Set();
-  const deniedOrigins = /* @__PURE__ */ new Set();
-  const acceptedSites = [];
-  const permissionDeniedSites = [];
-  const requestedPermissionPatterns = Array.from(
-    new Set(
-      repaired.repairedSites.flatMap(
-        (site) => Array.isArray(site?.permissionPatterns) ? site.permissionPatterns.filter((pattern) => typeof pattern === "string" && pattern.trim()) : []
-      )
-    )
-  );
-  const permissionRequestResult = await requestOriginPermissions(requestedPermissionPatterns);
-  permissionRequestResult.requestedOrigins.forEach((origin) => requestedOrigins.add(origin));
-  permissionRequestResult.deniedOrigins.forEach((origin) => deniedOrigins.add(origin));
-  for (const site of repaired.repairedSites) {
-    const permissionPatterns = Array.isArray(site?.permissionPatterns) ? site.permissionPatterns.filter((pattern) => typeof pattern === "string" && pattern.trim()) : [];
-    permissionPatterns.forEach((origin) => requestedOrigins.add(origin));
-    const missingOrigins = await findMissingOriginPermissions(permissionPatterns);
-    if (missingOrigins.length === 0) {
-      acceptedSites.push(site);
-      continue;
-    }
-    missingOrigins.forEach((origin) => deniedOrigins.add(origin));
-    permissionDeniedSites.push({
-      id: safeText2(site.id) || void 0,
-      name: safeText2(site.name) || "Custom AI",
-      reason: "permission_denied",
-      origins: missingOrigins
-    });
-  }
-  return {
-    acceptedSites,
-    rejectedSites: [...repaired.rejectedSites, ...permissionDeniedSites],
-    rewrittenIds: repaired.rewrittenIds,
-    deniedOrigins: [...deniedOrigins],
-    requestedOrigins: [...requestedOrigins]
-  };
 }
 function normalizeImportVersion(value) {
   const version = Number(value);
@@ -2948,6 +2905,79 @@ function migrateImportData(rawValue) {
     migrated: payload,
     sourceVersion,
     targetVersion: CURRENT_EXPORT_VERSION
+  };
+}
+
+// src/shared/prompts/import-export/summary.ts
+function createImportSummary(targetVersion, sourceVersion, importedCustomSites, customSiteImport, builtInStateImport, builtInOverrideImport) {
+  return {
+    version: targetVersion,
+    migratedFromVersion: sourceVersion,
+    customSites: {
+      importedCount: importedCustomSites.length,
+      acceptedIds: customSiteImport.acceptedSites.map((site) => site.id),
+      acceptedNames: customSiteImport.acceptedSites.map((site) => site.name),
+      rejected: customSiteImport.rejectedSites,
+      rewrittenIds: customSiteImport.rewrittenIds,
+      deniedOrigins: customSiteImport.deniedOrigins
+    },
+    builtInSiteStates: {
+      appliedIds: builtInStateImport.appliedIds,
+      droppedIds: builtInStateImport.droppedIds
+    },
+    builtInSiteOverrides: {
+      appliedIds: builtInOverrideImport.appliedIds,
+      droppedIds: builtInOverrideImport.droppedIds,
+      adjustedIds: builtInOverrideImport.adjustedIds
+    }
+  };
+}
+function createImportPermissionDeniedError(importSummary) {
+  const error = new Error("Import failed.");
+  error.code = "import_permission_denied";
+  error.importSummary = importSummary;
+  return error;
+}
+
+// src/shared/prompts/import-export.ts
+async function repairImportedCustomSitesWithPermissions(rawSites) {
+  const repaired = repairImportedCustomSites(rawSites);
+  const requestedOrigins = /* @__PURE__ */ new Set();
+  const deniedOrigins = /* @__PURE__ */ new Set();
+  const acceptedSites = [];
+  const permissionDeniedSites = [];
+  const requestedPermissionPatterns = Array.from(
+    new Set(
+      repaired.repairedSites.flatMap(
+        (site) => Array.isArray(site?.permissionPatterns) ? site.permissionPatterns.filter((pattern) => typeof pattern === "string" && pattern.trim()) : []
+      )
+    )
+  );
+  const permissionRequestResult = await requestOriginPermissions(requestedPermissionPatterns);
+  permissionRequestResult.requestedOrigins.forEach((origin) => requestedOrigins.add(origin));
+  permissionRequestResult.deniedOrigins.forEach((origin) => deniedOrigins.add(origin));
+  for (const site of repaired.repairedSites) {
+    const permissionPatterns = Array.isArray(site?.permissionPatterns) ? site.permissionPatterns.filter((pattern) => typeof pattern === "string" && pattern.trim()) : [];
+    permissionPatterns.forEach((origin) => requestedOrigins.add(origin));
+    const missingOrigins = await findMissingOriginPermissions(permissionPatterns);
+    if (missingOrigins.length === 0) {
+      acceptedSites.push(site);
+      continue;
+    }
+    missingOrigins.forEach((origin) => deniedOrigins.add(origin));
+    permissionDeniedSites.push({
+      id: safeText2(site.id) || void 0,
+      name: safeText2(site.name) || "Custom AI",
+      reason: "permission_denied",
+      origins: missingOrigins
+    });
+  }
+  return {
+    acceptedSites,
+    rejectedSites: [...repaired.rejectedSites, ...permissionDeniedSites],
+    rewrittenIds: repaired.rewrittenIds,
+    deniedOrigins: [...deniedOrigins],
+    requestedOrigins: [...requestedOrigins]
   };
 }
 async function exportPromptData() {

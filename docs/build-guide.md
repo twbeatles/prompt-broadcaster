@@ -200,7 +200,7 @@ The generated ZIP contains the built extension from `dist/` only.
    Confirm that auth pages, settings pages, unsupported routes, and tabs without a usable prompt surface are not offered as reusable targets
 11. Verify prompt submission on all built-in services, with dedicated checks for Claude click-submit behavior and Perplexity conditional submit behavior
    For Perplexity specifically, confirm that the prompt is inserted once into `#ask-input[data-lexical-editor='true']` and that submission still succeeds through the standard submit path
-12. Update selector verification evidence such as [selector-verification-2026-05-11.md](selector-verification-2026-05-11.md) for every built-in touched by the release
+12. Update selector verification evidence such as [selector-verification-2026-07-22.md](selector-verification-2026-07-22.md) for every built-in touched by the release
 13. Verify that a per-service prompt override with template variables resolves correctly and that retry reuses the originally rendered prompt even after editing the popup text
 14. Add, import, delete, and reset a custom service and confirm optional host permissions are batch-requested, import aborts when any required origin stays denied, and cleanup only removes unused origins after commit
 15. Confirm that popup sorting, favorite duplication, resend-service selection, import-report modals, and the integrated favorite editor all behave correctly
@@ -293,6 +293,6 @@ Before uploading, run these manual checks in a real Chrome window:
 ## Related Docs
 
 - Architecture: [extension-architecture.md](extension-architecture.md)
-- Selector verification evidence: [selector-verification-2026-05-11.md](selector-verification-2026-05-11.md)
+- Selector verification evidence: [selector-verification-2026-07-22.md](selector-verification-2026-07-22.md)
 - Web Store checklist: [web_store_checklist.md](web_store_checklist.md)
 - Privacy policy draft: [privacy-policy.md](privacy-policy.md)

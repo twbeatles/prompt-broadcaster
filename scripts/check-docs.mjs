@@ -63,13 +63,14 @@ const REQUIRED_INCLUDES = [
     snippets: ["npm run docs:check", "npm run qa:extension", "selector:audit", "AI response"],
   },
   {
-    file: "docs/selector-verification-2026-05-11.md",
+    file: "docs/selector-verification-2026-07-22.md",
     snippets: [
       "Automated Audit Snapshot",
       "Logged-In Canonical Route Checklist",
       "Requires authenticated session",
-      "all 5 built-in services",
       "input-and-conditional-submit",
+      "Alert Noise Controls",
+      "Promotion threshold raised to 3",
     ],
   },
   {

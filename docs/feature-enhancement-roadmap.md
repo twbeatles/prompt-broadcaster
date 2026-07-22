@@ -1,7 +1,7 @@
 # AI Prompt Broadcaster 기능 고도화 및 추가 기능 분석
 
 > 작성일: 2026-05-10  
-> 참고 문서: `README.md`, `PROJECT_ANALYSIS.md`, `docs/extension-architecture.md`, `docs/build-guide.md`, `docs/web_store_checklist.md`, `docs/web-store-copy.md`, `docs/selector-verification-2026-05-11.md`
+> 참고 문서: `README.md`, `PROJECT_ANALYSIS.md`, `docs/extension-architecture.md`, `docs/build-guide.md`, `docs/web_store_checklist.md`, `docs/web-store-copy.md`, `docs/selector-verification-2026-07-22.md`
 > 목적: 현재 Chrome 확장 프로그램의 기능 성숙도를 기준으로, 실제 제품 가치가 큰 고도화 방향과 추가 기능 후보를 우선순위별로 정리한다.
 
 > 2026-05-11 구현 상태: Selector Health Center, local AI response capture, prompt experiment MVP, template packs, service groups, export/import v9, simplified dashboard, and extension-page E2E are now implemented as baseline features. This roadmap now treats those items as hardening/expansion tracks rather than wholly new work.
@@ -82,7 +82,7 @@
   - 최근 패치처럼 Cloudflare/access challenge 감지는 selector 변경으로 단정하지 않는 쪽이 맞음
 - "수동 복구 가이드" 링크
   - `tools/find_selector.js`
-  - `docs/selector-verification-2026-05-11.md`
+  - `docs/selector-verification-2026-07-22.md`
   - GitHub issue search
 - audit 결과 import 또는 표시
   - `output/selector-audit/*.md`는 개발자 산출물이므로, 사용자 UI에는 요약 상태만 표시

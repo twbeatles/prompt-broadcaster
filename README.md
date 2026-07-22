@@ -238,7 +238,7 @@ proactive selector checker의 첫 번째 미검출은 같은 브라우저 세션
 - `supportedRoutes`는 selector checker와 열린 탭 재사용 preflight가 공통으로 쓰는 pathname prefix allowlist입니다. 비워 두면 전체 경로를 허용합니다.
 - `waitMs`는 너무 짧게 잡지 말고 hydration 이후를 고려해 설정하세요.
 - 변경 후 `npm run build`를 다시 실행해 `dist/`를 갱신하세요.
-- 릴리스 전에는 [docs/selector-verification-2026-05-11.md](docs/selector-verification-2026-05-11.md) 같은 selector verification 증적을 갱신해 auth route, canonical route, locale, prompt surface, submit surface를 다시 검증하세요.
+- 릴리스 전에는 [docs/selector-verification-2026-07-22.md](docs/selector-verification-2026-07-22.md) 같은 selector verification 증적을 갱신해 auth route, canonical route, locale, prompt surface, submit surface를 다시 검증하세요.
 
 ### 셀렉터가 깨졌을 때 직접 수정하는 방법
 1. 문제 사이트를 Chrome에서 엽니다.
@@ -547,7 +547,7 @@ Additional notes:
 - `supportedRoutes` is the shared pathname-prefix allowlist used by selector checking and reusable-tab preflight. Leave it empty only when the service genuinely supports multiple composer routes.
 - Set `waitMs` conservatively to account for hydration and delayed editors.
 - Run `npm run build` again after any source change so both `dist/` and the generated root runtime mirrors stay current.
-- Before a release, update selector verification evidence such as [docs/selector-verification-2026-05-11.md](docs/selector-verification-2026-05-11.md) for auth route, canonical route, locale, prompt surface, submit surface, and soft-gated checks.
+- Before a release, update selector verification evidence such as [docs/selector-verification-2026-07-22.md](docs/selector-verification-2026-07-22.md) for auth route, canonical route, locale, prompt surface, submit surface, and soft-gated checks.
 
 ### Local Smoke QA
 The repository includes Playwright-based local fixtures under `qa/fixtures/`, orchestrated by `scripts/qa-smoke.mjs` with helper modules under `scripts/qa-smoke/`.

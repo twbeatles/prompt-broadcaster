@@ -77,6 +77,7 @@ export function normalizePendingSelectorCheckEntry(
     count: Number.isFinite(count) ? Math.max(1, Math.round(count)) : 1,
     firstSeenAt: Number.isFinite(firstSeenAt) ? firstSeenAt : fallbackNow,
     lastSeenAt: Number.isFinite(lastSeenAt) ? lastSeenAt : fallbackNow,
+    promoted: Boolean(source.promoted),
   };
 }
 

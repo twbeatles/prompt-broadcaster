@@ -80,16 +80,26 @@ To package a release zip:
 - `src/options/features/dashboard-metrics.ts`: pure dashboard aggregation for the four summary cards, recent activity, actions, usage share, recent daily counts, and failures
 - `src/options/features/schedule-summary.ts`: pure scheduled-run summary helper used by options schedules UI
 - `src/options/ui/charts.ts`: chart rendering
-- `src/background/app/bootstrap.ts` + `src/background/app/bootstrap/{app,context,utils,tab-targets,runtime-events}.ts`: service worker composition root plus app context, utilities, tab-routing, and listener-registration helpers
-- `src/background/app/{comparison,experiments,injection}/*`: background feature helpers for response capture, experiment variables, and injection runtime types
+- `src/background/app/bootstrap.ts` + `src/background/app/bootstrap/{app,context,utils,runtime-events}.ts`: thin service-worker composition root (wiring only) plus app context, utilities, and Chrome listener registration
+- `src/background/app/bootstrap/tab-targets/`: site lookup, origin/permission helpers, reusable-tab preflight + factory (`index.ts`, `site-origin.ts`, `types.ts`) with facade at `tab-targets.ts`
+- `src/background/broadcast/`: pending-broadcast lifecycle, queueing, completion waiters (`pending/{controller,types}.ts`, `queue.ts`, `waiters.ts`)
+- `src/background/injection/`: tab inject execution + pending-injection controller (`execute.ts`, `pending.ts`)
+- `src/background/comparison/handlers/`: comparison notes and auto response capture controller + `src/background/app/comparison/capture.ts` selectors/helpers
+- `src/background/experiments/handlers.ts` + `src/background/app/experiments/variables.ts`: experiment save/run handlers and scheduled variable blocklist
+- `src/background/lifecycle/service-worker.ts`: SW init, reset-all-data, popup-opened, open-AI-tabs, cancel, active-tab context
+- `src/background/messages/{router,selector-handlers,template-packs}.ts`: runtime message routing, selector/inject status handlers, template-pack/service-group handlers
+- `src/background/service-test/`: selector probe + service-test message handler
+- `src/background/sites/health.ts`: service health snapshot aggregation
+- `src/background/ui/{badge,notifications}.ts`: action badge + desktop notification policy
 - `src/background/runtime/`, `src/background/session/`, `src/background/tabs/`: runtime handler map, session-state mutation store, and normal-window/tab routing helpers
 - `src/background/commands/quick-palette.ts`: command handling and content-script injection for the page overlay
 - `src/background/context-menu/index.ts`: context-menu lifecycle
-- `src/background/messages/router.ts`: runtime message routing
 - `src/background/popup/launcher.ts`: popup/open-window fallback handling
-- `src/background/popup/favorites-workflow.ts` + `src/background/popup/favorites-workflow/{entrypoints,run-jobs,messages}.ts`: favorite run, chain, and schedule workflow
+- `src/background/popup/favorites-workflow.ts` + `favorites-workflow/{entrypoints,run-jobs,messages}.ts` facades over nested `entrypoints/` and `run-jobs/` handlers
 - `src/background/selection/runtime.ts`: active-tab selection helpers
-- `src/background/app/injection-helpers.ts`: timeout scaling, selector normalization, result mapping, adaptive strategy ordering
+- `src/background/app/injection-helpers.ts` + `src/background/app/injection/types.ts`: timeout scaling, selector normalization, result mapping, adaptive strategy ordering, inject type globals
+- `src/shared/prompts/normalizers/`: split into `primitives`, `enums`, `site-results`, `entities`, `settings-normalize` with `core.ts` compatibility facade
+- `src/shared/prompts/import-export/`: `migrations.ts` + `summary.ts` with `import-export.ts` orchestration facade
 - `src/shared/prompts/normalizers.ts` + `src/shared/prompts/normalizers/*`: prompt/history/favorite/experiment/settings normalizer facade and domain boundaries
 - `src/content/palette/`: shadow-root quick palette overlay split into `main.ts`, `state.ts`, `render.ts`, `events.ts`, and `runtime.ts`
 - `src/content/selector-checker/` and `src/content/selection/`: modular content helpers split by runtime, DOM, and reporting concerns
@@ -176,12 +186,14 @@ When `chrome.action.openPopup()` fails because Chrome has no active browser wind
 - Options `Dashboard` now renders four beginner-facing cards, recent activity, next actions, and a collapsed advanced stats area for usage share, recent daily counts, and top failure reasons.
 
 ### Selector checker
-Runs on supported pages and reports `ok`, `selector_missing`, or `auth_page` back to the background worker.
-`supportedRoutes` is the primary route gate. The first proactive `selector_missing` is stored only in session as `pendingSelectorChecks`; popup warnings and desktop notifications are emitted only after the same service/signature misses again in the same browser session or when injector-time selector failure occurs.
+Runs on supported pages and reports `ok`, `selector_missing`, `auth_page`, or `skipped` back to the background worker.
+`supportedRoutes` is the primary route gate. Proactive `selector_missing` strikes use a site-level signature and promote to a popup warning only after 3 misses in the same browser session; proactive checks do not create desktop notifications.
+Desktop notifications are reserved for injector-time failures and are de-duped with a per-site cooldown.
 Popup uses confirmed `failedSelectors` only, so pending selector noise never shows a warning badge.
+Auth/challenge/loading states should not promote as selector drift.
 
 ### Release verification
-Update selector verification evidence such as `docs/selector-verification-2026-05-11.md` before shipping selector or route changes. Built-in checks should cover logged-out/auth route, canonical logged-in route, locale, prompt surface, submit surface, and whether the service is soft-gated.
+Update selector verification evidence such as `docs/selector-verification-2026-07-22.md` before shipping selector or route changes. Built-in checks should cover logged-out/auth route, canonical logged-in route, locale, prompt surface, submit surface, and whether the service is soft-gated.
 
 ### Toast styling
 Toast CSS is injected by `src/popup/ui/toast.ts`.
@@ -225,7 +237,7 @@ Smoke coverage includes:
 - `broadcastCounter` export/import/reset lifecycle
 - import migration to export `version: 9`
 - supported-route normalization plus reusable-tab route gating
-- pending selector escalation (session pending -> confirmed warning)
+- pending selector escalation (session pending -> confirmed warning after 3 site-level misses; proactive no desktop notify)
 - `siteOrder` normalization and ordering reuse
 - history replay snapshot fallback and resend routing safety
 - prompt draft/sent separation plus popup handoff consumption

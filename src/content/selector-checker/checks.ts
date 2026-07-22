@@ -16,6 +16,9 @@ const ACCESS_CHALLENGE_SELECTORS = [
   ".cf-challenge",
   ".cf-turnstile",
   "iframe[src*='challenges.cloudflare.com']",
+  "div#cf-challenge-running",
+  "div.cf-challenge-container",
+  "#challenge-stage",
 ];
 
 function normalizePageText(value) {
@@ -37,12 +40,17 @@ export function isLikelyAccessChallengePage() {
       hasChallengeSelector ||
       title.includes("just a moment") ||
       title.includes("잠시만 기다리십시오") ||
+      title.includes("attention required") ||
       bodyText.includes("security check") ||
       bodyText.includes("checking your browser") ||
       bodyText.includes("checking if the site connection is secure") ||
       bodyText.includes("verify you are human") ||
+      bodyText.includes("enable javascript and cookies") ||
+      bodyText.includes("needs to review the security") ||
       bodyText.includes("보안 확인 수행 중") ||
-      bodyText.includes("사용자가 봇이 아님")
+      bodyText.includes("사용자가 봇이 아님") ||
+      bodyText.includes("잠시만 기다리") ||
+      bodyText.includes("사람인지 확인")
     );
   } catch (error) {
     logSelectorCheckerError("Failed access challenge detection in selector checker.", error);
@@ -86,6 +94,27 @@ export function isLikelyAuthPage(site) {
   }
 }
 
+function isLikelyAppLoading() {
+  try {
+    const bodyText = normalizePageText(document.body?.innerText ?? "");
+    if (!bodyText || bodyText.length < 8) {
+      return true;
+    }
+
+    const busy =
+      document.querySelector('[aria-busy="true"]') ||
+      document.querySelector("progress") ||
+      document.querySelector('[role="progressbar"]');
+    if (busy && bodyText.length < 40) {
+      return true;
+    }
+
+    return false;
+  } catch (_error) {
+    return false;
+  }
+}
+
 export async function runSelectorCheck() {
   try {
     const initResponse = await sendRuntimeMessage({
@@ -124,6 +153,18 @@ export async function runSelectorCheck() {
     }
 
     await sleep(Math.max(site.waitMs ?? 0, 1200));
+
+    // Re-evaluate after the wait: Cloudflare/login interstitials often appear late.
+    if (isLikelyAuthPage(site)) {
+      await sendSelectorCheckReport({
+        status: "auth_page",
+        siteId: site.id,
+        siteName: site.name,
+        pageUrl: window.location.href,
+      });
+      return;
+    }
+
     const submitRequirement = buildSubmitRequirement(site);
 
     const checks = [
@@ -164,6 +205,30 @@ export async function runSelectorCheck() {
           field: check.field,
           selector: check.selectors[0] ?? "",
         });
+      }
+    }
+
+    if (missing.length > 0) {
+      // Final guard: do not escalate loading/auth/challenge states as selector drift.
+      if (isLikelyAuthPage(site) || isLikelyAccessChallengePage()) {
+        await sendSelectorCheckReport({
+          status: "auth_page",
+          siteId: site.id,
+          siteName: site.name,
+          pageUrl: window.location.href,
+        });
+        return;
+      }
+
+      if (isLikelyAppLoading()) {
+        await sendSelectorCheckReport({
+          status: "skipped",
+          reason: "app_loading",
+          siteId: site.id,
+          siteName: site.name,
+          pageUrl: window.location.href,
+        });
+        return;
       }
     }
 

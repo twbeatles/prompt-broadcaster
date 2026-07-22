@@ -167,34 +167,37 @@ var AIPromptBroadcasterSelectorCheckerBundle = (() => {
       url: "https://chatgpt.com/",
       hostname: "chatgpt.com",
       supportedRoutes: [],
-      inputSelector: "#prompt-textarea, div#prompt-textarea[contenteditable='true'], textarea[aria-label*='chatgpt' i], textarea[aria-label*='채팅' i], textarea[placeholder*='ask' i]",
+      // Prefer ProseMirror / contenteditable surfaces first; legacy #prompt-textarea kept as fallback.
+      inputSelector: "div#prompt-textarea[contenteditable='true'], #prompt-textarea, div.ProseMirror[contenteditable='true'], textarea[aria-label*='chatgpt' i], textarea[aria-label*='채팅' i], textarea[placeholder*='ask' i]",
       fallbackSelectors: [
-        "#prompt-textarea",
         "div#prompt-textarea[contenteditable='true']",
+        "#prompt-textarea",
+        "div.ProseMirror[contenteditable='true']",
         "textarea[aria-label*='chatgpt' i]",
         "textarea[aria-label*='채팅' i]",
         "textarea[placeholder*='ask' i]",
         "textarea.wcDTda_fallbackTextarea",
-        "div.ProseMirror[contenteditable='true']",
         "div[contenteditable='true'][data-id='root']",
-        "main div[contenteditable='true']"
+        "main div[contenteditable='true']",
+        "div[contenteditable='true'][role='textbox']"
       ],
       inputType: "contenteditable",
-      submitSelector: "button[data-testid='send-button'], button[aria-label*='send' i], button[aria-label*='보내기' i]",
+      submitSelector: "button[data-testid='send-button'], button[data-testid='composer-send-button'], button[aria-label*='send' i], button[aria-label*='보내기' i]",
       submitMethod: "click",
       selectorCheckMode: "input-and-conditional-submit",
-      waitMs: 2e3,
+      waitMs: 2500,
       fallback: true,
-      lastVerified: "2026-05",
-      verifiedAt: "2026-05-10",
+      lastVerified: "2026-07",
+      verifiedAt: "2026-07-22",
       verifiedRoute: "/",
       verifiedAuthState: "logged-out",
       verifiedLocale: "ko",
-      verifiedVersion: "chatgpt-web-may-2026",
+      verifiedVersion: "chatgpt-web-jul-2026",
       authSelectors: [
         "form[action*='/auth']",
         "input[name='email']",
         "input[name='username']",
+        "button[data-testid='login-button']",
         "a[href*='cloudflare.com']",
         "#challenge-running",
         ".cf-browser-verification",
@@ -209,30 +212,36 @@ var AIPromptBroadcasterSelectorCheckerBundle = (() => {
       url: "https://gemini.google.com/app",
       hostname: "gemini.google.com",
       supportedRoutes: ["/app"],
-      inputSelector: "div[contenteditable='true'][role='textbox'], div[aria-label*='Gemini' i][contenteditable='true'][role='textbox'], div.ql-editor.textarea.new-input-ui[contenteditable='true'], div.ql-editor[contenteditable='true'][role='textbox']",
+      // 2026-07-22 probe: ql-editor.textarea.new-input-ui, aria-label "Enter a prompt for Gemini"
+      inputSelector: "div.ql-editor.textarea.new-input-ui[contenteditable='true'], div[aria-label*='prompt for Gemini' i][contenteditable='true'][role='textbox'], div[aria-label*='Gemini' i][contenteditable='true'][role='textbox'], div[contenteditable='true'][role='textbox']",
       fallbackSelectors: [
-        "div[contenteditable='true'][role='textbox']",
-        "div[aria-label*='Gemini' i][contenteditable='true'][role='textbox']",
         "div.ql-editor.textarea.new-input-ui[contenteditable='true']",
         "div.ql-editor[contenteditable='true'][role='textbox']",
+        "div[aria-label*='prompt for Gemini' i][contenteditable='true'][role='textbox']",
+        "div[aria-label*='Gemini' i][contenteditable='true'][role='textbox']",
+        "div[aria-label*='Ask Gemini' i][contenteditable='true']",
+        "div[contenteditable='true'][role='textbox']",
+        "div[contenteditable='true'][data-placeholder*='Gemini' i]",
         "textarea, div[contenteditable='true']"
       ],
       inputType: "contenteditable",
-      submitSelector: "button.send-button, button[aria-label*='send' i], button[aria-label*='보내기' i], button[aria-label*='메시지 보내기' i], button[type='submit']",
+      submitSelector: "button.send-button, button[aria-label*='send' i], button[aria-label*='보내기' i], button[aria-label*='메시지 보내기' i], button[aria-label*='Submit' i], button[type='submit']",
       submitMethod: "click",
       selectorCheckMode: "input-and-conditional-submit",
       waitMs: 2500,
       fallback: true,
-      lastVerified: "2026-05",
-      verifiedAt: "2026-05-10",
+      lastVerified: "2026-07",
+      verifiedAt: "2026-07-22",
       verifiedRoute: "/app",
       verifiedAuthState: "logged-out",
-      verifiedLocale: "ko",
-      verifiedVersion: "gemini-app-may-2026",
+      verifiedLocale: "en-US",
+      verifiedVersion: "gemini-app-jul-2026",
       authSelectors: [
         "a[href*='accounts.google.com/ServiceLogin']",
         "a[aria-label*='로그인']",
         "a[aria-label*='sign in' i]",
+        "button[aria-label*='Sign in' i]",
+        "button[aria-label*='로그인' i]",
         "input[type='email']",
         "input[type='password']"
       ]
@@ -243,26 +252,28 @@ var AIPromptBroadcasterSelectorCheckerBundle = (() => {
       url: "https://claude.ai/new",
       hostname: "claude.ai",
       supportedRoutes: ["/new"],
-      inputSelector: "div[contenteditable='true'][role='textbox'], div[contenteditable='true'][aria-label*='Claude' i], div[contenteditable='true'][aria-label*='prompt' i]",
+      inputSelector: "div[contenteditable='true'][role='textbox'], div[contenteditable='true'][aria-label*='Claude' i], div[contenteditable='true'][aria-label*='prompt' i], div.ProseMirror[contenteditable='true']",
       fallbackSelectors: [
         "div[contenteditable='true'][role='textbox']",
         "div[contenteditable='true'][aria-label*='Claude' i]",
         "div[contenteditable='true'][aria-label*='prompt' i]",
+        "div.ProseMirror[contenteditable='true']",
         "div[contenteditable='true']",
+        "fieldset div[contenteditable='true']",
         "textarea"
       ],
       inputType: "contenteditable",
-      submitSelector: "button[aria-label='Send message'], button[aria-label*='send' i], button[aria-label*='submit' i], button[aria-label*='보내' i], button[aria-label*='전송' i]",
+      submitSelector: "button[aria-label='Send message'], button[aria-label*='send message' i], button[aria-label*='send' i], button[aria-label*='submit' i], button[aria-label*='보내' i], button[aria-label*='전송' i]",
       submitMethod: "click",
       selectorCheckMode: "input-and-conditional-submit",
-      waitMs: 1500,
+      waitMs: 2e3,
       fallback: true,
-      lastVerified: "2026-05",
-      verifiedAt: "2026-05-10",
+      lastVerified: "2026-07",
+      verifiedAt: "2026-07-22",
       verifiedRoute: "/new",
       verifiedAuthState: "logged-out",
       verifiedLocale: "en-US",
-      verifiedVersion: "claude-web-may-2026",
+      verifiedVersion: "claude-web-jul-2026",
       authSelectors: [
         "input#email",
         "input[type='email']",
@@ -282,11 +293,15 @@ var AIPromptBroadcasterSelectorCheckerBundle = (() => {
       url: "https://grok.com/",
       hostname: "grok.com",
       supportedRoutes: [],
-      inputSelector: "textarea[aria-label*='grok' i], textarea[placeholder*='help' i], textarea[placeholder*='무엇' i], textarea",
+      // 2026-07-22 probe: textarea aria-label "Grok에게…", placeholder "무엇을 알고 싶으세요?"
+      inputSelector: "textarea[aria-label*='grok' i], textarea[placeholder*='알고 싶' i], textarea[placeholder*='무엇' i], textarea[placeholder*='help' i], textarea[aria-label*='Ask' i]",
       fallbackSelectors: [
         "textarea[aria-label*='grok' i]",
-        "textarea[placeholder*='help' i]",
+        "textarea[placeholder*='알고 싶' i]",
         "textarea[placeholder*='무엇' i]",
+        "textarea[placeholder*='help' i]",
+        "textarea[aria-label*='Ask' i]",
+        "textarea:not([aria-hidden='true'])",
         "textarea",
         "div.tiptap.ProseMirror[contenteditable='true']",
         "div.ProseMirror[contenteditable='true'][translate='no']",
@@ -298,17 +313,20 @@ var AIPromptBroadcasterSelectorCheckerBundle = (() => {
       selectorCheckMode: "input-and-conditional-submit",
       waitMs: 3e3,
       fallback: true,
-      lastVerified: "2026-05",
-      verifiedAt: "2026-05-10",
+      lastVerified: "2026-07",
+      verifiedAt: "2026-07-22",
       verifiedRoute: "/",
       verifiedAuthState: "logged-out",
       verifiedLocale: "ko",
-      verifiedVersion: "grok-web-may-2026",
+      verifiedVersion: "grok-web-jul-2026",
       authSelectors: [
         "input[autocomplete='username']",
         "input[type='password']",
         "a[href*='/sign-in']",
-        "a[href*='/login']"
+        "a[href*='/login']",
+        "button[aria-label*='Sign in' i]",
+        "button[aria-label*='Log in' i]",
+        "button[aria-label*='로그인' i]"
       ]
     },
     {
@@ -318,11 +336,12 @@ var AIPromptBroadcasterSelectorCheckerBundle = (() => {
       hostname: "www.perplexity.ai",
       hostnameAliases: ["perplexity.ai"],
       supportedRoutes: [],
-      inputSelector: "#ask-input[data-lexical-editor='true'][role='textbox']",
+      inputSelector: "#ask-input[data-lexical-editor='true'][role='textbox'], div#ask-input[contenteditable='true'][role='textbox'], #ask-input[contenteditable='true']",
       fallbackSelectors: [
         "div#ask-input[data-lexical-editor='true'][role='textbox']",
         "div#ask-input[contenteditable='true'][role='textbox']",
         "#ask-input[contenteditable='true']",
+        "div[contenteditable='true'][data-lexical-editor='true']",
         "div[contenteditable='true'][role='textbox']",
         "textarea[aria-label*='Ask' i]",
         "textarea[placeholder*='Ask'][data-testid='search-input']",
@@ -331,17 +350,17 @@ var AIPromptBroadcasterSelectorCheckerBundle = (() => {
         "textarea"
       ],
       inputType: "contenteditable",
-      submitSelector: "button[aria-label*='Submit'][type='submit'], button[type='submit'][aria-label*='검색'], button[aria-label*='submit' i], button[aria-label*='제출' i]",
+      submitSelector: "button[aria-label*='Submit'][type='submit'], button[type='submit'][aria-label*='검색'], button[aria-label*='submit' i], button[aria-label*='제출' i], button[aria-label*='Send' i]",
       submitMethod: "click",
       selectorCheckMode: "input-and-conditional-submit",
-      waitMs: 2e3,
+      waitMs: 2500,
       fallback: true,
-      lastVerified: "2026-05",
-      verifiedAt: "2026-05-10",
+      lastVerified: "2026-07",
+      verifiedAt: "2026-07-22",
       verifiedRoute: "/",
       verifiedAuthState: "soft-gated",
       verifiedLocale: "en-US",
-      verifiedVersion: "perplexity-web-may-2026",
+      verifiedVersion: "perplexity-web-jul-2026",
       authSelectors: [
         "input[type='email']",
         "input[type='password']",
@@ -549,7 +568,10 @@ var AIPromptBroadcasterSelectorCheckerBundle = (() => {
     ".cf-browser-verification",
     ".cf-challenge",
     ".cf-turnstile",
-    "iframe[src*='challenges.cloudflare.com']"
+    "iframe[src*='challenges.cloudflare.com']",
+    "div#cf-challenge-running",
+    "div.cf-challenge-container",
+    "#challenge-stage"
   ];
   function normalizePageText(value) {
     return String(value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
@@ -561,7 +583,7 @@ var AIPromptBroadcasterSelectorCheckerBundle = (() => {
       const hasChallengeSelector = ACCESS_CHALLENGE_SELECTORS.some(
         (selector) => Boolean(findElementDeep(selector, document, { visibleOnly: true }))
       );
-      return hasChallengeSelector || title.includes("just a moment") || title.includes("잠시만 기다리십시오") || bodyText.includes("security check") || bodyText.includes("checking your browser") || bodyText.includes("checking if the site connection is secure") || bodyText.includes("verify you are human") || bodyText.includes("보안 확인 수행 중") || bodyText.includes("사용자가 봇이 아님");
+      return hasChallengeSelector || title.includes("just a moment") || title.includes("잠시만 기다리십시오") || title.includes("attention required") || bodyText.includes("security check") || bodyText.includes("checking your browser") || bodyText.includes("checking if the site connection is secure") || bodyText.includes("verify you are human") || bodyText.includes("enable javascript and cookies") || bodyText.includes("needs to review the security") || bodyText.includes("보안 확인 수행 중") || bodyText.includes("사용자가 봇이 아님") || bodyText.includes("잠시만 기다리") || bodyText.includes("사람인지 확인");
     } catch (error) {
       logSelectorCheckerError("Failed access challenge detection in selector checker.", error);
       return false;
@@ -596,6 +618,21 @@ var AIPromptBroadcasterSelectorCheckerBundle = (() => {
       return false;
     }
   }
+  function isLikelyAppLoading() {
+    try {
+      const bodyText = normalizePageText(document.body?.innerText ?? "");
+      if (!bodyText || bodyText.length < 8) {
+        return true;
+      }
+      const busy = document.querySelector('[aria-busy="true"]') || document.querySelector("progress") || document.querySelector('[role="progressbar"]');
+      if (busy && bodyText.length < 40) {
+        return true;
+      }
+      return false;
+    } catch (_error) {
+      return false;
+    }
+  }
   async function runSelectorCheck() {
     try {
       const initResponse = await sendRuntimeMessage2({
@@ -627,6 +664,15 @@ var AIPromptBroadcasterSelectorCheckerBundle = (() => {
         return;
       }
       await sleep(Math.max(site.waitMs ?? 0, 1200));
+      if (isLikelyAuthPage(site)) {
+        await sendSelectorCheckReport({
+          status: "auth_page",
+          siteId: site.id,
+          siteName: site.name,
+          pageUrl: window.location.href
+        });
+        return;
+      }
       const submitRequirement = buildSubmitRequirement(site);
       const checks = [
         {
@@ -659,6 +705,27 @@ var AIPromptBroadcasterSelectorCheckerBundle = (() => {
             field: check.field,
             selector: check.selectors[0] ?? ""
           });
+        }
+      }
+      if (missing.length > 0) {
+        if (isLikelyAuthPage(site) || isLikelyAccessChallengePage()) {
+          await sendSelectorCheckReport({
+            status: "auth_page",
+            siteId: site.id,
+            siteName: site.name,
+            pageUrl: window.location.href
+          });
+          return;
+        }
+        if (isLikelyAppLoading()) {
+          await sendSelectorCheckReport({
+            status: "skipped",
+            reason: "app_loading",
+            siteId: site.id,
+            siteName: site.name,
+            pageUrl: window.location.href
+          });
+          return;
         }
       }
       await sendSelectorCheckReport({

@@ -1262,7 +1262,7 @@ async function main() {
     );
     assert.equal(
       result.builtInSiteOverrides.chatgpt.submitSelector,
-      "button[data-testid='send-button'], button[aria-label*='send' i], button[aria-label*='보내기' i]",
+      "button[data-testid='send-button'], button[data-testid='composer-send-button'], button[aria-label*='send' i], button[aria-label*='보내기' i]",
     );
     assert.ok(!chromeMock.__getGrantedOrigins().includes("https://legacy.example.com/*"));
   });
@@ -3177,13 +3177,28 @@ async function main() {
 
     const first = module.registerPendingSelectorCheck({}, report, 1000);
     assert.equal(first.promoted, false);
+    assert.equal(first.record?.count, 1);
     assert.equal(Object.keys(first.next).length, 1);
 
     const second = module.registerPendingSelectorCheck(first.next, report, 2000);
-    assert.equal(second.promoted, true);
-    assert.equal(Object.keys(second.next).length, 0);
+    assert.equal(second.promoted, false);
+    assert.equal(second.record?.count, 2);
+    assert.equal(Object.keys(second.next).length, 1);
 
-    const withDifferentSignature = module.registerPendingSelectorCheck(first.next, {
+    const third = module.registerPendingSelectorCheck(second.next, report, 3000);
+    assert.equal(third.promoted, true);
+    assert.equal(third.record?.count, 3);
+    assert.equal(third.record?.promoted, true);
+    // Keep the pending record after promotion so later misses do not re-promote.
+    assert.equal(Object.keys(third.next).length, 1);
+
+    const fourth = module.registerPendingSelectorCheck(third.next, report, 4000);
+    assert.equal(fourth.promoted, false);
+    assert.equal(fourth.record?.count, 4);
+    assert.equal(fourth.record?.promoted, true);
+
+    // Different missing field still shares the site-level signature.
+    const differentMissing = module.registerPendingSelectorCheck(first.next, {
       siteId: "claude",
       missing: [
         {
@@ -3191,17 +3206,42 @@ async function main() {
           selector: "button[aria-label='Send']",
         },
       ],
-    }, 3000);
-    assert.equal(withDifferentSignature.promoted, false);
+    }, 5000);
+    assert.equal(differentMissing.promoted, false);
+    assert.equal(differentMissing.signature, "claude");
+    assert.equal(differentMissing.record?.count, 2);
     assert.equal(
       Object.keys(
         module.clearPendingSelectorChecksForService(
-          withDifferentSignature.next,
+          differentMissing.next,
           "claude",
         ),
       ).length,
       0,
     );
+  });
+
+  await runStep("selector alert signature is site-level and cooldown-aware", async () => {
+    const module = await loadBundledModule("src/background/app/selector-alerts.ts", createChromeMock());
+
+    assert.equal(
+      module.buildSelectorAlertSignature({
+        siteId: "chatgpt",
+        missing: [{ field: "inputSelector", selector: "#prompt-textarea" }],
+      }),
+      "chatgpt",
+    );
+    assert.equal(
+      module.buildSelectorAlertSignature({
+        siteId: "chatgpt",
+        missing: [{ field: "submitSelector", selector: "button[data-testid='send-button']" }],
+      }),
+      "chatgpt",
+    );
+
+    assert.equal(module.shouldAllowSelectorNotification(undefined, 10_000, 3_600_000), true);
+    assert.equal(module.shouldAllowSelectorNotification(1_000, 10_000, 3_600_000), false);
+    assert.equal(module.shouldAllowSelectorNotification(1_000, 4_000_000, 3_600_000), true);
   });
 
   await runStep("reset helper clears local and session runtime state", async () => {
