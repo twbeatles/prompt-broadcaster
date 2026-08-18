@@ -1,623 +1,318 @@
-# AI Prompt Broadcaster
+# 🚀 AI Prompt Broadcaster
 
-> Broadcast one prompt to multiple AI chat services from a single Chrome extension popup.
->
-> 하나의 프롬프트를 여러 AI 서비스에 동시에 전송하는 Chrome 확장 프로그램입니다.
+> **하나의 프롬프트로 여러 AI 서비스에 동시 전송!**  
+> API 키나 별도 백엔드 없이, 이미 로그인된 브라우저에서 ChatGPT, Claude, Gemini, Grok, Perplexity 등으로 프롬프트를 한 번에 방송하고 답변을 비교하세요.
 
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-4285F4?logo=googlechrome&logoColor=white)](https://developer.chrome.com/docs/extensions/)
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-34A853)](https://developer.chrome.com/docs/extensions/develop/migrate/what-is-mv3)
-[![MIT License](https://img.shields.io/badge/License-MIT-black.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/status-best--effort-orange)](#supported-ai-services--지원-ai-서비스)
-
-## Table of Contents
-- [한국어](#한국어)
-- [English](#english)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Local First](https://img.shields.io/badge/Privacy-100%25%20Local-success)](#-개인정보-보호-및-보안)
 
 ---
 
-## 한국어
-
-### 소개
-`AI Prompt Broadcaster`는 팝업에서 한 번 입력한 프롬프트를 ChatGPT, Gemini, Claude, Grok, Perplexity로 동시에 전송하는 Chrome Manifest V3 확장 프로그램입니다.
-
-백엔드나 API 키 없이, 사용자가 이미 로그인한 각 AI 웹앱의 DOM 입력창에 직접 프롬프트를 주입하는 방식으로 동작합니다.
-
-현재 소스 코드는 `src/` 아래 TypeScript 모듈로 관리됩니다. Chrome에는 `dist/` 산출물을 기본으로 로드하고, 루트 런타임 JS는 `npm run build`가 함께 동기화하는 generated mirror입니다. `src/*/main.ts`는 얇은 composition root로 유지되고, 실제 런타임은 `src/background/{commands,context-menu,messages,popup,runtime,selection,session,tabs}`, `src/options/{core,features}`, `src/popup/{app,compose,favorites,history,overlays,services,ui}`, `src/content/palette/*`, `src/shared/*`, `scripts/qa-smoke/*`, `popup/styles/partials`, `options/styles/partials`처럼 기능 기준으로 분리되어 있습니다.
-최근 분할 기준으로도 조립용 배럴 파일은 유지하되, `src/background/app/bootstrap/{app,context,utils,tab-targets,runtime-events}.ts`, `src/background/app/{comparison,experiments,injection}/*`, `src/background/popup/favorites-workflow/{entrypoints,run-jobs,messages}.ts`, `src/popup/app/{bootstrap,i18n,rendering}/*`, `src/popup/favorites/controller/*`, `src/options/features/{experiments,services}/*`, `src/shared/prompts/normalizers/*`, `src/shared/sites/normalizers/*`처럼 책임이 하위 디렉터리로 더 세분화되어 있습니다.
-
-빌드 및 패키징 절차는 [docs/build-guide.md](docs/build-guide.md), 현재 구조 설명은 [docs/extension-architecture.md](docs/extension-architecture.md)를 참고하세요.
-
-### 주요 기능
-- 하나의 프롬프트를 여러 AI 서비스로 한 번에 방송
-- **다크 모드 + 팝업 키보드 단축키** – `Ctrl/Cmd+Enter`, `Ctrl/Cmd+Shift+Enter`, `Ctrl/Cmd+1..4`, `Esc` 등 지원
-- 전송 성공 프롬프트 히스토리 자동 저장
-- 즐겨찾기 저장, 제목 편집, 제목/본문/태그/폴더 검색
-- **저장형 체인 즐겨찾기** – 단계별 지연시간과 단계별 대상 서비스 override를 가진 chain favorite 실행
-- **즐겨찾기 예약 실행** – one-time / daily / weekday / weekly 예약과 options `Schedules` 목록 제공
-- **빠른 팔레트** – `Alt+Shift+F`로 현재 페이지 위에서 즐겨찾기 검색 및 즉시 실행, 필요 시 popup 폴백
-- **즐겨찾기 태그·폴더·핀 시스템** – 태그와 폴더로 즐겨찾기를 분류하고, 중요 항목을 상단 고정
-- **즐겨찾기 복제 + 정렬 옵션** – 최근 사용순, 사용 횟수순, 제목순, 생성일순 정렬과 복제 저장 지원
-- **서비스 순서 커스터마이징** – options `Services`에서 `Move up` / `Move down`으로 서비스 표시 순서를 저장하고 popup·favorite editor·options에 동일 반영
-- **히스토리 재전송 선택 + 옵션 일괄 삭제** – 원래 대상 기준 재전송 모달, 선택 삭제, 7/30/90일 이전 빠른 삭제
-- **AI 응답 저장** – 전송 후 보이는 AI 응답을 로컬 히스토리에 자동 저장하고, popup/options 히스토리에서 서비스별로 다시 확인
-- **프롬프트 실험 매트릭스** – variants × variable sets 조합을 미리 계산하고, 기본 soft 10개 / hard 30개 전송 제한으로 대량 실행을 제어
-- **템플릿 팩과 서비스 그룹** – options에서 템플릿 팩 export/import와 서비스 그룹 저장/선택을 관리
-- **단순 Dashboard** – 최근 전송, 최근 성공률, 저장된 응답 수, 확인 필요 서비스를 먼저 표시하고 상세 통계는 접힘 영역으로 제공
-- **예약 실행 결과 요약** – options `Schedules`에서 최근 scheduled 실행 시각, 상태, 실패 상세를 별도로 확인 가능
-- **서비스별 프롬프트 오버라이드** – 서비스 카드마다 메인 프롬프트와 다른 별도 프롬프트를 지정 가능
-- 히스토리/즐겨찾기/템플릿 캐시/설정/서비스 구성을 JSON으로 내보내기 및 가져오기 (`v9`, 체인/예약 메타, 재전송 스냅샷, 구조화된 selector verification metadata, `supportedRoutes`, 비교 노트, 실험, 템플릿 팩, 서비스 그룹, `{{counter}}` 포함)
-- **상세 import 리포트 + 구조화된 전송 결과 코드** – 권한 거부/ID 재작성/built-in 보정 내역과 서비스별 결과 코드 표시
-- **확장 템플릿 변수** – `{{url}}`, `{{title}}`, `{{selection}}`, `{{counter}}`, `{{random}}` 등 9개 이상의 시스템 변수 지원
-- Chrome MV3 기반, 백엔드 없음
-- `chrome.scripting.executeScript` 기반 동적 주입
-- 사이트별 셀렉터와 전략을 `src/config/sites/builtins.ts`에서 중앙 관리
-- 모든 5개 built-in 서비스(ChatGPT, Gemini, Claude, Grok, Perplexity)는 selector check 단계에서 `input-and-conditional-submit` semantics를 사용해 empty composer false negative를 줄입니다.
-- Perplexity는 `#ask-input[data-lexical-editor='true']`를 최우선으로 잡고, `MAIN` world에서 Lexical 상태를 갱신한 뒤 기존 submit 경로로 전송
-- **전역 대기 배율(wait multiplier)** 과 서비스별 적응형 주입 전략 통계(내부 저장) 지원
-- 입력 실패 시 클립보드 복사 + 비차단 폴백 배너 제공
-- 셀렉터가 깨졌을 때 자동 진단 및 알림, **GitHub 이슈 신고 버튼** 제공
-- 개발자용 셀렉터 탐지 스크립트 제공
-- **옵션 페이지 히스토리 상세에서 서비스별 전송 결과 비교 뷰** 제공
-
-### 지원 AI 서비스
-
-| 서비스 | URL | 주입 방식 | 현재 상태 |
-|---|---|---|---|
-| ChatGPT | `https://chatgpt.com/` | `contenteditable` + 버튼 클릭 | 지원, Best effort |
-| Gemini | `https://gemini.google.com/app` | `contenteditable` + 버튼 클릭 | 지원, Best effort |
-| Claude | `https://claude.ai/new` | `contenteditable` + 버튼 클릭 | 지원, Best effort |
-| Grok | `https://grok.com/` | `textarea` 우선 + 버튼 클릭 | 지원, Best effort |
-| Perplexity | `https://www.perplexity.ai/` | `contenteditable` + 버튼 클릭 | 지원, Best effort |
-
-`Best effort`는 대상 사이트의 DOM 구조 변경, 로그인 상태, 반자동화 정책에 따라 주입 성공률이 달라질 수 있음을 의미합니다.
-
-Perplexity 참고:
-- 일반 `contenteditable`처럼 보이지만 실제로는 Lexical editor이므로, broad selector 대신 `#ask-input[data-lexical-editor='true']`를 우선 사용합니다.
-- 입력은 page-owned editor state와 맞추기 위해 `MAIN` world에서 처리하고, 발신은 기존 click-submit 경로를 유지합니다.
-
-### 이런 분께 좋아요
-- 같은 프롬프트를 여러 AI에 동시에 보내고 답변을 비교하고 싶은 사용자
-- 반복적으로 프롬프트를 테스트하는 프롬프트 엔지니어와 개발자
-- 여러 AI 탭을 일일이 열고 붙여넣는 작업을 줄이고 싶은 사용자
-
-### 설치 방법
-#### 1. 저장소 준비
-```bash
-git clone https://github.com/twbeatles/prompt-broadcaster.git
-cd prompt-broadcaster
-npm install
-npm run build
-```
-
-#### 2. Chrome에서 확장 프로그램 로드
-1. Chrome 주소창에 `chrome://extensions` 입력 후 이동합니다.
-   스크린샷 자리표시자: `docs/assets/install-step-1-extensions-page.png`
-2. 우측 상단의 `개발자 모드`를 켭니다.
-   스크린샷 자리표시자: `docs/assets/install-step-2-developer-mode.png`
-3. `압축해제된 확장 프로그램을 로드합니다`를 클릭합니다.
-   스크린샷 자리표시자: `docs/assets/install-step-3-load-unpacked.png`
-4. 이 프로젝트의 `dist` 폴더를 선택합니다.
-   스크린샷 자리표시자: `docs/assets/install-step-4-select-folder.png`
-5. 확장 프로그램이 목록에 표시되고 에러가 없는지 확인합니다.
-   스크린샷 자리표시자: `docs/assets/install-step-5-extension-loaded.png`
-
-### 사용 방법
-1. Chrome 툴바에서 `AI Prompt Broadcaster` 아이콘을 클릭합니다.
-2. 프롬프트를 입력합니다. `{{url}}`, `{{date}}` 같은 템플릿 변수를 사용할 수 있습니다.
-3. 전송할 AI 서비스를 선택합니다. 서비스 카드에서 ▸ 아이콘을 클릭하면 해당 서비스에만 적용할 별도 프롬프트를 지정할 수 있습니다.
-4. 필요하면 열린 탭 재사용/새 탭/특정 탭을 고르고, 히스토리/즐겨찾기 정렬 기준을 바꿉니다.
-5. `Send` 버튼을 누르거나 `Ctrl/Cmd+Enter`를 누릅니다.
-6. 전송 중에는 `Ctrl/Cmd+Shift+Enter` 또는 취소 버튼으로 중단할 수 있습니다.
-7. 선택한 서비스별 새 탭이 열리거나 재사용 탭이 선택되고, 각 사이트에서 자동 주입과 전송을 시도합니다.
-8. 실패한 경우 클립보드 복사 및 수동 전송 안내 배너가 표시됩니다.
-9. 히스토리 재전송 시에는 서비스 선택 모달에서 일부 서비스만 골라 다시 보낼 수 있습니다.
-10. 즐겨찾기는 단일 프롬프트뿐 아니라 chain favorite과 예약 favorite으로 저장할 수 있습니다.
-11. `Alt+Shift+F` 빠른 팔레트로 현재 페이지 위에서 즐겨찾기를 검색해 바로 실행할 수 있습니다.
-12. 옵션 페이지 히스토리에서 **상세 보기**를 누르면 서비스별 성공/실패 결과를 한눈에 확인할 수 있습니다.
-
-GIF 자리표시자: `docs/assets/usage-demo.gif`
-
-### 제한 사항
-- 각 AI 서비스에 미리 로그인되어 있어야 정상 동작합니다.
-- 이 확장 프로그램은 각 사이트의 DOM 구조와 입력창 셀렉터에 의존하므로, 사이트 UI가 바뀌면 자동 주입이 일시적으로 깨질 수 있습니다.
-- 일부 서비스는 자동화 또는 합성 입력 이벤트를 제한할 수 있어, 환경에 따라 수동 붙여넣기 폴백이 사용될 수 있습니다.
-- 지원 상태는 `Best effort`이며, 모든 환경에서 100% 동작을 보장하지는 않습니다.
-
-### 개인정보 및 데이터 처리
-- 이 프로젝트는 별도 백엔드를 사용하지 않습니다.
-- 프롬프트 전송은 사용자의 브라우저에서 직접 대상 AI 서비스 탭으로 수행됩니다.
-- 히스토리와 즐겨찾기 데이터는 브라우저 로컬 저장소에 보관됩니다.
-- API 키를 요구하지 않으며, 별도 서버를 통해 프롬프트를 중계하지 않습니다.
-
-### 템플릿 변수
-프롬프트에 `{{변수명}}` 형태로 값을 자동 치환할 수 있습니다.
-
-**시스템 변수 (자동 채워짐)**
-
-| 변수 | 한국어 별칭 | 설명 |
-|---|---|---|
-| `{{date}}` | `{{날짜}}` | 오늘 날짜 |
-| `{{time}}` | `{{시간}}` | 현재 시각 |
-| `{{weekday}}` | `{{요일}}` | 요일 |
-| `{{clipboard}}` | `{{클립보드}}` | 클립보드 텍스트 |
-| `{{url}}` | `{{주소}}` | 현재 탭 URL |
-| `{{title}}` | `{{제목}}` | 현재 탭 제목 |
-| `{{selection}}` | `{{선택}}` | 현재 탭에서 선택한 텍스트 |
-| `{{counter}}` | `{{카운터}}` | 최소 1개 타깃이 정상 큐잉된 방송 누적 횟수 |
-| `{{random}}` | `{{랜덤}}` | 1–1000 랜덤 숫자 |
-
-**사용자 변수** – `{{topic}}`처럼 임의 이름을 사용하면 팝업에서 값을 입력하는 모달이 열립니다.
-
-### 즐겨찾기 태그·폴더·핀
-- 즐겨찾기 항목의 `···` 메뉴 → **태그 및 폴더 편집**으로 쉼표 구분 태그와 폴더명을 입력합니다.
-- 같은 메뉴에서 **상단 고정** / **고정 해제**로 중요 항목을 목록 최상단에 고정합니다.
-- 같은 메뉴에서 **복제**를 누르면 `[복사]` 접두어가 붙은 새 즐겨찾기를 만들 수 있습니다.
-- 즐겨찾기 패널 상단의 태그·폴더 칩을 클릭하면 해당 항목만 필터링됩니다.
-- 즐겨찾기 검색창은 제목, 본문, 태그, 폴더명을 함께 검색합니다. `#태그명` 형태 검색도 지원합니다.
-- 즐겨찾기 정렬은 최근 사용순, 사용 횟수순, 제목순, 생성일순을 지원하며, pinned 그룹 내부에만 정렬이 적용됩니다.
-
-### 즐겨찾기 체인·예약·빠른 팔레트
-- 즐겨찾기 편집기에서 `Single` / `Chain` 모드를 전환할 수 있고, chain 모드에서는 단계 추가, 순서 이동, 단계별 지연시간, 단계별 대상 서비스 override를 설정할 수 있습니다.
-- chain 단계의 대상 서비스를 비워 두면 해당 단계는 즐겨찾기 기본 대상 서비스를 그대로 상속합니다.
-- chain favorite은 각 단계를 순차 실행하며, 한 단계라도 `submitted`가 아닌 결과가 나오면 즉시 중단됩니다.
-- 예약은 즐겨찾기 단위로 저장되며, `One time`, `Daily`, `Weekdays`, `Weekly` 반복 규칙을 지원합니다.
-- 예약 실행은 `{{date}}`, `{{time}}`, `{{weekday}}`, `{{random}}`, `{{counter}}`만 자동 해석합니다. `{{url}}`, `{{title}}`, `{{selection}}`, `{{clipboard}}`가 필요하면 해당 예약 실행은 실패 히스토리를 남기고 건너뜁니다.
-- popup에서 실행되는 즐겨찾기는 `{{url}}`, `{{title}}`, `{{selection}}`, `{{clipboard}}`를 먼저 준비한 뒤 background job으로 넘깁니다. quick palette/options에서 popup fallback이 발생해도 popup이 자동으로 이어서 실행을 재시도합니다.
-- 즐겨찾기 실행은 background job으로 즉시 큐잉되고, 같은 즐겨찾기의 `queued/running` 실행만 dedupe합니다. 완료/실패 직후 재실행은 다시 허용됩니다. 팝업과 options `Schedules`에는 최근 job의 `queued/running/done/failed` 상태가 간단히 표시됩니다.
-- 옵션 페이지 `Schedules` 섹션에서 예약된 즐겨찾기만 모아 보고, 활성화 토글, `Run now`, `Edit in popup`을 사용할 수 있습니다. 최근 **scheduled** 실행은 manual run과 분리되어 시각, 상태, 대표 실패 상세를 따로 표시합니다.
-- `Alt+Shift+F` 빠른 팔레트는 shadow root 오버레이로 동작하며, popup 즐겨찾기 검색과 같은 로직으로 제목/본문/태그/폴더 및 `#tag` 검색을 지원합니다. 즉시 해석 가능한 즐겨찾기는 바로 실행하고 추가 입력이 필요하면 popup으로 handoff합니다.
-
-### 옵션 Dashboard와 서비스 순서
-- options `Dashboard`는 최근 전송, 최근 성공률, 저장된 AI 응답, 확인 필요 항목을 먼저 보여주고, 사용 비율/최근 7일/실패 원인은 접힌 고급 통계로 낮췄습니다.
-- options `Services` 섹션의 `Move up` / `Move down`은 `appSettings.siteOrder`로 저장되며 popup compose 서비스 카드, favorite editor 대상 체크리스트, options 서비스 목록 순서에 동일하게 반영됩니다.
-
-### 팝업 단축키와 정렬
-- `Ctrl/Cmd+Enter`는 전송, `Ctrl/Cmd+Shift+Enter`는 현재 방송 취소입니다.
-- `Ctrl/Cmd+1..4`는 작성/히스토리/즐겨찾기/설정 탭을 전환합니다.
-- `Esc`는 열린 모달이나 메뉴를 닫습니다.
-- 작성 탭에서 포커스가 입력창 밖에 있을 때만 `Ctrl/Cmd+A`가 전체 서비스 선택/해제로 동작하고, 입력창 안에서는 브라우저 기본 전체 선택을 유지합니다.
-- 히스토리와 즐겨찾기 목록은 키보드 roving focus 탐색을 지원하며, 각각 정렬 드롭다운으로 표시 순서를 바꿀 수 있습니다.
-- 팝업을 다시 열면 마지막 전송 프롬프트가 아니라 현재 작성 중이던 draft가 우선 복원되고, popup handoff 프롬프트는 one-shot intent로 한 번만 주입됩니다.
-
-### 서비스별 프롬프트 오버라이드
-서비스 카드에서 **Custom prompt for this service** 토글을 켜면 해당 서비스에만 전송할 별도 프롬프트를 입력할 수 있습니다. 비워두면 메인 프롬프트가 사용됩니다.
-메인 프롬프트와 서비스별 오버라이드는 모두 같은 템플릿 변수 해석 경로를 타며, 재시도와 히스토리 재전송 시에도 최초 전송 시점의 서비스별 resolved prompt snapshot이 그대로 재사용됩니다.
-
-### 커스텀 서비스 권한
-- 커스텀 서비스는 `url`과 `hostnameAliases`에서 파생된 모든 origin에 대해 optional host permission을 확인합니다.
-- 저장 또는 JSON import 시 필요한 origin 중 하나라도 거부되면 해당 커스텀 서비스는 부분 적용되지 않고 전체가 거부됩니다.
-- 커스텀 서비스를 삭제하거나 서비스 설정을 리셋하거나 JSON import로 교체하면, 더 이상 어떤 커스텀 서비스도 사용하지 않는 origin permission만 자동 회수합니다.
-- `{{counter}}`는 팝업 미리보기에서는 다음 값처럼 보이지만, 실제 저장값은 최소 1개 타깃이 큐잉된 방송에서만 증가하며 export/import/reset과 함께 관리됩니다.
-
-### 셀렉터 오류 신고
-셀렉터 경고(⚠)가 표시된 서비스는 설정 탭의 서비스 관리 카드에 **Report issue** 링크가 표시됩니다. 클릭하면 해당 서비스의 GitHub 이슈 검색 페이지가 열립니다.
-proactive selector checker의 첫 번째 미검출은 같은 브라우저 세션 안의 pending 상태로만 보관되고, 같은 서비스/같은 missing signature가 다시 발생하거나 실제 injector가 selector를 못 찾았을 때만 popup 경고와 OS 알림으로 승격됩니다.
-
-### 전송 결과 비교 뷰
-옵션 페이지(`chrome://extensions` → AI Prompt Broadcaster → 세부정보 → 확장 옵션) 히스토리 탭에서 특정 전송 기록을 클릭하면 모달 하단에 서비스별 전송 결과(✅ 성공 / ❌ 실패 / ⏳ 요청만)가 카드 형태로 나열됩니다.
-
-서비스별 결과는 문자열 한 개가 아니라 구조화된 결과 코드로 저장됩니다. 현재 주요 코드는 `submitted`, `selector_timeout`, `auth_required`, `submit_failed`, `strategy_exhausted`, `injection_timeout`, `cancelled`, `unexpected_error` 등입니다.
-
-### 가져오기/내보내기와 상세 리포트
-- JSON export는 항상 `version: 9`로 기록됩니다.
-- import는 `v1 -> v2 -> v3 -> v4 -> v5 -> v6 -> v7 -> v8 -> v9` 단계형 마이그레이션을 거쳐 기존 데이터를 정규화합니다.
-- `v9`은 구조화된 selector verification metadata(`verifiedAt`, `verifiedRoute`, `verifiedAuthState`, `verifiedLocale`, `verifiedVersion`), 서비스별 `supportedRoutes`, 비교 노트(`comparisonNotes`), 프롬프트 실험(`promptExperiments`), 템플릿 팩(`templatePacks`), 서비스 그룹(`serviceGroups`)을 유지합니다. legacy `lastVerified`는 호환용 month 필드로 남고, `verifiedAt`가 있으면 `YYYY-MM`으로 자동 derive됩니다. `v8` 이하 payload는 새 v9 컬렉션을 빈 배열로 보강합니다.
-- popup과 options 모두 import 직후 상세 리포트 모달을 띄워 적용된 서비스, 거부된 서비스, 권한 거부 origin, ID 재작성, alias 검증 오류, built-in 보정 내역을 보여줍니다.
-
-### Reset data
-옵션 페이지의 **Reset data**는 background worker를 통해 실행됩니다. 진행 중인 방송을 먼저 정리한 뒤 히스토리, 즐겨찾기, 템플릿 캐시, 커스텀 서비스, `composeDraftPrompt`, `lastSentPrompt`, 전략 통계(`strategyStats`) 같은 local 데이터뿐 아니라 `pendingBroadcasts`, `pendingInjections`, `pendingSelectorChecks`, `pendingUiToasts`, `lastBroadcast`, `popupPromptIntent`, `favoriteRunJobs` 같은 session/runtime 상태도 함께 초기화합니다.
-
-### 새 AI 서비스 추가 방법
-기본 내장 서비스 추가는 `src/config/sites/builtins.ts`에 새 항목을 추가하는 것입니다. `src/config/sites.ts`는 하위 호환용 re-export만 담당합니다.
-
-예시:
-
-```js
-{
-  id: "newai",
-  name: "NewAI",
-  url: "https://newai.example.com/",
-  hostname: "newai.example.com",
-  supportedRoutes: ["/chat"],
-  inputSelector: "textarea[name='prompt']",
-  inputType: "textarea",
-  submitSelector: "button[type='submit']",
-  submitMethod: "click",
-  waitMs: 2000,
-  fallback: true,
-  authSelectors: [
-    "a[href*='login']",
-    "input[type='password']"
-  ]
-}
-```
-
-추가 체크사항:
-- 기존 도메인이 아니라면 [manifest.json](manifest.json)의 `host_permissions`와 `content_scripts.matches`에도 새 도메인을 추가해야 합니다.
-- `inputSelector`는 가능한 한 안정적인 `id`, `data-testid`, `aria-label` 기반으로 잡는 것이 좋습니다.
-- `supportedRoutes`는 selector checker와 열린 탭 재사용 preflight가 공통으로 쓰는 pathname prefix allowlist입니다. 비워 두면 전체 경로를 허용합니다.
-- `waitMs`는 너무 짧게 잡지 말고 hydration 이후를 고려해 설정하세요.
-- 변경 후 `npm run build`를 다시 실행해 `dist/`를 갱신하세요.
-- 릴리스 전에는 [docs/selector-verification-2026-07-22.md](docs/selector-verification-2026-07-22.md) 같은 selector verification 증적을 갱신해 auth route, canonical route, locale, prompt surface, submit surface를 다시 검증하세요.
-
-### 셀렉터가 깨졌을 때 직접 수정하는 방법
-1. 문제 사이트를 Chrome에서 엽니다.
-2. DevTools를 엽니다.
-3. [tools/find_selector.js](tools/find_selector.js) 내용을 콘솔에 붙여넣고 실행합니다.
-4. 콘솔에 출력된 후보 셀렉터와 추천 스니펫을 확인합니다.
-5. [builtins.ts](src/config/sites/builtins.ts)에서 해당 서비스의 `inputSelector`, `submitSelector`, `inputType`을 수정합니다.
-6. `npm run build`를 실행한 뒤 `chrome://extensions`에서 `dist` 확장 프로그램을 새로고침합니다.
-
-참고:
-- [`src/content/selector-checker/`](src/content/selector-checker) 모듈이 셀렉터 미검출과 인증 페이지 상태를 백그라운드로 보고합니다.
-- 로그인 페이지로 리다이렉트된 경우에는 셀렉터가 정상이어도 자동 주입이 동작하지 않습니다.
-
-### 기여 가이드라인
-- 이슈를 열 때는 대상 서비스, URL, 로그인 상태, 실패 증상을 함께 적어주세요.
-- 셀렉터 수정 PR에는 가능한 경우 DOM 스냅샷이나 DevTools 캡처를 포함해주세요.
-- 새 서비스 추가 시 `src/config/sites/builtins.ts`, `manifest.json`, README의 서비스 표를 함께 업데이트해주세요.
-- 사이트별 하드코딩보다 설정 기반 수정이 우선입니다.
-- PR 설명에는 재현 방법과 확인 결과를 포함해주세요.
-
-### 라이선스
-MIT
+## 📌 목차
+1. [소개 및 핵심 가치](#-소개-및-핵심-가치)
+2. [지원 AI 서비스](#-지원-ai-서비스)
+3. [설치 방법](#-설치-방법)
+4. [빠른 시작 가이드 (기본 사용법)](#-빠른-시작-가이드-기본-사용법)
+5. [상세 기능 사용 가이드](#-상세-기능-사용-가이드)
+   - [1. 탭 라우팅 & 스마트 탭 재사용](#1-탭-라우팅--스마트-탭-재사용)
+   - [2. 스마트 템플릿 변수 시스템](#2-스마트-템플릿-변수-시스템)
+   - [3. 서비스별 프롬프트 오버라이드](#3-서비스별-프롬프트-오버라이드-custom-prompt-override)
+   - [4. 즐겨찾기(Favorites) 관리 & 태그·폴더·핀](#4-즐겨찾기favorites-관리--태그폴더핀)
+   - [5. 다단계 체인(Chain) 자동화](#5-다단계-체인chain-자동화)
+   - [6. 스케줄링 및 예약 실행 (Schedules)](#6-스케줄링-및-예약-실행-schedules)
+   - [7. 웹서핑 중 어디서나 호출하는 빠른 팔레트 (`Alt+Shift+F`)](#7-웹서핑-중-어디서나-호출하는-빠른-팔레트-altshiftf)
+   - [8. AI 응답 로컬 수집 및 전송 결과 비교 뷰](#8-ai-응답-로컬-수집-및-전송-결과-비교-뷰)
+   - [9. 프롬프트 실험 매트릭스 (Experiment Matrix)](#9-프롬프트-실험-매트릭스-experiment-matrix)
+   - [10. 템플릿 팩 & 서비스 그룹 관리](#10-템플릿-팩--서비스-그룹-관리)
+   - [11. 커스텀 AI 사이트 추가 & 셀렉터 관리](#11-커스텀-ai-사이트-추가--셀렉터-관리)
+   - [12. 데이터 백업 / 복원 (JSON v9) & 초기화](#12-데이터-백업--복원-json-v9--초기화)
+6. [⌨️ 키보드 단축키 모음](#️-키보드-단축키-모음)
+7. [🔒 개인정보 보호 및 보안](#-개인정보-보호-및-보안)
+8. [🛠️ 문제 해결 및 FAQ](#️-문제-해결-및-faq)
+9. [💻 개발 및 테스트 가이드](#-개발-및-테스트-가이드)
+10. [라이선스](#-라이선스)
 
 ---
 
-## English
+## 💡 소개 및 핵심 가치
 
-### Overview
-`AI Prompt Broadcaster` is a Chrome Manifest V3 extension that sends a single prompt to ChatGPT, Gemini, Claude, Grok, and Perplexity from one popup UI.
+`AI Prompt Broadcaster`는 여러 AI 웹 서비스에 동일한 질문을 반복해서 복사/붙여넣기하는 번거로움을 해결하기 위해 제작된 **Chrome Manifest V3 확장 프로그램**입니다.
 
-It works without a backend or API keys by injecting prompts directly into each AI web app's input surface after the target tab loads.
+- **Zero API Key & Zero Backend**: 별도의 유료 API 키나 외부 중계 서버가 필요 없습니다. 사용자가 브라우저에서 이미 로그인해둔 웹 계정 세션을 그대로 활용합니다.
+- **Direct DOM Injection**: 각 AI 웹 서비스의 입력창(DOM)에 프롬프트를 안전하게 직접 주입하고 전송합니다.
+- **All 5 built-in services**: ChatGPT, Gemini, Claude, Grok, Perplexity의 5개 주요 AI 서비스를 기본 내장 지원하며, 최신 웹 UI에 맞춘 적응형 주입 전략을 제공합니다.
+- **Local-First Architecture**: 프롬프트 히스토리, 즐겨찾기, AI 응답 수집 데이터 등 모든 정보는 사용자의 브라우저 로컬 저장소(`chrome.storage.local`)에만 안전하게 보관됩니다.
 
-The source of truth lives in `src/` as TypeScript modules. Chrome should load the built `dist/` output, and the root runtime JS files are generated mirrors refreshed by `npm run build`. The runtime entrypoints in `src/*/main.ts` stay intentionally thin while the implementation is split by feature into modules such as `src/background/{commands,context-menu,messages,popup,runtime,selection,session,tabs}`, `src/options/{core,features}`, `src/popup/{app,compose,favorites,history,overlays,services,ui}`, `src/content/palette/*`, `src/shared/*`, `scripts/qa-smoke/*`, and CSS partials under `popup/styles/partials` and `options/styles/partials`.
-The recent refactor keeps the public barrel files stable while pushing concrete responsibilities into nested folders such as `src/background/app/bootstrap/{app,context,utils,tab-targets,runtime-events}.ts`, `src/background/app/{comparison,experiments,injection}/*`, `src/background/popup/favorites-workflow/{entrypoints,run-jobs,messages}.ts`, `src/popup/app/{bootstrap,i18n,rendering}/*`, `src/popup/favorites/controller/*`, `src/options/features/{experiments,services}/*`, `src/shared/prompts/normalizers/*`, and `src/shared/sites/normalizers/*`.
+---
 
-For build and packaging steps, see [docs/build-guide.md](docs/build-guide.md). For the current architecture, see [docs/extension-architecture.md](docs/extension-architecture.md).
+## 🌐 지원 AI 서비스
 
-### Key Features
-- Broadcast one prompt to multiple AI services from one popup
-- **Dark mode plus popup keyboard shortcuts** — includes `Ctrl/Cmd+Enter`, `Ctrl/Cmd+Shift+Enter`, `Ctrl/Cmd+1..4`, and `Esc`
-- Discover already-open AI tabs in the current window and reuse them by default
-- Choose a specific open tab, force a new tab, or keep the default routing per service from the popup
-- Automatic prompt history for successful broadcasts
-- Favorites with editable titles and search across title, text, tags, and folders
-- **Saved chain favorites** — build multi-step favorites with per-step delay and target overrides
-- **Scheduled favorite runs** — store one-time or repeating schedules on favorites and manage them from the options `Schedules` surface
-- **Quick palette overlay** — press `Alt+Shift+F` to search favorites on the current page and run them immediately when all inputs are resolvable
-- **Favorites tag, folder, and pin system** — categorize saved prompts with tags and folders; pin important ones to the top
-- **Favorite duplication and sort controls** — duplicate saved prompts and sort by recent use, usage count, title, or creation date
-- **Custom service ordering** — reorder service cards from the options `Services` section with `Move up` / `Move down`, and reuse that order across popup, favorite editor, and options
-- **History resend selection and bulk delete tools** — choose a subset of the original services when replaying history, with stale specific-tab targets disabled until you reselect them, and delete selected or aged entries from options
-- **AI response capture** — after a send completes, visible service responses can be captured automatically into local history; popup history and options history detail show saved responses per service
-- **Prompt experiment matrix** — preview variant × variable-set runs and enforce soft 10 / hard 30 broadcast limits before queueing
-- **Template packs and service groups** — manage reusable template pack export/import and saved service target groups from options
-- **Simple dashboard** — recent sends, recent success rate, saved AI responses, and only the services or responses that need attention
-- **Scheduled-run result summary** — the options `Schedules` section separates the last scheduled run from manual runs and surfaces its status plus representative failure detail
-- **Per-service prompt overrides** — assign a different prompt to individual service cards without changing the main prompt
-- JSON export/import for history, favorites, template cache, settings, and service configuration, including `broadcastCounter`, history resend snapshots, structured selector verification metadata, `supportedRoutes`, comparison notes, prompt experiments, template packs, service groups, and export `version: 9`; custom-site host permissions are requested in one batch before commit and denied origins abort the import before local data changes
-- History keeps requested, submitted, failed, and per-site snapshot prompt data so partial broadcasts can be replayed accurately
-- **Detailed import reports and structured result codes** — popup/options show rejected services, rewritten ids, built-in adjustments, service-level result codes, and selector verification metadata
-- **Extended template variables** — 9+ system variables including `{{url}}`, `{{title}}`, `{{selection}}`, `{{counter}}`, and `{{random}}`
-- Custom services can store fallback selectors, auth selectors, hostname aliases, and verification metadata
-- Pure MV3 extension, no backend required
-- Dynamic prompt injection using `chrome.scripting.executeScript`
-- Captured AI response text is stored locally in `comparisonNotes` and is not sent to developer-controlled servers
-- Central site configuration in `src/config/sites/builtins.ts`
-- All 5 built-in services (ChatGPT, Gemini, Claude, Grok, Perplexity) use `input-and-conditional-submit` selector-check semantics so empty composers do not fail preflight before a submit surface appears.
-- Perplexity prefers `#ask-input[data-lexical-editor='true']`, updates Lexical state from the page's `MAIN` world, and keeps the legacy submit path for dispatch
-- Global wait scaling (`waitMsMultiplier`) and internally persisted adaptive strategy stats improve reliability on slow or changing sites
-- Click-submit flows wait for the submit button to become enabled so async React editors can finish state updates before submission
-- Clipboard copy fallback and non-blocking banner on injection failure
-- Selector self-diagnostics with Chrome notifications; **Report issue button** appears in service management for affected services
-- **Broadcast result comparison view** in the options page history detail modal
-- Popup-open requests can fall back to a standalone extension window when Chrome cannot open the toolbar action popup from the background worker
-- Developer helper script for finding replacement selectors
-
-### Supported AI Services
-
-| Service | URL | Injection Method | Status |
+| 서비스 | 지원 URL | 주입 방식 | 기본 지원 상태 |
 |---|---|---|---|
-| ChatGPT | `https://chatgpt.com/` | `contenteditable` + click submit | Supported, Best effort |
-| Gemini | `https://gemini.google.com/app` | `contenteditable` + click submit | Supported, Best effort |
-| Claude | `https://claude.ai/new` | `contenteditable` + click submit | Supported, Best effort |
-| Grok | `https://grok.com/` | `textarea` first + click submit | Supported, Best effort |
-| Perplexity | `https://www.perplexity.ai/` | `contenteditable` + click submit | Supported, Best effort |
+| **ChatGPT** | `https://chatgpt.com/` | `contenteditable` 에디터 + 버튼 클릭/전송 | ✅ 지원 (Best effort) |
+| **Claude** | `https://claude.ai/new` | `contenteditable` 에디터 + 버튼 클릭/전송 | ✅ 지원 (Best effort) |
+| **Gemini** | `https://gemini.google.com/app` | `contenteditable` 에디터 + 버튼 클릭/전송 | ✅ 지원 (Best effort) |
+| **Grok** | `https://grok.com/` | `textarea` 우선 + 버튼 클릭/전송 | ✅ 지원 (Best effort) |
+| **Perplexity** | `https://www.perplexity.ai/` | Lexical 에디터(`MAIN` world) + 버튼 클릭/전송 | ✅ 지원 (Best effort) |
+| **Custom AI** | 사용자 지정 URL | 사용자 정의 CSS 셀렉터 기반 동적 주입 | ⚙️ 자유 확장 가능 |
 
-`Best effort` means injection can break when a target site changes its DOM, redirects to login, or blocks synthetic input events.
+> 📌 **참고 (Best effort)**: 본 확장 프로그램은 웹 서비스의 DOM 구조에 기반하므로, 대상 사이트의 UI 업데이트나 캡차/로그인 만료 등에 따라 주입 동작이 일시적으로 영향을 받을 수 있습니다. 셀렉터가 변경된 경우에도 자체 자가진단 및 커스텀 설정 기능을 통해 빠르게 대처할 수 있습니다.
 
-Perplexity note:
-- The visible composer is backed by a Lexical editor, so the extension prioritizes `#ask-input[data-lexical-editor='true']` over broader textbox selectors.
-- Text injection runs in the page `MAIN` world to stay in sync with Lexical state, while submission still uses the standard click-submit flow.
+---
 
-### Who This Is For
-- People who want to send the same prompt to multiple AI services and compare responses
-- Prompt engineers and developers running repeated prompt experiments
-- Users who want to avoid manually opening several AI tabs and pasting the same prompt over and over
+## 📦 설치 방법
 
-### Installation
-#### 1. Clone the repository
+### 1. 소스 코드 다운로드 및 빌드
 ```bash
+# 1. 저장소 복제
 git clone https://github.com/twbeatles/prompt-broadcaster.git
 cd prompt-broadcaster
+
+# 2. 의존성 패키지 설치
 npm install
+
+# 3. 확장 프로그램 빌드 (dist/ 생성)
 npm run build
 ```
 
-#### 2. Load the extension in Chrome
-1. Open `chrome://extensions`.
-   Screenshot placeholder: `docs/assets/install-step-1-extensions-page.png`
-2. Enable `Developer mode` in the top-right corner.
-   Screenshot placeholder: `docs/assets/install-step-2-developer-mode.png`
-3. Click `Load unpacked`.
-   Screenshot placeholder: `docs/assets/install-step-3-load-unpacked.png`
-4. Select the `dist` folder of this project.
-   Screenshot placeholder: `docs/assets/install-step-4-select-folder.png`
-5. Confirm that the extension loads without manifest errors.
-   Screenshot placeholder: `docs/assets/install-step-5-extension-loaded.png`
+### 2. Chrome 브라우저에 로드
+1. Chrome 브라우저 주소창에 `chrome://extensions`를 입력하여 이동합니다.
+2. 우측 상단의 **개발자 모드(Developer mode)** 토글을 켭니다.
+3. 좌측 상단의 **압축해제된 확장 프로그램을 로드합니다(Load unpacked)** 버튼을 클릭합니다.
+4. 빌드 완료된 본 프로젝트의 **`dist`** 폴더를 선택합니다.
+5. 확장 프로그램 목록에 `AI Prompt Broadcaster`가 정상적으로 표시되는지 확인합니다.
 
-### Usage
-1. Click the `AI Prompt Broadcaster` icon in the Chrome toolbar.
-2. Enter a prompt. System template variables like `{{url}}` or `{{date}}` are replaced automatically at send time.
-3. Select one or more target AI services.
-4. Optionally expand a service card to set a **per-service prompt override** that replaces the main prompt for that service only.
-5. Optionally choose `default behavior`, `always open a new tab`, or a specific already-open AI tab for each selected service.
-6. Click `Send` or press `Ctrl/Cmd+Enter`.
-7. Use `Ctrl/Cmd+Shift+Enter` to cancel an in-flight broadcast.
-8. The extension reuses matching tabs in the current window when that setting is enabled, otherwise it opens fresh tabs.
-9. Tabs are focused and processed in sequence so prompt injection can run against focus-sensitive editors more reliably.
-10. If automatic injection fails, a fallback banner appears and the prompt is copied to the clipboard when possible.
-11. Favorites can be saved as single prompts, scheduled runs, or multi-step chains.
-12. Press `Alt+Shift+F` to open the quick palette on the current page and search favorites without opening the popup first.
-13. Replaying a history item opens a service picker so you can resend only a subset of the originally requested services.
-14. Open the options page and use **Open details** on any history row to see a per-service result comparison (✅ / ❌ / ⏳) in the detail modal.
+---
 
-If a keyboard shortcut or notification tries to reopen the UI while Chrome has no active browser window, the extension stores a one-shot popup prompt intent first and falls back to a standalone popup window when needed.
+## ⚡ 빠른 시작 가이드 (기본 사용법)
 
-GIF placeholder: `docs/assets/usage-demo.gif`
+1. **AI 서비스 로그인**: 전송하고자 하는 대상 AI 서비스(ChatGPT, Claude 등)에 브라우저로 미리 로그인해 둡니다.
+2. **팝업 열기**: Chrome 툴바의 **AI Prompt Broadcaster 아이콘**을 클릭하거나 단축키 <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>P</kbd>를 누릅니다.
+3. **프롬프트 입력**: 상단 텍스트 영역에 전달할 질문이나 프롬프트를 작성합니다.
+4. **대상 서비스 선택**: 하단의 서비스 카드(ChatGPT, Claude, Gemini 등)를 클릭하여 활성화합니다.
+5. **동시 전송**: <kbd>Ctrl</kbd> / <kbd>Cmd</kbd> + <kbd>Enter</kbd>를 누르거나 **전송(Send)** 버튼을 클릭합니다.
+6. **자동 전송 완료**: 각 AI 탭이 순차적으로 포커스되며 프롬프트가 자동으로 입력 및 발송됩니다!
 
-### Tab Routing and Reuse
-- The popup can list currently open AI tabs in the active browser window and let you target a specific tab per service.
-- A reusable-tab setting is available in both the popup settings tab and the options page.
-- The default routing mode reuses a matching open AI tab before opening a new one when `reuseExistingTabs` is enabled.
-- Specific-tab targets are strict. If the selected tab disappears or no longer qualifies for reuse, the send/replay fails for that site instead of silently falling back to a different tab or a new tab.
-- Reuse candidates must still pass a lightweight preflight: matching service host, non-auth/non-settings route, visible editable prompt surface, and submit surface availability when the service requires click-submit.
-- Cancelling a broadcast closes only tabs opened by the current broadcast and leaves reused conversation tabs untouched.
+---
 
-### Template Variables
-Template prompts support both user-defined variables and built-in system variables.
+## 📖 상세 기능 사용 가이드
 
-**System variables (auto-filled)**
+### 1. 탭 라우팅 & 스마트 탭 재사용
+이미 열려 있는 AI 대화 탭을 불필요하게 새로 열지 않고 효율적으로 재사용할 수 있습니다.
 
-| Variable | Korean alias | Description |
-|---|---|---|
-| `{{date}}` | `{{날짜}}` | Today's date |
-| `{{time}}` | `{{시간}}` | Current time |
-| `{{weekday}}` | `{{요일}}` | Day of the week |
-| `{{clipboard}}` | `{{클립보드}}` | Clipboard text |
-| `{{url}}` | `{{주소}}` | Active tab URL |
-| `{{title}}` | `{{제목}}` | Active tab page title |
-| `{{selection}}` | `{{선택}}` | Text selected on the active tab |
-| `{{counter}}` | `{{카운터}}` | Cumulative count of broadcasts that queued at least one target |
-| `{{random}}` | `{{랜덤}}` | Random number between 1 and 1000 |
+- **기본 모드 (열린 탭 자동 재사용)**: 설정에서 `열린 탭 재사용`이 활성화되어 있으면, 현재 창에 열려 있는 해당 AI 사이트 탭을 찾아 프롬프트를 전송합니다.
+- **항상 새 탭 열기 (New Tab)**: 기존 대화와 섞이지 않고 완전히 새로운 세션에서 시작하고 싶을 때 선택합니다.
+- **특정 탭 지정 (Specific Tab)**: 서비스 카드의 드롭다운에서 현재 브라우저에 열려 있는 특정 AI 탭 번호/제목을 직접 선택하여 해당 대화창에만 전송할 수 있습니다.
+- **포커스 순차 처리**: React/Lexical 등 포커스 상태에 민감한 에디터 환경을 위해 탭을 순차적으로 활성화하여 주입 신뢰성을 극대화합니다.
 
-`url`, `title`, and `selection` are read from the active browser tab via the background service worker at send time.
+---
 
-**User variables** — any other `{{name}}` is treated as a user variable. The popup opens a fill-in modal and caches the entered values for reuse.
+### 2. 스마트 템플릿 변수 시스템
+프롬프트 내에 `{{변수명}}` 형태를 입력하면 전송 시점에 실시간 데이터로 자동 변환됩니다.
 
-### Favorites Tag, Folder, and Pin System
-- Open the `···` menu on any favorite entry and choose **Edit tags & folder** to assign comma-separated tags and a folder name (up to 50 characters).
-- Use **Pin to top** / **Unpin** from the same menu to keep important favorites at the top of the list.
-- Use **Duplicate** from the same menu to create a `[Copy]` clone of an existing favorite.
-- A filter bar above the favorites list shows tag and folder chips for one-click filtering.
-- The favorites search box matches title, body text, tags, and folder names. Queries like `#urgent` also match tags directly.
-- Favorite sorting supports recent use, usage count, title, and created date. Sorting is applied inside pinned and unpinned groups separately.
+#### 🛠️ 시스템 자동 변수 (자동 채워짐)
+| 변수 표기 | 한국어 별칭 | 치환 내용 | 활용 예시 |
+|---|---|---|---|
+| `{{url}}` | `{{주소}}` | 현재 보고 있는 웹페이지의 URL | `"다음 페이지 내용을 요약해줘: {{url}}"` |
+| `{{title}}` | `{{제목}}` | 현재 보고 있는 웹페이지의 제목 | `"[{{title}}] 글의 주요 시사점을 분석해줘."` |
+| `{{selection}}` | `{{선택}}` | 웹페이지에서 드래그하여 선택한 텍스트 | `"선택한 문장을 교정해줘: {{selection}}"` |
+| `{{clipboard}}` | `{{클립보드}}` | 현재 클립보드에 복사된 텍스트 | `"클립보드 코드를 리팩토링해줘: {{clipboard}}"` |
+| `{{date}}` | `{{날짜}}` | 오늘 날짜 (`YYYY-MM-DD`) | `"{{date}} 기준 일일 업무 보고서 템플릿 작성"` |
+| `{{time}}` | `{{시간}}` | 현재 시각 (`HH:mm:ss`) | `"현재 시각: {{time}}"` |
+| `{{weekday}}` | `{{요일}}` | 오늘 요일 (예: `월요일`, `Monday`) | `"{{weekday}} 회의 안건 정리"` |
+| `{{counter}}` | `{{카운터}}` | 성공적으로 큐잉된 누적 전송 횟수 | `"테스트 케이스 #{{counter}}"` |
+| `{{random}}` | `{{랜덤}}` | 1~1000 사이의 난수 | `"임의 시드값: {{random}}"` |
 
-### Favorite Chains, Schedules, and Quick Palette
-- The favorite editor supports `Single` and `Chain` modes. Chain favorites can add steps, reorder them, apply per-step delays, and override the target services for each step.
-- Leaving a chain step target list empty makes that step inherit the favorite's default targets.
-- Chain execution is sequential. If any step finishes with a result other than `submitted`, the remaining steps are skipped.
-- Favorites can store one-time or repeating schedules (`daily`, `weekday`, `weekly`) and the options page exposes a dedicated `Schedules` section for toggle, `Run now`, and `Edit in popup` actions.
-- Scheduled execution auto-resolves only `{{date}}`, `{{time}}`, `{{weekday}}`, `{{random}}`, and `{{counter}}`. Favorites that need `{{url}}`, `{{title}}`, `{{selection}}`, or `{{clipboard}}` are skipped and recorded as failed schedule runs.
-- Scheduled chain validation now records the actual failing step text and `chainStepIndex`, so schedule summaries no longer collapse later-step failures into step 1.
-- Popup-triggered favorite runs pre-resolve `{{url}}`, `{{title}}`, `{{selection}}`, and `{{clipboard}}` before handing off to the background worker. Popup fallbacks from quick palette or options retry automatically once that context is available.
-- Favorite runs now queue as background jobs immediately, dedupe only overlapping `queued/running` runs for the same favorite, and expose a light `queued/running/done/failed/skipped` status in popup and options.
-- Scheduled overlaps do not write duplicate prompt history. They append a terminal `skipped` favorite job while the live `queued/running` badge continues to reflect the active run.
-- The options `Schedules` section now separates the last **scheduled** execution from manual runs and shows its timestamp, status, and representative failure detail when present.
-- The quick palette uses a shadow-root overlay on the current page. Its search behavior now matches popup favorite search across title, body text, folder, tags, and `#tag` queries. Fully resolvable favorites run immediately; favorites that still need popup input fall back through a popup handoff intent.
+#### 👤 사용자 정의 변수 (팝업 입력 모달)
+- `{{topic}}`, `{{language}}`, `{{tone}}` 등 시스템 예약어가 아닌 임의의 변수를 사용하면, 전송 버튼을 눌렀을 때 **변수 입력 모달**이 자동으로 나타납니다.
+- 한 번 입력한 값은 캐시되어 다음번 전송 시 기본값으로 빠르게 재사용할 수 있습니다.
 
-### Options Dashboard and Service Ordering
-- The options `Dashboard` now starts with recent sends, recent success rate, saved AI responses, and needs-attention actions. Usage share, last-7-day bars, and failure reasons are kept in a collapsed advanced stats area.
-- The options `Services` section persists service ordering through `appSettings.siteOrder`, and that order is reused by popup compose service cards, favorite editor target checklists, and the options service list.
+---
 
-### Popup Shortcuts and Sorting
-- `Ctrl/Cmd+Enter` sends the current prompt, and `Ctrl/Cmd+Shift+Enter` cancels the active broadcast.
-- `Ctrl/Cmd+1..4` switches between Compose, History, Favorites, and Settings.
-- `Esc` closes the currently open modal or menu.
-- `Ctrl/Cmd+A` toggles all services only when focus is outside a text field; normal select-all behavior is preserved inside inputs.
-- History and favorites support keyboard roving focus and have popup sort controls for display order.
-- Reopening the popup restores the one-shot `popupPromptIntent` first, then the unsent compose draft, then `lastSentPrompt` as a final fallback.
+### 3. 서비스별 프롬프트 오버라이드 (Custom Prompt Override)
+여러 AI 모델의 특성에 맞게 서비스마다 조금씩 다른 프롬프트를 전달할 수 있습니다.
 
-### Per-Service Prompt Overrides
-Expand a service card in the compose view and enable the **Custom prompt for this service** toggle to enter a prompt that will be used exclusively for that service. The main prompt is used when the override is left blank or the toggle is off.
-Both the main prompt and per-service overrides go through the same template-variable resolution flow, and retry/history replay actions reuse the exact resolved prompt captured by the original broadcast snapshot.
+- 작성 화면에서 서비스 카드의 **▸ (상세 옵션)** 아이콘을 클릭합니다.
+- **Custom prompt for this service (이 서비스 전용 프롬프트)** 토글을 켭니다.
+- 해당 서비스 전용 프롬프트를 작성합니다. (비워둘 경우 상단 메인 프롬프트가 전달됩니다.)
+- *예시*: Claude에는 코딩 전용 상세 요구사항을 전달하고, ChatGPT에는 요약용 프롬프트를 동시에 전달할 수 있습니다.
 
-### Selector Error Reporting
-When the selector checker detects a stale or missing selector (⚠), a **Report issue** link appears in the settings tab's service management card for that service. Clicking it opens a GitHub issue search scoped to that service so you can check existing reports or file a new one.
-The first proactive selector miss stays session-local as a pending signal only. Popup warnings and desktop notifications appear only when the same service reports the same missing signature again in the same browser session or when the live injector itself fails to find the selector.
+---
 
-### Broadcast Result Comparison View
-The options page history detail modal now includes a **Broadcast results** section listing every requested service with its outcome: ✅ succeeded, ❌ failed, or ⏳ requested but no result recorded. Successful rows include an **Open** link pointing to the service URL.
+### 4. 즐겨찾기(Favorites) 관리 & 태그·폴더·핀
+자주 사용하는 프롬프트와 템플릿을 체계적으로 저장하고 검색할 수 있습니다.
 
-Each stored service result now uses a structured code rather than a free-form string. Main codes include `submitted`, `selector_timeout`, `auth_required`, `submit_failed`, `strategy_exhausted`, `injection_timeout`, `cancelled`, and `unexpected_error`.
+- **태그 및 폴더 분류**: 프롬프트마다 쉼표로 구분된 태그(`개발, 번역, 요약`)와 폴더명을 지정하여 분류합니다.
+- **상단 고정 (Pin to Top)**: 자주 쓰는 핵심 프롬프트는 핀으로 고정하여 목록 최상단에 상시 노출합니다.
+- **다양한 정렬 기준**: 최근 사용순, 누적 사용 횟수순, 제목순, 생성일순 정렬을 지원합니다.
+- **스마트 검색**: 제목, 본문 텍스트뿐만 아니라 `#태그명` 검색으로 원하는 프롬프트를 1초 만에 찾을 수 있습니다.
+- **원클릭 복제 (Duplicate)**: 기존 템플릿을 기반으로 조금만 수정한 새 템플릿을 손쉽게 만듭니다.
 
-### History and Favorites Semantics
-- History entries now store `requestedSiteIds`, `submittedSiteIds`, and `failedSiteIds`.
-- History entries also store `targetSnapshots`, which capture the original per-site resolved prompt and routing mode used for replay.
-- The legacy `sentTo` field is still exported for backward compatibility and mirrors the submitted service ids.
-- `appSettings.historyLimit` is a non-destructive default visible cap for popup/options history lists. Lowering it does not delete stored history, and exports still include the full stored history up to the 1000-entry storage hard cap.
-- Reloading a history entry or creating a favorite from it uses `targetSnapshots` first, then falls back to requested services for legacy data, so partially failed broadcasts can be retried with the original target list and prompt text intact.
-- Favorite records also track `mode`, `steps`, `scheduleEnabled`, `scheduledAt`, `scheduleRepeat`, `usageCount`, and `lastUsedAt`.
-- History rows can carry `originFavoriteId`, `chainRunId`, `chainStepIndex`, `chainStepCount`, and `trigger` so chain runs and scheduled executions remain traceable.
+---
 
-### Import / Export and Detailed Reports
-- JSON export always writes `version: 9`.
-- Import applies staged migrations from older payloads (`v1 -> v2 -> v3 -> v4 -> v5 -> v6 -> v7 -> v8 -> v9`) before normalizing settings, favorites, history records, comparison notes, prompt experiments, template packs, and service groups.
-- `v9` preserves structured selector verification metadata (`verifiedAt`, `verifiedRoute`, `verifiedAuthState`, `verifiedLocale`, `verifiedVersion`), `supportedRoutes`, `comparisonNotes`, `promptExperiments`, `templatePacks`, and `serviceGroups`. Legacy `lastVerified` remains for compatibility and is derived from `verifiedAt` when available. Imports from `v8` and older payloads keep backward compatibility by creating empty v9-only collections when they are absent.
-- Import requests all required custom-site host permissions in one preflight batch, aborts before commit if any requested origin stays denied, and applies the local data update through one `chrome.storage.local.set` call. Optional permission cleanup after commit is best-effort only.
-- Both popup and options show a detailed import report modal listing accepted services, rejected services, denied origins, rewritten ids, alias validation errors, and built-in override adjustments.
+### 5. 다단계 체인(Chain) 자동화
+여러 단계의 프롬프트를 순차적으로 실행하는 매크로/파이프라인을 구축할 수 있습니다.
 
-### Custom Service Advanced Settings
-The popup service editor supports the following advanced fields for custom services:
-
-- `fallbackSelectors`: alternate selectors checked when the primary input selector fails
-- `authSelectors`: selectors that indicate a dedicated login or auth screen when no prompt surface is visible
-- `hostnameAliases`: extra allowed hostnames for redirects or alternate app domains
-- `supportedRoutes`: pathname prefixes allowed for selector checking and reusable-tab preflight; leave empty to allow all routes
-- `verifiedAt`: a structured verification date in `YYYY-MM-DD`
-- `verifiedRoute`: the route used during the latest selector verification
-- `verifiedAuthState`: `logged-in`, `logged-out`, or `soft-gated`
-- `verifiedLocale`: the locale observed during selector verification
-- `verifiedVersion`: a free-form UI or app build tag
-- `lastVerified`: a legacy compatibility month derived automatically from `verifiedAt` when present
-
-If `submitMethod` is `click`, `submitSelector` is required and validation blocks saving until it is provided.
-
-Custom service permissions are managed per site, not per single URL field:
-
-- optional host permissions are derived from the service `url` plus every `hostnameAliases` entry
-- `hostnameAliases` lines must be valid `host[:port]` entries or absolute `http/https` URLs before save/import continues
-- save and JSON import are all-or-nothing for a custom service if any required origin is denied
-- deleting a custom service, resetting service settings, or replacing custom services through JSON import removes only the unused optional origins
-
-### Limitations
-- You must already be logged in to each target AI service.
-- The extension depends on each site's DOM structure and selectors, so automatic injection can break when a site updates its UI.
-- Open-tab discovery is scoped to a normal Chrome browser window and only considers tabs that map back to a configured service and still expose a usable prompt surface.
-- Some services may restrict automation or synthetic input events, which can force the fallback flow.
-- Support is provided on a best-effort basis and is not guaranteed to work in every environment.
-
-### Privacy and Data Handling
-- This project does not require a backend server.
-- Prompts are sent directly from the user's browser to the target AI service tabs.
-- History and favorites are stored in the browser's local storage.
-- No API keys are required, and prompts are not relayed through a separate server.
-
-### Adding a New AI Service
-The primary change goes into `src/config/sites/builtins.ts`.
-
-Example:
-
-```js
-{
-  id: "newai",
-  name: "NewAI",
-  url: "https://newai.example.com/",
-  hostname: "newai.example.com",
-  supportedRoutes: ["/compose"],
-  hostnameAliases: [
-    "app.newai.example.com"
-  ],
-  inputSelector: "textarea[name='prompt']",
-  fallbackSelectors: [
-    "textarea",
-    "div[contenteditable='true'][role='textbox']"
-  ],
-  inputType: "textarea",
-  submitSelector: "button[type='submit']",
-  submitMethod: "click",
-  waitMs: 2000,
-  fallback: true,
-  authSelectors: [
-    "a[href*='login']",
-    "input[type='password']"
-  ],
-  verifiedAt: "2026-04-10",
-  verifiedRoute: "/compose",
-  verifiedAuthState: "logged-in",
-  verifiedLocale: "en-US",
-  verifiedVersion: "newai-web-apr-2026"
-}
+```mermaid
+flowchart LR
+    Step1["1단계: 개요 작성 (ChatGPT, Claude)"] -->|10초 대기| Step2["2단계: 코드 구현 (Claude)"]
+    Step2 -->|5초 대기| Step3["3단계: 코드 리뷰 (Gemini)"]
 ```
 
-Additional notes:
-- If the service uses a new domain, also update `host_permissions` and `content_scripts.matches` in [manifest.json](manifest.json).
-- Prefer stable selectors using `id`, `data-testid`, or `aria-label`.
-- `supportedRoutes` is the shared pathname-prefix allowlist used by selector checking and reusable-tab preflight. Leave it empty only when the service genuinely supports multiple composer routes.
-- Set `waitMs` conservatively to account for hydration and delayed editors.
-- Run `npm run build` again after any source change so both `dist/` and the generated root runtime mirrors stay current.
-- Before a release, update selector verification evidence such as [docs/selector-verification-2026-07-22.md](docs/selector-verification-2026-07-22.md) for auth route, canonical route, locale, prompt surface, submit surface, and soft-gated checks.
+- **체인 모드 전환**: 즐겨찾기 편집기에서 모드를 `Chain`으로 설정합니다.
+- **단계별 상세 설정**:
+  - 각 단계별 프롬프트 본문
+  - 이전 단계 실행 후 다음 단계 실행까지의 지연시간 (`delayMs`)
+  - 각 단계가 전송될 대상 AI 서비스 지정 (지정하지 않으면 즐겨찾기 기본 서비스 상속)
+  - 실패 시 대응 정책 (`stop`: 즉시 중단, `continue`: 계속 진행, `retry-once`: 1회 재시도)
+- 복잡한 다단계 리서치나 번역-검수 파이프라인을 버튼 한 번으로 전자동 수행합니다.
 
-### Local Smoke QA
-The repository includes Playwright-based local fixtures under `qa/fixtures/`, orchestrated by `scripts/qa-smoke.mjs` with helper modules under `scripts/qa-smoke/`.
+---
 
-Run the local smoke flow with:
+### 6. 스케줄링 및 예약 실행 (Schedules)
+정해진 시간에 원하는 프롬프트나 체인을 백그라운드에서 자동으로 실행합니다.
 
+- **반복 주기 설정**: `One-time (1회성)`, `Daily (매일)`, `Weekdays (평일 매일)`, `Weekly (매주)` 주기를 지원합니다.
+- **스케줄 관리 탭**: 확장 프로그램 옵션 페이지의 `Schedules` 메뉴에서 현재 활성화된 예약 목록과 다음 실행 예정 시각을 한눈에 관리할 수 있습니다.
+- **실행 결과 확인**: 수동 실행과 예약 실행 결과가 분리 기록되어 언제 어떤 스케줄이 성공/실패했는지 상세히 추적할 수 있습니다.
+- *(참고: 스케줄 실행은 `{{date}}`, `{{time}}`, `{{counter}}` 등 시간 기반 시스템 변수와 완벽히 호환됩니다.)*
+
+---
+
+### 7. 웹서핑 중 어디서나 호출하는 빠른 팔레트 (`Alt+Shift+F`)
+어떤 웹페이지를 보고 있든 팝업을 열 필요 없이 즉시 프롬프트를 실행할 수 있습니다.
+
+1. 웹서핑 중 <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>F</kbd>를 누릅니다.
+2. 화면 중앙에 Shadow DOM 기반의 **빠른 팔레트(Quick Palette) 오버레이**가 표시됩니다.
+3. 즐겨찾기 제목이나 본문, `#태그`를 입력하여 검색합니다.
+4. 원하는 항목을 선택하고 <kbd>Enter</kbd>를 누르면 백그라운드에서 즉시 실행됩니다!
+5. *(추가 사용자 입력이 필요한 템플릿의 경우 팝업으로 자연스럽게 핸드오프되어 입력을 이어받습니다.)*
+
+---
+
+### 8. AI 응답 로컬 수집 및 전송 결과 비교 뷰
+각 AI가 내놓은 답변을 한 곳에서 비교하고 기록을 보관할 수 있습니다.
+
+- **AI 응답 자동 수집 (Response Capture)**: 전송이 완료된 후 각 AI 웹페이지에 렌더링된 최종 응답 텍스트를 로컬 히스토리에 자동으로 캡처하여 저장합니다.
+- **결과 비교 뷰 (Comparison View)**: 옵션 페이지의 히스토리 상세 모달에서 서비스별 전송 상태(✅ 성공, ❌ 실패, ⏳ 진행 중)와 함께 저장된 AI 답변을 나란히 비교할 수 있습니다.
+- **부분 재전송 (History Resend Selection)**: 과거 전송 기록 중 특정 AI 서비스만 골라서 다시 전송할 수 있습니다.
+- **구조화된 결과 코드**: 단순 성공/실패를 넘어 `submitted`, `selector_timeout`, `auth_required`, `submit_failed` 등 상세 원인을 제공합니다.
+
+---
+
+### 9. 프롬프트 실험 매트릭스 (Experiment Matrix)
+프롬프트 엔지니어링을 위해 다양한 프롬프트 변형과 변수 조합을 체계적으로 A/B 테스트할 수 있습니다.
+
+- **Variants × Variable Sets**: 여러 개의 프롬프트 후보군(Variants)과 테스트 데이터셋(Variable Sets)을 정의합니다.
+- **사전 조합 미리보기**: 실행 전 총 전송 수와 매트릭스 조합을 미리 검토합니다.
+- **안전 제한 장치**: 무분별한 요청 방지를 위해 기본 소프트 10개 / 하드 30개의 안전 한도 내에서 배치 실행을 제어합니다.
+
+---
+
+### 10. 템플릿 팩 & 서비스 그룹 관리
+자주 함께 사용하는 AI 서비스 목록과 템플릿 묶음을 팀원과 공유하거나 백업할 수 있습니다.
+
+- **서비스 그룹 (Service Groups)**: `코딩용 AI 묶음 (Claude + ChatGPT)`, `검색용 AI 묶음 (Perplexity + Gemini)` 등 목적별 서비스 세트를 저장하고 작성 탭에서 원클릭으로 선택합니다.
+- **템플릿 팩 (Template Packs)**: 업무별 프롬프트 세트를 JSON 파일로 내보내거나 불러올 수 있습니다. (민감한 기본값 제외 옵션 제공)
+
+---
+
+### 11. 커스텀 AI 사이트 추가 & 셀렉터 관리
+사내 구축 LLM, DeepSeek, Poe 등 원하는 어떤 웹 AI 서비스도 자유롭게 등록하여 방송 대상에 포함할 수 있습니다.
+
+- **커스텀 사이트 설정 항목**:
+  - `URL` 및 허용 도메인(`hostnameAliases`)
+  - 입력창 CSS 셀렉터 (`inputSelector`) 및 입력 방식 (`textarea` / `contenteditable`)
+  - 전송 버튼 CSS 셀렉터 (`submitSelector`) 및 전송 방식 (`click` / `enter`)
+  - 페이지 로딩 대기시간 (`waitMs`)
+  - 로그인 감지 셀렉터 (`authSelectors`) 및 지원 경로 (`supportedRoutes`)
+- **최소 권한 원칙 (Origin Permissions)**: 커스텀 사이트를 등록할 때 필요한 도메인 권한만 요청하며, 사이트 삭제 시 사용하지 않는 권한은 자동으로 회수됩니다.
+- **셀렉터 자가 진단 및 수정**: 사이트 UI가 변경되어 셀렉터가 작동하지 않는 경우 확장 프로그램이 이를 감지하여 경고 알림 및 GitHub 이슈 리포트 링크를 제공합니다.
+
+---
+
+### 12. 데이터 백업 / 복원 (JSON v9) & 초기화
+- **완벽한 데이터 호환 (version: 9)**: 히스토리, 즐겨찾기, 체인, 스케줄, 설정, 커스텀 사이트, 실험 데이터까지 JSON 파일로 원클릭 내보내기/가져오기가 가능합니다.
+- **상세 Import 리포트**: 데이터 복원 시 추가된 항목, 중복 처리, 권한 승인 내역 등을 상세 리포트 모달로 확인시켜 줍니다.
+- **데이터 한도 및 보관 정책**: 1000-entry storage hard cap 정책을 기반으로 안정적인 로컬 스토리지를 유지하며, 7/30/90일 이전 기록 일괄 정리 기능을 지원합니다.
+- **안전한 데이터 초기화 (Reset Data)**: 옵션 페이지에서 진행 중인 전송 정리와 함께 모든 로컬/세션 데이터를 초기 상태로 안전하게 리셋할 수 있습니다.
+
+---
+
+## ⌨️ 키보드 단축키 모음
+
+### 🌐 전역 단축키 (어디서나 동작)
+| 단축키 | 기능 설명 |
+|---|---|
+| <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>P</kbd> | **AI Prompt Broadcaster 팝업 열기** |
+| <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>F</kbd> | **웹페이지 위 빠른 팔레트(Quick Palette) 열기** |
+| <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>S</kbd> | **현재 웹페이지의 선택된 텍스트 캡처** |
+
+### 🪟 팝업 창 단축키
+| 단축키 | 기능 설명 |
+|---|---|
+| <kbd>Ctrl</kbd> / <kbd>Cmd</kbd> + <kbd>Enter</kbd> | **프롬프트 방송 전송 (Send)** |
+| <kbd>Ctrl</kbd> / <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>Enter</kbd> | **진행 중인 전송 취소 (Cancel)** |
+| <kbd>Ctrl</kbd> / <kbd>Cmd</kbd> + <kbd>1</kbd> ~ <kbd>4</kbd> | **탭 전환** (1: 작성, 2: 히스토리, 3: 즐겨찾기, 4: 설정) |
+| <kbd>Ctrl</kbd> / <kbd>Cmd</kbd> + <kbd>A</kbd> | **전체 서비스 선택 / 해제** (입력창 외부 포커스 시) |
+| <kbd>Esc</kbd> | **열려 있는 모달, 메뉴, 오버레이 닫기** |
+
+---
+
+## 🔒 개인정보 보호 및 보안
+
+- **100% 로컬 프라이버시**: 프롬프트 내용, 템플릿 변수, 히스토리, 캡처된 AI 답변 텍스트는 개발자 서버나 제3자 서버로 절대 전송되지 않으며 오직 사용자의 브라우저 로컬 저장소에만 남습니다.
+- **No API Key Storage**: 외부 유출 위험이 있는 유료 API 키를 보관하거나 요구하지 않습니다.
+- **안전한 권한 요청**: 불필요한 전체 웹 접근 권한을 요구하지 않으며, 지원되는 AI 사이트 및 사용자가 직접 등록한 커스텀 도메인에 한해서만 최소 권한으로 동작합니다.
+
+---
+
+## 🛠️ 문제 해결 및 FAQ
+
+### Q1. 특정 AI 서비스에 프롬프트가 주입되지 않아요.
+1. **로그인 상태 확인**: 대상 AI 서비스에 브라우저 세션이 정상 로그인되어 있는지 확인해 주세요.
+2. **캡차/인증 화면 확인**: 봇 방지 화면(Cloudflare 등)이나 팝업 공지가 떠 있다면 수동으로 해제해 주세요.
+3. **클립보드 폴백 활용**: 자동 주입이 실패하더라도 프롬프트가 클립보드에 자동 복사되므로, 열린 탭에서 <kbd>Ctrl</kbd>+<kbd>V</kbd>로 즉시 붙여넣을 수 있습니다.
+
+### Q2. 웹사이트 UI가 개편되어 셀렉터가 동작하지 않을 때 (셀렉터 수정 방법)
+1. 문제 사이트를 브라우저에서 열고 <kbd>F12</kbd> (DevTools) 콘솔을 엽니다.
+2. 프로젝트 내 [tools/find_selector.js](tools/find_selector.js) 스크립트 내용을 복사하여 콘솔에 실행합니다.
+3. 콘솔에 출력된 추천 셀렉터를 확인합니다.
+4. 옵션 페이지의 서비스 설정에서 해당 셀렉터를 갱신하거나 [src/config/sites/builtins.ts](src/config/sites/builtins.ts)를 수정한 뒤 `npm run build`를 실행합니다.
+
+---
+
+## 💻 개발 및 테스트 가이드
+
+### 빌드 및 검증 스크립트
 ```bash
+# 전체 빌드
+npm run build
+
+# 클린 후 재빌드
+npm run rebuild
+
+# 문서 정합성 및 릴리스 규칙 검증
 npm run docs:check
-npm run build
+
+# Playwright 기반 로컬 Smoke QA 테스트
 npm run qa:smoke
+
+# Chromium 실제 확장 프로그램 로드 통합 테스트
 npm run qa:extension
+
+# 셀렉터 감사 및 검증
 npm run selector:audit
 ```
 
-`docs:check` verifies release documentation stays aligned with export/import versioning, local AI response storage wording, and validation commands. `qa:extension` loads the built `dist/` extension in Chromium and checks options navigation, experiment caps, saved AI responses, template packs, service groups, and popup fallback behavior.
+### 아키텍처 및 상세 기술 문서
+- [docs/extension-architecture.md](docs/extension-architecture.md) : 시스템 아키텍처 및 런타임 수명 주기
+- [docs/build-guide.md](docs/build-guide.md) : 빌드 및 패키징 가이드
+- [docs/feature-enhancement-roadmap.md](docs/feature-enhancement-roadmap.md) : 기능 로드맵
 
-The smoke script verifies:
+---
 
-- direct selector injection
-- fallback selector injection
-- visible element preference when hidden matches exist
-- delayed click-submit activation for async contenteditable editors
-- `click`, `enter`, and `shift+enter` submission paths
-- selector checker `ok` reporting
-- auth page detection through `authSelectors`
-- conditional-submit preflight semantics for empty composers
-- textarea-first Grok selector preference and soft-gated auth coexistence
-- custom service permission cleanup for shared and unused origins
-- JSON import repair for alias-based custom service permissions and invalid built-in click-submit overrides
-- batched custom-site permission preflight and atomic local import commit behavior
-- `broadcastCounter` export/import/reset semantics
-- import migration to export `version: 9` defaults
-- history replay snapshot fallback and resend routing safety
-- popup restore precedence (`popupPromptIntent -> composeDraftPrompt -> lastSentPrompt`) and popup handoff consumption
-- favorite background job dedupe helpers and runtime-state cleanup
-- scheduled overlap skip-job visibility and active-job precedence
-- quick palette filtering and execution handoff
-- favorite chain/schedule field normalization for legacy imports
-- favorites search across title, text, tags, folders, and `#tag`
-- per-service override template resolution and retry prompt preservation
-- CSV export escaping for spreadsheet formula-leading cells
-- pending broadcast state accumulation across sequential completions with structured `siteResults`
-- adaptive strategy-stat accumulation for injector attempts
-- reusable-tab preflight rejection for auth/settings/non-input tabs
-- reset helper cleanup for both local and session runtime state
-
-If Chromium is not installed yet for Playwright, run:
-
-```bash
-npx playwright install chromium
-```
-
-### How to Fix Broken Selectors
-1. Open the target AI site in Chrome.
-2. Open DevTools.
-3. Paste [tools/find_selector.js](tools/find_selector.js) into the console and run it.
-4. Review the candidate selectors and the generated config snippet.
-5. Update the matching service entry in [builtins.ts](src/config/sites/builtins.ts).
-6. Run `npm run build`, then reload the `dist` extension in `chrome://extensions` and test again.
-
-Related:
-- The [`src/content/selector-checker/`](src/content/selector-checker) module reports stale selectors and auth-page states back to the background worker.
-- If the tab redirects to a login screen, injection is expected to stop.
-
-### Contributing
-- Open an issue with the target service, URL, login state, and failure symptoms.
-- Include DOM snapshots or DevTools screenshots when reporting selector breakage.
-- When adding a new service, update `src/config/sites/builtins.ts`, `manifest.json`, and the README support table together.
-- Prefer config-driven fixes over site-specific hardcoded logic.
-- Include reproduction steps and validation notes in every PR.
-
-### License
-MIT
+## 📄 라이선스
+본 프로젝트는 [MIT License](LICENSE)에 따라 자유롭게 사용, 수정 및 배포할 수 있습니다.
