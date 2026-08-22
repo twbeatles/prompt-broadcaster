@@ -13,7 +13,7 @@ Most important follow-up areas:
 
 1. Make the extension E2E check runnable in a headless/CI-capable MV3 browser.
 2. Add authenticated, real-service selector/injection regression coverage; three public built-in pages are Cloudflare-gated.
-3. Add an explicit service-worker restart E2E around a live pending injection and multi-site automatic response capture.
+3. Add an MV3 service-worker lifecycle E2E around a live pending injection; controller-level recovery coverage is now present.
 
 No evidence of current data destruction or silent data loss was found. Local storage writes are capped for large collections and recover from quota-like errors. Import data is normalized before a single multi-key commit; permission denial aborts before that commit.
 
@@ -75,7 +75,7 @@ CodeGraph call paths inspected included `createBroadcastQueue`, `createPendingIn
 
 - `npm run typecheck` — passed.
 - `npm run docs:check` — passed.
-- `npm run qa:smoke` — passed, 60/60 checks.
+- `npm run qa:smoke` — passed, 63/63 checks, including stale pending-injection recovery and streamed response-capture regressions.
 - `npm run qa:extension` with `APB_E2E_HEADLESS=1` — timed out waiting for an MV3 service worker. README documents this headless limitation; this is not evidence of a product-runtime failure.
 - The headed E2E command was started but did not complete within this audit environment's command window; it is not counted as passed.
 
@@ -113,10 +113,10 @@ The following suspected failure modes were investigated and not retained as issu
 - **Impact:** A provider UI change can cause a selector/submit failure until the selector checker detects it.
 - **Suggested direction:** keep an opt-in authenticated release checklist and add fixtures for discovered DOM variations.
 
-### [GAP-003] Automatic response capture has no real-service streaming E2E
+### [GAP-003] Automatic response capture lacks real-service streaming E2E
 
 - **Classification:** Likely Gap
-- **Evidence:** capture polls visible service-specific DOM selectors for up to 45 seconds and deduplicates text. Its code path is covered by review and caps, but executed smoke tests did not replay a provider streaming response.
+- **Evidence:** capture polls visible service-specific DOM selectors for up to 45 seconds and deduplicates text. Smoke coverage now replays prompt echo, partial content, repeated final content, and verifies one final note through the controller; it does not run against authenticated provider DOMs.
 - **Impact:** Provider DOM drift may cause missing comparison notes, while sending remains unaffected.
 - **Suggested direction:** add fixtures with partial streaming, prompt echo, multiple assistant candidates, and final stable text.
 
@@ -134,9 +134,8 @@ No production-code emergency fix is indicated. Make the extension E2E environmen
 
 ### Phase 2 — Stability
 
-1. Add a forced service-worker restart E2E while an injection is `injecting`; assert exactly one terminal site result.
-2. Add streaming-response fixtures and verify the retry loop preserves useful final text.
-3. Run the authenticated selector checklist before releases that modify selectors, routes, or submit mechanics.
+1. Add a forced MV3 service-worker restart E2E while an injection is `injecting`; assert exactly one terminal site result.
+2. Run the authenticated selector checklist before releases that modify selectors, routes, or submit mechanics.
 
 ### Phase 3 — Structural
 
@@ -172,14 +171,14 @@ No production-code emergency fix is indicated. Make the extension E2E environmen
 | Area | Assessment | Basis |
 | --- | --- | --- |
 | Functional Correctness | Good | Typecheck, docs checks, and all 60 smoke checks passed; primary broadcast/persistence paths validate input and return structured outcomes. |
-| Runtime Stability | Acceptable | Pending work is persisted and reconciled, but full MV3 restart E2E remains unproven. |
+| Runtime Stability | Acceptable | Stale pending-injection recovery is regression-tested; full MV3 restart E2E remains unproven. |
 | Data Integrity | Good | Normalization, caps, permission-before-import commit, and serialized state mutation reduce corruption/loss risk. |
 | Error Resilience | Acceptable | Injector, tab, selector, permission, and storage failures return structured states and user feedback; external DOMs remain variable. |
 | Cross-platform Robustness | Needs Work | Windows/Unix package scripts exist, but no completed cross-platform extension E2E evidence was available. |
-| Test Confidence | Acceptable | Strong fixture/smoke coverage; extension E2E needs deterministic MV3 launch support and live authenticated coverage is intentionally absent. |
+| Test Confidence | Acceptable | Smoke coverage includes recovery and streamed-capture regressions; extension E2E needs deterministic MV3 launch support and live authenticated coverage is intentionally absent. |
 
 The first three items to address are:
 
 1. Stabilize the MV3 extension E2E browser/CI environment.
-2. Add a service-worker-restart pending-injection regression test.
-3. Add authenticated/manual provider selector checks and streaming response-capture fixtures for all built-in services.
+2. Add a forced MV3 service-worker-restart E2E.
+3. Add authenticated/manual provider selector checks for all built-in services.

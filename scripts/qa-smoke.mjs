@@ -3342,6 +3342,113 @@ async function main() {
     assert.deepEqual(chromeMock.__getAlarms(), {});
   });
 
+  await runStep("pending injection recovery records one stale result after repeated reconciliation", async () => {
+    const chromeMock = createChromeMock();
+    const module = await loadBundledModule("src/background/injection/pending.ts", chromeMock);
+    const pending = {
+      42: {
+        broadcastId: "broadcast-restart",
+        siteId: "chatgpt",
+        prompt: "Recover this prompt",
+        site: { id: "chatgpt", name: "ChatGPT", url: "https://chatgpt.com/" },
+        createdAt: Date.now() - 61_000,
+        startedAt: Date.now() - 61_000,
+        injected: true,
+        status: "injecting",
+      },
+    };
+    const recordedResults = [];
+    const controller = module.createPendingInjectionController({
+      getI18nMessage: () => "",
+      getErrorMessage: (error) => String(error),
+      sleep: async () => {},
+      activeInjections: new Set(),
+      queuedInjectionTabIds: new Set(),
+      getPendingInjections: async () => pending,
+      getPendingBroadcasts: async () => ({ "broadcast-restart": { id: "broadcast-restart" } }),
+      updatePendingInjection: async () => null,
+      removePendingInjection: async (tabId) => { delete pending[tabId]; },
+      recordBroadcastSiteResult: async (broadcastId, siteId, result) => {
+        recordedResults.push({ broadcastId, siteId, result });
+        return null;
+      },
+      waitForTabInteractionReady: async () => true,
+      isSameSiteOrigin: () => true,
+    });
+
+    await controller.reconcilePendingInjections();
+    await controller.reconcilePendingInjections();
+
+    assert.equal(recordedResults.length, 1);
+    assert.equal(recordedResults[0].broadcastId, "broadcast-restart");
+    assert.equal(recordedResults[0].siteId, "chatgpt");
+    assert.equal(recordedResults[0].result.code, "injection_timeout");
+    assert.deepEqual(pending, {});
+  });
+
+  await runStep("streaming response capture keeps only meaningful final content", async () => {
+    const module = await loadBundledModule("src/background/app/comparison/capture.ts", createChromeMock());
+    const prompt = "Explain the release risks";
+    const partial = "The release has a few risks";
+    const final = "The release has a few risks: selector drift, worker restart recovery, and response capture reliability.";
+
+    assert.equal(module.isPromptEcho(prompt, prompt), true);
+    assert.equal(module.shouldUpdateAutoCapturedResponse("", partial), true);
+    assert.equal(module.shouldUpdateAutoCapturedResponse(partial, final), true);
+    assert.equal(module.shouldUpdateAutoCapturedResponse(final, partial), false);
+    assert.equal(module.shouldUpdateAutoCapturedResponse(final, final), false);
+  });
+
+  await runStep("automatic response capture ignores echo and saves the stable streamed response", async () => {
+    const chromeMock = createChromeMock();
+    const capturedFrames = [
+      "Explain the release risks",
+      "The release has a few risks that need review.",
+      "The release has a few risks that need review: selector drift and worker restart recovery.",
+      "The release has a few risks that need review: selector drift and worker restart recovery.",
+    ];
+    chromeMock.tabs = {
+      async get(tabId) {
+        return { id: tabId, url: "https://chatgpt.com/" };
+      },
+      async query() {
+        return [];
+      },
+    };
+    chromeMock.scripting = {
+      async executeScript() {
+        return [{ result: capturedFrames.shift() ?? "" }];
+      },
+    };
+    await chromeMock.storage.local.set({
+      appSettings: { autoCaptureResponses: true },
+      comparisonNotes: [],
+    });
+    const module = await loadBundledModule(
+      "src/background/comparison/handlers/controller.ts",
+      chromeMock,
+    );
+    const handlers = module.createComparisonHandlers({
+      sleep: async () => {},
+      selectionCache: new Map(),
+      getSiteForUrl: async () => ({ id: "chatgpt", name: "ChatGPT" }),
+    });
+
+    await handlers.autoCaptureBroadcastResponses(
+      { id: 77, text: "Explain the release risks" },
+      {
+        submittedSiteIds: ["chatgpt"],
+        targetTabIdsBySiteId: { chatgpt: 12 },
+      },
+    );
+
+    const notes = chromeMock.__getStorage().local.comparisonNotes;
+    assert.equal(notes.length, 1);
+    assert.equal(notes[0].historyId, 77);
+    assert.equal(notes[0].serviceId, "chatgpt");
+    assert.match(notes[0].responseText, /selector drift and worker restart recovery/);
+  });
+
   const failed = results.filter((result) => !result.ok);
   if (failed.length > 0) {
     console.error(`Smoke QA failed: ${failed.length}/${results.length} step(s) did not pass.`);
