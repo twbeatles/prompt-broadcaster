@@ -1024,12 +1024,12 @@ var AI_SITES = Object.freeze([
     selectorCheckMode: "input-and-conditional-submit",
     waitMs: 2500,
     fallback: true,
-    lastVerified: "2026-07",
-    verifiedAt: "2026-07-22",
+    lastVerified: "2026-08",
+    verifiedAt: "2026-08-22",
     verifiedRoute: "/",
     verifiedAuthState: "logged-out",
     verifiedLocale: "ko",
-    verifiedVersion: "chatgpt-web-jul-2026",
+    verifiedVersion: "chatgpt-web-aug-2026",
     authSelectors: [
       "form[action*='/auth']",
       "input[name='email']",
@@ -1067,12 +1067,12 @@ var AI_SITES = Object.freeze([
     selectorCheckMode: "input-and-conditional-submit",
     waitMs: 2500,
     fallback: true,
-    lastVerified: "2026-07",
-    verifiedAt: "2026-07-22",
+    lastVerified: "2026-08",
+    verifiedAt: "2026-08-22",
     verifiedRoute: "/app",
     verifiedAuthState: "logged-out",
     verifiedLocale: "en-US",
-    verifiedVersion: "gemini-app-jul-2026",
+    verifiedVersion: "gemini-app-aug-2026",
     authSelectors: [
       "a[href*='accounts.google.com/ServiceLogin']",
       "a[aria-label*='로그인']",
@@ -1105,12 +1105,12 @@ var AI_SITES = Object.freeze([
     selectorCheckMode: "input-and-conditional-submit",
     waitMs: 2e3,
     fallback: true,
-    lastVerified: "2026-07",
-    verifiedAt: "2026-07-22",
+    lastVerified: "2026-08",
+    verifiedAt: "2026-08-22",
     verifiedRoute: "/new",
     verifiedAuthState: "logged-out",
     verifiedLocale: "en-US",
-    verifiedVersion: "claude-web-jul-2026",
+    verifiedVersion: "claude-web-aug-2026",
     authSelectors: [
       "input#email",
       "input[type='email']",
@@ -1150,12 +1150,12 @@ var AI_SITES = Object.freeze([
     selectorCheckMode: "input-and-conditional-submit",
     waitMs: 3e3,
     fallback: true,
-    lastVerified: "2026-07",
-    verifiedAt: "2026-07-22",
+    lastVerified: "2026-08",
+    verifiedAt: "2026-08-22",
     verifiedRoute: "/",
     verifiedAuthState: "logged-out",
     verifiedLocale: "ko",
-    verifiedVersion: "grok-web-jul-2026",
+    verifiedVersion: "grok-web-aug-2026",
     authSelectors: [
       "input[autocomplete='username']",
       "input[type='password']",
@@ -1192,12 +1192,12 @@ var AI_SITES = Object.freeze([
     selectorCheckMode: "input-and-conditional-submit",
     waitMs: 2500,
     fallback: true,
-    lastVerified: "2026-07",
-    verifiedAt: "2026-07-22",
+    lastVerified: "2026-08",
+    verifiedAt: "2026-08-22",
     verifiedRoute: "/",
     verifiedAuthState: "soft-gated",
     verifiedLocale: "en-US",
-    verifiedVersion: "perplexity-web-jul-2026",
+    verifiedVersion: "perplexity-web-aug-2026",
     authSelectors: [
       "input[type='email']",
       "input[type='password']",
@@ -3959,18 +3959,34 @@ function createComparisonHandlers(deps) {
       return;
     }
     const submittedSiteIds = Array.isArray(completedRecord.submittedSiteIds) ? completedRecord.submittedSiteIds : [];
-    for (const serviceId of submittedSiteIds) {
-      const tabId = Number(completedRecord.targetTabIdsBySiteId?.[serviceId]);
-      const tab = await findComparisonCaptureTab(serviceId, Number.isFinite(tabId) ? tabId : null);
-      if (!tab?.id) {
-        continue;
-      }
-      const responseText = await captureAssistantResponseWithRetry(tab.id, serviceId, historyItem.text);
-      if (!responseText.trim()) {
-        continue;
-      }
-      await saveAutoCapturedResponse(Number(historyItem.id), serviceId, responseText);
-    }
+    await Promise.allSettled(
+      submittedSiteIds.map(async (serviceId) => {
+        try {
+          const tabId = Number(completedRecord.targetTabIdsBySiteId?.[serviceId]);
+          const tab = await findComparisonCaptureTab(
+            serviceId,
+            Number.isFinite(tabId) ? tabId : null
+          );
+          if (!tab?.id) {
+            return;
+          }
+          const responseText = await captureAssistantResponseWithRetry(
+            tab.id,
+            serviceId,
+            historyItem.text
+          );
+          if (!responseText.trim()) {
+            return;
+          }
+          await saveAutoCapturedResponse(Number(historyItem.id), serviceId, responseText);
+        } catch (error) {
+          console.warn(
+            "[AI Prompt Broadcaster] Failed to auto-capture a service response.",
+            { serviceId, error }
+          );
+        }
+      })
+    );
   }
   async function handleComparisonCaptureStart(message) {
     const historyId = Math.max(0, Math.round(Number(message?.historyId)));

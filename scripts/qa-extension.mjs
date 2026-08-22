@@ -25,7 +25,19 @@ async function waitForExtensionServiceWorker(context) {
     return existingWorker;
   }
 
-  return context.waitForEvent("serviceworker", { timeout: 10000 });
+  try {
+    return await context.waitForEvent("serviceworker", { timeout: 10000 });
+  } catch (error) {
+    if (headless) {
+      throw new Error(
+        "MV3 extension service workers are unavailable in this browser's headless mode. " +
+          "Run `npm run qa:extension` without APB_E2E_HEADLESS=1, or use a Chromium build that supports headless MV3 extensions.",
+        { cause: error },
+      );
+    }
+
+    throw error;
+  }
 }
 
 function getExtensionId(worker) {

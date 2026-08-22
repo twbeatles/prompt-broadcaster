@@ -299,20 +299,36 @@ export function createComparisonHandlers(deps: ComparisonHandlersDeps) {
     const submittedSiteIds = Array.isArray(completedRecord.submittedSiteIds)
       ? completedRecord.submittedSiteIds
       : [];
-    for (const serviceId of submittedSiteIds) {
-      const tabId = Number(completedRecord.targetTabIdsBySiteId?.[serviceId]);
-      const tab = await findComparisonCaptureTab(serviceId, Number.isFinite(tabId) ? tabId : null);
-      if (!tab?.id) {
-        continue;
-      }
+    await Promise.allSettled(
+      submittedSiteIds.map(async (serviceId) => {
+        try {
+          const tabId = Number(completedRecord.targetTabIdsBySiteId?.[serviceId]);
+          const tab = await findComparisonCaptureTab(
+            serviceId,
+            Number.isFinite(tabId) ? tabId : null,
+          );
+          if (!tab?.id) {
+            return;
+          }
 
-      const responseText = await captureAssistantResponseWithRetry(tab.id, serviceId, historyItem.text);
-      if (!responseText.trim()) {
-        continue;
-      }
+          const responseText = await captureAssistantResponseWithRetry(
+            tab.id,
+            serviceId,
+            historyItem.text,
+          );
+          if (!responseText.trim()) {
+            return;
+          }
 
-      await saveAutoCapturedResponse(Number(historyItem.id), serviceId, responseText);
-    }
+          await saveAutoCapturedResponse(Number(historyItem.id), serviceId, responseText);
+        } catch (error) {
+          console.warn(
+            "[AI Prompt Broadcaster] Failed to auto-capture a service response.",
+            { serviceId, error },
+          );
+        }
+      }),
+    );
   }
 
   async function handleComparisonCaptureStart(

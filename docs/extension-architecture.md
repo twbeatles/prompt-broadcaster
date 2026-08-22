@@ -500,7 +500,7 @@ Active job lookups prefer `queued/running` records over newer terminal records s
 - `strategyStats` stores per-site success/failure counts for injector strategies
 - `pendingBroadcasts` also keep `openedTabIds` and `targetTabIdsBySiteId` so automatic response capture can prefer the exact tab used for each submitted service
 - cancellation closes only tabs opened for the current broadcast; reused tabs are preserved
-- when `appSettings.autoCaptureResponses` is enabled, completed broadcasts start a best-effort local response capture for submitted services only; captured text is stored in `comparisonNotes` with `captureMode: "auto"` and is not sent to developer-controlled servers
+- when `appSettings.autoCaptureResponses` is enabled, completed broadcasts start a best-effort local response capture for submitted services only; services are captured independently so one capture failure does not block the others. Captured text is stored in `comparisonNotes` with `captureMode: "auto"` and is not sent to developer-controlled servers
 
 ## High-Level Execution Flows
 

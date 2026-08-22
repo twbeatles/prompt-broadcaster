@@ -36,6 +36,7 @@
 
 # Test artifacts
 /playwright-report/
+.playwright-cli/
 /test-results/
 /coverage/
 /output/

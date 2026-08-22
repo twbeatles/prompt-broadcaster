@@ -1,126 +1,185 @@
 # Project Audit
 
+Audit date: 2026-08-22
+Scope: functional implementation and runtime stability. Source code and configuration were not changed by this audit.
+
 ## 1. Executive Summary
 
-현재 전체 위험도는 **Low-Medium**입니다. 기존 감사에서 확인된 저장 quota, runtime sender policy, pending injection 복구, selector/docs drift 리스크는 구현과 검증으로 대부분 해소되었습니다. 이후 코드 분할 리팩토링도 public entrypoint/facade 경로를 유지하면서 background, popup, options, shared 영역의 책임 경계를 하위 폴더로 분리했습니다.
+The project is in **Acceptable** functional condition. It is a Manifest V3 Chrome extension that opens or reuses AI-service tabs, injects prompts through site-specific selectors, records structured results, and supports history, favorites, schedules, imports/exports, and comparison notes.
 
-완료된 핵심 사항:
+Overall risk is **Low-Medium**. No `Confirmed` or strongly evidenced `Likely` production high-risk issue was found in the audited paths. The audit found protections for invalid broadcast requests, custom-site host permissions, duplicate result writes, worker-restart recovery, storage quota pressure, and runtime-message sender authorization.
 
-- `promptHistory`: 최신순 저장 hard cap 1000개, quota 실패 시 500개 emergency retry
-- `comparisonNotes`: `updatedAt` 최신순 저장 hard cap 2000개, quota 실패 시 1000개 emergency retry
-- 자동 캡처 응답: 저장 전 20000자 truncate
-- Runtime message: action별 sender policy 적용, mutation/reset/settings 계열은 extension sender 전용
-- Pending injection: `status: "injecting"` + `startedAt` 기반 재시작 reconcile 적용
-- Custom service selector: input/fallback/submit selector CSS 문법 검증 추가
-- Docs/build parity: built-in selector mode, generated mirror drift, `PROJECT_ANALYSIS.md`, `PROJECT_AUDIT.md` consistency guard 보강
-- `.gitignore`: local `.codegraph/` index 제외
+Most important follow-up areas:
 
-검증 결과:
+1. Make the extension E2E check runnable in a headless/CI-capable MV3 browser.
+2. Add authenticated, real-service selector/injection regression coverage; three public built-in pages are Cloudflare-gated.
+3. Add an explicit service-worker restart E2E around a live pending injection and multi-site automatic response capture.
 
-- `npm run typecheck`: 통과
-- `npm run build`: 통과
-- `npm run docs:check`: 통과
-- `npm run qa:smoke`: 59/59 통과
-- `npm run qa:extension`: 통과
-- `git diff --check`: 통과
+No evidence of current data destruction or silent data loss was found. Local storage writes are capped for large collections and recover from quota-like errors. Import data is normalized before a single multi-key commit; permission denial aborts before that commit.
 
 ## 2. Project Understanding
 
-이 프로젝트는 Chrome Manifest V3 확장으로, 백엔드/API 키 없이 사용자가 로그인한 AI 웹앱의 DOM 입력창에 프롬프트를 직접 주입합니다. `src/`가 TypeScript source of truth이고, `npm run build`가 `dist/`와 root generated mirror(`background/`, `popup/`, `options/`, `content/`)를 동기화합니다.
+### Purpose
 
-주요 흐름:
+AI Prompt Broadcaster sends one prompt to selected AI web applications. Built-ins are ChatGPT, Gemini, Claude, Grok, and Perplexity; users may add custom services with optional host permissions. The extension keeps prompt history, reusable favorites/chains/schedules, comparison notes, template packs, and experiment metadata in `chrome.storage`.
 
-1. Popup composer가 prompt, 대상 서비스, per-service override, template variable을 resolve합니다.
-2. Background runtime handler가 `broadcast` message를 받아 pending broadcast와 pending injection을 생성합니다.
-3. Background가 탭 routing/reuse/preflight를 수행하고 content injector를 실행합니다.
-4. Content injector가 selector 탐색, 입력, submit을 수행하고 구조화된 result code를 반환합니다.
-5. Background가 history, last broadcast, favorite job, auto response capture, notification을 best-effort side effect로 처리합니다.
+### Entrypoints and core modules
 
-현재 구조 리팩토링 상태:
+- `manifest.json` → MV3 background worker `background/service_worker.js` (built from `src/background/app/bootstrap/app.ts`).
+- `manifest.json` → popup `popup/popup.html` / `popup/popup.js` (source bootstrap: `src/popup/app/bootstrap/app.ts`).
+- `manifest.json` → options page `options/options.html` / `options/options.js`.
+- `manifest.json` → `content/selector_checker.js` on configured AI domains. The worker injects the main injector when a broadcast is ready.
+- `src/config/sites/builtins.ts` → routes, selector chains, auth selectors, submit behavior, and verification metadata.
 
-- `src/background/app/bootstrap.ts`는 facade이고 실제 wiring은 `src/background/app/bootstrap/app.ts`에 있습니다.
-- Background singleton state와 공통 helper는 `bootstrap/context.ts`, `bootstrap/utils.ts`로 분리했습니다.
-- Background feature helper는 `src/background/app/{comparison,experiments,injection}/`에 분리했습니다.
-- Popup bootstrap app body, favorite filter/rendering, options experiments/services, options i18n, shared prompt normalizers는 facade-preserving 하위 폴더 구조로 분리했습니다.
+### Data storage and dependencies
 
-## 3. High-Risk Issues
+- `chrome.storage.local`: history, favorites, settings, templates, experiments, comparison notes, custom services, and built-in overrides/states.
+- `chrome.storage.session`: pending broadcasts/injections, last broadcast, active comparison context, and favorite-run jobs.
+- An in-memory background mutation queue serializes shared session-state updates; a waiter registry coordinates favorite/chain completion.
+- Runtime uses Chrome extension APIs. Development dependencies are TypeScript, esbuild, and Playwright; product runtime has no database or backend API.
 
-### 3.1 저장 데이터 증가와 quota 실패 복구
+### Core execution flows
 
-* 위치: `src/shared/prompts/history-store.ts`, `src/shared/prompts/advanced-store.ts`, `src/shared/prompts/storage.ts`
-* 문제: 기존에는 history/comparison note 저장 cap이 없고 quota 계열 실패가 사용자에게 잘 보이지 않았습니다.
-* 영향: 장기 사용 또는 자동 응답 캡처 누적으로 Chrome local storage quota를 넘으면 히스토리/비교 노트 저장이 조용히 실패할 수 있었습니다.
-* 근거: 기존 저장 함수는 전체 배열을 그대로 `chrome.storage.local.set`에 저장했습니다.
-* 권장 수정 방향: **구현 완료.** 저장 hard cap, quota-like error emergency retry, 최종 실패 toast, 자동 캡처 20000자 cap을 적용했습니다.
-* 우선순위: High -> Implemented
+```text
+Popup/shortcut/context-menu input
+  → runtime message router (sender policy)
+  → broadcast queue (prompt/target validation)
+  → pending broadcast + tab creation/reuse + pending injection
+  → focused content-script injection / submit
+  → structured site result + history + last-broadcast state
+  → optional response capture / favorite-chain completion / user feedback
+```
 
-### 3.2 service worker 재시작 시 pending injection 복구
+```text
+Import JSON
+  → JSON parse + version migration + normalization/ID repair
+  → request/check custom-service host permissions
+  → one chrome.storage.local.set commit
+  → best-effort removal of unused optional permissions
+  → import summary to popup/options
+```
 
-* 위치: `src/shared/types/models.ts`, `src/background/session/store.ts`, `src/background/app/bootstrap/app.ts`
-* 문제: 기존에는 실제 injection 전 `injected: true`로 저장된 작업이 service worker 재시작 후 timeout 전까지 재큐잉되지 않을 수 있었습니다.
-* 영향: favorite chain/schedule이 broadcast completion을 기다리며 오래 지연될 수 있었습니다.
-* 근거: 기존 reconcile이 `job.injected === true` 항목을 건너뛰었습니다.
-* 권장 수정 방향: **구현 완료.** `PendingInjectionRecord.startedAt`을 추가했고, `status: "injecting"` 작업은 timeout 전이면 탭 상태 확인 후 재큐잉하며 오래된 injecting 작업은 즉시 timeout 정리합니다.
-* 우선순위: Medium -> Implemented
+CodeGraph call paths inspected included `createBroadcastQueue`, `createPendingInjectionController`, `recordBroadcastSiteResult`, `createBroadcastWaiterRegistry`, `importPromptData`, `createComparisonHandlers`, and `registerRuntimeMessageRouter`.
 
-### 3.3 runtime message sender 권한
+## 3. Audit Coverage & Limitations
 
-* 위치: `src/background/messages/router.ts`, `src/background/runtime/handlers.ts`
-* 문제: 기존 라우터는 content sender와 extension sender를 action별로 충분히 분리하지 않았습니다.
-* 영향: 향후 content script 확장 시 저장/삭제성 action 노출 가능성이 있었습니다.
-* 근거: mutation/reset/experiment/template/service-group action이 selector/injection report action과 같은 handler table에 있었습니다.
-* 권장 수정 방향: **구현 완료.** `senderPolicy`를 추가해 content 허용 action을 selector/injection report, selection update, quick palette 계열로 제한했습니다.
-* 우선순위: Medium -> Implemented
+### Covered
 
-### 3.4 selector/docs/build parity
+- Manifest, package scripts, README, CLAUDE, repository instructions, built-in site configuration, and entrypoint relationships.
+- Popup send flow, broadcast queue, tab reuse/preflight, pending-injection timeout/recovery, injection result handling, and history completion.
+- Local/session storage, import/export/migrations, custom-site permissions, reset behavior, schedules/favorite jobs, automatic response capture, and runtime-message sender policy.
+- CodeGraph caller/callee and blast-radius information for the above paths.
+- The repository's local `.codegraph/` index was present and used before file search for code discovery.
 
-* 위치: `README.md`, `CLAUDE.md`, `PROJECT_ANALYSIS.md`, `docs/extension-architecture.md`, `scripts/check-docs.mjs`
-* 문제: 코드 분할 이후 문서가 old module path를 유지하면 release/debug 기준이 어긋날 수 있었습니다.
-* 영향: 새 구조에서 수정 지점을 잘못 찾거나 generated mirror 갱신 누락을 놓칠 수 있습니다.
-* 근거: `src/background/app/bootstrap.ts`는 facade로 바뀌었고, options/popup/shared 기능이 하위 폴더로 분리되었습니다.
-* 권장 수정 방향: **구현 완료.** 주요 Markdown 구조 설명과 docs check required snippets를 새 폴더 구조에 맞췄습니다.
-* 우선순위: Medium -> Implemented
+### Executed checks
 
-## 4. Potential Functional Gaps
+- `npm run typecheck` — passed.
+- `npm run docs:check` — passed.
+- `npm run qa:smoke` — passed, 60/60 checks.
+- `npm run qa:extension` with `APB_E2E_HEADLESS=1` — timed out waiting for an MV3 service worker. README documents this headless limitation; this is not evidence of a product-runtime failure.
+- The headed E2E command was started but did not complete within this audit environment's command window; it is not counted as passed.
 
-* 잔여 리스크: 자동 응답 캡처는 여전히 서비스 DOM selector 기반입니다. 실제 서비스 UI 변화에 대한 fixture 확장이 필요합니다.
-* 잔여 리스크: pending injection service worker restart 복구는 코드 경로와 smoke 간접 검증은 되었지만, 강제 worker restart 전용 E2E는 아직 없습니다.
-* 잔여 리스크: `src/background/app/bootstrap/app.ts`는 여전히 가장 큰 wiring 파일입니다. 이번 리팩토링은 facade/context/feature helper 경계를 만든 1차 분할이며, broadcast/injection/comparison controller factory로 더 나누는 후속 작업 여지가 있습니다.
+### Limitations
 
-## 5. Recommended Fix Plan
+- No authenticated accounts or live prompt submissions were used.
+- The full extension E2E suite could not be completed in the available environment.
+- External service DOMs and Cloudflare challenges are volatile; local source analysis cannot prove future selector compatibility.
 
-### 1단계: 완료
+## 4. High-Risk Issues
 
-1. 저장 hard cap, quota emergency retry, 저장 실패 toast.
-2. runtime message action별 sender allowlist.
-3. pending injection `startedAt`/`status` 기반 reconcile.
-4. selector syntax validation과 docs/build mirror drift 검사.
+No `Confirmed` or strongly supported `Likely` production high-risk issues were found.
 
-### 2단계: 완료
+The following suspected failure modes were investigated and not retained as issues:
 
-1. public facade 유지형 코드 분할.
-2. `README.md`, `CLAUDE.md`, `PROJECT_ANALYSIS.md`, `docs/extension-architecture.md`, `docs/build-guide.md` 구조 설명 갱신.
-3. `.gitignore`에 local `.codegraph/` index 제외 추가 및 proof 확인.
+- **Concurrent broadcast/result corruption:** `createBroadcastQueue` routes session mutations through `queueBackgroundStateMutation`; pending injection has active/queued-tab guards; result updates are centralized. Smoke coverage includes result accumulation, resend routing, and favorite-job concurrency.
+- **Worker restart leaving a send stuck:** pending records retain `createdAt`, `startedAt`, and `status`; reconciliation turns stale work into `injection_timeout`, records a result, and removes the pending entry.
+- **Import replacing data after permission failure:** custom-site origins are requested and rechecked before `chrome.storage.local.set`; denied origins throw before commit. Smoke tests cover denial and commit-failure paths.
+- **Content pages invoking privileged mutations:** the router classifies extension versus content senders and enforces handler sender policies. Smoke tests exercise action allowlists.
+- **Unbounded local collections:** history, comparison notes, captured responses, UI toasts, and favorite jobs have caps/normalizers; quota retry and retention are smoke-tested.
 
-### 3단계: 권장 후속
+## 5. Potential Functional Gaps
 
-1. `src/background/app/bootstrap/app.ts`를 broadcast/injection/comparison/lifecycle controller factory로 추가 분할.
-2. service worker restart 전용 E2E 추가.
-3. 자동 응답 캡처 DOM fixture 확대.
+### [GAP-001] CI-compatible MV3 extension E2E is not currently proven
 
-## 6. Test Recommendations
+- **Classification:** Confirmed Gap (test-environment capability, not product failure)
+- **Evidence:** `qa:extension` times out in documented headless mode at `waitForExtensionServiceWorker`. `scripts/qa-extension.mjs` enables this only through `APB_E2E_HEADLESS`; README warns that headless must only be used with Chromium builds supporting MV3 extension workers.
+- **Impact:** CI in that mode can report a false failure and will not validate popup/options integration.
+- **Suggested direction:** pin a browser/launch configuration with headless MV3 support, or run headed under a virtual display and document it in CI.
 
-이번 변경에서 확인된 테스트:
+### [GAP-002] Authenticated live-service regression coverage is incomplete
 
-- `npm run typecheck`
-- `npm run build`
-- `npm run docs:check`
-- `npm run qa:smoke`
-- `npm run qa:extension`
-- `git diff --check`
+- **Classification:** Likely Gap
+- **Evidence:** selector evidence records Cloudflare challenges for ChatGPT, Claude, and Perplexity on public pages. Playwright interaction checks confirmed Gemini and Grok only. Fixtures test injector mechanics, not every provider's current authenticated DOM.
+- **Impact:** A provider UI change can cause a selector/submit failure until the selector checker detects it.
+- **Suggested direction:** keep an opt-in authenticated release checklist and add fixtures for discovered DOM variations.
 
-추가 권장 테스트:
+### [GAP-003] Automatic response capture has no real-service streaming E2E
 
-- 실제 service worker restart 중 `status: "injecting"` pending job 재큐잉/timeout E2E
-- 자동 응답 캡처 서비스별 DOM fixture: prompt echo, streaming 중간 상태, 복수 assistant candidate, 긴 응답
-- custom service selector validation에서 browser `querySelector`가 잡는 고급 invalid selector 케이스
+- **Classification:** Likely Gap
+- **Evidence:** capture polls visible service-specific DOM selectors for up to 45 seconds and deduplicates text. Its code path is covered by review and caps, but executed smoke tests did not replay a provider streaming response.
+- **Impact:** Provider DOM drift may cause missing comparison notes, while sending remains unaffected.
+- **Suggested direction:** add fixtures with partial streaming, prompt echo, multiple assistant candidates, and final stable text.
+
+## 6. Documentation Mismatches
+
+No material README/CLAUDE mismatch was found in the audited scope.
+
+`npm run docs:check` passed. The source-of-truth rule (`src/`), build command, MV3 E2E headless caveat, selector-verification workflow, and service configuration agree with the implementation.
+
+## 7. Recommended Fix Plan
+
+### Phase 1 — Immediate
+
+No production-code emergency fix is indicated. Make the extension E2E environment deterministic so regression coverage can run reliably.
+
+### Phase 2 — Stability
+
+1. Add a forced service-worker restart E2E while an injection is `injecting`; assert exactly one terminal site result.
+2. Add streaming-response fixtures and verify the retry loop preserves useful final text.
+3. Run the authenticated selector checklist before releases that modify selectors, routes, or submit mechanics.
+
+### Phase 3 — Structural
+
+1. Retain the current facade/module boundaries and add caller-path tests when expanding background controllers.
+2. Promote selector audit evidence and E2E browser/version requirements into release automation.
+
+## 8. Test Recommendations
+
+### Unit
+
+- Import duplicate history IDs, malformed custom-site selectors, and an ungranted origin; expect repaired IDs, validation errors, and no storage commit.
+- Feed `recordBroadcastSiteResult` the same terminal site result twice; expect one completion increment, one history result, and one final summary.
+- Feed capture update logic a prompt echo, shorter partial text, larger streamed text, and unrelated replacement text; assert its update decisions.
+
+### Integration
+
+- Create a two-site broadcast with one denied custom permission and one injectable tab; expect one `permission_denied`, one submitted result, and partial history.
+- Start a favorite chain whose first step fails under `stop`, `continue`, and `retry-once`; assert step count, history, and terminal job state.
+- Import successfully then force optional permission cleanup to reject; assert the local commit remains and a warning is handled.
+
+### End-to-End and concurrency
+
+- Start a multi-site broadcast, terminate the worker after a record becomes `injecting`, restart it, and assert one timeout result with no duplicate notification/history record.
+- Run two favorites resolving `{{counter}}`; assert consecutive counter values and no duplicate job for one favorite.
+- Exercise popup, options, and content origins against sender-policy actions; content may report selector status but must not reset settings or mutate services.
+
+### Platform-specific
+
+- Run `package:win` on Windows and `package:unix` on Linux/macOS from clean checkouts; load `dist/` and execute extension E2E using a supported headed/virtual-display configuration.
+
+## 9. Final Assessment
+
+| Area | Assessment | Basis |
+| --- | --- | --- |
+| Functional Correctness | Good | Typecheck, docs checks, and all 60 smoke checks passed; primary broadcast/persistence paths validate input and return structured outcomes. |
+| Runtime Stability | Acceptable | Pending work is persisted and reconciled, but full MV3 restart E2E remains unproven. |
+| Data Integrity | Good | Normalization, caps, permission-before-import commit, and serialized state mutation reduce corruption/loss risk. |
+| Error Resilience | Acceptable | Injector, tab, selector, permission, and storage failures return structured states and user feedback; external DOMs remain variable. |
+| Cross-platform Robustness | Needs Work | Windows/Unix package scripts exist, but no completed cross-platform extension E2E evidence was available. |
+| Test Confidence | Acceptable | Strong fixture/smoke coverage; extension E2E needs deterministic MV3 launch support and live authenticated coverage is intentionally absent. |
+
+The first three items to address are:
+
+1. Stabilize the MV3 extension E2E browser/CI environment.
+2. Add a service-worker-restart pending-injection regression test.
+3. Add authenticated/manual provider selector checks and streaming response-capture fixtures for all built-in services.

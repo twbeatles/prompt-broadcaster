@@ -433,6 +433,9 @@ async function main() {
   const builtInSites = await loadBuiltInSites();
   const browser = await chromium.launch({
     headless: !process.argv.includes("--headed"),
+    // Lets local audits reuse an installed Chromium/Chrome when Playwright's
+    // managed browser has not been downloaded yet.
+    executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH || undefined,
   });
   const context = await browser.newContext();
   const page = await context.newPage();

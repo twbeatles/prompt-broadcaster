@@ -120,7 +120,7 @@ The smoke flow loads local fixtures from `qa/fixtures/` and validates the built 
 The smoke suite still does not cover full live Chrome popup behavior such as real-window open-tab discovery or explicit tab targeting. Check those manually in a real browser window before release.
 Run `npm run build` first and then `npm run qa:smoke` after the build finishes. The smoke script reads the built files from `dist/` and should not be started in parallel with the build.
 
-Run `npm run qa:extension` after `npm run build` when you need a real extension-page E2E pass. It loads `dist/` into a persistent Chromium profile under `output/extension-e2e/`, opens options and popup pages, and verifies experiments, saved AI responses, service groups, and template packs. The script runs headed by default because Chromium extension service workers are not reliable in legacy headless mode; set `APB_E2E_HEADLESS=1` only when the local Chromium build supports extension workers in headless mode.
+Run `npm run qa:extension` after `npm run build` when you need a real extension-page E2E pass. It loads `dist/` into a persistent Chromium profile under `output/extension-e2e/`, opens options and popup pages, and verifies experiments, saved AI responses, service groups, and template packs. The script runs headed by default because Chromium extension service workers are not reliable in legacy headless mode; set `APB_E2E_HEADLESS=1` only when the local Chromium build supports extension workers in headless mode. In an unsupported headless browser, the script now reports this requirement explicitly instead of leaving only a generic service-worker timeout.
 
 Use the Playwright-based selector audit when you want a Markdown snapshot of the current built-in site surfaces:
 
