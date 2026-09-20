@@ -14,6 +14,7 @@ Source of truth: `src/` (TypeScript). Chrome loads the built output in `dist/`, 
 npm install
 npm run build
 npm run typecheck
+npm run qa:unit
 npm run docs:check
 npm run qa:smoke
 npm run qa:extension
@@ -81,8 +82,8 @@ To package a release zip:
 - `src/options/features/schedule-summary.ts`: pure scheduled-run summary helper used by options schedules UI
 - `src/options/ui/charts.ts`: chart rendering
 - `src/background/app/bootstrap.ts` + `src/background/app/bootstrap/{app,context,utils,runtime-events}.ts`: thin service-worker composition root (wiring only) plus app context, utilities, and Chrome listener registration
-- `src/background/app/bootstrap/tab-targets/`: site lookup, origin/permission helpers, reusable-tab preflight + factory (`index.ts`, `site-origin.ts`, `types.ts`) with facade at `tab-targets.ts`
-- `src/background/broadcast/`: pending-broadcast lifecycle, queueing, completion waiters (`pending/{controller,types}.ts`, `queue.ts`, `waiters.ts`)
+- `src/background/app/bootstrap/tab-targets/`: site lookup, origin/permission helpers, reusable-tab preflight + factory (`index.ts`, `site-origin.ts`, `site-lookup.ts`, `target-resolution.ts`, `tab-reuse.ts`, `types.ts`) with facade at `tab-targets.ts`
+- `src/background/broadcast/`: pending-broadcast lifecycle, queueing, completion waiters (`pending/{controller,support,lifecycle,completion,maintenance,types}.ts`, `queue.ts`, `waiters.ts`)
 - `src/background/injection/`: tab inject execution + pending-injection controller (`execute.ts`, `pending.ts`)
 - `src/background/comparison/handlers/`: comparison notes and auto response capture controller + `src/background/app/comparison/capture.ts` selectors/helpers
 - `src/background/experiments/handlers.ts` + `src/background/app/experiments/variables.ts`: experiment save/run handlers and scheduled variable blocklist
@@ -95,7 +96,7 @@ To package a release zip:
 - `src/background/commands/quick-palette.ts`: command handling and content-script injection for the page overlay
 - `src/background/context-menu/index.ts`: context-menu lifecycle
 - `src/background/popup/launcher.ts`: popup/open-window fallback handling
-- `src/background/popup/favorites-workflow.ts` + `favorites-workflow/{entrypoints,run-jobs,messages}.ts` facades over nested `entrypoints/` and `run-jobs/` handlers
+- `src/background/popup/favorites-workflow.ts` + `favorites-workflow/{entrypoints,run-jobs,messages}.ts` facades over nested `entrypoints/{notifications,enqueue,schedules,messages,palette}` and `run-jobs/{job-mutation,failure-history,queue,completion,execution,maintenance}` sub-factories
 - `src/background/selection/runtime.ts`: active-tab selection helpers
 - `src/background/app/injection-helpers.ts` + `src/background/app/injection/types.ts`: timeout scaling, selector normalization, result mapping, adaptive strategy ordering, inject type globals
 - `src/shared/prompts/normalizers/`: split into `primitives`, `enums`, `site-results`, `entities`, `settings-normalize` with `core.ts` compatibility facade
@@ -209,7 +210,9 @@ Do not duplicate toast styles in `popup/styles/app.css`.
 
 ## Testing
 
-Smoke QA lives in `qa/` and uses Playwright against local fixtures.
+Smoke QA lives in `qa/` and uses Playwright against local fixtures. Browser-free unit regressions run with `npm run qa:unit` (`scripts/qa-unit.mjs`, no browser required) and cover broadcast timeout tab handling plus busy-tab queue contention.
+
+Test tiers: Tier 1 is browser-free and CI-capable (`npm run build`, `npm run typecheck`, `npm run docs:check`, `npm run qa:unit`), enforced by `.github/workflows/ci-unit.yml`. Tier 2 needs a local browser (`npm run qa:smoke`, `npm run qa:extension`, `npm run selector:audit`) and stays manual or machine-gated.
 
 ```bash
 npx playwright install chromium

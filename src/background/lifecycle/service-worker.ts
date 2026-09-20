@@ -1,4 +1,6 @@
 import { resetPersistedExtensionState } from "../../shared/runtime-state";
+import { FAVORITE_JOB_ALARM_PREFIX } from "../favorites/jobs";
+import { SCHEDULE_ALARM_PREFIX } from "../favorites/schedules";
 import {
   BADGE_CLEAR_ALARM,
   KEEPALIVE_PERIOD_MINUTES,
@@ -162,7 +164,7 @@ export function createServiceWorkerLifecycle(deps: ServiceWorkerLifecycleDeps) {
     const alarms = await chrome.alarms.getAll().catch(() => []);
     await Promise.all(
       alarms
-        .filter((alarm) => alarm.name.startsWith("apb-favorite-job:"))
+        .filter((alarm) => alarm.name.startsWith(FAVORITE_JOB_ALARM_PREFIX) || alarm.name.startsWith(SCHEDULE_ALARM_PREFIX))
         .map((alarm) => chrome.alarms.clear(alarm.name).catch(() => false))
     );
 

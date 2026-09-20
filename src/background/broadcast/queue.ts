@@ -16,6 +16,7 @@ import type {
 import type {
   LastBroadcastSummary,
   PendingBroadcastRecord,
+  PendingInjectionRecord,
   RuntimeSite,
   SiteInjectionResult,
 } from "../../shared/types/models";
@@ -28,6 +29,7 @@ export interface BroadcastQueueDeps {
     mutator: (state: BackgroundSessionState) => Promise<TResult> | TResult,
   ) => Promise<TResult>;
   getPendingBroadcasts: () => Promise<Record<string, PendingBroadcastRecord>>;
+  getPendingInjections: () => Promise<Record<string, PendingInjectionRecord>>;
   createPendingBroadcast: (
     prompt: string,
     targets: ResolvedBroadcastTarget[],
@@ -73,6 +75,7 @@ export function createBroadcastQueue(deps: BroadcastQueueDeps) {
     clonePlainValue,
     queueBackgroundStateMutation,
     getPendingBroadcasts,
+    getPendingInjections,
     createPendingBroadcast,
     registerBroadcastCompletionWaiter,
     reconcilePendingBroadcasts,
@@ -166,6 +169,16 @@ export function createBroadcastQueue(deps: BroadcastQueueDeps) {
           if (!reusableTab) {
             await closeTabQuietly(targetTab.id);
           }
+          continue;
+        }
+
+        const liveInjections = await getPendingInjections();
+        const occupyingJob = liveInjections[String(targetTab.id)];
+        if (occupyingJob && occupyingJob.broadcastId !== broadcast.id) {
+          failedTabSiteIds.push(site.id);
+          await recordBroadcastSiteResult(broadcast.id, site.id, buildSiteResult("unexpected_error", {
+            message: `Tab ${targetTab.id} is busy with another broadcast; skipped to preserve its pending injection.`,
+          }));
           continue;
         }
 

@@ -300,8 +300,12 @@ npm run docs:check
 # Playwright 기반 로컬 Smoke QA 테스트
 npm run qa:smoke
 
+# 브라우저 없이 실행하는 단위 회귀 테스트 (브로드캐스트 타임아웃·탭 경합)
+npm run qa:unit
+
 # Chromium 실제 확장 프로그램 로드 통합 테스트
 npm run qa:extension
+# headed 모드가 기본. 로컬 Chromium이 headless MV3 워커를 지원할 때만 APB_E2E_HEADLESS=1 설정
 
 # 셀렉터 감사 및 검증
 npm run selector:audit

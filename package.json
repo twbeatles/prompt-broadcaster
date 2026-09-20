@@ -10,6 +10,7 @@
     "rebuild": "npm run clean && npm run build",
     "docs:check": "node ./scripts/check-docs.mjs",
     "qa:smoke": "node ./scripts/qa-smoke.mjs",
+    "qa:unit": "node ./scripts/qa-unit.mjs",
     "qa:extension": "node ./scripts/qa-extension.mjs",
     "selector:audit": "node ./scripts/selector-audit.mjs",
     "package:win": "powershell -ExecutionPolicy Bypass -File .\\package.ps1",

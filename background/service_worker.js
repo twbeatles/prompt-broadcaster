@@ -2957,34 +2957,6 @@ function applyPendingBroadcastSiteResult(record, siteId, resultInput, now = (/* 
   };
 }
 
-// src/background/app/constants.ts
-var INJECTOR_SCRIPT_PATH = "content/injector.js";
-var PALETTE_SCRIPT_PATH = "content/palette.js";
-var SELECTOR_CHECKER_SCRIPT_PATH = "content/selector_checker.js";
-var SELECTION_SCRIPT_PATH = "content/selection.js";
-var ONBOARDING_URL = "onboarding/onboarding.html";
-var POPUP_PAGE_URL = "popup/popup.html";
-var PENDING_INJECTIONS_KEY = "pendingInjections";
-var PENDING_BROADCASTS_KEY = "pendingBroadcasts";
-var PENDING_SELECTOR_CHECKS_KEY = "pendingSelectorChecks";
-var SELECTOR_ALERTS_KEY = "selectorAlerts";
-var NOTIFICATION_ICON_PATH = "icons/icon-128.png";
-var CONTEXT_MENU_ROOT_ID = "apb-root";
-var CONTEXT_MENU_ALL_ID = "apb-send-all";
-var CONTEXT_MENU_SITE_PREFIX = "apb-send-site:";
-var CONTEXT_MENU_SAVE_COMPARISON_ID = "apb-save-comparison-note";
-var CAPTURE_SELECTION_COMMAND = "capture-selected-text";
-var QUICK_PALETTE_COMMAND = "quick-palette";
-var RECONCILE_ALARM = "apb-reconcile";
-var BADGE_CLEAR_ALARM = "apb-clear-badge";
-var PENDING_TIMEOUT_MS = 6e4;
-var BADGE_CLEAR_DELAY_MS = 5e3;
-var KEEPALIVE_PERIOD_MINUTES = 0.5;
-var TAB_LOAD_READY_TIMEOUT_MS = 1e4;
-var TAB_POST_SUBMIT_SETTLE_MS = 1400;
-var STANDALONE_POPUP_WIDTH = 460;
-var STANDALONE_POPUP_HEIGHT = 860;
-
 // src/background/app/injection-helpers.ts
 function scaleTimeout(value, multiplier = 1) {
   const numericValue = Number(value);
@@ -3075,35 +3047,8 @@ function buildInjectionConfig(site, runtimeOverrides = {}) {
   };
 }
 
-// src/background/broadcast/pending/controller.ts
-function createPendingBroadcastController(deps) {
-  const {
-    getI18nMessage: getI18nMessage2,
-    nowIso: nowIso2,
-    clonePlainValue: clonePlainValue3,
-    getBroadcastTriggerLabel: getBroadcastTriggerLabel2,
-    queueBackgroundStateMutation: queueBackgroundStateMutation2,
-    getPendingBroadcasts: getPendingBroadcasts2,
-    getPendingInjections: getPendingInjections2,
-    removePendingInjection: removePendingInjection2,
-    activeInjections: activeInjections2,
-    suppressedCompletedBroadcastIds: suppressedCompletedBroadcastIds2,
-    getFocusedTabContext: getFocusedTabContext2,
-    restoreFocusedTabContext: restoreFocusedTabContext2,
-    applyBadgeForBroadcast: applyBadgeForBroadcast2,
-    maybeCreateBroadcastNotification: maybeCreateBroadcastNotification2,
-    handleFavoriteBroadcastCompletion: handleFavoriteBroadcastCompletion2,
-    resolveBroadcastCompletionWaiter,
-    autoCaptureBroadcastResponses
-  } = deps;
-  async function syncLastBroadcast(summary) {
-    await setLastBroadcast(summary);
-    await applyBadgeForBroadcast2(summary);
-  }
-  function getBroadcastAgeMs(record) {
-    const startedAtMs = Date.parse(record?.startedAt ?? "");
-    return Number.isFinite(startedAtMs) ? Date.now() - startedAtMs : 0;
-  }
+// src/background/broadcast/pending/completion.ts
+function createBroadcastCompletion(deps) {
   async function finalizeBroadcastSites(broadcastId, siteIds, status) {
     let lastSummary = null;
     for (const siteId of Array.isArray(siteIds) ? siteIds : []) {
@@ -3111,63 +3056,10 @@ function createPendingBroadcastController(deps) {
     }
     return lastSummary;
   }
-  async function closeTabQuietly(tabId) {
-    try {
-      await chrome.tabs.remove(tabId);
-    } catch (_error) {
-    }
-  }
-  async function restoreBroadcastFocus(record) {
-    if (!record) {
-      return;
-    }
-    await restoreFocusedTabContext2({
-      tabId: Number.isFinite(Number(record.originTabId)) ? Number(record.originTabId) : null,
-      windowId: Number.isFinite(Number(record.originWindowId)) ? Number(record.originWindowId) : null
-    });
-  }
-  async function createPendingBroadcast(prompt, targets, metadata = {}) {
-    const pendingInjections2 = await getPendingInjections2();
-    if (Object.keys(pendingInjections2).length > 0) {
-      console.warn("[AI Prompt Broadcaster] Starting a new broadcast while pending tabs still exist.", pendingInjections2);
-    }
-    const originContext = await getFocusedTabContext2();
-    const sites = Array.isArray(targets) ? targets.map((target) => target.site).filter(Boolean) : [];
-    const broadcastId = typeof crypto?.randomUUID === "function" ? crypto.randomUUID() : `broadcast-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const record = {
-      id: broadcastId,
-      prompt,
-      siteIds: sites.map((site) => site.id),
-      total: sites.length,
-      completed: 0,
-      submittedSiteIds: [],
-      failedSiteIds: [],
-      siteResults: {},
-      targetSnapshots: buildQueueTargetSnapshots(targets, prompt),
-      startedAt: nowIso2(),
-      status: "sending",
-      originTabId: originContext?.tabId ?? null,
-      originWindowId: originContext?.windowId ?? null,
-      openedTabIds: [],
-      targetTabIdsBySiteId: {},
-      originFavoriteId: typeof metadata.originFavoriteId === "string" && metadata.originFavoriteId.trim() ? metadata.originFavoriteId.trim() : null,
-      chainRunId: typeof metadata.chainRunId === "string" && metadata.chainRunId.trim() ? metadata.chainRunId.trim() : null,
-      chainStepIndex: Number.isFinite(Number(metadata.chainStepIndex)) ? Math.max(0, Math.round(Number(metadata.chainStepIndex))) : null,
-      chainStepCount: Number.isFinite(Number(metadata.chainStepCount)) ? Math.max(0, Math.round(Number(metadata.chainStepCount))) : null,
-      experimentRunId: typeof metadata.experimentRunId === "string" && metadata.experimentRunId.trim() ? metadata.experimentRunId.trim() : null,
-      trigger: getBroadcastTriggerLabel2(metadata.trigger)
-    };
-    await queueBackgroundStateMutation2((state) => {
-      state.pendingBroadcasts[broadcastId] = record;
-      return clonePlainValue3(record);
-    });
-    await syncLastBroadcast(buildPendingBroadcastSummary(record, { finishedAt: "" }, nowIso2()));
-    return record;
-  }
   async function recordBroadcastSiteResult(broadcastId, siteId, resultInput) {
     const result = typeof resultInput === "string" ? buildSiteResult(resultInput) : buildSiteResult(resultInput?.code ?? resultInput, resultInput ?? {});
     try {
-      const mutationResult = await queueBackgroundStateMutation2((state) => {
+      const mutationResult = await deps.queueBackgroundStateMutation((state) => {
         const record = state.pendingBroadcasts[broadcastId];
         if (!record) {
           return {
@@ -3177,11 +3069,11 @@ function createPendingBroadcastController(deps) {
         }
         if (record.siteResults?.[siteId]) {
           return {
-            summary: buildPendingBroadcastSummary(record, {}, nowIso2()),
+            summary: buildPendingBroadcastSummary(record, {}, deps.nowIso()),
             completedRecord: null
           };
         }
-        const mutation = applyPendingBroadcastSiteResult(record, siteId, result, nowIso2());
+        const mutation = applyPendingBroadcastSiteResult(record, siteId, result, deps.nowIso());
         if (mutation.nextRecord) {
           state.pendingBroadcasts[broadcastId] = mutation.nextRecord;
         } else {
@@ -3189,7 +3081,7 @@ function createPendingBroadcastController(deps) {
         }
         return {
           summary: mutation.summary,
-          completedRecord: mutation.completedRecord ? clonePlainValue3(mutation.completedRecord) : null
+          completedRecord: mutation.completedRecord ? deps.clonePlainValue(mutation.completedRecord) : null
         };
       });
       if (!mutationResult?.summary) {
@@ -3202,7 +3094,7 @@ function createPendingBroadcastController(deps) {
         } catch (sideEffectError) {
           if (label === "appendPromptHistory") {
             await enqueueUiToast({
-              message: getI18nMessage2("toast_prompt_history_save_failed") || "Broadcast finished, but prompt history could not be saved.",
+              message: deps.getI18nMessage("toast_prompt_history_save_failed") || "Broadcast finished, but prompt history could not be saved.",
               type: "error",
               duration: 7e3
             });
@@ -3217,15 +3109,15 @@ function createPendingBroadcastController(deps) {
         }
       };
       if (completedRecord) {
-        const suppressCompletionEffects = suppressedCompletedBroadcastIds2.has(broadcastId);
-        suppressedCompletedBroadcastIds2.delete(broadcastId);
+        const suppressCompletionEffects = deps.suppressedCompletedBroadcastIds.has(broadcastId);
+        deps.suppressedCompletedBroadcastIds.delete(broadcastId);
         await runSideEffect("syncLastBroadcast", async () => {
-          await syncLastBroadcast(summary);
+          await deps.syncLastBroadcast(summary);
         });
         await runSideEffect("handleFavoriteBroadcastCompletion", async () => {
-          await handleFavoriteBroadcastCompletion2(summary);
+          await deps.handleFavoriteBroadcastCompletion(summary);
         });
-        resolveBroadcastCompletionWaiter(broadcastId, summary);
+        deps.resolveBroadcastCompletionWaiter(broadcastId, summary);
         if (suppressCompletionEffects) {
           return summary;
         }
@@ -3248,24 +3140,24 @@ function createPendingBroadcastController(deps) {
             experimentRunId: completedRecord.experimentRunId ?? null,
             trigger: completedRecord.trigger ?? "popup"
           });
-          void autoCaptureBroadcastResponses(historyItem, completedRecord).catch((error) => {
+          void deps.autoCaptureBroadcastResponses(historyItem, completedRecord).catch((error) => {
             console.warn("[AI Prompt Broadcaster] Automatic response capture failed.", error);
             void enqueueUiToast({
-              message: getI18nMessage2("toast_auto_capture_save_failed") || "Automatic response capture could not be saved.",
+              message: deps.getI18nMessage("toast_auto_capture_save_failed") || "Automatic response capture could not be saved.",
               type: "warning",
               duration: 7e3
             }).catch(() => void 0);
           });
         });
         await runSideEffect("restoreBroadcastFocus", async () => {
-          await restoreBroadcastFocus(completedRecord);
+          await deps.restoreBroadcastFocus(completedRecord);
         });
         await runSideEffect("maybeCreateBroadcastNotification", async () => {
-          await maybeCreateBroadcastNotification2(summary);
+          await deps.maybeCreateBroadcastNotification(summary);
         });
       } else {
         await runSideEffect("syncLastBroadcast", async () => {
-          await syncLastBroadcast(summary);
+          await deps.syncLastBroadcast(summary);
         });
       }
       return summary;
@@ -3279,14 +3171,126 @@ function createPendingBroadcastController(deps) {
       return null;
     }
   }
+  return {
+    finalizeBroadcastSites,
+    recordBroadcastSiteResult
+  };
+}
+
+// src/background/broadcast/pending/lifecycle.ts
+function createPendingBroadcastLifecycle(deps) {
+  async function createPendingBroadcast(prompt, targets, metadata = {}) {
+    const pendingInjections2 = await deps.getPendingInjections();
+    if (Object.keys(pendingInjections2).length > 0) {
+      console.warn("[AI Prompt Broadcaster] Starting a new broadcast while pending tabs still exist.", pendingInjections2);
+    }
+    const originContext = await deps.getFocusedTabContext();
+    const sites = Array.isArray(targets) ? targets.map((target) => target.site).filter(Boolean) : [];
+    const broadcastId = typeof crypto?.randomUUID === "function" ? crypto.randomUUID() : `broadcast-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const record = {
+      id: broadcastId,
+      prompt,
+      siteIds: sites.map((site) => site.id),
+      total: sites.length,
+      completed: 0,
+      submittedSiteIds: [],
+      failedSiteIds: [],
+      siteResults: {},
+      targetSnapshots: buildQueueTargetSnapshots(targets, prompt),
+      startedAt: deps.nowIso(),
+      status: "sending",
+      originTabId: originContext?.tabId ?? null,
+      originWindowId: originContext?.windowId ?? null,
+      openedTabIds: [],
+      targetTabIdsBySiteId: {},
+      originFavoriteId: typeof metadata.originFavoriteId === "string" && metadata.originFavoriteId.trim() ? metadata.originFavoriteId.trim() : null,
+      chainRunId: typeof metadata.chainRunId === "string" && metadata.chainRunId.trim() ? metadata.chainRunId.trim() : null,
+      chainStepIndex: Number.isFinite(Number(metadata.chainStepIndex)) ? Math.max(0, Math.round(Number(metadata.chainStepIndex))) : null,
+      chainStepCount: Number.isFinite(Number(metadata.chainStepCount)) ? Math.max(0, Math.round(Number(metadata.chainStepCount))) : null,
+      experimentRunId: typeof metadata.experimentRunId === "string" && metadata.experimentRunId.trim() ? metadata.experimentRunId.trim() : null,
+      trigger: deps.getBroadcastTriggerLabel(metadata.trigger)
+    };
+    await deps.queueBackgroundStateMutation((state) => {
+      state.pendingBroadcasts[broadcastId] = record;
+      return deps.clonePlainValue(record);
+    });
+    await deps.syncLastBroadcast(buildPendingBroadcastSummary(record, { finishedAt: "" }, deps.nowIso()));
+    return record;
+  }
+  return {
+    createPendingBroadcast
+  };
+}
+
+// src/background/app/constants.ts
+var INJECTOR_SCRIPT_PATH = "content/injector.js";
+var PALETTE_SCRIPT_PATH = "content/palette.js";
+var SELECTOR_CHECKER_SCRIPT_PATH = "content/selector_checker.js";
+var SELECTION_SCRIPT_PATH = "content/selection.js";
+var ONBOARDING_URL = "onboarding/onboarding.html";
+var POPUP_PAGE_URL = "popup/popup.html";
+var PENDING_INJECTIONS_KEY = "pendingInjections";
+var PENDING_BROADCASTS_KEY = "pendingBroadcasts";
+var PENDING_SELECTOR_CHECKS_KEY = "pendingSelectorChecks";
+var SELECTOR_ALERTS_KEY = "selectorAlerts";
+var NOTIFICATION_ICON_PATH = "icons/icon-128.png";
+var CONTEXT_MENU_ROOT_ID = "apb-root";
+var CONTEXT_MENU_ALL_ID = "apb-send-all";
+var CONTEXT_MENU_SITE_PREFIX = "apb-send-site:";
+var CONTEXT_MENU_SAVE_COMPARISON_ID = "apb-save-comparison-note";
+var CAPTURE_SELECTION_COMMAND = "capture-selected-text";
+var QUICK_PALETTE_COMMAND = "quick-palette";
+var RECONCILE_ALARM = "apb-reconcile";
+var BADGE_CLEAR_ALARM = "apb-clear-badge";
+var PENDING_TIMEOUT_MS = 6e4;
+var BADGE_CLEAR_DELAY_MS = 5e3;
+var KEEPALIVE_PERIOD_MINUTES = 0.5;
+var TAB_LOAD_READY_TIMEOUT_MS = 1e4;
+var TAB_POST_SUBMIT_SETTLE_MS = 1400;
+var STANDALONE_POPUP_WIDTH = 460;
+var STANDALONE_POPUP_HEIGHT = 860;
+
+// src/background/broadcast/pending/support.ts
+async function closeTabQuietly(tabId) {
+  try {
+    await chrome.tabs.remove(tabId);
+  } catch (_error) {
+  }
+}
+function getBroadcastAgeMs(record) {
+  const startedAtMs = Date.parse(record?.startedAt ?? "");
+  return Number.isFinite(startedAtMs) ? Date.now() - startedAtMs : 0;
+}
+function createBroadcastSupport(deps) {
+  async function syncLastBroadcast(summary) {
+    await setLastBroadcast(summary);
+    await deps.applyBadgeForBroadcast(summary);
+  }
+  async function restoreBroadcastFocus(record) {
+    if (!record) {
+      return;
+    }
+    await deps.restoreFocusedTabContext({
+      tabId: Number.isFinite(Number(record.originTabId)) ? Number(record.originTabId) : null,
+      windowId: Number.isFinite(Number(record.originWindowId)) ? Number(record.originWindowId) : null
+    });
+  }
+  return {
+    syncLastBroadcast,
+    restoreBroadcastFocus
+  };
+}
+
+// src/background/broadcast/pending/maintenance.ts
+function createBroadcastMaintenance(deps) {
   async function cancelBroadcast(broadcastId, reason = "cancelled") {
     const normalizedBroadcastId = typeof broadcastId === "string" ? broadcastId.trim() : "";
     if (!normalizedBroadcastId) {
       return null;
     }
-    const pendingBroadcastsBeforeCancel = await getPendingBroadcasts2();
+    const pendingBroadcastsBeforeCancel = await deps.getPendingBroadcasts();
     const recordBeforeCancel = pendingBroadcastsBeforeCancel[normalizedBroadcastId] ?? null;
-    const pendingInjections2 = await getPendingInjections2();
+    const pendingInjections2 = await deps.getPendingInjections();
     const matchingJobs = Object.entries(pendingInjections2).filter(
       ([, job]) => job?.broadcastId === normalizedBroadcastId
     );
@@ -3299,33 +3303,33 @@ function createPendingBroadcastController(deps) {
       if (job?.siteId) {
         pendingSiteIds.add(job.siteId);
       }
-      await removePendingInjection2(tabId);
-      activeInjections2.delete(tabId);
+      await deps.removePendingInjection(tabId);
+      deps.activeInjections.delete(tabId);
       if (job?.closeOnCancel !== false && Number.isFinite(tabId)) {
         tabsToClose.add(tabId);
       }
     }
     let lastSummary = null;
-    lastSummary = await finalizeBroadcastSites(
+    lastSummary = await deps.finalizeBroadcastSites(
       normalizedBroadcastId,
       [...pendingSiteIds],
       buildSiteResult(reason === "reset" ? "cancelled" : reason)
     ) ?? lastSummary;
-    const refreshedPendingBroadcasts = await getPendingBroadcasts2();
+    const refreshedPendingBroadcasts = await deps.getPendingBroadcasts();
     const record = refreshedPendingBroadcasts[normalizedBroadcastId];
     const unresolvedSiteIds = getUnresolvedPendingBroadcastSiteIds(record).filter((siteId) => !pendingSiteIds.has(siteId));
-    lastSummary = await finalizeBroadcastSites(
+    lastSummary = await deps.finalizeBroadcastSites(
       normalizedBroadcastId,
       unresolvedSiteIds,
       buildSiteResult(reason === "reset" ? "cancelled" : reason)
     ) ?? lastSummary;
     await Promise.all([...tabsToClose].map(async (tabId) => closeTabQuietly(Number(tabId))));
-    await restoreBroadcastFocus(recordBeforeCancel);
+    await deps.restoreBroadcastFocus(recordBeforeCancel);
     const fallbackSummary = await getLastBroadcast();
     const summary = lastSummary ?? fallbackSummary;
     if (reason !== "reset") {
       await enqueueUiToast({
-        message: getI18nMessage2("toast_broadcast_cancelled") || "Broadcast cancelled.",
+        message: deps.getI18nMessage("toast_broadcast_cancelled") || "Broadcast cancelled.",
         type: "warning",
         duration: 5e3,
         meta: {
@@ -3334,12 +3338,12 @@ function createPendingBroadcastController(deps) {
         }
       });
     }
-    resolveBroadcastCompletionWaiter(normalizedBroadcastId, summary ?? null);
+    deps.resolveBroadcastCompletionWaiter(normalizedBroadcastId, summary ?? null);
     return summary;
   }
   async function reconcilePendingBroadcasts() {
-    const pendingBroadcasts2 = await getPendingBroadcasts2();
-    const pendingInjections2 = await getPendingInjections2();
+    const pendingBroadcasts2 = await deps.getPendingBroadcasts();
+    const pendingInjections2 = await deps.getPendingInjections();
     const jobsByBroadcastId = /* @__PURE__ */ new Map();
     for (const [tabIdKey, job] of Object.entries(pendingInjections2)) {
       if (!job?.broadcastId) {
@@ -3356,30 +3360,63 @@ function createPendingBroadcastController(deps) {
       }
       const relatedJobs = jobsByBroadcastId.get(broadcastId) ?? [];
       if (relatedJobs.length === 0) {
-        await finalizeBroadcastSites(broadcastId, unresolvedSiteIds, "broadcast_stale");
+        await deps.finalizeBroadcastSites(broadcastId, unresolvedSiteIds, "broadcast_stale");
         continue;
       }
       if (getBroadcastAgeMs(record) <= PENDING_TIMEOUT_MS) {
         continue;
       }
-      for (const [tabIdKey] of relatedJobs) {
+      const hasActivelyInjectingJob = relatedJobs.some(([, job]) => {
+        const injectedAt = Number(job?.startedAt || 0);
+        return job?.status === "injecting" && injectedAt > 0 && Date.now() - injectedAt <= PENDING_TIMEOUT_MS;
+      });
+      if (hasActivelyInjectingJob) {
+        continue;
+      }
+      for (const [tabIdKey, job] of relatedJobs) {
         const tabId = Number(tabIdKey);
-        await removePendingInjection2(tabId);
-        activeInjections2.delete(tabId);
+        await deps.removePendingInjection(tabId);
+        deps.activeInjections.delete(tabId);
+        if (job?.closeOnCancel === false) {
+          continue;
+        }
         await closeTabQuietly(tabId);
       }
-      await finalizeBroadcastSites(broadcastId, unresolvedSiteIds, "injection_timeout");
+      await deps.finalizeBroadcastSites(broadcastId, unresolvedSiteIds, "injection_timeout");
     }
   }
   return {
-    syncLastBroadcast,
-    createPendingBroadcast,
-    recordBroadcastSiteResult,
-    finalizeBroadcastSites,
     cancelBroadcast,
-    reconcilePendingBroadcasts,
+    reconcilePendingBroadcasts
+  };
+}
+
+// src/background/broadcast/pending/controller.ts
+function createPendingBroadcastController(deps) {
+  const support = createBroadcastSupport(deps);
+  const completion = createBroadcastCompletion({
+    ...deps,
+    syncLastBroadcast: support.syncLastBroadcast,
+    restoreBroadcastFocus: support.restoreBroadcastFocus
+  });
+  const lifecycle2 = createPendingBroadcastLifecycle({
+    ...deps,
+    syncLastBroadcast: support.syncLastBroadcast
+  });
+  const maintenance = createBroadcastMaintenance({
+    ...deps,
+    finalizeBroadcastSites: completion.finalizeBroadcastSites,
+    restoreBroadcastFocus: support.restoreBroadcastFocus
+  });
+  return {
+    syncLastBroadcast: support.syncLastBroadcast,
+    createPendingBroadcast: lifecycle2.createPendingBroadcast,
+    recordBroadcastSiteResult: completion.recordBroadcastSiteResult,
+    finalizeBroadcastSites: completion.finalizeBroadcastSites,
+    cancelBroadcast: maintenance.cancelBroadcast,
+    reconcilePendingBroadcasts: maintenance.reconcilePendingBroadcasts,
     closeTabQuietly,
-    restoreBroadcastFocus,
+    restoreBroadcastFocus: support.restoreBroadcastFocus,
     getBroadcastAgeMs
   };
 }
@@ -3566,6 +3603,7 @@ function createBroadcastQueue(deps) {
     clonePlainValue: clonePlainValue3,
     queueBackgroundStateMutation: queueBackgroundStateMutation2,
     getPendingBroadcasts: getPendingBroadcasts2,
+    getPendingInjections: getPendingInjections2,
     createPendingBroadcast,
     registerBroadcastCompletionWaiter,
     reconcilePendingBroadcasts,
@@ -3578,7 +3616,7 @@ function createBroadcastQueue(deps) {
     addPendingInjection: addPendingInjection2,
     queuePendingInjection,
     recordBroadcastSiteResult,
-    closeTabQuietly
+    closeTabQuietly: closeTabQuietly2
   } = deps;
   async function queueResolvedBroadcastRequest(prompt, selectedTargets, metadata = {}) {
     const selectedSites = selectedTargets.map((target) => target.site);
@@ -3632,8 +3670,17 @@ function createBroadcastQueue(deps) {
         const pendingAfterCreate = await getPendingBroadcasts2();
         if (!pendingAfterCreate[broadcast.id]) {
           if (!reusableTab) {
-            await closeTabQuietly(targetTab.id);
+            await closeTabQuietly2(targetTab.id);
           }
+          continue;
+        }
+        const liveInjections = await getPendingInjections2();
+        const occupyingJob = liveInjections[String(targetTab.id)];
+        if (occupyingJob && occupyingJob.broadcastId !== broadcast.id) {
+          failedTabSiteIds.push(site.id);
+          await recordBroadcastSiteResult(broadcast.id, site.id, buildSiteResult("unexpected_error", {
+            message: `Tab ${targetTab.id} is busy with another broadcast; skipped to preserve its pending injection.`
+          }));
           continue;
         }
         await addPendingInjection2(targetTab.id, {
@@ -4593,6 +4640,73 @@ function createPendingInjectionController(deps) {
   };
 }
 
+// src/background/favorites/jobs.ts
+var FAVORITE_JOB_ALARM_PREFIX = "apb-favorite-job:";
+var FAVORITE_JOB_INITIAL_DELAY_MS = 50;
+var favoriteExecutionChain = Promise.resolve();
+function createFavoriteRunJobId() {
+  return typeof crypto?.randomUUID === "function" ? crypto.randomUUID() : `favorite-job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+function buildFavoriteJobAlarmName(jobId) {
+  const normalizedJobId = typeof jobId === "string" ? jobId.trim() : "";
+  return normalizedJobId ? `${FAVORITE_JOB_ALARM_PREFIX}${normalizedJobId}` : "";
+}
+function parseFavoriteJobIdFromAlarmName(alarmName) {
+  const normalizedAlarmName = typeof alarmName === "string" ? alarmName.trim() : "";
+  return normalizedAlarmName.startsWith(FAVORITE_JOB_ALARM_PREFIX) ? normalizedAlarmName.slice(FAVORITE_JOB_ALARM_PREFIX.length) : "";
+}
+async function scheduleFavoriteJobAlarm(jobId, delayMs = FAVORITE_JOB_INITIAL_DELAY_MS) {
+  const alarmName = buildFavoriteJobAlarmName(jobId);
+  if (!alarmName) {
+    return;
+  }
+  chrome.alarms.create(alarmName, {
+    when: Date.now() + Math.max(FAVORITE_JOB_INITIAL_DELAY_MS, Math.round(Number(delayMs) || 0))
+  });
+}
+function replaceFavoriteRunJob(jobs, nextJob) {
+  const nextJobs = jobs.filter((job) => job.jobId !== nextJob.jobId);
+  nextJobs.unshift(nextJob);
+  return nextJobs;
+}
+function queueFavoriteExecution(task) {
+  const resultPromise = favoriteExecutionChain.then(task, task);
+  favoriteExecutionChain = resultPromise.then(() => void 0, () => void 0);
+  return resultPromise;
+}
+
+// src/background/favorites/schedules.ts
+var SCHEDULE_ALARM_PREFIX = "apb-schedule:";
+function buildScheduleAlarmName(favoriteId) {
+  const normalizedFavoriteId = typeof favoriteId === "string" ? favoriteId.trim() : "";
+  return normalizedFavoriteId ? `${SCHEDULE_ALARM_PREFIX}${normalizedFavoriteId}` : "";
+}
+function parseScheduleAlarmFavoriteId(alarmName) {
+  const normalizedAlarmName = typeof alarmName === "string" ? alarmName.trim() : "";
+  return normalizedAlarmName.startsWith(SCHEDULE_ALARM_PREFIX) ? alarmName.slice(SCHEDULE_ALARM_PREFIX.length) : "";
+}
+function computeNextScheduledAt(repeat, scheduledAt, now = /* @__PURE__ */ new Date()) {
+  const normalizedRepeat = typeof repeat === "string" ? repeat : "none";
+  if (normalizedRepeat === "none") {
+    return null;
+  }
+  const baseDate = Number.isFinite(Date.parse(String(scheduledAt ?? ""))) ? new Date(String(scheduledAt)) : new Date(now);
+  const nextDate = new Date(baseDate);
+  do {
+    if (normalizedRepeat === "daily") {
+      nextDate.setDate(nextDate.getDate() + 1);
+    } else if (normalizedRepeat === "weekly") {
+      nextDate.setDate(nextDate.getDate() + 7);
+    } else {
+      nextDate.setDate(nextDate.getDate() + 1);
+      while (nextDate.getDay() === 0 || nextDate.getDay() === 6) {
+        nextDate.setDate(nextDate.getDate() + 1);
+      }
+    }
+  } while (nextDate.getTime() <= now.getTime());
+  return nextDate.toISOString();
+}
+
 // src/background/lifecycle/service-worker.ts
 function createServiceWorkerLifecycle(deps) {
   const {
@@ -4605,7 +4719,7 @@ function createServiceWorkerLifecycle(deps) {
     getPendingBroadcasts: getPendingBroadcasts2,
     getPendingInjections: getPendingInjections2,
     suppressedCompletedBroadcastIds: suppressedCompletedBroadcastIds2,
-    closeTabQuietly,
+    closeTabQuietly: closeTabQuietly2,
     activeInjections: activeInjections2,
     queuedInjectionTabIds: queuedInjectionTabIds2,
     selectionCache: selectionCache2,
@@ -4674,7 +4788,7 @@ function createServiceWorkerLifecycle(deps) {
         if (job?.closeOnCancel === false) {
           return;
         }
-        await closeTabQuietly(Number(tabIdKey));
+        await closeTabQuietly2(Number(tabIdKey));
       })
     );
     activeInjections2.clear();
@@ -4683,7 +4797,7 @@ function createServiceWorkerLifecycle(deps) {
     resetRememberedState2();
     const alarms = await chrome.alarms.getAll().catch(() => []);
     await Promise.all(
-      alarms.filter((alarm) => alarm.name.startsWith("apb-favorite-job:")).map((alarm) => chrome.alarms.clear(alarm.name).catch(() => false))
+      alarms.filter((alarm) => alarm.name.startsWith(FAVORITE_JOB_ALARM_PREFIX) || alarm.name.startsWith(SCHEDULE_ALARM_PREFIX)).map((alarm) => chrome.alarms.clear(alarm.name).catch(() => false))
     );
     await queueBackgroundStateMutation2((state) => {
       state.pendingInjections = {};
@@ -5408,33 +5522,6 @@ function createNotificationService(deps) {
   };
 }
 
-// src/shared/sites/reuse-preflight.ts
-function evaluateReusableTabSnapshot(snapshot) {
-  const pathBlockReason = getSitePathBlockReason(
-    { supportedRoutes: snapshot?.supportedRoutes },
-    snapshot?.pathname
-  );
-  if (pathBlockReason === "auth_path") {
-    return { ok: false, reason: "auth_path" };
-  }
-  if (pathBlockReason === "settings_path") {
-    return { ok: false, reason: "settings_path" };
-  }
-  if (pathBlockReason === "unsupported_route") {
-    return { ok: false, reason: "unsupported_route" };
-  }
-  if (!snapshot?.hasPromptSurface) {
-    return {
-      ok: false,
-      reason: snapshot?.hasAuthSurface ? "auth_selector" : "missing_input"
-    };
-  }
-  if (shouldRequireVisibleSubmitSurface(snapshot?.submitRequirement) && !snapshot?.hasSubmitSurface) {
-    return { ok: false, reason: "missing_submit" };
-  }
-  return { ok: true };
-}
-
 // src/background/app/bootstrap/tab-targets/site-origin.ts
 function isInjectableTabUrl(urlString) {
   try {
@@ -5486,8 +5573,8 @@ function scoreReusableTabForSite(tab, site) {
   return (exactUrlMatch ? 0 : 5) + activePenalty;
 }
 
-// src/background/app/bootstrap/tab-targets/index.ts
-function createBackgroundTabTargetResolver(deps) {
+// src/background/app/bootstrap/tab-targets/site-lookup.ts
+function createSiteLookup(deps) {
   let runtimeSiteLookupCache = null;
   function cacheRuntimeSites(sites) {
     runtimeSiteLookupCache = new Map(
@@ -5504,16 +5591,6 @@ function createBackgroundTabTargetResolver(deps) {
       }
     }
     return runtimeSiteLookupCache ?? /* @__PURE__ */ new Map();
-  }
-  function buildSelectedTabUnavailableMessage2(siteName, tabId) {
-    const label = siteName || "AI service";
-    if (Number.isFinite(Number(tabId))) {
-      return deps.getI18nMessage("toast_selected_tab_unavailable", [
-        label,
-        String(tabId)
-      ]) || `${label} selected tab #${String(tabId)} is unavailable.`;
-    }
-    return deps.getI18nMessage("toast_selected_tab_unavailable", [label]) || `${label} selected tab is unavailable.`;
   }
   async function getSiteById2(siteId) {
     const siteLookup = await getRuntimeSiteLookup();
@@ -5533,47 +5610,43 @@ function createBackgroundTabTargetResolver(deps) {
       return null;
     }
   }
-  async function resolveSelectedTargets2(siteRefs) {
-    const runtimeSites = await deps.getRuntimeSites();
-    cacheRuntimeSites(runtimeSites);
-    const resolvedTargets = [];
-    const seenIds = /* @__PURE__ */ new Set();
-    for (const siteRef of Array.isArray(siteRefs) ? siteRefs : []) {
-      let resolvedSite = null;
-      let targetTabId = null;
-      let requireExplicitTab = false;
-      let forceNewTab = false;
-      let promptOverride;
-      let resolvedPrompt;
-      if (typeof siteRef === "string") {
-        resolvedSite = runtimeSites.find((site) => site.id === siteRef) ?? null;
-      } else if (siteRef && typeof siteRef === "object") {
-        if (typeof siteRef.id === "string") {
-          resolvedSite = runtimeSites.find((site) => site.id === siteRef.id) ?? buildInjectionConfig(siteRef);
-        } else {
-          resolvedSite = buildInjectionConfig(siteRef);
-        }
-        targetTabId = normalizeTargetTabId2(siteRef.tabId);
-        requireExplicitTab = siteRef.target === "tab" || targetTabId !== null;
-        forceNewTab = siteRef.reuseExistingTab === false || siteRef.openInNewTab === true || siteRef.target === "new";
-        promptOverride = typeof siteRef.promptOverride === "string" && siteRef.promptOverride.trim() ? siteRef.promptOverride.trim() : void 0;
-        resolvedPrompt = typeof siteRef.resolvedPrompt === "string" ? siteRef.resolvedPrompt : void 0;
-      }
-      if (!resolvedSite || !resolvedSite.id || seenIds.has(resolvedSite.id)) {
-        continue;
-      }
-      seenIds.add(resolvedSite.id);
-      resolvedTargets.push({
-        site: buildInjectionConfig(resolvedSite),
-        targetTabId,
-        requireExplicitTab,
-        forceNewTab,
-        promptOverride,
-        resolvedPrompt
-      });
-    }
-    return resolvedTargets;
+  return {
+    cacheRuntimeSites,
+    getRuntimeSiteLookup,
+    getSiteById: getSiteById2,
+    getSiteForUrl: getSiteForUrl2
+  };
+}
+
+// src/shared/sites/reuse-preflight.ts
+function evaluateReusableTabSnapshot(snapshot) {
+  const pathBlockReason = getSitePathBlockReason(
+    { supportedRoutes: snapshot?.supportedRoutes },
+    snapshot?.pathname
+  );
+  if (pathBlockReason === "auth_path") {
+    return { ok: false, reason: "auth_path" };
   }
+  if (pathBlockReason === "settings_path") {
+    return { ok: false, reason: "settings_path" };
+  }
+  if (pathBlockReason === "unsupported_route") {
+    return { ok: false, reason: "unsupported_route" };
+  }
+  if (!snapshot?.hasPromptSurface) {
+    return {
+      ok: false,
+      reason: snapshot?.hasAuthSurface ? "auth_selector" : "missing_input"
+    };
+  }
+  if (shouldRequireVisibleSubmitSurface(snapshot?.submitRequirement) && !snapshot?.hasSubmitSurface) {
+    return { ok: false, reason: "missing_submit" };
+  }
+  return { ok: true };
+}
+
+// src/background/app/bootstrap/tab-targets/tab-reuse.ts
+function createTabReuse(deps) {
   async function runReusableTabPreflight(tabId, site) {
     try {
       const inputSelectors = normalizeSelectorEntries([
@@ -5759,7 +5832,7 @@ function createBackgroundTabTargetResolver(deps) {
       return {
         requested: true,
         tab: null,
-        message: buildSelectedTabUnavailableMessage2(target.site?.name ?? "", null)
+        message: deps.buildSelectedTabUnavailableMessage(target.site?.name ?? "", null)
       };
     }
     try {
@@ -5768,7 +5841,7 @@ function createBackgroundTabTargetResolver(deps) {
         return {
           requested: true,
           tab: null,
-          message: buildSelectedTabUnavailableMessage2(
+          message: deps.buildSelectedTabUnavailableMessage(
             target.site?.name ?? "",
             targetTabId
           )
@@ -5780,7 +5853,7 @@ function createBackgroundTabTargetResolver(deps) {
       } : {
         requested: true,
         tab: null,
-        message: buildSelectedTabUnavailableMessage2(
+        message: deps.buildSelectedTabUnavailableMessage(
           target.site?.name ?? "",
           targetTabId
         )
@@ -5789,7 +5862,7 @@ function createBackgroundTabTargetResolver(deps) {
       return {
         requested: true,
         tab: null,
-        message: buildSelectedTabUnavailableMessage2(
+        message: deps.buildSelectedTabUnavailableMessage(
           target.site?.name ?? "",
           targetTabId
         )
@@ -5818,19 +5891,98 @@ function createBackgroundTabTargetResolver(deps) {
     };
   }
   return {
-    getSiteById: getSiteById2,
-    getSiteForUrl: getSiteForUrl2,
-    resolveSelectedTargets: resolveSelectedTargets2,
-    buildSelectedTabUnavailableMessage: buildSelectedTabUnavailableMessage2,
-    isInjectableTabUrl,
-    getAllowedSiteHostnames,
-    getSitePermissionPatterns,
-    isSameSiteOrigin,
     isReusableTabForSite: isReusableTabForSite2,
     isCustomSitePermissionGranted: isCustomSitePermissionGranted2,
     findReusableTabsForSites: findReusableTabsForSites2,
     getExplicitReusableTabForTarget: getExplicitReusableTabForTarget2,
     getPreferredInjectableNormalTab: getPreferredInjectableNormalTab2
+  };
+}
+
+// src/background/app/bootstrap/tab-targets/target-resolution.ts
+function createTargetResolution(deps) {
+  function buildSelectedTabUnavailableMessage2(siteName, tabId) {
+    const label = siteName || "AI service";
+    if (Number.isFinite(Number(tabId))) {
+      return deps.getI18nMessage("toast_selected_tab_unavailable", [
+        label,
+        String(tabId)
+      ]) || `${label} selected tab #${String(tabId)} is unavailable.`;
+    }
+    return deps.getI18nMessage("toast_selected_tab_unavailable", [label]) || `${label} selected tab is unavailable.`;
+  }
+  async function resolveSelectedTargets2(siteRefs) {
+    const runtimeSites = await deps.getRuntimeSites();
+    deps.cacheRuntimeSites(runtimeSites);
+    const resolvedTargets = [];
+    const seenIds = /* @__PURE__ */ new Set();
+    for (const siteRef of Array.isArray(siteRefs) ? siteRefs : []) {
+      let resolvedSite = null;
+      let targetTabId = null;
+      let requireExplicitTab = false;
+      let forceNewTab = false;
+      let promptOverride;
+      let resolvedPrompt;
+      if (typeof siteRef === "string") {
+        resolvedSite = runtimeSites.find((site) => site.id === siteRef) ?? null;
+      } else if (siteRef && typeof siteRef === "object") {
+        if (typeof siteRef.id === "string") {
+          resolvedSite = runtimeSites.find((site) => site.id === siteRef.id) ?? buildInjectionConfig(siteRef);
+        } else {
+          resolvedSite = buildInjectionConfig(siteRef);
+        }
+        targetTabId = normalizeTargetTabId2(siteRef.tabId);
+        requireExplicitTab = siteRef.target === "tab" || targetTabId !== null;
+        forceNewTab = siteRef.reuseExistingTab === false || siteRef.openInNewTab === true || siteRef.target === "new";
+        promptOverride = typeof siteRef.promptOverride === "string" && siteRef.promptOverride.trim() ? siteRef.promptOverride.trim() : void 0;
+        resolvedPrompt = typeof siteRef.resolvedPrompt === "string" ? siteRef.resolvedPrompt : void 0;
+      }
+      if (!resolvedSite || !resolvedSite.id || seenIds.has(resolvedSite.id)) {
+        continue;
+      }
+      seenIds.add(resolvedSite.id);
+      resolvedTargets.push({
+        site: buildInjectionConfig(resolvedSite),
+        targetTabId,
+        requireExplicitTab,
+        forceNewTab,
+        promptOverride,
+        resolvedPrompt
+      });
+    }
+    return resolvedTargets;
+  }
+  return {
+    buildSelectedTabUnavailableMessage: buildSelectedTabUnavailableMessage2,
+    resolveSelectedTargets: resolveSelectedTargets2
+  };
+}
+
+// src/background/app/bootstrap/tab-targets/index.ts
+function createBackgroundTabTargetResolver(deps) {
+  const lookup = createSiteLookup(deps);
+  const resolution = createTargetResolution({
+    ...deps,
+    cacheRuntimeSites: lookup.cacheRuntimeSites
+  });
+  const reuse = createTabReuse({
+    ...deps,
+    buildSelectedTabUnavailableMessage: resolution.buildSelectedTabUnavailableMessage
+  });
+  return {
+    getSiteById: lookup.getSiteById,
+    getSiteForUrl: lookup.getSiteForUrl,
+    resolveSelectedTargets: resolution.resolveSelectedTargets,
+    buildSelectedTabUnavailableMessage: resolution.buildSelectedTabUnavailableMessage,
+    isInjectableTabUrl,
+    getAllowedSiteHostnames,
+    getSitePermissionPatterns,
+    isSameSiteOrigin,
+    isReusableTabForSite: reuse.isReusableTabForSite,
+    isCustomSitePermissionGranted: reuse.isCustomSitePermissionGranted,
+    findReusableTabsForSites: reuse.findReusableTabsForSites,
+    getExplicitReusableTabForTarget: reuse.getExplicitReusableTabForTarget,
+    getPreferredInjectableNormalTab: reuse.getPreferredInjectableNormalTab
   };
 }
 
@@ -6495,37 +6647,6 @@ function createFavoriteExecutionContextTools(deps) {
   };
 }
 
-// src/background/favorites/schedules.ts
-function buildScheduleAlarmName(favoriteId) {
-  const normalizedFavoriteId = typeof favoriteId === "string" ? favoriteId.trim() : "";
-  return normalizedFavoriteId ? `apb-schedule:${normalizedFavoriteId}` : "";
-}
-function parseScheduleAlarmFavoriteId(alarmName) {
-  const normalizedAlarmName = typeof alarmName === "string" ? alarmName.trim() : "";
-  return normalizedAlarmName.startsWith("apb-schedule:") ? alarmName.slice("apb-schedule:".length) : "";
-}
-function computeNextScheduledAt(repeat, scheduledAt, now = /* @__PURE__ */ new Date()) {
-  const normalizedRepeat = typeof repeat === "string" ? repeat : "none";
-  if (normalizedRepeat === "none") {
-    return null;
-  }
-  const baseDate = Number.isFinite(Date.parse(String(scheduledAt ?? ""))) ? new Date(String(scheduledAt)) : new Date(now);
-  const nextDate = new Date(baseDate);
-  do {
-    if (normalizedRepeat === "daily") {
-      nextDate.setDate(nextDate.getDate() + 1);
-    } else if (normalizedRepeat === "weekly") {
-      nextDate.setDate(nextDate.getDate() + 7);
-    } else {
-      nextDate.setDate(nextDate.getDate() + 1);
-      while (nextDate.getDay() === 0 || nextDate.getDay() === 6) {
-        nextDate.setDate(nextDate.getDate() + 1);
-      }
-    }
-  } while (nextDate.getTime() <= now.getTime());
-  return nextDate.toISOString();
-}
-
 // src/background/favorites/template-resolution.ts
 var SCHEDULED_VARIABLE_BLOCKLIST = /* @__PURE__ */ new Set([
   SYSTEM_TEMPLATE_VARIABLES.url,
@@ -6699,37 +6820,8 @@ function createFavoriteTemplateResolutionTools(deps) {
   };
 }
 
-// src/background/popup/favorites-workflow/entrypoints/handlers.ts
-function createFavoriteWorkflowEntryPoints(deps) {
-  async function maybeCreateFavoriteFailureNotification(favorite, message) {
-    const settings = await getAppSettings().catch(() => null);
-    if (!settings?.desktopNotifications) {
-      return;
-    }
-    try {
-      await chrome.notifications.create(`favorite-failure-${Date.now()}`, {
-        type: "basic",
-        iconUrl: chrome.runtime.getURL(NOTIFICATION_ICON_PATH),
-        title: favorite?.title || deps.getWorkflowMessage(
-          "favorite_run_notification_title_skipped",
-          [],
-          "Favorite run skipped"
-        ),
-        message: String(
-          message ?? deps.getWorkflowMessage(
-            "favorite_run_error_start_failed",
-            [],
-            "Favorite execution could not start."
-          )
-        )
-      });
-    } catch (error) {
-      console.error(
-        "[AI Prompt Broadcaster] Failed to create favorite failure notification.",
-        error
-      );
-    }
-  }
+// src/background/popup/favorites-workflow/entrypoints/enqueue.ts
+function createFavoriteRunEnqueue(deps) {
   async function storePopupFavoriteIntentAndOpen(favoriteId, type, source, reason = "") {
     await setPopupFavoriteIntent({
       type,
@@ -6782,7 +6874,7 @@ function createFavoriteWorkflowEntryPoints(deps) {
           type: "warning",
           duration: 5e3
         });
-        await maybeCreateFavoriteFailureNotification(
+        await deps.maybeCreateFavoriteFailureNotification(
           favorite,
           validation.message ?? deps.getWorkflowMessage(
             "favorite_run_error_start_failed",
@@ -6811,6 +6903,159 @@ function createFavoriteWorkflowEntryPoints(deps) {
       validation.defaults ?? {}
     );
   }
+  return {
+    storePopupFavoriteIntentAndOpen,
+    enqueueFavoriteRun
+  };
+}
+
+// src/background/popup/favorites-workflow/entrypoints/messages.ts
+function createFavoriteRunMessageHandlers(deps) {
+  async function handleFavoriteRunMessage2(message, sender) {
+    const favoriteId = typeof message?.favoriteId === "string" ? message.favoriteId.trim() : "";
+    if (!favoriteId) {
+      return {
+        ok: false,
+        error: deps.getWorkflowMessage(
+          "favorite_run_error_favorite_id_required",
+          [],
+          "Favorite id is required."
+        )
+      };
+    }
+    const favorites = await getPromptFavorites();
+    const favorite = favorites.find((entry) => String(entry.id) === favoriteId);
+    if (!favorite) {
+      return {
+        ok: false,
+        error: deps.getWorkflowMessage(
+          "favorite_run_error_favorite_not_found",
+          [],
+          "Favorite not found."
+        )
+      };
+    }
+    const execution = await deps.enqueueFavoriteRun(favorite, {
+      trigger: message?.trigger ?? "popup",
+      sender,
+      allowPopupFallback: message?.allowPopupFallback !== false,
+      preparedExecutionContext: message?.preparedExecutionContext
+    });
+    if (execution?.ok) {
+      return execution;
+    }
+    const requiresPopupInput = "requiresPopupInput" in execution && Boolean(execution.requiresPopupInput);
+    if (!requiresPopupInput || message?.allowPopupFallback === false) {
+      return execution;
+    }
+    await deps.storePopupFavoriteIntentAndOpen(
+      favoriteId,
+      "run",
+      message?.trigger ?? "popup",
+      ("error" in execution ? execution.error : "") ?? ""
+    );
+    return {
+      ok: true,
+      popupFallback: true,
+      reason: ("reason" in execution ? execution.reason : "popup_fallback") ?? "popup_fallback"
+    };
+  }
+  async function handleFavoriteOpenEditorMessage2(message) {
+    const favoriteId = typeof message?.favoriteId === "string" ? message.favoriteId.trim() : "";
+    if (!favoriteId) {
+      return {
+        ok: false,
+        error: deps.getWorkflowMessage(
+          "favorite_run_error_favorite_id_required",
+          [],
+          "Favorite id is required."
+        )
+      };
+    }
+    await deps.storePopupFavoriteIntentAndOpen(
+      favoriteId,
+      "edit",
+      message?.source ?? "options-edit"
+    );
+    return { ok: true };
+  }
+  return {
+    handleFavoriteRunMessage: handleFavoriteRunMessage2,
+    handleFavoriteOpenEditorMessage: handleFavoriteOpenEditorMessage2
+  };
+}
+
+// src/background/popup/favorites-workflow/entrypoints/notifications.ts
+function createFavoriteFailureNotifications(deps) {
+  async function maybeCreateFavoriteFailureNotification(favorite, message) {
+    const settings = await getAppSettings().catch(() => null);
+    if (!settings?.desktopNotifications) {
+      return;
+    }
+    try {
+      await chrome.notifications.create(`favorite-failure-${Date.now()}`, {
+        type: "basic",
+        iconUrl: chrome.runtime.getURL(NOTIFICATION_ICON_PATH),
+        title: favorite?.title || deps.getWorkflowMessage(
+          "favorite_run_notification_title_skipped",
+          [],
+          "Favorite run skipped"
+        ),
+        message: String(
+          message ?? deps.getWorkflowMessage(
+            "favorite_run_error_start_failed",
+            [],
+            "Favorite execution could not start."
+          )
+        )
+      });
+    } catch (error) {
+      console.error(
+        "[AI Prompt Broadcaster] Failed to create favorite failure notification.",
+        error
+      );
+    }
+  }
+  return {
+    maybeCreateFavoriteFailureNotification
+  };
+}
+
+// src/background/popup/favorites-workflow/entrypoints/palette.ts
+function createQuickPaletteHandlers(deps) {
+  async function handleQuickPaletteGetState2() {
+    const favorites = await getPromptFavorites();
+    return {
+      ok: true,
+      favorites: favorites.map((favorite) => ({
+        id: favorite.id,
+        title: favorite.title || deps.previewFavoriteText(favorite),
+        text: favorite.text ?? "",
+        preview: deps.previewFavoriteText(favorite),
+        mode: favorite.mode === "chain" ? "chain" : "single",
+        tags: Array.isArray(favorite.tags) ? favorite.tags : [],
+        folder: favorite.folder ?? ""
+      }))
+    };
+  }
+  async function handleQuickPaletteExecuteMessage2(message, sender) {
+    return deps.handleFavoriteRunMessage(
+      {
+        favoriteId: message?.favoriteId,
+        trigger: "palette",
+        allowPopupFallback: true
+      },
+      sender
+    );
+  }
+  return {
+    handleQuickPaletteGetState: handleQuickPaletteGetState2,
+    handleQuickPaletteExecuteMessage: handleQuickPaletteExecuteMessage2
+  };
+}
+
+// src/background/popup/favorites-workflow/entrypoints/schedules.ts
+function createFavoriteScheduleHandlers(deps) {
   async function reconcileFavoriteSchedules2() {
     const favorites = await getPromptFavorites().catch(() => []);
     const desiredAlarms = /* @__PURE__ */ new Map();
@@ -6859,7 +7104,7 @@ function createFavoriteWorkflowEntryPoints(deps) {
       }
       return;
     }
-    await enqueueFavoriteRun(favorite, {
+    await deps.enqueueFavoriteRun(favorite, {
       trigger: "scheduled",
       allowPopupFallback: false
     });
@@ -6879,106 +7124,39 @@ function createFavoriteWorkflowEntryPoints(deps) {
     }
     await reconcileFavoriteSchedules2();
   }
-  async function handleFavoriteRunMessage2(message, sender) {
-    const favoriteId = typeof message?.favoriteId === "string" ? message.favoriteId.trim() : "";
-    if (!favoriteId) {
-      return {
-        ok: false,
-        error: deps.getWorkflowMessage(
-          "favorite_run_error_favorite_id_required",
-          [],
-          "Favorite id is required."
-        )
-      };
-    }
-    const favorites = await getPromptFavorites();
-    const favorite = favorites.find((entry) => String(entry.id) === favoriteId);
-    if (!favorite) {
-      return {
-        ok: false,
-        error: deps.getWorkflowMessage(
-          "favorite_run_error_favorite_not_found",
-          [],
-          "Favorite not found."
-        )
-      };
-    }
-    const execution = await enqueueFavoriteRun(favorite, {
-      trigger: message?.trigger ?? "popup",
-      sender,
-      allowPopupFallback: message?.allowPopupFallback !== false,
-      preparedExecutionContext: message?.preparedExecutionContext
-    });
-    if (execution?.ok) {
-      return execution;
-    }
-    const requiresPopupInput = "requiresPopupInput" in execution && Boolean(execution.requiresPopupInput);
-    if (!requiresPopupInput || message?.allowPopupFallback === false) {
-      return execution;
-    }
-    await storePopupFavoriteIntentAndOpen(
-      favoriteId,
-      "run",
-      message?.trigger ?? "popup",
-      ("error" in execution ? execution.error : "") ?? ""
-    );
-    return {
-      ok: true,
-      popupFallback: true,
-      reason: ("reason" in execution ? execution.reason : "popup_fallback") ?? "popup_fallback"
-    };
-  }
-  async function handleFavoriteOpenEditorMessage2(message) {
-    const favoriteId = typeof message?.favoriteId === "string" ? message.favoriteId.trim() : "";
-    if (!favoriteId) {
-      return {
-        ok: false,
-        error: deps.getWorkflowMessage(
-          "favorite_run_error_favorite_id_required",
-          [],
-          "Favorite id is required."
-        )
-      };
-    }
-    await storePopupFavoriteIntentAndOpen(
-      favoriteId,
-      "edit",
-      message?.source ?? "options-edit"
-    );
-    return { ok: true };
-  }
-  async function handleQuickPaletteGetState2() {
-    const favorites = await getPromptFavorites();
-    return {
-      ok: true,
-      favorites: favorites.map((favorite) => ({
-        id: favorite.id,
-        title: favorite.title || deps.previewFavoriteText(favorite),
-        text: favorite.text ?? "",
-        preview: deps.previewFavoriteText(favorite),
-        mode: favorite.mode === "chain" ? "chain" : "single",
-        tags: Array.isArray(favorite.tags) ? favorite.tags : [],
-        folder: favorite.folder ?? ""
-      }))
-    };
-  }
-  async function handleQuickPaletteExecuteMessage2(message, sender) {
-    return handleFavoriteRunMessage2(
-      {
-        favoriteId: message?.favoriteId,
-        trigger: "palette",
-        allowPopupFallback: true
-      },
-      sender
-    );
-  }
   return {
     reconcileFavoriteSchedules: reconcileFavoriteSchedules2,
-    handleFavoriteScheduleAlarm: handleFavoriteScheduleAlarm2,
-    handleFavoriteRunMessage: handleFavoriteRunMessage2,
-    handleFavoriteOpenEditorMessage: handleFavoriteOpenEditorMessage2,
-    handleQuickPaletteGetState: handleQuickPaletteGetState2,
-    handleQuickPaletteExecuteMessage: handleQuickPaletteExecuteMessage2
+    handleFavoriteScheduleAlarm: handleFavoriteScheduleAlarm2
+  };
+}
+
+// src/background/popup/favorites-workflow/entrypoints/handlers.ts
+function createFavoriteWorkflowEntryPoints(deps) {
+  const notifications = createFavoriteFailureNotifications(deps);
+  const enqueue = createFavoriteRunEnqueue({
+    ...deps,
+    maybeCreateFavoriteFailureNotification: notifications.maybeCreateFavoriteFailureNotification
+  });
+  const schedules = createFavoriteScheduleHandlers({
+    ...deps,
+    enqueueFavoriteRun: enqueue.enqueueFavoriteRun
+  });
+  const messages = createFavoriteRunMessageHandlers({
+    ...deps,
+    enqueueFavoriteRun: enqueue.enqueueFavoriteRun,
+    storePopupFavoriteIntentAndOpen: enqueue.storePopupFavoriteIntentAndOpen
+  });
+  const palette = createQuickPaletteHandlers({
+    ...deps,
+    handleFavoriteRunMessage: messages.handleFavoriteRunMessage
+  });
+  return {
+    reconcileFavoriteSchedules: schedules.reconcileFavoriteSchedules,
+    handleFavoriteScheduleAlarm: schedules.handleFavoriteScheduleAlarm,
+    handleFavoriteRunMessage: messages.handleFavoriteRunMessage,
+    handleFavoriteOpenEditorMessage: messages.handleFavoriteOpenEditorMessage,
+    handleQuickPaletteGetState: palette.handleQuickPaletteGetState,
+    handleQuickPaletteExecuteMessage: palette.handleQuickPaletteExecuteMessage
   };
 }
 
@@ -7053,52 +7231,313 @@ function createFavoriteWorkflowMessages(getI18nMessage2) {
   };
 }
 
-// src/background/favorites/jobs.ts
-var FAVORITE_JOB_ALARM_PREFIX = "apb-favorite-job:";
-var FAVORITE_JOB_INITIAL_DELAY_MS = 50;
-var favoriteExecutionChain = Promise.resolve();
-function createFavoriteRunJobId() {
-  return typeof crypto?.randomUUID === "function" ? crypto.randomUUID() : `favorite-job-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-function buildFavoriteJobAlarmName(jobId) {
-  const normalizedJobId = typeof jobId === "string" ? jobId.trim() : "";
-  return normalizedJobId ? `${FAVORITE_JOB_ALARM_PREFIX}${normalizedJobId}` : "";
-}
-function parseFavoriteJobIdFromAlarmName(alarmName) {
-  const normalizedAlarmName = typeof alarmName === "string" ? alarmName.trim() : "";
-  return normalizedAlarmName.startsWith(FAVORITE_JOB_ALARM_PREFIX) ? normalizedAlarmName.slice(FAVORITE_JOB_ALARM_PREFIX.length) : "";
-}
-async function scheduleFavoriteJobAlarm(jobId, delayMs = FAVORITE_JOB_INITIAL_DELAY_MS) {
-  const alarmName = buildFavoriteJobAlarmName(jobId);
-  if (!alarmName) {
-    return;
-  }
-  chrome.alarms.create(alarmName, {
-    when: Date.now() + Math.max(FAVORITE_JOB_INITIAL_DELAY_MS, Math.round(Number(delayMs) || 0))
+// src/background/popup/favorites-workflow/run-jobs/job-mutation.ts
+async function mutateFavoriteRunJob(jobId, updater) {
+  return updateFavoriteRunJobs((jobs) => {
+    const existing = getFavoriteRunJobById(jobs, jobId);
+    if (!existing) {
+      return jobs;
+    }
+    return replaceFavoriteRunJob(jobs, updater(existing));
   });
 }
-function replaceFavoriteRunJob(jobs, nextJob) {
-  const nextJobs = jobs.filter((job) => job.jobId !== nextJob.jobId);
-  nextJobs.unshift(nextJob);
-  return nextJobs;
-}
-function queueFavoriteExecution(task) {
-  const resultPromise = favoriteExecutionChain.then(task, task);
-  favoriteExecutionChain = resultPromise.then(() => void 0, () => void 0);
-  return resultPromise;
+
+// src/background/popup/favorites-workflow/run-jobs/completion.ts
+function createFavoriteRunJobCompletion(deps) {
+  async function handleFavoriteBroadcastCompletion2(summary) {
+    const jobs = await getFavoriteRunJobs();
+    const job = findFavoriteRunJobByBroadcastId(jobs, summary?.broadcastId ?? "");
+    if (!job) {
+      return;
+    }
+    const stepIndex = job.currentStepIndex ?? 0;
+    const completedSteps = Math.min(job.stepCount, stepIndex + 1);
+    if (summary?.status !== "submitted") {
+      const currentStep = job.steps[stepIndex];
+      const failurePolicy = currentStep?.failurePolicy ?? "stop";
+      const retryKey = currentStep?.id || String(stepIndex);
+      const retryCounts = job.stepRetryCounts ?? {};
+      const retryCount = retryCounts[retryKey] ?? 0;
+      if (failurePolicy === "retry-once" && retryCount < 1) {
+        await mutateFavoriteRunJob(job.jobId, (current) => ({
+          ...current,
+          status: "running",
+          currentBroadcastId: null,
+          currentStepIndex: stepIndex,
+          message: deps.getQueuedStepMessage(stepIndex, current.stepCount),
+          stepRetryCounts: {
+            ...current.stepRetryCounts ?? {},
+            [retryKey]: retryCount + 1
+          },
+          updatedAt: deps.nowIso()
+        }));
+        await scheduleFavoriteJobAlarm(job.jobId);
+        return;
+      }
+      if (failurePolicy === "continue" && job.mode === "chain" && completedSteps < job.stepCount) {
+        const nextStepIndex2 = completedSteps;
+        const nextStep2 = job.steps[nextStepIndex2];
+        const nextDelayMs2 = Math.max(0, Math.round(Number(nextStep2?.delayMs) || 0));
+        await mutateFavoriteRunJob(job.jobId, (current) => ({
+          ...current,
+          status: "running",
+          completedSteps,
+          currentBroadcastId: null,
+          currentStepIndex: nextStepIndex2,
+          message: nextDelayMs2 > 0 ? deps.getWaitingStepMessage(nextStepIndex2, current.stepCount) : deps.getQueuedStepMessage(nextStepIndex2, current.stepCount),
+          updatedAt: deps.nowIso()
+        }));
+        await scheduleFavoriteJobAlarm(job.jobId, nextDelayMs2);
+        return;
+      }
+      await mutateFavoriteRunJob(job.jobId, (current) => ({
+        ...current,
+        status: "failed",
+        completedSteps,
+        currentBroadcastId: null,
+        message: deps.getFailedMessage(),
+        updatedAt: deps.nowIso()
+      }));
+      return;
+    }
+    if (job.mode !== "chain" || completedSteps >= job.stepCount) {
+      await mutateFavoriteRunJob(job.jobId, (current) => ({
+        ...current,
+        status: "completed",
+        completedSteps: current.stepCount,
+        currentBroadcastId: null,
+        message: deps.getCompletedMessage(),
+        updatedAt: deps.nowIso()
+      }));
+      return;
+    }
+    const nextStepIndex = completedSteps;
+    const nextStep = job.steps[nextStepIndex];
+    const nextDelayMs = Math.max(0, Math.round(Number(nextStep?.delayMs) || 0));
+    await mutateFavoriteRunJob(job.jobId, (current) => ({
+      ...current,
+      status: "running",
+      completedSteps,
+      currentBroadcastId: null,
+      currentStepIndex: nextStepIndex,
+      message: nextDelayMs > 0 ? deps.getWaitingStepMessage(nextStepIndex, current.stepCount) : deps.getQueuedStepMessage(nextStepIndex, current.stepCount),
+      updatedAt: deps.nowIso()
+    }));
+    await scheduleFavoriteJobAlarm(job.jobId, nextDelayMs);
+  }
+  return {
+    handleFavoriteBroadcastCompletion: handleFavoriteBroadcastCompletion2
+  };
 }
 
-// src/background/popup/favorites-workflow/run-jobs/handlers.ts
-function createFavoriteRunJobHandlers(deps) {
-  async function mutateFavoriteRunJob(jobId, updater) {
-    return updateFavoriteRunJobs((jobs) => {
-      const existing = getFavoriteRunJobById(jobs, jobId);
-      if (!existing) {
-        return jobs;
+// src/background/popup/favorites-workflow/run-jobs/execution.ts
+function createFavoriteRunJobExecution(deps) {
+  async function runFavoriteJob(jobId) {
+    try {
+      const jobs = await getFavoriteRunJobs();
+      const job = getFavoriteRunJobById(jobs, jobId);
+      if (!job || job.currentBroadcastId || job.status === "completed" || job.status === "failed" || job.status === "skipped") {
+        return;
       }
-      return replaceFavoriteRunJob(jobs, updater(existing));
+      const stepIndex = job.currentStepIndex ?? job.completedSteps;
+      const step = typeof stepIndex === "number" ? job.steps[stepIndex] : null;
+      if (!step) {
+        await mutateFavoriteRunJob(jobId, (current) => ({
+          ...current,
+          status: "completed",
+          completedSteps: current.stepCount,
+          currentBroadcastId: null,
+          currentStepIndex: current.stepCount > 0 ? current.stepCount - 1 : null,
+          message: deps.getCompletedMessage(),
+          updatedAt: deps.nowIso()
+        }));
+        return;
+      }
+      const targetSiteIds = normalizeSiteIdList(step.targetSiteIds);
+      const response = await queueFavoriteExecution(async () => {
+        const prompt = await deps.buildFavoriteStepPrompt(
+          step,
+          job.templateDefaults,
+          job.executionContext
+        );
+        return deps.queueBroadcastRequest(
+          prompt,
+          targetSiteIds.map((siteId) => {
+            const targetRef = { id: siteId };
+            if (step.targetMode === "new" || step.targetMode === "tab") {
+              targetRef.target = step.targetMode;
+            }
+            return targetRef;
+          }),
+          {
+            originFavoriteId: job.favoriteId,
+            chainRunId: job.chainRunId,
+            chainStepIndex: job.mode === "chain" ? stepIndex : null,
+            chainStepCount: job.mode === "chain" ? job.stepCount : null,
+            trigger: job.trigger
+          }
+        );
+      });
+      if (!response?.ok || !response?.broadcastId) {
+        const errorMessage = response?.error ?? deps.getWorkflowMessage(
+          "favorite_run_error_queue_failed",
+          [],
+          "Favorite execution could not be queued."
+        );
+        await mutateFavoriteRunJob(jobId, (current) => ({
+          ...current,
+          status: "failed",
+          currentBroadcastId: null,
+          message: errorMessage,
+          updatedAt: deps.nowIso()
+        }));
+        await deps.appendFavoriteRunJobFailureHistory(job, stepIndex, errorMessage);
+        return;
+      }
+      if ((job.completedSteps ?? 0) === 0 && stepIndex === 0) {
+        await markFavoriteUsed(job.favoriteId).catch((error) => {
+          console.error(
+            "[AI Prompt Broadcaster] Failed to mark favorite usage.",
+            error
+          );
+        });
+      }
+      await mutateFavoriteRunJob(jobId, (current) => ({
+        ...current,
+        status: "running",
+        currentBroadcastId: response.broadcastId ?? null,
+        currentStepIndex: stepIndex,
+        message: deps.getFavoriteRunProgressMessage({
+          ...current,
+          currentStepIndex: stepIndex
+        }),
+        updatedAt: deps.nowIso()
+      }));
+      const lastBroadcast = await getLastBroadcast().catch(() => null);
+      if (lastBroadcast && lastBroadcast.broadcastId === response.broadcastId && lastBroadcast.status !== "sending") {
+        await deps.handleFavoriteBroadcastCompletion(lastBroadcast);
+      }
+    } catch (error) {
+      console.error("[AI Prompt Broadcaster] Favorite run worker failed.", error);
+      const jobs = await getFavoriteRunJobs();
+      const job = getFavoriteRunJobById(jobs, jobId);
+      if (!job) {
+        return;
+      }
+      const stepIndex = job.currentStepIndex ?? job.completedSteps;
+      const errorMessage = error instanceof Error && error.message ? error.message : deps.getWorkflowMessage(
+        "favorite_run_error_start_failed",
+        [],
+        "Favorite execution could not start."
+      );
+      await mutateFavoriteRunJob(jobId, (current) => ({
+        ...current,
+        status: "failed",
+        currentBroadcastId: null,
+        message: errorMessage,
+        updatedAt: deps.nowIso()
+      }));
+      if (typeof stepIndex === "number") {
+        await deps.appendFavoriteRunJobFailureHistory(job, stepIndex, errorMessage);
+      }
+    }
+  }
+  return {
+    runFavoriteJob
+  };
+}
+
+// src/background/popup/favorites-workflow/run-jobs/failure-history.ts
+function createFavoriteRunJobFailureHistory(deps) {
+  async function appendFavoriteRunJobFailureHistory(job, stepIndex, message) {
+    const step = job.steps[stepIndex];
+    if (!step) {
+      return;
+    }
+    await deps.createFavoriteFailureHistory({
+      favoriteId: job.favoriteId,
+      requestedSiteIds: step.targetSiteIds,
+      message,
+      text: step.text,
+      chainRunId: job.chainRunId,
+      chainStepIndex: job.mode === "chain" ? stepIndex : null,
+      chainStepCount: job.mode === "chain" ? job.stepCount : null,
+      trigger: job.trigger
     });
   }
+  return {
+    appendFavoriteRunJobFailureHistory
+  };
+}
+
+// src/background/popup/favorites-workflow/run-jobs/maintenance.ts
+function createFavoriteRunJobMaintenance(deps) {
+  async function reconcileFavoriteRunJobs2() {
+    const [jobs, alarms] = await Promise.all([
+      getFavoriteRunJobs(),
+      chrome.alarms.getAll().catch(() => [])
+    ]);
+    const existingAlarmNames = new Set(alarms.map((alarm) => alarm.name));
+    const desiredAlarmNames = /* @__PURE__ */ new Set();
+    await Promise.all(
+      jobs.map(async (job) => {
+        if (job.status !== "queued" && job.status !== "running" || job.currentBroadcastId) {
+          return;
+        }
+        const alarmName = buildFavoriteJobAlarmName(job.jobId);
+        if (!alarmName) {
+          return;
+        }
+        desiredAlarmNames.add(alarmName);
+        if (!existingAlarmNames.has(alarmName)) {
+          await scheduleFavoriteJobAlarm(job.jobId);
+        }
+      })
+    );
+    await Promise.all(
+      alarms.filter((alarm) => alarm.name.startsWith(FAVORITE_JOB_ALARM_PREFIX)).filter((alarm) => !desiredAlarmNames.has(alarm.name)).map((alarm) => chrome.alarms.clear(alarm.name).catch(() => false))
+    );
+  }
+  async function handleFavoriteRunJobAlarm2(alarmName) {
+    const jobId = parseFavoriteJobIdFromAlarmName(alarmName);
+    if (!jobId) {
+      return;
+    }
+    try {
+      await deps.runFavoriteJob(jobId);
+    } catch (error) {
+      console.error("[AI Prompt Broadcaster] Favorite alarm worker failed.", error);
+      const jobs = await getFavoriteRunJobs();
+      const job = getFavoriteRunJobById(jobs, jobId);
+      if (!job) {
+        return;
+      }
+      const stepIndex = job.currentStepIndex ?? job.completedSteps;
+      const errorMessage = error instanceof Error && error.message ? error.message : deps.getWorkflowMessage(
+        "favorite_run_error_start_failed",
+        [],
+        "Favorite execution could not start."
+      );
+      await mutateFavoriteRunJob(jobId, (current) => ({
+        ...current,
+        status: "failed",
+        currentBroadcastId: null,
+        message: errorMessage,
+        updatedAt: deps.nowIso()
+      }));
+      if (typeof stepIndex === "number") {
+        await deps.appendFavoriteRunJobFailureHistory(job, stepIndex, errorMessage);
+      }
+    }
+  }
+  return {
+    reconcileFavoriteRunJobs: reconcileFavoriteRunJobs2,
+    handleFavoriteRunJobAlarm: handleFavoriteRunJobAlarm2
+  };
+}
+
+// src/background/popup/favorites-workflow/run-jobs/queue.ts
+function createFavoriteRunJobQueue(deps) {
   async function queueFavoriteRunJob(favorite, trigger, executionContext, steps, defaults) {
     const createdAt = deps.nowIso();
     const queueState = {
@@ -7191,276 +7630,31 @@ function createFavoriteRunJobHandlers(deps) {
       message: deps.getQueuedMessage()
     };
   }
-  async function appendFavoriteRunJobFailureHistory(job, stepIndex, message) {
-    const step = job.steps[stepIndex];
-    if (!step) {
-      return;
-    }
-    await deps.createFavoriteFailureHistory({
-      favoriteId: job.favoriteId,
-      requestedSiteIds: step.targetSiteIds,
-      message,
-      text: step.text,
-      chainRunId: job.chainRunId,
-      chainStepIndex: job.mode === "chain" ? stepIndex : null,
-      chainStepCount: job.mode === "chain" ? job.stepCount : null,
-      trigger: job.trigger
-    });
-  }
-  async function handleFavoriteBroadcastCompletion2(summary) {
-    const jobs = await getFavoriteRunJobs();
-    const job = findFavoriteRunJobByBroadcastId(jobs, summary?.broadcastId ?? "");
-    if (!job) {
-      return;
-    }
-    const stepIndex = job.currentStepIndex ?? 0;
-    const completedSteps = Math.min(job.stepCount, stepIndex + 1);
-    if (summary?.status !== "submitted") {
-      const currentStep = job.steps[stepIndex];
-      const failurePolicy = currentStep?.failurePolicy ?? "stop";
-      const retryKey = currentStep?.id || String(stepIndex);
-      const retryCounts = job.stepRetryCounts ?? {};
-      const retryCount = retryCounts[retryKey] ?? 0;
-      if (failurePolicy === "retry-once" && retryCount < 1) {
-        await mutateFavoriteRunJob(job.jobId, (current) => ({
-          ...current,
-          status: "running",
-          currentBroadcastId: null,
-          currentStepIndex: stepIndex,
-          message: deps.getQueuedStepMessage(stepIndex, current.stepCount),
-          stepRetryCounts: {
-            ...current.stepRetryCounts ?? {},
-            [retryKey]: retryCount + 1
-          },
-          updatedAt: deps.nowIso()
-        }));
-        await scheduleFavoriteJobAlarm(job.jobId);
-        return;
-      }
-      if (failurePolicy === "continue" && job.mode === "chain" && completedSteps < job.stepCount) {
-        const nextStepIndex2 = completedSteps;
-        const nextStep2 = job.steps[nextStepIndex2];
-        const nextDelayMs2 = Math.max(0, Math.round(Number(nextStep2?.delayMs) || 0));
-        await mutateFavoriteRunJob(job.jobId, (current) => ({
-          ...current,
-          status: "running",
-          completedSteps,
-          currentBroadcastId: null,
-          currentStepIndex: nextStepIndex2,
-          message: nextDelayMs2 > 0 ? deps.getWaitingStepMessage(nextStepIndex2, current.stepCount) : deps.getQueuedStepMessage(nextStepIndex2, current.stepCount),
-          updatedAt: deps.nowIso()
-        }));
-        await scheduleFavoriteJobAlarm(job.jobId, nextDelayMs2);
-        return;
-      }
-      await mutateFavoriteRunJob(job.jobId, (current) => ({
-        ...current,
-        status: "failed",
-        completedSteps,
-        currentBroadcastId: null,
-        message: deps.getFailedMessage(),
-        updatedAt: deps.nowIso()
-      }));
-      return;
-    }
-    if (job.mode !== "chain" || completedSteps >= job.stepCount) {
-      await mutateFavoriteRunJob(job.jobId, (current) => ({
-        ...current,
-        status: "completed",
-        completedSteps: current.stepCount,
-        currentBroadcastId: null,
-        message: deps.getCompletedMessage(),
-        updatedAt: deps.nowIso()
-      }));
-      return;
-    }
-    const nextStepIndex = completedSteps;
-    const nextStep = job.steps[nextStepIndex];
-    const nextDelayMs = Math.max(0, Math.round(Number(nextStep?.delayMs) || 0));
-    await mutateFavoriteRunJob(job.jobId, (current) => ({
-      ...current,
-      status: "running",
-      completedSteps,
-      currentBroadcastId: null,
-      currentStepIndex: nextStepIndex,
-      message: nextDelayMs > 0 ? deps.getWaitingStepMessage(nextStepIndex, current.stepCount) : deps.getQueuedStepMessage(nextStepIndex, current.stepCount),
-      updatedAt: deps.nowIso()
-    }));
-    await scheduleFavoriteJobAlarm(job.jobId, nextDelayMs);
-  }
-  async function runFavoriteJob(jobId) {
-    try {
-      const jobs = await getFavoriteRunJobs();
-      const job = getFavoriteRunJobById(jobs, jobId);
-      if (!job || job.currentBroadcastId || job.status === "completed" || job.status === "failed" || job.status === "skipped") {
-        return;
-      }
-      const stepIndex = job.currentStepIndex ?? job.completedSteps;
-      const step = typeof stepIndex === "number" ? job.steps[stepIndex] : null;
-      if (!step) {
-        await mutateFavoriteRunJob(jobId, (current) => ({
-          ...current,
-          status: "completed",
-          completedSteps: current.stepCount,
-          currentBroadcastId: null,
-          currentStepIndex: current.stepCount > 0 ? current.stepCount - 1 : null,
-          message: deps.getCompletedMessage(),
-          updatedAt: deps.nowIso()
-        }));
-        return;
-      }
-      const targetSiteIds = normalizeSiteIdList(step.targetSiteIds);
-      const response = await queueFavoriteExecution(async () => {
-        const prompt = await deps.buildFavoriteStepPrompt(
-          step,
-          job.templateDefaults,
-          job.executionContext
-        );
-        return deps.queueBroadcastRequest(
-          prompt,
-          targetSiteIds.map((siteId) => {
-            const targetRef = { id: siteId };
-            if (step.targetMode === "new" || step.targetMode === "tab") {
-              targetRef.target = step.targetMode;
-            }
-            return targetRef;
-          }),
-          {
-            originFavoriteId: job.favoriteId,
-            chainRunId: job.chainRunId,
-            chainStepIndex: job.mode === "chain" ? stepIndex : null,
-            chainStepCount: job.mode === "chain" ? job.stepCount : null,
-            trigger: job.trigger
-          }
-        );
-      });
-      if (!response?.ok || !response?.broadcastId) {
-        const errorMessage = response?.error ?? deps.getWorkflowMessage(
-          "favorite_run_error_queue_failed",
-          [],
-          "Favorite execution could not be queued."
-        );
-        await mutateFavoriteRunJob(jobId, (current) => ({
-          ...current,
-          status: "failed",
-          currentBroadcastId: null,
-          message: errorMessage,
-          updatedAt: deps.nowIso()
-        }));
-        await appendFavoriteRunJobFailureHistory(job, stepIndex, errorMessage);
-        return;
-      }
-      if ((job.completedSteps ?? 0) === 0 && stepIndex === 0) {
-        await markFavoriteUsed(job.favoriteId).catch((error) => {
-          console.error(
-            "[AI Prompt Broadcaster] Failed to mark favorite usage.",
-            error
-          );
-        });
-      }
-      await mutateFavoriteRunJob(jobId, (current) => ({
-        ...current,
-        status: "running",
-        currentBroadcastId: response.broadcastId ?? null,
-        currentStepIndex: stepIndex,
-        message: deps.getFavoriteRunProgressMessage({
-          ...current,
-          currentStepIndex: stepIndex
-        }),
-        updatedAt: deps.nowIso()
-      }));
-      const lastBroadcast = await getLastBroadcast().catch(() => null);
-      if (lastBroadcast && lastBroadcast.broadcastId === response.broadcastId && lastBroadcast.status !== "sending") {
-        await handleFavoriteBroadcastCompletion2(lastBroadcast);
-      }
-    } catch (error) {
-      console.error("[AI Prompt Broadcaster] Favorite run worker failed.", error);
-      const jobs = await getFavoriteRunJobs();
-      const job = getFavoriteRunJobById(jobs, jobId);
-      if (!job) {
-        return;
-      }
-      const stepIndex = job.currentStepIndex ?? job.completedSteps;
-      const errorMessage = error instanceof Error && error.message ? error.message : deps.getWorkflowMessage(
-        "favorite_run_error_start_failed",
-        [],
-        "Favorite execution could not start."
-      );
-      await mutateFavoriteRunJob(jobId, (current) => ({
-        ...current,
-        status: "failed",
-        currentBroadcastId: null,
-        message: errorMessage,
-        updatedAt: deps.nowIso()
-      }));
-      if (typeof stepIndex === "number") {
-        await appendFavoriteRunJobFailureHistory(job, stepIndex, errorMessage);
-      }
-    }
-  }
-  async function reconcileFavoriteRunJobs2() {
-    const [jobs, alarms] = await Promise.all([
-      getFavoriteRunJobs(),
-      chrome.alarms.getAll().catch(() => [])
-    ]);
-    const existingAlarmNames = new Set(alarms.map((alarm) => alarm.name));
-    const desiredAlarmNames = /* @__PURE__ */ new Set();
-    await Promise.all(
-      jobs.map(async (job) => {
-        if (job.status !== "queued" && job.status !== "running" || job.currentBroadcastId) {
-          return;
-        }
-        const alarmName = buildFavoriteJobAlarmName(job.jobId);
-        if (!alarmName) {
-          return;
-        }
-        desiredAlarmNames.add(alarmName);
-        if (!existingAlarmNames.has(alarmName)) {
-          await scheduleFavoriteJobAlarm(job.jobId);
-        }
-      })
-    );
-    await Promise.all(
-      alarms.filter((alarm) => alarm.name.startsWith(FAVORITE_JOB_ALARM_PREFIX)).filter((alarm) => !desiredAlarmNames.has(alarm.name)).map((alarm) => chrome.alarms.clear(alarm.name).catch(() => false))
-    );
-  }
-  async function handleFavoriteRunJobAlarm2(alarmName) {
-    const jobId = parseFavoriteJobIdFromAlarmName(alarmName);
-    if (!jobId) {
-      return;
-    }
-    try {
-      await runFavoriteJob(jobId);
-    } catch (error) {
-      console.error("[AI Prompt Broadcaster] Favorite alarm worker failed.", error);
-      const jobs = await getFavoriteRunJobs();
-      const job = getFavoriteRunJobById(jobs, jobId);
-      if (!job) {
-        return;
-      }
-      const stepIndex = job.currentStepIndex ?? job.completedSteps;
-      const errorMessage = error instanceof Error && error.message ? error.message : deps.getWorkflowMessage(
-        "favorite_run_error_start_failed",
-        [],
-        "Favorite execution could not start."
-      );
-      await mutateFavoriteRunJob(jobId, (current) => ({
-        ...current,
-        status: "failed",
-        currentBroadcastId: null,
-        message: errorMessage,
-        updatedAt: deps.nowIso()
-      }));
-      if (typeof stepIndex === "number") {
-        await appendFavoriteRunJobFailureHistory(job, stepIndex, errorMessage);
-      }
-    }
-  }
   return {
-    queueFavoriteRunJob,
-    reconcileFavoriteRunJobs: reconcileFavoriteRunJobs2,
-    handleFavoriteRunJobAlarm: handleFavoriteRunJobAlarm2,
-    handleFavoriteBroadcastCompletion: handleFavoriteBroadcastCompletion2
+    queueFavoriteRunJob
+  };
+}
+
+// src/background/popup/favorites-workflow/run-jobs/handlers.ts
+function createFavoriteRunJobHandlers(deps) {
+  const failureHistory = createFavoriteRunJobFailureHistory(deps);
+  const completion = createFavoriteRunJobCompletion(deps);
+  const execution = createFavoriteRunJobExecution({
+    ...deps,
+    appendFavoriteRunJobFailureHistory: failureHistory.appendFavoriteRunJobFailureHistory,
+    handleFavoriteBroadcastCompletion: completion.handleFavoriteBroadcastCompletion
+  });
+  const queue = createFavoriteRunJobQueue(deps);
+  const maintenance = createFavoriteRunJobMaintenance({
+    ...deps,
+    runFavoriteJob: execution.runFavoriteJob,
+    appendFavoriteRunJobFailureHistory: failureHistory.appendFavoriteRunJobFailureHistory
+  });
+  return {
+    queueFavoriteRunJob: queue.queueFavoriteRunJob,
+    reconcileFavoriteRunJobs: maintenance.reconcileFavoriteRunJobs,
+    handleFavoriteRunJobAlarm: maintenance.handleFavoriteRunJobAlarm,
+    handleFavoriteBroadcastCompletion: completion.handleFavoriteBroadcastCompletion
   };
 }
 
@@ -8503,6 +8697,7 @@ var broadcastQueue = createBroadcastQueue({
   clonePlainValue,
   queueBackgroundStateMutation,
   getPendingBroadcasts,
+  getPendingInjections,
   createPendingBroadcast: pendingBroadcasts.createPendingBroadcast,
   registerBroadcastCompletionWaiter: broadcastWaiters.register,
   reconcilePendingBroadcasts: () => deferred.reconcilePendingBroadcasts(),

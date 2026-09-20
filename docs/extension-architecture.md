@@ -26,6 +26,13 @@ prompt-broadcaster/
 │   │   │   │   ├── context.ts
 │   │   │   │   ├── runtime-events.ts
 │   │   │   │   ├── tab-targets.ts
+│   │   │   │   ├── tab-targets/
+│   │   │   │   │   ├── index.ts
+│   │   │   │   │   ├── site-lookup.ts
+│   │   │   │   │   ├── site-origin.ts
+│   │   │   │   │   ├── tab-reuse.ts
+│   │   │   │   │   ├── target-resolution.ts
+│   │   │   │   │   └── types.ts
 │   │   │   │   └── utils.ts
 │   │   │   ├── comparison/
 │   │   │   ├── experiments/
@@ -40,8 +47,25 @@ prompt-broadcaster/
 │   │   │   └── router.ts
 │   │   ├── popup/
 │   │   │   ├── favorites-workflow/
+│   │   │   │   ├── entrypoints/
+│   │   │   │   │   ├── enqueue.ts
+│   │   │   │   │   ├── handlers.ts
+│   │   │   │   │   ├── messages.ts
+│   │   │   │   │   ├── notifications.ts
+│   │   │   │   │   ├── palette.ts
+│   │   │   │   │   ├── schedules.ts
+│   │   │   │   │   └── types.ts
 │   │   │   │   ├── entrypoints.ts
 │   │   │   │   ├── messages.ts
+│   │   │   │   ├── run-jobs/
+│   │   │   │   │   ├── completion.ts
+│   │   │   │   │   ├── execution.ts
+│   │   │   │   │   ├── failure-history.ts
+│   │   │   │   │   ├── handlers.ts
+│   │   │   │   │   ├── job-mutation.ts
+│   │   │   │   │   ├── maintenance.ts
+│   │   │   │   │   ├── queue.ts
+│   │   │   │   │   └── types.ts
 │   │   │   │   └── run-jobs.ts
 │   │   │   ├── favorites-workflow.ts
 │   │   │   └── launcher.ts
@@ -148,6 +172,7 @@ prompt-broadcaster/
 │   ├── check-docs.mjs
 │   ├── qa-extension.mjs
 │   ├── qa-smoke.mjs
+│   ├── qa-unit.mjs
 │   ├── selector-audit.mjs
 │   └── qa-smoke/
 ├── manifest.json
@@ -222,7 +247,7 @@ Responsibilities:
 - open target tabs and track pending broadcasts
 - maintain action badge state, notifications, selector alerts, and popup reopen flow
 - keep the service-worker app body as a composition root in `src/background/app/bootstrap/app.ts`, mutable runtime state in `context.ts`, and shared helpers in `utils.ts`
-- keep tab targeting and reusable-tab preflight rules in `src/background/app/bootstrap/tab-targets/` (`site-origin`, `types`, factory `index`)
+- keep tab targeting and reusable-tab preflight rules in `src/background/app/bootstrap/tab-targets/` (`site-origin`, `site-lookup`, `target-resolution`, `tab-reuse`, `types`, factory `index`)
 - keep comparison capture selectors/helpers, experiment variable guards, and injection runtime types in `src/background/app/{comparison,experiments,injection}/` plus feature controllers under `src/background/{broadcast,injection,comparison,lifecycle,ui}/`
 - run favorite execution workflows through `src/background/popup/favorites-workflow.ts`
 - keep favorite workflow entrypoints, queued-job execution, and user-facing status messages split under `src/background/popup/favorites-workflow/`

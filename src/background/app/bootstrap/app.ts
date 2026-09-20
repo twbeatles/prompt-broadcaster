@@ -339,6 +339,7 @@ const broadcastQueue = createBroadcastQueue({
   clonePlainValue,
   queueBackgroundStateMutation,
   getPendingBroadcasts,
+  getPendingInjections,
   createPendingBroadcast: pendingBroadcasts.createPendingBroadcast,
   registerBroadcastCompletionWaiter: broadcastWaiters.register,
   reconcilePendingBroadcasts: () => deferred.reconcilePendingBroadcasts(),

@@ -1,0 +1,20 @@
+name: unit-qa
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  browser-free-qa:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npm run docs:check
+      - run: npm run qa:unit

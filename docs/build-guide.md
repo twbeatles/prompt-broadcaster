@@ -185,6 +185,22 @@ These scripts:
 
 The generated ZIP contains the built extension from `dist/` only.
 
+### Packaging parity (Windows vs macOS/Linux)
+
+`package.ps1` and `package.sh` both build from the same commit, read the
+version from `dist/manifest.json`, and produce `prompt-broadcaster-v<version>.zip`
+from the `dist/` contents. The archivers differ (`Compress-Archive` vs `zip`),
+so compare extracted content rather than ZIP bytes. When both platform
+artifacts are available for a release, confirm:
+
+1. Both ZIP names carry the same `dist/manifest.json` version.
+2. The extracted file lists match (`unzip -l` on either platform, or
+   `7z l` on Windows).
+3. The extracted `background/service_worker.js`, `content/*.js`,
+   `popup/popup.js`, and `options/options.js` have identical sizes and
+   contents on both sides.
+4. `manifest.json`, `_locales/`, and `icons/` are present in both.
+
 ## Recommended Release Flow
 
 1. `npm install`
@@ -215,7 +231,7 @@ The generated ZIP contains the built extension from `dist/` only.
 21. In options `Dashboard`, confirm the four summary cards, recent activity, next actions, saved AI response count, and collapsed advanced stats render with sane labels and escaped content
 22. In options `Services`, reorder services with `Move up` / `Move down` and confirm the same order appears in popup compose and favorite editor target checklists
 23. Trigger **Reset data** and confirm it clears both local prompt data and in-memory/session runtime state, including `pendingSelectorChecks`, `activeComparisonContext`, and strategy stats
-24. Run the packaging script for your platform
+24. Run the packaging script for your platform, and when the other platform artifact exists, run the Packaging parity checklist above
 25. Upload the generated ZIP to Chrome Web Store or attach it to a GitHub release
 
 ## Chrome Web Store Release Checklist

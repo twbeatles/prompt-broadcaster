@@ -1,14 +1,16 @@
+export const SCHEDULE_ALARM_PREFIX = "apb-schedule:";
+
 export function buildScheduleAlarmName(favoriteId: string) {
   const normalizedFavoriteId =
     typeof favoriteId === "string" ? favoriteId.trim() : "";
-  return normalizedFavoriteId ? `apb-schedule:${normalizedFavoriteId}` : "";
+  return normalizedFavoriteId ? `${SCHEDULE_ALARM_PREFIX}${normalizedFavoriteId}` : "";
 }
 
 export function parseScheduleAlarmFavoriteId(alarmName: string) {
   const normalizedAlarmName =
     typeof alarmName === "string" ? alarmName.trim() : "";
-  return normalizedAlarmName.startsWith("apb-schedule:")
-    ? alarmName.slice("apb-schedule:".length)
+  return normalizedAlarmName.startsWith(SCHEDULE_ALARM_PREFIX)
+    ? alarmName.slice(SCHEDULE_ALARM_PREFIX.length)
     : "";
 }
 

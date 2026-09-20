@@ -39,3 +39,20 @@ string, and deliberately did not submit it.
 
 This confirms the current public signed-out compose flow for the two
 non-challenge-gated sites. No message was sent during either check.
+
+## Automation vs Manual Coverage Boundary (2026-09-20 addendum)
+
+Automated suites (`qa:smoke`, `selector:audit`, `qa:extension`) cover
+fixture-based injection, logged-out selector snapshots, and unauthenticated
+composer surfaces only. They do not cover:
+
+- Logged-in composer input/submit behavior per service. That requires a real
+  authenticated session; see the Decision section above for ChatGPT, Claude,
+  and Perplexity.
+- Real-window behaviors such as open-tab discovery, explicit tab targeting,
+  focus-sequential injection, and popup fallback flows.
+
+Before a release that touches built-in selectors or routes, verify the
+logged-in canonical route, locale prompt surface, submit surface, and
+soft-gate state manually in a real browser window, then record new evidence
+under `docs/selector-verification-<date>.md`.
