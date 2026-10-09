@@ -431,13 +431,38 @@ function renderSiteSection(result) {
 
 async function main() {
   const builtInSites = await loadBuiltInSites();
-  const browser = await chromium.launch({
-    headless: !process.argv.includes("--headed"),
-    // Lets local audits reuse an installed Chromium/Chrome when Playwright's
-    // managed browser has not been downloaded yet.
-    executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH || undefined,
-  });
-  const context = await browser.newContext();
+  const headed = process.argv.includes("--headed") || process.env.SELECTOR_AUDIT_HEADED === "1";
+  const executablePath = process.env.PLAYWRIGHT_EXECUTABLE_PATH || undefined;
+  // SELECTOR_AUDIT_CHANNEL="chrome" reuses the installed Google Chrome, which
+  // clears Cloudflare challenges more often than the managed headless shell.
+  // It is ignored when PLAYWRIGHT_EXECUTABLE_PATH is set (executable wins).
+  const channel = !executablePath ? process.env.SELECTOR_AUDIT_CHANNEL || undefined : undefined;
+  // SELECTOR_AUDIT_PROFILE_DIR points at a persistent user-data directory
+  // (e.g. a copy of a logged-in Chrome profile). The persistent context keeps
+  // cookies/sessions between runs and looks like a real user to bot checks.
+  // Cloudflare Turnstile may still need one manual checkbox click in headed mode.
+  const profileDir = (process.env.SELECTOR_AUDIT_PROFILE_DIR || "").trim();
+  const slowMo = Number(process.env.SELECTOR_AUDIT_SLOW_MO_MS) || 0;
+  let browser = null;
+  let context;
+  if (profileDir) {
+    context = await chromium.launchPersistentContext(profileDir, {
+      headless: !headed,
+      channel,
+      executablePath,
+      slowMo: slowMo || undefined,
+    });
+  } else {
+    browser = await chromium.launch({
+      headless: !headed,
+      // Lets local audits reuse an installed Chromium/Chrome when Playwright's
+      // managed browser has not been downloaded yet.
+      channel,
+      executablePath,
+      slowMo: slowMo || undefined,
+    });
+    context = await browser.newContext();
+  }
   const page = await context.newPage();
 
   try {
@@ -463,7 +488,9 @@ async function main() {
   } finally {
     await page.close();
     await context.close();
-    await browser.close();
+    if (browser) {
+      await browser.close();
+    }
   }
 }
 

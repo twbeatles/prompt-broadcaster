@@ -1262,7 +1262,7 @@ async function main() {
     );
     assert.equal(
       result.builtInSiteOverrides.chatgpt.submitSelector,
-      "button[data-testid='send-button'], button[data-testid='composer-send-button'], button[aria-label*='send' i], button[aria-label*='보내기' i]",
+      "button[data-testid='send-button'], button[data-testid='composer-send-button'], #composer-submit-button, button[aria-label*='Send message' i], button[aria-label*='Send prompt' i], button[aria-label*='send' i], button[aria-label*='보내기' i]",
     );
     assert.ok(!chromeMock.__getGrantedOrigins().includes("https://legacy.example.com/*"));
   });

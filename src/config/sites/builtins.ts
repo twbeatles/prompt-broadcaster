@@ -29,7 +29,7 @@ export const AI_SITES = Object.freeze([
     ],
     inputType: "contenteditable",
     submitSelector:
-      "button[data-testid='send-button'], button[data-testid='composer-send-button'], button[aria-label*='send' i], button[aria-label*='보내기' i]",
+      "button[data-testid='send-button'], button[data-testid='composer-send-button'], #composer-submit-button, button[aria-label*='Send message' i], button[aria-label*='Send prompt' i], button[aria-label*='send' i], button[aria-label*='보내기' i]",
     submitMethod: "click",
     selectorCheckMode: "input-and-conditional-submit",
     waitMs: 2500,
@@ -102,8 +102,10 @@ export const AI_SITES = Object.freeze([
     hostname: "claude.ai",
     supportedRoutes: ["/new"],
     inputSelector:
-      "div[contenteditable='true'][role='textbox'], div[contenteditable='true'][aria-label*='Claude' i], div[contenteditable='true'][aria-label*='prompt' i], div.ProseMirror[contenteditable='true']",
+      "div[data-testid='chat-input'][contenteditable='true'], div.tiptap.ProseMirror[contenteditable='true'], div[contenteditable='true'][role='textbox'], div[contenteditable='true'][aria-label*='Claude' i], div[contenteditable='true'][aria-label*='prompt' i], div.ProseMirror[contenteditable='true']",
     fallbackSelectors: [
+      "div[data-testid='chat-input'][contenteditable='true']",
+      "div.tiptap.ProseMirror[contenteditable='true']",
       "div[contenteditable='true'][role='textbox']",
       "div[contenteditable='true'][aria-label*='Claude' i]",
       "div[contenteditable='true'][aria-label*='prompt' i]",
@@ -114,7 +116,7 @@ export const AI_SITES = Object.freeze([
     ],
     inputType: "contenteditable",
     submitSelector:
-      "button[aria-label='Send message'], button[aria-label*='send message' i], button[aria-label*='send' i], button[aria-label*='submit' i], button[aria-label*='보내' i], button[aria-label*='전송' i]",
+      "button[data-testid='chat-input-send'], button[aria-label='Send message'], button[aria-label*='send message' i], button[aria-label*='send' i], button[aria-label*='submit' i], button[aria-label*='보내' i], button[aria-label*='전송' i]",
     submitMethod: "click",
     selectorCheckMode: "input-and-conditional-submit",
     waitMs: 2000,
@@ -144,10 +146,14 @@ export const AI_SITES = Object.freeze([
     url: "https://grok.com/",
     hostname: "grok.com",
     supportedRoutes: [],
-    // 2026-07-22 probe: textarea aria-label "Grok에게…", placeholder "무엇을 알고 싶으세요?"
+    // 2026-10-09 probe: main composer is Tiptap ProseMirror (aria-label "Ask Grok anything"); legacy textarea mirror kept as fallback.
     inputSelector:
-      "textarea[aria-label*='grok' i], textarea[placeholder*='알고 싶' i], textarea[placeholder*='무엇' i], textarea[placeholder*='help' i], textarea[aria-label*='Ask' i]",
+      "div.tiptap.ProseMirror[contenteditable='true'], div[aria-label*='Ask Grok' i][contenteditable='true'], div.ProseMirror[contenteditable='true'][translate='no'], textarea[aria-label*='grok' i], textarea[placeholder*='알고 싶' i], textarea[placeholder*='무엇' i]",
     fallbackSelectors: [
+      "div.tiptap.ProseMirror[contenteditable='true']",
+      "div[aria-label*='Ask Grok' i][contenteditable='true']",
+      "div.ProseMirror[contenteditable='true'][translate='no']",
+      "div.ProseMirror[contenteditable='true']",
       "textarea[aria-label*='grok' i]",
       "textarea[placeholder*='알고 싶' i]",
       "textarea[placeholder*='무엇' i]",
@@ -155,23 +161,20 @@ export const AI_SITES = Object.freeze([
       "textarea[aria-label*='Ask' i]",
       "textarea:not([aria-hidden='true'])",
       "textarea",
-      "div.tiptap.ProseMirror[contenteditable='true']",
-      "div.ProseMirror[contenteditable='true'][translate='no']",
-      "div.ProseMirror[contenteditable='true']",
     ],
-    inputType: "textarea",
+    inputType: "contenteditable",
     submitSelector:
       "button[data-testid='chat-submit'], button[type='submit'][aria-label*='submit' i], button[type='submit'][aria-label*='제출' i], button[aria-label*='submit' i], button[aria-label*='제출' i]",
     submitMethod: "click",
     selectorCheckMode: "input-and-conditional-submit",
     waitMs: 3000,
     fallback: true,
-    lastVerified: "2026-08",
-    verifiedAt: "2026-08-22",
+    lastVerified: "2026-10",
+    verifiedAt: "2026-10-09",
     verifiedRoute: "/",
     verifiedAuthState: "logged-out",
-    verifiedLocale: "ko",
-    verifiedVersion: "grok-web-aug-2026",
+    verifiedLocale: "en",
+    verifiedVersion: "grok-web-oct-2026",
     authSelectors: [
       "input[autocomplete='username']",
       "input[type='password']",

@@ -195,6 +195,7 @@ Auth/challenge/loading states should not promote as selector drift.
 
 ### Release verification
 Update selector verification evidence such as `docs/selector-verification-2026-07-22.md` before shipping selector or route changes. Built-in checks should cover logged-out/auth route, canonical logged-in route, locale, prompt surface, submit surface, and whether the service is soft-gated.
+`npm run selector:audit` runs headless against Playwright's managed Chromium by default. For Cloudflare-gated services, rerun it headed with the installed Chrome and a persistent (optionally logged-in) profile copy: `SELECTOR_AUDIT_HEADED=1 SELECTOR_AUDIT_CHANNEL=chrome SELECTOR_AUDIT_PROFILE_DIR=<profile-copy> npm run selector:audit`. Turnstile may still need one manual checkbox click; never audit against the live default profile directory while Chrome is running.
 
 ### Toast styling
 Toast CSS is injected by `src/popup/ui/toast.ts`.
