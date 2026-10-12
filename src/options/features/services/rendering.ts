@@ -18,17 +18,17 @@ export function renderServicesSection() {
 
     return `
       <article class="panel service-card">
-        <div class="section-head">
-          <h2>${escapeHTML(site.name)}</h2>
-          <p>${escapeHTML(site.url)}</p>
+        <div class="service-card-head">
+          <span class="swatch" style="background:${escapeHTML(site.color || CHART_COLORS[index % CHART_COLORS.length])}"></span>
+          <div class="section-head">
+            <h2>${escapeHTML(site.name)}</h2>
+            <p>${escapeHTML(site.url)}</p>
+          </div>
         </div>
         <div class="metric-grid">
-          <div>${escapeHTML(t.services.inputType)}</div><div>${escapeHTML(site.inputType)}</div>
-          <div>${escapeHTML(t.services.waitTime)}</div><div>${escapeHTML(`${site.waitMs}ms`)}</div>
-          <div>${escapeHTML(t.services.requestCount)}</div><div>${requestCount}</div>
-          <div>${escapeHTML(t.services.successRate)}</div><div>${successRate}%</div>
-          <div>${escapeHTML(t.services.lastUsed)}</div><div>${escapeHTML(lastUsed)}</div>
-          <div>${escapeHTML(t.services.defaultColor)}</div><div><span class="swatch" style="background:${escapeHTML(site.color || CHART_COLORS[index % CHART_COLORS.length])}"></span></div>
+          <div class="metric"><span class="metric-label">${escapeHTML(t.services.requestCount)}</span><span class="metric-value">${requestCount}</span></div>
+          <div class="metric"><span class="metric-label">${escapeHTML(t.services.successRate)}</span><span class="metric-value">${requestCount > 0 ? `${successRate}%` : "–"}</span></div>
+          <div class="metric"><span class="metric-label">${escapeHTML(t.services.lastUsed)}</span><span class="metric-value">${escapeHTML(lastUsed)}</span></div>
         </div>
         <div class="settings-actions">
           <button class="btn ghost" type="button" data-move-site="${escapeHTML(site.id)}" data-direction="up" ${index === 0 ? "disabled" : ""}>${escapeHTML(t.services.moveUp)}</button>

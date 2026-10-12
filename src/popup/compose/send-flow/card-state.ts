@@ -7,7 +7,7 @@ export function createPopupSendCardState(): PopupSendCardState {
     );
   }
 
-  function setSiteCardState(siteId: string, cardState: string): void {
+  function setSiteCardState(siteId: string, cardState: string, note = ""): void {
     const card = getSiteCardElement(siteId);
     if (!card) {
       return;
@@ -15,19 +15,32 @@ export function createPopupSendCardState(): PopupSendCardState {
 
     card.classList.remove("sending", "sent", "failed");
     card.classList.add(cardState);
-    card.querySelector(".retry-btn")?.remove();
-    card.querySelector(".login-retry-btn")?.remove();
-    card.querySelector(".selector-check-btn")?.remove();
-    card.querySelector(".new-tab-retry-btn")?.remove();
+    card.querySelector(".site-recovery")?.remove();
+
+    if (cardState === "failed" && note) {
+      const noteNode = document.createElement("p");
+      noteNode.className = "site-result-note";
+      noteNode.textContent = note;
+      getRecoveryRow(card).prepend(noteNode);
+    }
+  }
+
+  function getRecoveryRow(card: HTMLElement): HTMLElement {
+    const existing = card.querySelector<HTMLElement>(".site-recovery");
+    if (existing) {
+      return existing;
+    }
+
+    const row = document.createElement("div");
+    row.className = "site-recovery";
+    card.appendChild(row);
+    return row;
   }
 
   function clearSiteCardStates(): void {
     document.querySelectorAll<HTMLElement>(".site-card").forEach((card) => {
       card.classList.remove("sending", "sent", "failed");
-      card.querySelector(".retry-btn")?.remove();
-      card.querySelector(".login-retry-btn")?.remove();
-      card.querySelector(".selector-check-btn")?.remove();
-      card.querySelector(".new-tab-retry-btn")?.remove();
+      card.querySelector(".site-recovery")?.remove();
     });
   }
 
@@ -47,6 +60,7 @@ export function createPopupSendCardState(): PopupSendCardState {
 
   return {
     clearSiteCardStates,
+    getRecoveryRow,
     getSiteCardElement,
     setSiteCardState,
     triggerRipple,

@@ -13,7 +13,7 @@
         <span class="brand-mark">APB</span>
         <div>
           <h1 data-i18n="ext_name">AI Prompt Broadcaster</h1>
-          <p data-i18n="options_brand_subtitle">Dashboard & analytics</p>
+          <p data-i18n="options_brand_subtitle">Manager</p>
         </div>
       </div>
 
@@ -84,8 +84,9 @@
         <div class="panel">
           <div class="filter-row">
             <select id="history-service-filter"></select>
-            <input id="history-date-from" type="date" />
-            <input id="history-date-to" type="date" />
+            <input id="history-date-from" type="date" aria-label="From date" data-i18n-aria-label="options_history_filter_from" data-i18n-title="options_history_filter_from" />
+            <span class="helper" aria-hidden="true">~</span>
+            <input id="history-date-to" type="date" aria-label="To date" data-i18n-aria-label="options_history_filter_to" data-i18n-title="options_history_filter_to" />
             <button id="history-export-csv" class="btn" type="button" data-i18n="options_history_export_csv">Export CSV</button>
           </div>
         </div>
@@ -164,7 +165,10 @@
             <textarea id="experiment-variants" rows="8" placeholder="One variant per block. Separate variants with a line containing ---" data-i18n-placeholder="options_experiments_variants_placeholder"></textarea>
             <textarea id="experiment-variables" rows="4" placeholder='Variable sets as JSON array, e.g. [{"topic":"selectors"}]' data-i18n-placeholder="options_experiments_variables_placeholder"></textarea>
           </div>
-          <div id="experiment-targets" class="service-badges"></div>
+          <div class="settings-control">
+            <strong data-i18n="options_experiments_targets_label">Send to</strong>
+            <div id="experiment-targets" class="service-badges"></div>
+          </div>
           <div class="settings-actions">
             <button id="experiment-preview" class="btn" type="button" data-i18n="options_experiments_preview">Preview</button>
             <button id="experiment-save" class="btn" type="button" data-i18n="options_experiments_save">Save</button>
@@ -181,22 +185,14 @@
           <p data-i18n="options_settings_desc">Configure retention, notifications, shortcuts, and data management.</p>
         </div>
         <div class="panel settings-stack">
-          <div class="settings-control">
-            <strong data-i18n="options_settings_history_limit">History retention</strong>
-            <input id="history-limit-slider" type="range" min="10" max="200" step="10" />
-            <span id="history-limit-value" class="helper"></span>
-            <div id="history-limit-note" class="helper" data-i18n="options_settings_history_limit_note">Visible list cap only. Existing history is not deleted.</div>
-          </div>
+          <h3 class="settings-group-title" data-i18n="options_settings_group_send">Sending</h3>
           <div class="settings-control">
             <div class="toggle-row">
-              <strong data-i18n="options_settings_auto_close">Auto-close popup after send</strong>
-              <input id="auto-close-toggle" type="checkbox" />
-            </div>
-          </div>
-          <div class="settings-control">
-            <div class="toggle-row">
-              <strong data-i18n="options_settings_desktop_notifications">Desktop notification on completion</strong>
-              <input id="desktop-notification-toggle" type="checkbox" />
+              <div>
+                <strong id="reuse-tabs-setting-title">Send to AI tabs that are already open</strong>
+                <div id="reuse-tabs-setting-desc" class="helper">If a matching AI tab is open in this window it is used; otherwise a new tab opens.</div>
+              </div>
+              <input id="reuse-tabs-toggle" type="checkbox" />
             </div>
           </div>
           <div class="settings-control">
@@ -210,18 +206,36 @@
           </div>
           <div class="settings-control">
             <div class="toggle-row">
-              <div>
-                <strong id="reuse-tabs-setting-title">Reuse current-window AI tabs</strong>
-                <div id="reuse-tabs-setting-desc" class="helper">When enabled, matching open AI tabs are reused before opening a new one.</div>
-              </div>
-              <input id="reuse-tabs-toggle" type="checkbox" />
+              <strong id="wait-multiplier-setting-title"></strong>
+              <span id="wait-multiplier-setting-value" class="setting-value"></span>
             </div>
+            <input id="wait-multiplier-slider" type="range" min="0.5" max="3" step="0.1" />
+            <div class="helper" data-i18n="settings_wait_multiplier_desc">If sends fail because AI pages load slowly, raise this.</div>
+          </div>
+
+          <h3 class="settings-group-title" data-i18n="options_settings_group_display">Display &amp; notifications</h3>
+          <div class="settings-control">
+            <label class="toggle-row" for="auto-close-toggle">
+              <strong data-i18n="options_settings_auto_close">Close the popup after sending</strong>
+              <input id="auto-close-toggle" type="checkbox" />
+            </label>
           </div>
           <div class="settings-control">
-            <strong id="wait-multiplier-setting-title"></strong>
-            <input id="wait-multiplier-slider" type="range" min="0.5" max="3" step="0.1" />
-            <span id="wait-multiplier-setting-value" class="helper"></span>
+            <label class="toggle-row" for="desktop-notification-toggle">
+              <strong data-i18n="options_settings_desktop_notifications">Notify me when sending finishes</strong>
+              <input id="desktop-notification-toggle" type="checkbox" />
+            </label>
           </div>
+          <div class="settings-control">
+            <div class="toggle-row">
+              <strong data-i18n="options_settings_history_limit">History items shown in lists</strong>
+              <span id="history-limit-value" class="setting-value"></span>
+            </div>
+            <input id="history-limit-slider" type="range" min="10" max="200" step="10" />
+            <div id="history-limit-note" class="helper" data-i18n="options_settings_history_limit_note">Only changes how many are shown. Saved history is not deleted.</div>
+          </div>
+
+          <h3 class="settings-group-title" data-i18n="options_settings_group_data">Shortcuts &amp; data</h3>
           <div class="settings-control">
             <strong data-i18n="options_settings_shortcuts">Keyboard shortcuts</strong>
             <div id="shortcut-list" class="helper"></div>

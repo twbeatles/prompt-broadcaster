@@ -113,6 +113,9 @@ export const t = {
     healthWarning: msg("options_services_health_warning") || "Selector warning",
     healthHealthy: msg("options_services_health_healthy") || "Healthy",
     healthNoRecentRun: msg("options_services_health_no_recent_run") || "No recent run",
+    healthRecentFailure: msg("options_services_health_recent_failure") || "Recent failure",
+    healthVerified: msg("options_services_health_verified") || "Verified",
+    healthStrategy: msg("options_services_health_strategy") || "Input method",
     healthLogin: msg("options_services_health_login") || "Login",
     healthRetry: msg("options_services_health_retry") || "Retry failed",
     healthSelectorCheck: msg("options_services_health_selector_check") || "Selector check",
@@ -282,6 +285,8 @@ export const t = {
     templatePackImport: msg("options_template_pack_import") || "Import pack JSON",
     templatePackEmpty: msg("options_template_pack_empty") || "No template packs yet.",
     templatePackDownload: msg("options_template_pack_download") || "Download",
+    templatePackCount: (count: number) =>
+      msg("options_template_pack_count", [String(count)]) || `${count} templates`,
     templatePackDefaultsIncluded:
       msg("options_template_pack_defaults_included") || "included",
     templatePackDefaultsRemoved:

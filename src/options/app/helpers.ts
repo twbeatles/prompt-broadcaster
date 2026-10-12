@@ -18,15 +18,15 @@ export function buildImportSummaryText(summary, { short = false } = {}) {
 
   if (isKorean) {
     const parts = [
-      `가져오기 완료: 커스텀 서비스 ${acceptedCount}개 적용`,
-      rejectedCount > 0 ? `건너뜀 ${rejectedCount}개` : "",
-      rewrittenCount > 0 ? `ID 재작성 ${rewrittenCount}개` : "",
+      `가져오기 완료: 직접 추가한 서비스 ${acceptedCount}개 적용`,
+      rejectedCount > 0 ? `제외 ${rejectedCount}개` : "",
+      rewrittenCount > 0 ? `ID 변경 ${rewrittenCount}개` : "",
       deniedCount > 0 ? `권한 거부 ${deniedCount}개` : "",
     ].filter(Boolean);
 
     if (!short && overrideAdjustedCount + overrideDroppedCount + stateDroppedCount > 0) {
       parts.push(
-        `기본 서비스 보정 ${overrideAdjustedCount + overrideDroppedCount + stateDroppedCount}개`
+        `기본 서비스 조정 ${overrideAdjustedCount + overrideDroppedCount + stateDroppedCount}개`
       );
     }
 

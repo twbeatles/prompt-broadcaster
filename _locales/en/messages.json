@@ -12,7 +12,7 @@
     "message": "Use the selected text as a prompt and open the popup"
   },
   "command_quick_palette": {
-    "message": "Open the quick palette for favorites"
+    "message": "Open quick favorites"
   },
   "popup_sections_aria": {
     "message": "Popup sections"
@@ -21,10 +21,10 @@
     "message": "Close"
   },
   "popup_placeholder": {
-    "message": "Write your prompt here...\n\nCtrl+Enter to send."
+    "message": "Type the prompt you want to send to every AI.\n\nPress Ctrl+Enter to send."
   },
   "popup_sites_label": {
-    "message": "Target services"
+    "message": "Send to"
   },
   "popup_select_all": {
     "message": "Select all"
@@ -36,10 +36,10 @@
     "message": "Send"
   },
   "popup_stop_sending": {
-    "message": "Stop"
+    "message": "Stop sending"
   },
   "popup_save_favorite": {
-    "message": "Save favorite"
+    "message": "Save as favorite"
   },
   "tab_write": {
     "message": "Compose"
@@ -54,13 +54,13 @@
     "message": "Settings"
   },
   "history_empty": {
-    "message": "No prompt history yet."
+    "message": "You haven't sent any prompts yet."
   },
   "favorites_empty": {
-    "message": "No favorites yet."
+    "message": "No favorites yet. Save prompts you reuse so you can send them again in one click."
   },
   "status_sending": {
-    "message": "Sending to $COUNT$ service(s)...",
+    "message": "Sending to $COUNT$ service(s)…",
     "placeholders": {
       "count": {
         "content": "$1"
@@ -68,7 +68,7 @@
     }
   },
   "status_success": {
-    "message": "Queued broadcast for $COUNT$ service(s)",
+    "message": "Sent to $COUNT$ service(s).",
     "placeholders": {
       "count": {
         "content": "$1"
@@ -84,22 +84,22 @@
     }
   },
   "settings_reset": {
-    "message": "Clear all history"
+    "message": "Delete all history"
   },
   "settings_export": {
-    "message": "Export as JSON"
+    "message": "Export backup (JSON)"
   },
   "settings_import": {
-    "message": "Import JSON"
+    "message": "Import backup (JSON)"
   },
   "context_menu_root": {
-    "message": "Send to AI Broadcaster"
+    "message": "Send with AI Prompt Broadcaster"
   },
   "context_menu_send_all": {
     "message": "Send to all services"
   },
   "context_menu_save_comparison": {
-    "message": "Save selection as comparison note"
+    "message": "Save selection as an AI response"
   },
   "context_menu_send_to": {
     "message": "Send to $SERVICE$ only",
@@ -113,7 +113,7 @@
     "message": "Please enter a prompt."
   },
   "popup_warn_no_site": {
-    "message": "Please select at least one service."
+    "message": "Select at least one service."
   },
   "popup_unknown_error": {
     "message": "Unknown error"
@@ -122,7 +122,7 @@
     "message": "Search history"
   },
   "popup_favorites_search": {
-    "message": "Search favorites"
+    "message": "Search title, text, or tag"
   },
   "popup_add_favorite": {
     "message": "Add to favorites"
@@ -134,7 +134,7 @@
     "message": "Added to favorites."
   },
   "popup_favorite_saved": {
-    "message": "Template favorite saved."
+    "message": "Favorite saved."
   },
   "popup_history_deleted": {
     "message": "Removed from history."
@@ -143,19 +143,19 @@
     "message": "Removed from favorites."
   },
   "popup_title_placeholder": {
-    "message": "Favorite title"
+    "message": "e.g. Weekly report summary"
   },
   "popup_title_saved": {
     "message": "Favorite title saved."
   },
   "popup_settings_title": {
-    "message": "Data management"
+    "message": "Data"
   },
   "popup_settings_description": {
-    "message": "Clear history, export JSON, or import JSON data."
+    "message": "Back up or restore your history, favorites, and settings."
   },
   "popup_open_options": {
-    "message": "Open dashboard"
+    "message": "Open manager page"
   },
   "popup_clear_history_confirm": {
     "message": "Delete all history? Favorites will be kept."
@@ -164,22 +164,22 @@
     "message": "History cleared."
   },
   "popup_import_success": {
-    "message": "JSON data imported."
+    "message": "Backup imported."
   },
   "popup_import_failed": {
-    "message": "Failed to import JSON data."
+    "message": "Couldn't import the backup file."
   },
   "popup_export_success": {
-    "message": "JSON export generated."
+    "message": "Backup file saved."
   },
   "popup_empty_action_compose": {
-    "message": "Go to Compose"
+    "message": "Write a prompt"
   },
   "popup_no_search_results": {
     "message": "No matching prompts."
   },
   "popup_imported_load": {
-    "message": "Prompt loaded into compose."
+    "message": "Loaded into Compose."
   },
   "popup_menu_more": {
     "message": "More actions"
@@ -188,7 +188,7 @@
     "message": "★"
   },
   "popup_template_summary": {
-    "message": "$COUNT$ template variable(s) detected",
+    "message": "$COUNT$ variable(s) — you'll fill them in before sending",
     "placeholders": {
       "count": {
         "content": "$1"
@@ -196,28 +196,28 @@
     }
   },
   "popup_template_user_kind": {
-    "message": "Input"
+    "message": "You fill in"
   },
   "popup_template_system_kind": {
-    "message": "System"
+    "message": "Auto-filled"
   },
   "popup_template_modal_title": {
-    "message": "Fill template variables"
+    "message": "Fill in variables"
   },
   "popup_template_modal_desc": {
-    "message": "Enter variable values and confirm the final prompt before sending."
+    "message": "Enter a value for each variable and check what will actually be sent."
   },
   "popup_template_preview_label": {
-    "message": "Preview"
+    "message": "What will be sent"
   },
   "popup_template_cancel": {
     "message": "Cancel"
   },
   "popup_template_confirm": {
-    "message": "Send final prompt"
+    "message": "Send this"
   },
   "popup_template_system_notice": {
-    "message": "Automatic system variables"
+    "message": "Auto-filled variables"
   },
   "favorite_job_status_queued": {
     "message": "Queued"
@@ -235,10 +235,10 @@
     "message": "Skipped"
   },
   "favorite_run_error_missing_targets": {
-    "message": "Favorite does not have any target services."
+    "message": "This favorite has no services to send to."
   },
   "favorite_run_error_missing_template_values": {
-    "message": "Missing template values: $NAMES$",
+    "message": "Variables without a value: $NAMES$",
     "placeholders": {
       "names": {
         "content": "$1"
@@ -246,7 +246,7 @@
     }
   },
   "favorite_run_error_scheduled_unsupported_variable": {
-    "message": "Scheduled favorites cannot resolve $VARIABLES$.",
+    "message": "Scheduled sends can't use $VARIABLES$.",
     "placeholders": {
       "variables": {
         "content": "$1"
@@ -254,16 +254,16 @@
     }
   },
   "favorite_run_error_clipboard_popup_required": {
-    "message": "Clipboard-backed favorites need popup input."
+    "message": "Favorites that use the clipboard must be run from the popup."
   },
   "favorite_run_error_tab_context_unavailable": {
-    "message": "Current tab context is unavailable for this favorite."
+    "message": "Couldn't read the current tab, so this favorite wasn't sent."
   },
   "favorite_run_error_start_failed": {
-    "message": "Favorite execution could not start."
+    "message": "Couldn't start sending this favorite."
   },
   "favorite_run_error_queue_failed": {
-    "message": "Favorite execution could not be queued."
+    "message": "Couldn't start sending this favorite. Try again."
   },
   "favorite_run_error_favorite_id_required": {
     "message": "Favorite id is required."
@@ -278,13 +278,13 @@
     "message": "Completed"
   },
   "favorite_run_message_failed": {
-    "message": "Favorite run failed"
+    "message": "Favorite send failed"
   },
   "favorite_run_message_deduped": {
-    "message": "Favorite run is already queued."
+    "message": "This favorite is already waiting to send."
   },
   "favorite_run_message_skipped_active": {
-    "message": "Skipped because another run is active."
+    "message": "Skipped because the previous run hasn't finished."
   },
   "favorite_run_message_step_progress": {
     "message": "Step $CURRENT$/$TOTAL$",
@@ -309,7 +309,7 @@
     }
   },
   "favorite_run_message_queued_step": {
-    "message": "Queued step $CURRENT$/$TOTAL$",
+    "message": "Step $CURRENT$/$TOTAL$ queued",
     "placeholders": {
       "current": {
         "content": "$1"
@@ -320,19 +320,19 @@
     }
   },
   "favorite_run_notification_title_skipped": {
-    "message": "Favorite run skipped"
+    "message": "Favorite send skipped"
   },
   "popup_service_permission_preview": {
-    "message": "Requested origins"
+    "message": "Sites that will ask for permission"
   },
   "popup_template_clipboard_notice": {
     "message": "Clipboard text is read automatically right before sending."
   },
   "popup_template_clipboard_error": {
-    "message": "Clipboard text could not be read. Check the clipboardRead permission and try again."
+    "message": "Couldn't read the clipboard. Allow clipboard access in the browser and try again."
   },
   "popup_template_missing_values": {
-    "message": "Please fill in every template variable before sending."
+    "message": "Fill in every variable before sending."
   },
   "popup_template_field_placeholder": {
     "message": "Enter $NAME$",
@@ -346,7 +346,7 @@
     "message": "Save favorite"
   },
   "popup_favorite_modal_desc": {
-    "message": "Save the current prompt as a reusable favorite."
+    "message": "Save this prompt so you can send it again later."
   },
   "popup_favorite_modal_cancel": {
     "message": "Cancel"
@@ -355,16 +355,16 @@
     "message": "Save"
   },
   "popup_favorite_title_label": {
-    "message": "Favorite title"
+    "message": "Title"
   },
   "popup_favorite_prompt_label": {
     "message": "Prompt"
   },
   "popup_favorite_save_defaults_label": {
-    "message": "Save template defaults with this favorite"
+    "message": "Also save the current variable values as defaults"
   },
   "popup_favorite_defaults_label": {
-    "message": "Template default values"
+    "message": "Default variable values"
   },
   "popup_favorite_modal_save_changes": {
     "message": "Save changes"
@@ -373,34 +373,34 @@
     "message": "Edit favorite"
   },
   "popup_favorite_edit_desc": {
-    "message": "Update targets, defaults, chain steps, and schedule settings."
+    "message": "Change services, variable defaults, steps, and schedule."
   },
   "popup_favorite_mode_label": {
-    "message": "Favorite type"
+    "message": "How to send"
   },
   "popup_favorite_mode_single": {
-    "message": "Single prompt"
+    "message": "One prompt"
   },
   "popup_favorite_mode_chain": {
-    "message": "Chain"
+    "message": "Several prompts in order"
   },
   "popup_favorite_targets_label": {
-    "message": "Default target services"
+    "message": "Send to"
   },
   "popup_favorite_pinned_label": {
-    "message": "Pin this favorite"
+    "message": "Pin to the top of the list"
   },
   "popup_favorite_schedule_enabled_label": {
-    "message": "Enable scheduled run"
+    "message": "Send automatically on a schedule"
   },
   "popup_favorite_scheduled_at_label": {
-    "message": "Next run time"
+    "message": "Send at"
   },
   "popup_favorite_schedule_repeat_label": {
     "message": "Repeat"
   },
   "popup_favorite_schedule_repeat_none": {
-    "message": "One time"
+    "message": "Once"
   },
   "popup_favorite_schedule_repeat_daily": {
     "message": "Daily"
@@ -412,10 +412,10 @@
     "message": "Weekly"
   },
   "popup_favorite_chain_title": {
-    "message": "Chain steps"
+    "message": "Steps"
   },
   "popup_favorite_chain_desc": {
-    "message": "Each step runs in order and stops the chain if any step fails."
+    "message": "Steps are sent from top to bottom. If one fails, the rest are not sent."
   },
   "popup_favorite_chain_add_step": {
     "message": "Add step"
@@ -438,34 +438,34 @@
     "message": "Prompt"
   },
   "popup_favorite_step_delay_label": {
-    "message": "Delay after previous step (ms)"
+    "message": "Wait after the previous step (ms)"
   },
   "popup_favorite_step_targets_label": {
-    "message": "Override targets"
+    "message": "Send this step to different services"
   },
   "popup_favorite_step_targets_hint": {
-    "message": "Leave empty to use the favorite default targets."
+    "message": "Leave unchecked to use the services chosen above."
   },
   "popup_favorite_run_now": {
-    "message": "Run now"
+    "message": "Send now"
   },
   "popup_favorite_run_queued": {
-    "message": "Favorite run queued."
+    "message": "Started sending this favorite."
   },
   "popup_favorite_run_needs_editor": {
-    "message": "This favorite needs more input before it can run."
+    "message": "A few values are needed before this can be sent."
   },
   "popup_favorite_schedule_date_required": {
-    "message": "Choose the next run time for this schedule."
+    "message": "Choose when this should be sent."
   },
   "popup_favorite_chain_needs_step": {
-    "message": "Add at least one non-empty chain step."
+    "message": "Add at least one step with a prompt."
   },
   "popup_favorite_kind_single": {
     "message": "Single"
   },
   "popup_favorite_kind_chain": {
-    "message": "Chain"
+    "message": "Sequence"
   },
   "popup_favorite_scheduled_badge": {
     "message": "Scheduled"
@@ -485,19 +485,19 @@
     "message": "Clear"
   },
   "popup_reuse_tabs_label": {
-    "message": "Reuse open AI tabs in the current window by default"
+    "message": "Send to AI tabs that are already open"
   },
   "popup_reuse_tabs_desc_enabled": {
-    "message": "When no tab is chosen explicitly, the broadcaster reuses a matching open AI tab before opening a new one."
+    "message": "If a matching AI tab is open in this window it is used; otherwise a new tab opens."
   },
   "popup_reuse_tabs_desc_disabled": {
-    "message": "When no tab is chosen explicitly, the broadcaster always opens a fresh tab."
+    "message": "A new tab is always opened."
   },
   "popup_auto_capture_responses_label": {
     "message": "Save AI responses automatically"
   },
   "popup_auto_capture_responses_desc_enabled": {
-    "message": "Visible AI responses are saved locally after a send finishes."
+    "message": "After sending, the AI responses shown on screen are saved locally in this browser so you can review them in History."
   },
   "popup_auto_capture_responses_desc_disabled": {
     "message": "AI responses will not be saved automatically."
@@ -532,7 +532,7 @@
     "message": "manual"
   },
   "popup_open_tabs_title": {
-    "message": "Open tabs ($COUNT$)",
+    "message": "Which tab? ($COUNT$ open)",
     "placeholders": {
       "count": {
         "content": "$1"
@@ -540,10 +540,10 @@
     }
   },
   "popup_open_tabs_use_default": {
-    "message": "Use default behavior"
+    "message": "Automatic"
   },
   "popup_open_tabs_use_default_detail": {
-    "message": "Current setting: $MODE$",
+    "message": "Follows your setting: $MODE$",
     "placeholders": {
       "mode": {
         "content": "$1"
@@ -551,19 +551,19 @@
     }
   },
   "popup_open_tabs_default_reuse": {
-    "message": "reuse a matching tab"
+    "message": "use an open tab"
   },
   "popup_open_tabs_default_new": {
     "message": "open a new tab"
   },
   "popup_open_tabs_always_new": {
-    "message": "Always open a new tab"
+    "message": "Open a new tab"
   },
   "popup_open_tabs_always_new_detail": {
-    "message": "Ignore matching open tabs for this service only."
+    "message": "Just this service opens a new tab this time."
   },
   "popup_open_tabs_active": {
-    "message": "Active"
+    "message": "Current"
   },
   "popup_open_tabs_ready": {
     "message": "Ready"
@@ -572,10 +572,10 @@
     "message": "Loading"
   },
   "popup_service_management_title": {
-    "message": "Service management"
+    "message": "AI services"
   },
   "popup_service_management_desc": {
-    "message": "Add, edit, enable, or disable AI targets without changing the code."
+    "message": "Turn services on or off, or add another AI site yourself."
   },
   "popup_service_add": {
     "message": "Add service"
@@ -593,7 +593,7 @@
     "message": "Custom"
   },
   "popup_service_disabled": {
-    "message": "Disabled"
+    "message": "Off"
   },
   "popup_service_edit": {
     "message": "Edit"
@@ -602,88 +602,88 @@
     "message": "Delete"
   },
   "popup_service_test": {
-    "message": "Test in current tab"
+    "message": "Check on current tab"
   },
   "popup_service_editor_add_title": {
-    "message": "Add custom service"
+    "message": "Add a custom service"
   },
   "popup_service_editor_edit_title": {
     "message": "Edit service"
   },
   "popup_service_editor_desc": {
-    "message": "Configure selector, submit strategy, style, and launch URL."
+    "message": "Give the site address and where its prompt box is (a CSS selector) so prompts can be sent there too."
   },
   "popup_service_field_name": {
     "message": "Service name"
   },
   "popup_service_field_url": {
-    "message": "Service URL"
+    "message": "Site address (URL)"
   },
   "popup_service_field_input_selector": {
-    "message": "Input selector"
+    "message": "Prompt box (CSS selector)"
   },
   "popup_service_field_input_type": {
-    "message": "Input type"
+    "message": "Prompt box type"
   },
   "popup_service_field_submit_selector": {
-    "message": "Submit selector"
+    "message": "Send button (CSS selector)"
   },
   "popup_service_field_submit_method": {
-    "message": "Submit method"
+    "message": "How to submit"
   },
   "popup_service_field_advanced": {
-    "message": "Advanced settings"
+    "message": "Advanced (optional)"
   },
   "popup_service_field_fallback_selectors": {
-    "message": "Fallback selectors"
+    "message": "Backup prompt-box selectors"
   },
   "popup_service_field_auth_selectors": {
-    "message": "Authentication selectors"
+    "message": "Login-page selectors"
   },
   "popup_service_field_hostname_aliases": {
-    "message": "Hostname aliases"
+    "message": "Other addresses for this service"
   },
   "popup_service_field_supported_routes": {
-    "message": "Supported routes"
+    "message": "Paths where sending works"
   },
   "popup_service_field_verified_at": {
-    "message": "Verified date"
+    "message": "Checked on"
   },
   "popup_service_field_verified_route": {
-    "message": "Verified route"
+    "message": "Checked path"
   },
   "popup_service_field_verified_auth_state": {
-    "message": "Verified auth state"
+    "message": "Login state when checked"
   },
   "popup_service_field_verified_locale": {
-    "message": "Verified locale"
+    "message": "Checked language"
   },
   "popup_service_field_verified_version": {
-    "message": "Verified version"
+    "message": "Checked version"
   },
   "popup_service_verified_auth_state_unknown": {
-    "message": "Unknown"
+    "message": "Not set"
   },
   "popup_service_verified_auth_state_logged_in": {
-    "message": "logged-in"
+    "message": "Logged in"
   },
   "popup_service_verified_auth_state_logged_out": {
-    "message": "logged-out"
+    "message": "Logged out"
   },
   "popup_service_verified_auth_state_soft_gated": {
-    "message": "soft-gated"
+    "message": "Usable without login (limited)"
   },
   "popup_service_field_wait": {
-    "message": "Page wait time"
+    "message": "Wait after the page opens"
   },
   "popup_service_field_color": {
-    "message": "Service color"
+    "message": "Color"
   },
   "popup_service_field_icon": {
-    "message": "Icon"
+    "message": "Icon text"
   },
   "popup_service_field_enabled": {
-    "message": "Enabled"
+    "message": "On"
   },
   "popup_service_editor_save": {
     "message": "Save"
@@ -701,10 +701,10 @@
     "message": "Service settings were reset."
   },
   "popup_service_permission_denied": {
-    "message": "Host permission was not granted for this service URL."
+    "message": "Permission to access this site was not granted."
   },
   "toast_service_permission_denied": {
-    "message": "Skipped $SERVICE$ because the required host permission was not granted.",
+    "message": "Skipped $SERVICE$ because site access was not granted.",
     "placeholders": {
       "service": {
         "content": "$1"
@@ -712,7 +712,7 @@
     }
   },
   "toast_selected_tab_unavailable": {
-    "message": "$SERVICE$ selected tab is unavailable.",
+    "message": "$SERVICE$: the tab you picked is closed or unavailable.",
     "placeholders": {
       "service": {
         "content": "$1"
@@ -723,19 +723,19 @@
     }
   },
   "popup_service_validation_error": {
-    "message": "Please check the service form fields."
+    "message": "Please check the form."
   },
   "popup_service_test_no_tab": {
-    "message": "No active tab is available for selector testing."
+    "message": "No tab to check. Open the AI site in a tab first."
   },
   "popup_service_test_no_selector": {
-    "message": "Enter a selector first."
+    "message": "Enter a CSS selector first."
   },
   "popup_service_test_invalid_tab": {
-    "message": "Selector testing only works on http/https pages."
+    "message": "This only works on regular web pages (http/https)."
   },
   "popup_service_test_success": {
-    "message": "Element found ($TYPE$)",
+    "message": "Prompt box found ($TYPE$)",
     "placeholders": {
       "type": {
         "content": "$1"
@@ -743,10 +743,10 @@
     }
   },
   "popup_service_test_fail": {
-    "message": "Element not found."
+    "message": "Prompt box not found."
   },
   "popup_service_test_error": {
-    "message": "Selector test failed: $MESSAGE$",
+    "message": "Check failed: $MESSAGE$",
     "placeholders": {
       "message": {
         "content": "$1"
@@ -773,13 +773,13 @@
     }
   },
   "notification_broadcast_title_success": {
-    "message": "Broadcast completed"
+    "message": "Sent"
   },
   "notification_broadcast_title_partial": {
-    "message": "Broadcast completed with partial failures"
+    "message": "Some sends failed"
   },
   "notification_broadcast_message_success": {
-    "message": "$COUNT$ service(s) completed",
+    "message": "Sent to $COUNT$ service(s).",
     "placeholders": {
       "count": {
         "content": "$1"
@@ -798,10 +798,10 @@
     }
   },
   "options_page_title": {
-    "message": "AI Prompt Broadcaster Dashboard"
+    "message": "AI Prompt Broadcaster Manager"
   },
   "options_brand_subtitle": {
-    "message": "Recent use"
+    "message": "Manager"
   },
   "options_nav_dashboard": {
     "message": "Dashboard"
@@ -813,10 +813,10 @@
     "message": "Schedules"
   },
   "options_nav_experiments": {
-    "message": "Experiments"
+    "message": "Compare prompts"
   },
   "options_nav_services": {
-    "message": "Services"
+    "message": "AI services"
   },
   "options_nav_settings": {
     "message": "Settings"
@@ -825,7 +825,7 @@
     "message": "Dashboard"
   },
   "options_dashboard_desc": {
-    "message": "Check recent use, saved AI responses, and anything that needs attention."
+    "message": "See recent sends and anything that needs your attention."
   },
   "options_dashboard_recent_title": {
     "message": "Recent activity"
@@ -834,16 +834,16 @@
     "message": "Latest sends and whether AI responses were saved."
   },
   "options_dashboard_view_history": {
-    "message": "View history"
+    "message": "View all history"
   },
   "options_dashboard_actions_title": {
-    "message": "Next actions"
+    "message": "To check"
   },
   "options_dashboard_actions_desc": {
-    "message": "Simple checks that help the next send work better."
+    "message": "Things worth checking so the next send goes smoothly."
   },
   "options_dashboard_advanced_summary": {
-    "message": "Advanced stats"
+    "message": "Detailed stats"
   },
   "options_dashboard_no_recent": {
     "message": "No sends yet."
@@ -872,7 +872,7 @@
     "message": "Check service status"
   },
   "options_dashboard_action_service_desc": {
-    "message": "$COUNT$ service(s) need attention.",
+    "message": "$COUNT$ service(s) had a recent problem.",
     "placeholders": {
       "count": {
         "content": "$1"
@@ -880,10 +880,10 @@
     }
   },
   "options_dashboard_action_response": {
-    "message": "Save missing responses"
+    "message": "Responses not saved"
   },
   "options_dashboard_action_response_desc": {
-    "message": "Open history to capture or paste AI responses."
+    "message": "In History you can grab the AI responses again or paste them in."
   },
   "options_dashboard_action_auto_capture": {
     "message": "Turn on response saving"
@@ -892,10 +892,10 @@
     "message": "Automatic response saving is currently off."
   },
   "options_dashboard_action_ready": {
-    "message": "Ready for the next send"
+    "message": "All good"
   },
   "options_dashboard_action_ready_desc": {
-    "message": "No urgent action is needed right now."
+    "message": "Nothing needs your attention."
   },
   "options_dashboard_open": {
     "message": "Open"
@@ -916,79 +916,79 @@
     "message": "History"
   },
   "options_history_desc": {
-    "message": "Browse transmission history, filter results, and export CSV."
+    "message": "Review what you sent and how each service did. Export to CSV if needed."
   },
   "options_services_title": {
-    "message": "Service Management"
+    "message": "AI services"
   },
   "options_services_desc": {
-    "message": "Inspect service health and metrics here, and use the popup manager for detailed editing."
+    "message": "Manage each service's status and order. Add or edit services in the popup's Settings tab."
   },
   "options_services_open_popup": {
-    "message": "Open popup manager"
+    "message": "Edit services in popup"
   },
   "options_services_open_failed": {
-    "message": "Failed to open the popup manager."
+    "message": "Couldn't open the popup."
   },
   "options_services_health_title": {
-    "message": "Selector Health Center"
+    "message": "Service status"
   },
   "options_services_health_desc": {
-    "message": "Track recent selector failures, auth gates, strategy hints, and verification metadata."
+    "message": "See which services had trouble recently and fix them from here."
   },
   "options_services_health_refresh": {
-    "message": "Refresh health"
+    "message": "Refresh"
   },
   "options_services_health_empty": {
-    "message": "No service health snapshot yet."
+    "message": "No status yet. It appears after your first send."
   },
   "options_services_health_warning": {
-    "message": "Selector warning"
+    "message": "Prompt box not found"
   },
   "options_services_health_healthy": {
     "message": "Healthy"
   },
   "options_services_health_no_recent_run": {
-    "message": "No recent run"
+    "message": "No recent sends"
   },
   "options_services_health_login": {
-    "message": "Login"
+    "message": "Log in"
   },
   "options_services_health_retry": {
-    "message": "Retry failed"
+    "message": "Resend failed"
   },
   "options_services_health_selector_check": {
-    "message": "Selector check"
+    "message": "Check prompt box"
   },
   "options_services_health_new_tab": {
-    "message": "New tab"
+    "message": "Open in new tab"
   },
   "options_services_retry_no_failed": {
-    "message": "No failed history item found for this service."
+    "message": "This service has no failed sends."
   },
   "options_services_retry_queued": {
-    "message": "Retry queued for failed service."
+    "message": "Resending the failed prompt."
   },
   "options_services_retry_failed": {
-    "message": "Retry failed."
+    "message": "Couldn't resend."
   },
   "options_services_selector_check_hint": {
-    "message": "Open the service tab, then use the popup test action after login."
+    "message": "Log in to the site, then use “Check on current tab” in the popup's service editor."
   },
   "options_services_health_refresh_failed": {
-    "message": "Service health refresh failed."
+    "message": "Couldn't refresh service status."
   },
   "options_service_groups_title": {
     "message": "Service Groups"
   },
   "options_service_groups_desc": {
-    "message": "Create reusable target groups for popup favorites and experiment runs."
+    "message": "Group services you often send to together so you can pick them in one click."
   },
   "options_service_groups_name_placeholder": {
     "message": "Group name"
   },
   "options_service_groups_save": {
-    "message": "Save group from checked services"
+    "message": "Create group from selected services"
   },
   "options_service_groups_empty": {
     "message": "No service groups yet."
@@ -997,16 +997,16 @@
     "message": "No services"
   },
   "options_service_groups_check_services": {
-    "message": "Check services"
+    "message": "Select these services"
   },
   "options_service_groups_delete": {
     "message": "Delete"
   },
   "options_service_groups_use_in_group": {
-    "message": "Use in group"
+    "message": "Include in group"
   },
   "options_service_groups_needs_service": {
-    "message": "Check at least one service for the group."
+    "message": "Select at least one service card below for the group."
   },
   "options_service_groups_saved": {
     "message": "Service group saved."
@@ -1015,22 +1015,22 @@
     "message": "Service group deleted."
   },
   "options_experiments_title": {
-    "message": "Prompt Experiments"
+    "message": "Compare prompts"
   },
   "options_experiments_desc": {
-    "message": "Preview and run variant x service x variable-set experiments through the normal broadcast history flow."
+    "message": "Send several versions of a prompt to several services and compare the results. Sends show up in History."
   },
   "options_experiments_draft": {
-    "message": "Experiment draft"
+    "message": "New comparison"
   },
   "options_experiments_title_placeholder": {
-    "message": "Experiment title"
+    "message": "Name (e.g. Summary prompt A/B)"
   },
   "options_experiments_variants_placeholder": {
-    "message": "One variant per block. Separate variants with a line containing ---"
+    "message": "Enter the prompts to compare. Separate them with a line containing only ---\n\nExample:\nSummarize this in three lines\n---\nGive me the key point in one sentence"
   },
   "options_experiments_variables_placeholder": {
-    "message": "Variable sets as JSON array, e.g. [{\"topic\":\"selectors\"}]"
+    "message": "(Optional) values for {{variables}}, as JSON\ne.g. [{\"topic\":\"travel\"}, {\"topic\":\"cooking\"}]"
   },
   "options_experiments_preview": {
     "message": "Preview"
@@ -1039,7 +1039,7 @@
     "message": "Save"
   },
   "options_experiments_run_saved": {
-    "message": "Run saved experiment"
+    "message": "Run saved comparison"
   },
   "options_experiments_load": {
     "message": "Load"
@@ -1051,37 +1051,37 @@
     "message": "Delete"
   },
   "options_experiments_delete_success": {
-    "message": "Experiment deleted."
+    "message": "Comparison deleted."
   },
   "options_experiments_empty": {
-    "message": "No saved experiments yet."
+    "message": "No saved comparisons yet."
   },
   "options_experiments_preview_empty": {
-    "message": "Add variants and target services to preview combinations."
+    "message": "Add prompts and services to preview how many sends this makes."
   },
   "options_experiments_no_target_services": {
-    "message": "No target services"
+    "message": "No services"
   },
   "options_experiments_invalid_variables": {
-    "message": "Variables JSON is invalid. Using an empty variable set."
+    "message": "The variable list isn't valid JSON, so it will be ignored."
   },
   "options_experiments_needs_variant_target": {
-    "message": "Experiment needs at least one variant and one target service."
+    "message": "Add at least one prompt and one service."
   },
   "options_experiments_save_success": {
-    "message": "Experiment saved."
+    "message": "Comparison saved."
   },
   "options_experiments_save_failed": {
-    "message": "Experiment save failed."
+    "message": "Couldn't save the comparison."
   },
   "options_experiments_run_failed": {
-    "message": "Experiment run failed."
+    "message": "Couldn't run the comparison."
   },
   "options_experiments_not_found": {
-    "message": "Experiment not found."
+    "message": "Comparison not found."
   },
   "options_experiments_queued": {
-    "message": "Experiment queued: $COUNT$ broadcasts.",
+    "message": "Started $COUNT$ sends.",
     "placeholders": {
       "count": {
         "content": "$1"
@@ -1089,7 +1089,7 @@
     }
   },
   "options_experiments_summary": {
-    "message": "$VARIANTS$ variants · $VARIABLESETS$ variable sets · $SERVICES$ services · $RUNS$ runs · $BROADCASTS$ broadcasts",
+    "message": "$VARIANTS$ prompts · $VARIABLESETS$ variable sets · $SERVICES$ services · $RUNS$ runs · $BROADCASTS$ sends",
     "placeholders": {
       "variants": {
         "content": "$1"
@@ -1109,7 +1109,7 @@
     }
   },
   "options_experiments_run_stats": {
-    "message": "$BROADCASTS$ broadcasts, $SERVICESENDS$ service sends. Confirmation starts above $SOFTLIMIT$; $HARDLIMIT$ is the hard limit.",
+    "message": "$BROADCASTS$ sends ($SERVICESENDS$ counting each service). Above $SOFTLIMIT$ you'll be asked to confirm; $HARDLIMIT$ is the maximum per run.",
     "placeholders": {
       "broadcasts": {
         "content": "$1"
@@ -1126,7 +1126,7 @@
     }
   },
   "options_experiments_confirm_large": {
-    "message": "Queue $BROADCASTS$ broadcasts ($SERVICESENDS$ service sends)? Runs above $SOFTLIMIT$ need confirmation.",
+    "message": "Send $BROADCASTS$ prompts ($SERVICESENDS$ counting each service) in one go? Runs above $SOFTLIMIT$ need confirmation.",
     "placeholders": {
       "broadcasts": {
         "content": "$1"
@@ -1140,7 +1140,7 @@
     }
   },
   "options_experiments_hard_limit": {
-    "message": "This experiment has $BROADCASTS$ broadcasts. Split it into batches of $HARDLIMIT$ or fewer.",
+    "message": "This makes $BROADCASTS$ sends, which is too many. Split it so each run is $HARDLIMIT$ or fewer.",
     "placeholders": {
       "broadcasts": {
         "content": "$1"
@@ -1154,19 +1154,19 @@
     "message": "Settings"
   },
   "options_settings_desc": {
-    "message": "Configure retention, notifications, shortcuts, and data management."
+    "message": "Sending behavior, notifications, shortcuts, and data backup."
   },
   "options_settings_reuse_tabs_title": {
-    "message": "Reuse current-window AI tabs"
+    "message": "Send to AI tabs that are already open"
   },
   "options_settings_reuse_tabs_desc": {
-    "message": "When enabled, matching open AI tabs are reused before opening a new one."
+    "message": "If a matching AI tab is open in this window it is used; otherwise a new tab opens. Turn off to always open a new tab."
   },
   "options_settings_auto_capture": {
     "message": "Save AI responses automatically"
   },
   "options_settings_auto_capture_desc": {
-    "message": "After a send completes, save visible AI responses locally in history."
+    "message": "After a send completes, the AI responses shown on screen are saved locally in this browser so you can review them in History."
   },
   "options_chart_service_usage": {
     "message": "Service usage share"
@@ -1250,7 +1250,7 @@
     "message": "No history matches the current filters."
   },
   "options_history_modal_title": {
-    "message": "Prompt details"
+    "message": "Send details"
   },
   "options_table_date": {
     "message": "Date"
@@ -1259,13 +1259,13 @@
     "message": "Prompt"
   },
   "options_table_services": {
-    "message": "Services"
+    "message": "Sent to"
   },
   "options_table_status": {
     "message": "Status"
   },
   "options_table_actions": {
-    "message": "Actions"
+    "message": "View"
   },
   "options_filter_all_services": {
     "message": "All services"
@@ -1291,10 +1291,10 @@
     "message": "Input type"
   },
   "options_service_wait_time": {
-    "message": "Wait time"
+    "message": "Wait after the page opens"
   },
   "options_service_request_count": {
-    "message": "Requests"
+    "message": "Sends"
   },
   "options_service_success_rate": {
     "message": "Success rate"
@@ -1318,10 +1318,10 @@
     "message": "None"
   },
   "options_settings_history_limit": {
-    "message": "Default visible history count"
+    "message": "History items shown in lists"
   },
   "options_settings_history_limit_value": {
-    "message": "Show up to $COUNT$ items in lists",
+    "message": "Show the latest $COUNT$",
     "placeholders": {
       "count": {
         "content": "$1"
@@ -1329,28 +1329,28 @@
     }
   },
   "options_settings_history_limit_note": {
-    "message": "This only changes the default list cap. Existing history is not deleted."
+    "message": "Only changes how many are shown. Saved history is not deleted."
   },
   "options_history_open_details": {
     "message": "Open details"
   },
   "options_settings_auto_close": {
-    "message": "Auto-close popup after send"
+    "message": "Close the popup after sending"
   },
   "options_settings_desktop_notifications": {
-    "message": "Desktop notification on completion"
+    "message": "Notify me when sending finishes"
   },
   "options_settings_shortcuts": {
     "message": "Keyboard shortcuts"
   },
   "options_settings_open_shortcuts": {
-    "message": "Open chrome://extensions/shortcuts"
+    "message": "Change shortcuts (opens Chrome settings)"
   },
   "options_settings_data_management": {
-    "message": "Data management"
+    "message": "Backup & reset"
   },
   "options_settings_reset_data": {
-    "message": "Reset data"
+    "message": "Delete all data"
   },
   "options_settings_saved": {
     "message": "Settings saved."
@@ -1359,64 +1359,64 @@
     "message": "Failed to save settings."
   },
   "options_settings_reset_confirm": {
-    "message": "Delete saved history, favorites, and template cache?"
+    "message": "Delete all saved data, including history, favorites, and service settings? This can't be undone."
   },
   "options_settings_reset_success": {
-    "message": "All saved data was reset."
+    "message": "All saved data was deleted."
   },
   "options_settings_export_success": {
-    "message": "JSON data exported."
+    "message": "Export saved."
   },
   "options_settings_export_failed": {
-    "message": "Failed to export JSON data."
+    "message": "Export failed."
   },
   "options_settings_import_success": {
-    "message": "JSON data imported."
+    "message": "Backup imported."
   },
   "options_settings_import_failed": {
-    "message": "Failed to import JSON data."
+    "message": "Couldn't import the backup file."
   },
   "options_settings_reset_failed": {
-    "message": "Failed to reset saved data."
+    "message": "Couldn't delete the saved data."
   },
   "options_settings_shortcuts_open_failed": {
     "message": "Failed to open the shortcuts page."
   },
   "options_template_packs_title": {
-    "message": "Template packs"
+    "message": "Favorite packs"
   },
   "options_template_packs_desc": {
-    "message": "Export/import favorites as reusable local packs. Sensitive template defaults are included unless unchecked."
+    "message": "Bundle your favorites into one file to move them to another browser or share them. Packs are stored locally in this browser."
   },
   "options_template_pack_sensitive": {
-    "message": "Include template defaults"
+    "message": "Include default variable values (uncheck if they contain personal info)"
   },
   "options_template_pack_export": {
-    "message": "Export current favorites as pack"
+    "message": "Export favorites as a pack"
   },
   "options_template_pack_import": {
-    "message": "Import pack JSON"
+    "message": "Import pack file"
   },
   "options_template_pack_empty": {
-    "message": "No template packs yet."
+    "message": "No packs yet."
   },
   "options_template_pack_download": {
     "message": "Download"
   },
   "options_template_pack_defaults_included": {
-    "message": "included"
+    "message": "variable defaults included"
   },
   "options_template_pack_defaults_removed": {
-    "message": "removed"
+    "message": "variable defaults removed"
   },
   "options_template_pack_exported": {
-    "message": "Template pack exported."
+    "message": "Pack exported."
   },
   "options_template_pack_export_failed": {
-    "message": "Template pack export failed."
+    "message": "Couldn't export the pack."
   },
   "options_template_pack_import_failed": {
-    "message": "Template pack import failed."
+    "message": "Couldn't import the pack."
   },
   "options_template_pack_imported": {
     "message": "Imported $IMPORTED$, skipped $SKIPPED$ duplicates.",
@@ -1433,7 +1433,7 @@
     "message": "Completed"
   },
   "options_status_partial": {
-    "message": "Partial"
+    "message": "Partly failed"
   },
   "options_status_failed": {
     "message": "Failed"
@@ -1445,10 +1445,10 @@
     "message": "Open popup"
   },
   "options_shortcut_capture_selected": {
-    "message": "Open popup with selected text"
+    "message": "Use selected text as the prompt"
   },
   "options_shortcut_quick_palette": {
-    "message": "Quick palette"
+    "message": "Quick favorites"
   },
   "options_shortcut_unassigned": {
     "message": "Not assigned"
@@ -1457,16 +1457,16 @@
     "message": "Could not load shortcut information."
   },
   "options_schedules_title": {
-    "message": "Schedules"
+    "message": "Scheduled sends"
   },
   "options_schedules_desc": {
-    "message": "Review schedule status, run items manually, and continue detailed editing in the popup."
+    "message": "See when scheduled favorites send next and how the last run went. Edit schedules from Favorites in the popup."
   },
   "options_schedules_empty": {
-    "message": "No scheduled favorites yet."
+    "message": "No scheduled favorites. Turn on a schedule when editing a favorite in the popup."
   },
   "options_schedules_next_run": {
-    "message": "Next run"
+    "message": "Next send"
   },
   "options_schedules_repeat": {
     "message": "Repeat"
@@ -1475,34 +1475,34 @@
     "message": "Enabled"
   },
   "options_schedules_last_run": {
-    "message": "Last run"
+    "message": "Last send"
   },
   "options_schedules_last_scheduled_run": {
-    "message": "Last scheduled run"
+    "message": "Last scheduled send"
   },
   "options_schedules_scheduled_result": {
     "message": "Scheduled result"
   },
   "options_schedules_failure_detail": {
-    "message": "Failure detail"
+    "message": "Why it failed"
   },
   "options_schedules_run_now": {
-    "message": "Run now"
+    "message": "Send now"
   },
   "options_schedules_open_in_popup": {
     "message": "Edit in popup"
   },
   "options_schedules_run_queued": {
-    "message": "Favorite run queued."
+    "message": "Started sending."
   },
   "options_schedules_popup_fallback": {
-    "message": "Popup opened to finish required inputs."
+    "message": "Opened the popup because some values are needed."
   },
   "options_schedules_open_failed": {
-    "message": "Failed to open the popup editor."
+    "message": "Couldn't open the popup."
   },
   "options_schedules_repeat_none": {
-    "message": "One time"
+    "message": "Once"
   },
   "options_schedules_repeat_daily": {
     "message": "Daily"
@@ -1520,16 +1520,16 @@
     "message": "Failed to refresh data."
   },
   "options_init_failed": {
-    "message": "Failed to initialize the options page."
+    "message": "Couldn't load the manager page."
   },
   "common_confirm": {
     "message": "Confirm"
   },
   "popup_selector_warning_tooltip": {
-    "message": "The selector may have changed. Review the service configuration."
+    "message": "The prompt box on this site wasn't found recently. The site may have changed."
   },
   "popup_broadcast_restored_done": {
-    "message": "Last broadcast: $SUCCESS$ success, $FAILED$ failed",
+    "message": "Last send: $SUCCESS$ sent, $FAILED$ failed",
     "placeholders": {
       "success": {
         "content": "$1"
@@ -1540,10 +1540,10 @@
     }
   },
   "popup_broadcast_restored_sending": {
-    "message": "A previous broadcast is still in progress."
+    "message": "A previous send is still in progress."
   },
   "popup_broadcast_cancelled": {
-    "message": "Broadcast cancelled."
+    "message": "Sending stopped."
   },
   "toast_history_deleted": {
     "message": "History item deleted."
@@ -1566,7 +1566,7 @@
     "message": "Select at least one service."
   },
   "toast_selector_failed": {
-    "message": "$SERVICE$ selector was not found.",
+    "message": "Couldn't find the prompt box on $SERVICE$.",
     "placeholders": {
       "service": {
         "content": "$1"
@@ -1574,7 +1574,7 @@
     }
   },
   "toast_inject_fallback_copied": {
-    "message": "$SERVICE$ copied the prompt to the clipboard. Paste it manually and send.",
+    "message": "Couldn't type into $SERVICE$ automatically, so the prompt was copied. Paste it and send.",
     "placeholders": {
       "service": {
         "content": "$1"
@@ -1582,7 +1582,7 @@
     }
   },
   "toast_inject_fallback_manual": {
-    "message": "$SERVICE$ automatic injection failed. Paste the prompt manually and send.",
+    "message": "Couldn't type into $SERVICE$ automatically. Paste the prompt and send it yourself.",
     "placeholders": {
       "service": {
         "content": "$1"
@@ -1590,7 +1590,7 @@
     }
   },
   "toast_injection_timeout": {
-    "message": "$SERVICE$ injection timed out.",
+    "message": "$SERVICE$ took too long to respond, so nothing was sent.",
     "placeholders": {
       "service": {
         "content": "$1"
@@ -1598,10 +1598,10 @@
     }
   },
   "toast_broadcast_cancelled": {
-    "message": "Broadcast cancelled."
+    "message": "Sending stopped."
   },
   "toast_injection_failed": {
-    "message": "$SERVICE$ automatic injection failed.",
+    "message": "Couldn't send to $SERVICE$ automatically.",
     "placeholders": {
       "service": {
         "content": "$1"
@@ -1617,10 +1617,10 @@
     }
   },
   "notification_broadcast_title_failed": {
-    "message": "Broadcast failed"
+    "message": "Send failed"
   },
   "notification_broadcast_message_failed": {
-    "message": "Broadcast failed. Check each tab for details."
+    "message": "Nothing was sent. Check each AI tab."
   },
   "notification_broadcast_message_partial_named": {
     "message": "$SUCCESS$ succeeded, $FAILED$ failed ($SERVICES$)",
@@ -1683,25 +1683,25 @@
     }
   },
   "popup_selector_warning_desc": {
-    "message": "Selector may be outdated."
+    "message": "The site may have changed, so the prompt box might not be found."
   },
   "popup_selector_report_btn": {
     "message": "Report issue"
   },
   "popup_selector_report_tooltip": {
-    "message": "Open a GitHub issue for this service's selector"
+    "message": "Look up or report this problem on GitHub"
   },
   "popup_override_prompt_label": {
-    "message": "Custom prompt for this service"
+    "message": "Send a different prompt to this service"
   },
   "popup_override_active": {
-    "message": "Override active"
+    "message": "Custom prompt in use"
   },
   "popup_override_prompt_placeholder": {
-    "message": "Leave blank to use the main prompt"
+    "message": "Prompt for this service only. Leave blank to send the main prompt."
   },
   "options_result_comparison_title": {
-    "message": "Broadcast results"
+    "message": "Result per service"
   },
   "options_result_open_tab": {
     "message": "Open"
@@ -1719,7 +1719,7 @@
     "message": "Save response"
   },
   "options_comparison_capture_now": {
-    "message": "Capture again"
+    "message": "Grab from page again"
   },
   "options_comparison_save_success": {
     "message": "AI response saved."
@@ -1728,13 +1728,13 @@
     "message": "AI response save failed."
   },
   "options_comparison_capture_success": {
-    "message": "Response captured."
+    "message": "Response saved from the page."
   },
   "options_comparison_capture_not_found": {
-    "message": "No visible assistant response was found."
+    "message": "No AI response was found in the open tab."
   },
   "options_comparison_capture_failed": {
-    "message": "Capture failed."
+    "message": "Couldn't grab the response."
   },
   "options_comparison_delete_success": {
     "message": "AI response deleted."
@@ -1755,7 +1755,7 @@
     "message": "Selected text on page"
   },
   "template_var_counter_label": {
-    "message": "Broadcast count"
+    "message": "Total send count"
   },
   "template_var_random_label": {
     "message": "Random number (1–1000)"
@@ -1770,7 +1770,7 @@
     "message": "[Copy]"
   },
   "popup_history_resend": {
-    "message": "Resend"
+    "message": "Send again"
   },
   "popup_history_sort_latest": {
     "message": "Latest"
@@ -1797,10 +1797,10 @@
     "message": "Created date"
   },
   "popup_wait_multiplier_label": {
-    "message": "Wait multiplier"
+    "message": "Page load wait"
   },
   "popup_wait_multiplier_value": {
-    "message": "$VALUE$x",
+    "message": "$VALUE$×",
     "placeholders": {
       "value": {
         "content": "$1"
@@ -1808,7 +1808,7 @@
     }
   },
   "popup_resend_modal_title": {
-    "message": "Resend History Item"
+    "message": "Send again"
   },
   "popup_resend_modal_desc": {
     "message": "Choose which services to resend this prompt to."
@@ -1817,22 +1817,22 @@
     "message": "Cancel"
   },
   "popup_resend_modal_confirm": {
-    "message": "Resend"
+    "message": "Send again"
   },
   "popup_resend_site_unavailable": {
     "message": "Unavailable"
   },
   "popup_resend_selected_tab_unavailable": {
-    "message": "Selected tab unavailable"
+    "message": "Original tab is closed"
   },
   "popup_resend_no_available_targets": {
-    "message": "No previously selected targets are currently available."
+    "message": "None of the original services are available right now."
   },
   "popup_import_report_title": {
-    "message": "Import Details"
+    "message": "Import results"
   },
   "popup_import_report_desc": {
-    "message": "Review accepted, rewritten, and rejected items from this import."
+    "message": "See what was imported and what was left out."
   },
   "popup_import_report_close": {
     "message": "Close"
@@ -1841,22 +1841,22 @@
     "message": "Version"
   },
   "popup_import_report_accepted": {
-    "message": "Accepted services"
+    "message": "Imported services"
   },
   "popup_import_report_rewritten": {
-    "message": "Rewritten IDs"
+    "message": "Services given a new ID"
   },
   "popup_import_report_builtins": {
-    "message": "Built-in adjustments"
+    "message": "Built-in service fixes"
   },
   "popup_import_report_rejected": {
-    "message": "Rejected services"
+    "message": "Skipped services"
   },
   "popup_import_report_rejected_empty": {
-    "message": "No rejected services."
+    "message": "Nothing was skipped."
   },
   "popup_import_reject_permission_denied": {
-    "message": "Permission denied"
+    "message": "Site access denied"
   },
   "popup_import_reject_validation_failed": {
     "message": "Invalid configuration"
@@ -1877,16 +1877,16 @@
     "message": "Select"
   },
   "options_history_select_all": {
-    "message": "Select page"
+    "message": "Select this page"
   },
   "options_history_delete_selected": {
     "message": "Delete selected"
   },
   "options_history_delete_filtered": {
-    "message": "Delete filtered"
+    "message": "Delete matching"
   },
   "options_history_delete_older_than": {
-    "message": "Delete older than $DAYS$d",
+    "message": "Delete older than $DAYS$ days",
     "placeholders": {
       "days": {
         "content": "$1"
@@ -1897,7 +1897,7 @@
     "message": "Delete the selected history items?"
   },
   "options_history_delete_filtered_confirm": {
-    "message": "Delete $COUNT$ filtered history item(s)?",
+    "message": "Delete $COUNT$ matching history item(s)?",
     "placeholders": {
       "count": {
         "content": "$1"
@@ -1916,10 +1916,10 @@
     "message": "History deleted."
   },
   "options_settings_wait_multiplier_title": {
-    "message": "Wait multiplier"
+    "message": "Page load wait"
   },
   "options_settings_wait_multiplier_value": {
-    "message": "$VALUE$x",
+    "message": "$VALUE$×",
     "placeholders": {
       "value": {
         "content": "$1"
@@ -1927,66 +1927,176 @@
     }
   },
   "options_import_report_title": {
-    "message": "Import Details"
+    "message": "Import results"
   },
   "options_import_report_desc": {
-    "message": "Review the imported items and any rejections."
+    "message": "See what was imported and what was left out."
   },
   "options_import_report_version": {
     "message": "Version"
   },
   "options_import_report_accepted": {
-    "message": "Accepted services"
+    "message": "Imported services"
   },
   "options_import_report_rewritten": {
-    "message": "Rewritten IDs"
+    "message": "Services given a new ID"
   },
   "options_import_report_builtins": {
-    "message": "Built-in adjustments"
+    "message": "Built-in service fixes"
   },
   "options_import_report_rejected": {
-    "message": "Rejected services"
+    "message": "Skipped services"
   },
   "options_import_report_rejected_empty": {
-    "message": "No rejected services."
+    "message": "Nothing was skipped."
   },
   "toast_prompt_history_save_failed": {
-    "message": "Broadcast finished, but prompt history could not be saved."
+    "message": "Sent, but it couldn't be saved to history."
   },
   "toast_auto_capture_save_failed": {
-    "message": "Automatic response capture could not be saved."
+    "message": "Couldn't save the AI responses automatically."
   },
   "result_code_submitted": {
-    "message": "Submitted"
+    "message": "Sent"
   },
   "result_code_selector_timeout": {
-    "message": "Selector timeout"
+    "message": "Prompt box not found"
   },
   "result_code_auth_required": {
     "message": "Login required"
   },
   "result_code_submit_failed": {
-    "message": "Submit failed"
+    "message": "Send button didn't work"
   },
   "result_code_strategy_exhausted": {
-    "message": "Injection failed"
+    "message": "Couldn't type the prompt"
   },
   "result_code_permission_denied": {
-    "message": "Permission denied"
+    "message": "No site access"
   },
   "result_code_tab_create_failed": {
-    "message": "Tab open failed"
+    "message": "Couldn't open tab"
   },
   "result_code_tab_closed": {
-    "message": "Tab closed"
+    "message": "Tab was closed"
   },
   "result_code_injection_timeout": {
-    "message": "Injection timeout"
+    "message": "Page took too long"
   },
   "result_code_cancelled": {
-    "message": "Cancelled"
+    "message": "Stopped"
   },
   "result_code_unexpected_error": {
     "message": "Unexpected error"
+  },
+  "popup_tagline": {
+    "message": "One prompt, every AI at once"
+  },
+  "popup_send_count": {
+    "message": "Send to $COUNT$ selected",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "popup_settings_send_title": {
+    "message": "Sending"
+  },
+  "popup_open_options_desc": {
+    "message": "History, schedules, and stats live on the manager page."
+  },
+  "popup_service_submit_click": {
+    "message": "Click the send button"
+  },
+  "popup_service_submit_enter": {
+    "message": "Press Enter"
+  },
+  "popup_service_submit_shift_enter": {
+    "message": "Press Shift+Enter"
+  },
+  "popup_service_test_type_mismatch": {
+    "message": "Prompt box found, but its type differs. Actual: $ACTUAL$, configured: $EXPECTED$",
+    "placeholders": {
+      "actual": {
+        "content": "$1"
+      },
+      "expected": {
+        "content": "$2"
+      }
+    }
+  },
+  "popup_service_test_submit_ok": {
+    "message": "The send button was found too."
+  },
+  "popup_service_test_submit_missing": {
+    "message": "The send button wasn't found, even after a test input."
+  },
+  "popup_service_test_submit_skipped": {
+    "message": "The send button wasn't checked because this service submits with $METHOD$.",
+    "placeholders": {
+      "method": {
+        "content": "$1"
+      }
+    }
+  },
+  "popup_retry_send": {
+    "message": "Retry"
+  },
+  "popup_retry_new_tab": {
+    "message": "Retry in new tab"
+  },
+  "popup_open_site": {
+    "message": "Open site"
+  },
+  "popup_open_site_hint": {
+    "message": "Check the site for a login prompt or layout change, then retry."
+  },
+  "options_services_health_recent_failure": {
+    "message": "Recent failure"
+  },
+  "options_services_health_verified": {
+    "message": "Verified"
+  },
+  "options_services_health_strategy": {
+    "message": "Input method"
+  },
+  "options_experiments_targets_label": {
+    "message": "Send to"
+  },
+  "options_settings_group_send": {
+    "message": "Sending"
+  },
+  "options_settings_group_display": {
+    "message": "Display & notifications"
+  },
+  "options_settings_group_data": {
+    "message": "Shortcuts & data"
+  },
+  "settings_wait_multiplier_desc": {
+    "message": "If sends fail because AI pages load slowly, raise this. (Default 1.0×)"
+  },
+  "options_template_pack_count": {
+    "message": "$COUNT$ favorites",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "options_history_filter_from": {
+    "message": "From date"
+  },
+  "options_history_filter_to": {
+    "message": "To date"
+  },
+  "popup_service_input_type_textarea": {
+    "message": "Multi-line box (textarea)"
+  },
+  "popup_service_input_type_contenteditable": {
+    "message": "Editable area (contenteditable)"
+  },
+  "popup_service_input_type_input": {
+    "message": "Single-line box (input)"
   }
 }

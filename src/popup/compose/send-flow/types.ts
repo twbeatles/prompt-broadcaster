@@ -45,7 +45,8 @@ export interface PopupSendFlowDeps {
 
 export interface PopupSendCardState {
   getSiteCardElement: (siteId: string) => HTMLElement | null;
-  setSiteCardState: (siteId: string, cardState: string) => void;
+  getRecoveryRow: (card: HTMLElement) => HTMLElement;
+  setSiteCardState: (siteId: string, cardState: string, note?: string) => void;
   clearSiteCardStates: () => void;
   triggerRipple: (button: HTMLButtonElement, event: MouseEvent) => void;
 }

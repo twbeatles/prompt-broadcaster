@@ -567,6 +567,14 @@ Active job lookups prefer `queued/running` records over newer terminal records s
 4. Entering a favorite either runs it directly or falls back to popup handoff when additional inputs are required.
 5. If the missing values are popup-resolvable only (for example clipboard or active-tab context), the popup retries automatically before showing the editor.
 
+## Popup and Options UX Layout
+
+- Popup compose: `.compose-body` scrolls; `.compose-actions` is pinned. The send button reads `popup_send_count` with the number of checked services. Per-service custom prompts open from a small icon in the card header (`.site-override-toggle`, `aria-expanded`), and cards that need more room (open-tab choices, custom prompt, failure actions) span both grid columns via `:has()`.
+- Failure recovery: `setSiteCardState(siteId, "failed", note)` appends a `.site-recovery` row with the localized result-code reason; recovery buttons (`retry-btn`, `new-tab-retry-btn`, `login-retry-btn`) are created in `send-execution.ts`.
+- Popup settings order: Sending (tab reuse, response capture, wait multiplier), AI services (managed list + editor), Data (backup/import/clear), manager-page link. Opening the service editor scrolls it into view and focuses the name field.
+- Options settings are grouped as Sending / Display & notifications / Shortcuts & data. The Experiments section is presented as "Compare prompts"; internal ids and storage keys (`promptExperiments`, `data-section="experiments"`) are unchanged.
+- All user-facing strings, including selector-test results and failure-recovery buttons, come from `_locales/{ko,en}/messages.json`.
+
 ## Options Analytics and Service Ordering
 
 - The options `Dashboard` now starts with four summary cards, recent activity, and practical next actions. Usage share, 7-day activity bars, and failure reasons remain in a collapsed advanced stats area.

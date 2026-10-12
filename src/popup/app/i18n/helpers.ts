@@ -25,15 +25,15 @@ export function buildImportSummaryText(
 
   if (isKorean) {
     const parts = [
-      `가져오기 완료: 커스텀 서비스 ${acceptedCount}개 적용`,
-      rejectedCount > 0 ? `건너뜀 ${rejectedCount}개` : "",
-      rewrittenCount > 0 ? `ID 재작성 ${rewrittenCount}개` : "",
+      `가져오기 완료: 직접 추가한 서비스 ${acceptedCount}개 적용`,
+      rejectedCount > 0 ? `제외 ${rejectedCount}개` : "",
+      rewrittenCount > 0 ? `ID 변경 ${rewrittenCount}개` : "",
       deniedCount > 0 ? `권한 거부 ${deniedCount}개` : "",
     ].filter(Boolean);
 
     if (!short && overrideAdjustedCount + overrideDroppedCount + stateDroppedCount > 0) {
       parts.push(
-        `기본 서비스 보정 ${
+        `기본 서비스 조정 ${
           overrideAdjustedCount + overrideDroppedCount + stateDroppedCount
         }개`,
       );
@@ -104,31 +104,22 @@ export function buildServiceTestResultMessage(
   if (response.input.typeMatches === false) {
     isError = true;
     lines.push(
-      isKorean
-        ? `⚠ 입력창은 찾았지만 타입이 다릅니다. 실제: ${response.input.actualType}, 기대: ${response.input.expectedType}`
-        : `⚠ Input found but type mismatched. Actual: ${response.input.actualType}, expected: ${response.input.expectedType}`,
+      `⚠ ${t.serviceTestTypeMismatch(
+        response.input.actualType ?? "",
+        response.input.expectedType ?? "",
+      )}`,
     );
   } else {
     lines.push(`✅ ${t.serviceTestSuccess(response.input.actualType ?? "")}`);
   }
 
   if (response?.submit?.status === "ok") {
-    lines.push(
-      isKorean ? "✅ 전송 버튼도 확인했습니다." : "✅ Submit target was also found.",
-    );
+    lines.push(`✅ ${t.serviceTestSubmitOk}`);
   } else if (response?.submit?.status === "missing") {
     isError = true;
-    lines.push(
-      isKorean
-        ? "❌ 임시 probe 입력 후에도 전송 버튼을 찾지 못했습니다."
-        : "❌ Submit selector was not found after the temporary probe.",
-    );
+    lines.push(`❌ ${t.serviceTestSubmitMissing}`);
   } else if (response?.submit?.method) {
-    lines.push(
-      isKorean
-        ? `ℹ ${response.submit.method} 전송 방식이라 버튼 검사는 건너뛰었습니다.`
-        : `ℹ Submit-button validation was skipped for ${response.submit.method} submit.`,
-    );
+    lines.push(`ℹ ${t.serviceTestSubmitSkipped(response.submit.method)}`);
   }
 
   return {

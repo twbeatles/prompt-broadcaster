@@ -3,7 +3,7 @@ import { sendRuntimeMessageWithTimeout } from "../../../shared/chrome/messaging"
 import { escapeHTML } from "../../../shared/security";
 import { t } from "../../app/i18n";
 import { state } from "../../app/state";
-import { formatDateTime, getSubmittedServices } from "../../app/helpers";
+import { formatShortDate } from "../../app/helpers";
 import { showAppToast } from "../../core/status";
 import { servicesHealthCenter } from "./dom";
 
@@ -12,7 +12,10 @@ export function getHealthStatus(snapshot) {
     return { label: t.services.healthWarning, tone: "danger" };
   }
   if (snapshot?.lastFailureAt && (!snapshot?.lastSuccessAt || Date.parse(snapshot.lastFailureAt) > Date.parse(snapshot.lastSuccessAt))) {
-    return { label: snapshot.lastFailureCode || "Recent failure", tone: "warning" };
+    return {
+      label: t.settings.resultCodeLabels[snapshot.lastFailureCode] || t.services.healthRecentFailure,
+      tone: "warning",
+    };
   }
   if (snapshot?.lastSuccessAt) {
     return { label: t.services.healthHealthy, tone: "success" };
@@ -39,9 +42,9 @@ export function renderServiceHealthCenter() {
         <div>
           <strong>${escapeHTML(snapshot.serviceName)}</strong>
           <div class="helper">
-            ${escapeHTML(status.label)}
-            ${snapshot.preferredStrategy ? ` · strategy: ${escapeHTML(snapshot.preferredStrategy)}` : ""}
-            ${verified ? ` · verified: ${escapeHTML(formatDateTime(verified))}` : ""}
+            <span class="health-status ${status.tone}">${escapeHTML(status.label)}</span>
+            ${snapshot.preferredStrategy ? ` · ${escapeHTML(t.services.healthStrategy)}: ${escapeHTML(snapshot.preferredStrategy)}` : ""}
+            ${verified ? ` · ${escapeHTML(t.services.healthVerified)}: ${escapeHTML(formatShortDate(verified))}` : ""}
           </div>
           ${selector ? `<code class="inline-code">${escapeHTML(selector)}</code>` : ""}
         </div>

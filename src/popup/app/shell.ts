@@ -192,6 +192,9 @@ export function createPopupShell(deps: PopupShellDeps) {
     const checkboxes = allCheckboxes();
     const allChecked = checkboxes.length > 0 && checkboxes.every((checkbox) => checkbox.checked);
     toggleAllBtn.textContent = allChecked ? t.deselectAll : t.selectAll;
+
+    const checkedCount = checkboxes.filter((checkbox) => checkbox.checked).length;
+    sendBtn.textContent = checkedCount > 0 ? t.sendCount(checkedCount) : t.send;
   }
 
   function applySiteSelection(sentTo: unknown): void {

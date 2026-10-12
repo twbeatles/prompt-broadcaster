@@ -30,7 +30,7 @@ export function renderTemplatePacksSection() {
       <article class="service-health-row">
         <div>
           <strong>${escapeHTML(pack.title)}</strong>
-          <div class="helper">${pack.templates.length} templates · defaults ${pack.includeSensitiveDefaults ? escapeHTML(t.settings.templatePackDefaultsIncluded) : escapeHTML(t.settings.templatePackDefaultsRemoved)}</div>
+          <div class="helper">${escapeHTML(t.settings.templatePackCount(pack.templates.length))} · ${pack.includeSensitiveDefaults ? escapeHTML(t.settings.templatePackDefaultsIncluded) : escapeHTML(t.settings.templatePackDefaultsRemoved)}</div>
         </div>
         <div class="settings-actions">
           <button class="btn ghost" type="button" data-pack-download="${escapeHTML(pack.id)}">${escapeHTML(t.settings.templatePackDownload)}</button>

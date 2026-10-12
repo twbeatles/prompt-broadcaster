@@ -48,7 +48,8 @@ export function createPopupBroadcastState(
       }
 
       if (status) {
-        cardState.setSiteCardState(siteId, "failed");
+        const labels: Record<string, string> = t.resultCodeLabels;
+        cardState.setSiteCardState(siteId, "failed", labels[code] ?? "");
         return;
       }
 

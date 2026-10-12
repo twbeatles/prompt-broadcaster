@@ -3200,7 +3200,7 @@ function applyI18n(root = document) {
 // src/popup/app/i18n/catalog.ts
 var t = {
   title: msg("ext_name"),
-  desc: msg("ext_description"),
+  desc: msg("popup_tagline") || msg("ext_description"),
   tabs: {
     compose: msg("tab_write"),
     history: msg("tab_history"),
@@ -3212,6 +3212,11 @@ var t = {
   selectAll: msg("popup_select_all"),
   deselectAll: msg("popup_deselect_all"),
   send: msg("popup_send"),
+  sendCount: (count) => msg("popup_send_count", [String(count)]) || msg("popup_send"),
+  retrySend: msg("popup_retry_send") || "Retry",
+  retryNewTab: msg("popup_retry_new_tab") || "Retry in new tab",
+  openSite: msg("popup_open_site") || "Open site",
+  openSiteHint: msg("popup_open_site_hint") || "Check the site for a login prompt or layout change, then retry.",
   saveFavorite: msg("popup_save_favorite"),
   sending: (count) => msg("status_sending", [String(count)]),
   sent: (count) => msg("status_success", [String(count)]),
@@ -3363,6 +3368,10 @@ var t = {
   serviceTestInvalidTab: msg("popup_service_test_invalid_tab") || "Selector testing only works on http/https tabs.",
   serviceTestSuccess: (inputType) => msg("popup_service_test_success", [String(inputType)]) || `Element found (${inputType})`,
   serviceTestFail: msg("popup_service_test_fail") || "Element not found.",
+  serviceTestTypeMismatch: (actual, expected) => msg("popup_service_test_type_mismatch", [String(actual), String(expected)]) || `Input found but type mismatched. Actual: ${actual}, expected: ${expected}`,
+  serviceTestSubmitOk: msg("popup_service_test_submit_ok") || "Submit target was also found.",
+  serviceTestSubmitMissing: msg("popup_service_test_submit_missing") || "Submit selector was not found after the temporary probe.",
+  serviceTestSubmitSkipped: (method) => msg("popup_service_test_submit_skipped", [String(method)]) || `Submit-button validation was skipped for ${method} submit.`,
   serviceTestError: (message) => msg("popup_service_test_error", [String(message)]) || `Selector test failed: ${message}`,
   serviceEmptyList: msg("popup_service_empty_list") || "No services available.",
   selectorWarningTooltip: msg("popup_selector_warning_tooltip") || "Selector may have changed. Review the service config.",
@@ -3457,14 +3466,14 @@ function buildImportSummaryText(summary, { short = false } = {}) {
   const stateDroppedCount = summary?.builtInSiteStates?.droppedIds?.length ?? 0;
   if (isKorean) {
     const parts2 = [
-      `가져오기 완료: 커스텀 서비스 ${acceptedCount}개 적용`,
-      rejectedCount > 0 ? `건너뜀 ${rejectedCount}개` : "",
-      rewrittenCount > 0 ? `ID 재작성 ${rewrittenCount}개` : "",
+      `가져오기 완료: 직접 추가한 서비스 ${acceptedCount}개 적용`,
+      rejectedCount > 0 ? `제외 ${rejectedCount}개` : "",
+      rewrittenCount > 0 ? `ID 변경 ${rewrittenCount}개` : "",
       deniedCount > 0 ? `권한 거부 ${deniedCount}개` : ""
     ].filter(Boolean);
     if (!short && overrideAdjustedCount + overrideDroppedCount + stateDroppedCount > 0) {
       parts2.push(
-        `기본 서비스 보정 ${overrideAdjustedCount + overrideDroppedCount + stateDroppedCount}개`
+        `기본 서비스 조정 ${overrideAdjustedCount + overrideDroppedCount + stateDroppedCount}개`
       );
     }
     return parts2.join(", ");
@@ -3518,24 +3527,21 @@ function buildServiceTestResultMessage(response) {
   if (response.input.typeMatches === false) {
     isError = true;
     lines.push(
-      isKorean ? `⚠ 입력창은 찾았지만 타입이 다릅니다. 실제: ${response.input.actualType}, 기대: ${response.input.expectedType}` : `⚠ Input found but type mismatched. Actual: ${response.input.actualType}, expected: ${response.input.expectedType}`
+      `⚠ ${t.serviceTestTypeMismatch(
+        response.input.actualType ?? "",
+        response.input.expectedType ?? ""
+      )}`
     );
   } else {
     lines.push(`✅ ${t.serviceTestSuccess(response.input.actualType ?? "")}`);
   }
   if (response?.submit?.status === "ok") {
-    lines.push(
-      isKorean ? "✅ 전송 버튼도 확인했습니다." : "✅ Submit target was also found."
-    );
+    lines.push(`✅ ${t.serviceTestSubmitOk}`);
   } else if (response?.submit?.status === "missing") {
     isError = true;
-    lines.push(
-      isKorean ? "❌ 임시 probe 입력 후에도 전송 버튼을 찾지 못했습니다." : "❌ Submit selector was not found after the temporary probe."
-    );
+    lines.push(`❌ ${t.serviceTestSubmitMissing}`);
   } else if (response?.submit?.method) {
-    lines.push(
-      isKorean ? `ℹ ${response.submit.method} 전송 방식이라 버튼 검사는 건너뛰었습니다.` : `ℹ Submit-button validation was skipped for ${response.submit.method} submit.`
-    );
+    lines.push(`ℹ ${t.serviceTestSubmitSkipped(response.submit.method)}`);
   }
   return {
     message: lines.join("\n"),
@@ -3608,7 +3614,8 @@ function createPopupBroadcastState(deps, cardState) {
         return;
       }
       if (status) {
-        cardState.setSiteCardState(siteId, "failed");
+        const labels = t.resultCodeLabels;
+        cardState.setSiteCardState(siteId, "failed", labels[code] ?? "");
         return;
       }
       if (summary.status === "sending") {
@@ -3714,25 +3721,35 @@ function createPopupSendCardState() {
       `.site-card[data-site-id="${CSS.escape(siteId)}"]`
     );
   }
-  function setSiteCardState(siteId, cardState) {
+  function setSiteCardState(siteId, cardState, note = "") {
     const card = getSiteCardElement(siteId);
     if (!card) {
       return;
     }
     card.classList.remove("sending", "sent", "failed");
     card.classList.add(cardState);
-    card.querySelector(".retry-btn")?.remove();
-    card.querySelector(".login-retry-btn")?.remove();
-    card.querySelector(".selector-check-btn")?.remove();
-    card.querySelector(".new-tab-retry-btn")?.remove();
+    card.querySelector(".site-recovery")?.remove();
+    if (cardState === "failed" && note) {
+      const noteNode = document.createElement("p");
+      noteNode.className = "site-result-note";
+      noteNode.textContent = note;
+      getRecoveryRow(card).prepend(noteNode);
+    }
+  }
+  function getRecoveryRow(card) {
+    const existing = card.querySelector(".site-recovery");
+    if (existing) {
+      return existing;
+    }
+    const row = document.createElement("div");
+    row.className = "site-recovery";
+    card.appendChild(row);
+    return row;
   }
   function clearSiteCardStates() {
     document.querySelectorAll(".site-card").forEach((card) => {
       card.classList.remove("sending", "sent", "failed");
-      card.querySelector(".retry-btn")?.remove();
-      card.querySelector(".login-retry-btn")?.remove();
-      card.querySelector(".selector-check-btn")?.remove();
-      card.querySelector(".new-tab-retry-btn")?.remove();
+      card.querySelector(".site-recovery")?.remove();
     });
   }
   function triggerRipple2(button, event) {
@@ -3750,6 +3767,7 @@ function createPopupSendCardState() {
   }
   return {
     clearSiteCardStates,
+    getRecoveryRow,
     getSiteCardElement,
     setSiteCardState,
     triggerRipple: triggerRipple2
@@ -4094,10 +4112,10 @@ function createPopupSendExecution(deps, cardState) {
     }
     const button = document.createElement("button");
     button.type = "button";
-    button.className = `secondary-btn ${className}`;
+    button.className = `recovery-btn ${className}`;
     button.textContent = label;
     button.addEventListener("click", onClick);
-    card.appendChild(button);
+    cardState.getRecoveryRow(card).appendChild(button);
   }
   function addRetryButton(target, mainPrompt) {
     const siteId = target.id;
@@ -4105,7 +4123,7 @@ function createPopupSendExecution(deps, cardState) {
     if (!card) {
       return;
     }
-    addRecoveryButton(card, "retry-btn", "Retry failed", async () => {
+    addRecoveryButton(card, "retry-btn", t.retrySend, async () => {
       const retryBtn = card.querySelector(".retry-btn");
       if (retryBtn) {
         retryBtn.disabled = true;
@@ -4137,14 +4155,7 @@ function createPopupSendExecution(deps, cardState) {
     if (!site?.url) {
       return;
     }
-    addRecoveryButton(card, "login-retry-btn", "Login", () => {
-      void chrome.tabs.create({ url: site.url, active: true });
-    });
-    addRecoveryButton(card, "selector-check-btn", "Selector check", () => {
-      void chrome.tabs.create({ url: site.url, active: true });
-      deps.showAppToast("After login, open Settings > Services to run selector checks.", "info", 3500);
-    });
-    addRecoveryButton(card, "new-tab-retry-btn", "New tab", async () => {
+    addRecoveryButton(card, "new-tab-retry-btn", t.retryNewTab, async () => {
       cardState.setSiteCardState(siteId, "sending");
       const response = await deps.sendPopupMessage(
         {
@@ -4158,7 +4169,12 @@ function createPopupSendExecution(deps, cardState) {
         cardState.setSiteCardState(siteId, "sent");
       } else {
         cardState.setSiteCardState(siteId, "failed");
+        addRetryButton(target, mainPrompt);
       }
+    });
+    addRecoveryButton(card, "login-retry-btn", t.openSite, () => {
+      deps.showAppToast(t.openSiteHint, "info", 3500);
+      void chrome.tabs.create({ url: site.url, active: true });
     });
   }
   function markTargetsFailed(siteIds, targets, mainPrompt) {
@@ -7267,6 +7283,8 @@ function createPopupServiceEditorController(deps) {
     setServiceTestResult("");
     renderServicePermissionPreview2(readServiceEditorDraft());
     serviceEditor.hidden = false;
+    serviceEditor.scrollIntoView({ block: "start", behavior: "smooth" });
+    serviceNameInput.focus({ preventScroll: true });
   }
   async function ensureSiteOriginPermission(url, hostnameAliases = []) {
     try {
@@ -7369,9 +7387,7 @@ var { managedSitesList } = popupDom.serviceManagement;
 function createManagedSitesController(deps) {
   function buildManagedSiteMarkup(site) {
     const chips = [
-      `<span class="managed-site-chip">${escapeHtml(site.isBuiltIn ? t.serviceBuiltInBadge : t.serviceCustomBadge)}</span>`,
-      `<span class="managed-site-chip">${escapeHtml(site.inputType)}</span>`,
-      `<span class="managed-site-chip">${escapeHtml(`${site.waitMs}ms`)}</span>`
+      `<span class="managed-site-chip">${escapeHtml(site.isBuiltIn ? t.serviceBuiltInBadge : t.serviceCustomBadge)}</span>`
     ];
     const selectorWarning = state.failedSelectors.get(site.id);
     const lastVerifiedStatus = deps.getSiteLastVerifiedStatus(site);
@@ -7398,7 +7414,7 @@ function createManagedSitesController(deps) {
           <div class="managed-site-title">
             <span class="site-icon" style="--site-color:${escapeAttribute(site.color)}">${escapeHtml(getSiteIcon(site))}</span>
             <div class="managed-site-name-wrap">
-              <span class="managed-site-name">${escapeHtml(site.name)}</span>
+              <span class="managed-site-name">${escapeHtml(site.name)} ${chips.join("")}</span>
               <span class="managed-site-url">${escapeHtml(site.url)}</span>
             </div>
           </div>
@@ -7407,11 +7423,10 @@ function createManagedSitesController(deps) {
             <span>${escapeHtml(t.serviceFieldEnabled)}</span>
           </label>
         </div>
-        <div class="managed-site-meta">${chips.join("")}</div>
         ${selectorWarningMarkup}
         <div class="managed-site-actions">
-          <button class="ghost-button" type="button" data-action="edit-service" data-site-id="${escapeAttribute(site.id)}">${escapeHtml(t.serviceEdit)}</button>
-          ${site.deletable ? `<button class="ghost-button danger-button" type="button" data-action="delete-service" data-site-id="${escapeAttribute(site.id)}">${escapeHtml(t.serviceDelete)}</button>` : ""}
+          <button class="ghost-button small-button" type="button" data-action="edit-service" data-site-id="${escapeAttribute(site.id)}">${escapeHtml(t.serviceEdit)}</button>
+          ${site.deletable ? `<button class="ghost-button small-button danger-button" type="button" data-action="delete-service" data-site-id="${escapeAttribute(site.id)}">${escapeHtml(t.serviceDelete)}</button>` : ""}
         </div>
       </article>
     `;
@@ -7532,7 +7547,26 @@ function createSitePanelRenderer(deps, renderTemplateSummary2) {
         "aria-label",
         `${deps.getRuntimeSiteLabel(site.id)} ${checkbox.checked ? t.ariaSelected : t.ariaNotSelected}`
       );
-      card.appendChild(mainRow);
+      const overrideLabel = msg("popup_override_prompt_label") || "Custom prompt for this service";
+      const overrideActiveLabel = msg("popup_override_active") || "Custom";
+      const hasOverride = Boolean(state.sitePromptOverrides?.[site.id]?.trim());
+      const overrideToggle = document.createElement("button");
+      overrideToggle.className = `site-override-toggle${hasOverride ? " active" : ""}`;
+      overrideToggle.type = "button";
+      overrideToggle.dataset.siteOverrideToggle = site.id;
+      overrideToggle.textContent = "✎";
+      overrideToggle.setAttribute("aria-expanded", String(hasOverride));
+      const syncOverrideToggle = (active) => {
+        overrideToggle.classList.toggle("active", active);
+        const label = active ? overrideActiveLabel : overrideLabel;
+        overrideToggle.title = label;
+        overrideToggle.setAttribute("aria-label", label);
+      };
+      syncOverrideToggle(hasOverride);
+      const cardHead = document.createElement("div");
+      cardHead.className = "site-card-head";
+      cardHead.append(mainRow, overrideToggle);
+      card.appendChild(cardHead);
       const openTabs = deps.getOpenSiteTabs(site.id);
       const selectedTarget = state.siteTargetSelections?.[site.id] ?? "default";
       if (openTabs.length > 0) {
@@ -7600,18 +7634,12 @@ function createSitePanelRenderer(deps, renderTemplateSummary2) {
         tabsWrap.append(tabsHead, tabsList);
         card.appendChild(tabsWrap);
       }
-      const overrideToggleRow = document.createElement("div");
-      overrideToggleRow.className = "site-override-toggle-row";
-      const overrideToggle = document.createElement("button");
-      const hasOverride = Boolean(state.sitePromptOverrides?.[site.id]?.trim());
-      overrideToggle.className = `ghost-button small-button site-override-toggle${hasOverride ? " active" : ""}`;
-      overrideToggle.type = "button";
-      overrideToggle.dataset.siteOverrideToggle = site.id;
-      overrideToggle.title = msg("popup_override_prompt_label") || "Custom prompt for this service";
-      overrideToggle.textContent = hasOverride ? `✎ ${msg("popup_override_active") || "Custom"}` : "✎";
-      const overrideWrap = document.createElement("div");
+      const overrideWrap = document.createElement("label");
       overrideWrap.className = "site-override-wrap";
       overrideWrap.hidden = !hasOverride;
+      const overrideCaption = document.createElement("span");
+      overrideCaption.className = "site-override-label";
+      overrideCaption.textContent = overrideLabel;
       const overrideTextarea = document.createElement("textarea");
       overrideTextarea.className = "site-override-textarea";
       overrideTextarea.rows = 3;
@@ -7620,20 +7648,18 @@ function createSitePanelRenderer(deps, renderTemplateSummary2) {
       overrideTextarea.dataset.siteOverrideInput = site.id;
       overrideTextarea.addEventListener("input", () => {
         state.sitePromptOverrides[site.id] = overrideTextarea.value;
-        const nowActive = Boolean(overrideTextarea.value.trim());
-        overrideToggle.classList.toggle("active", nowActive);
-        overrideToggle.textContent = nowActive ? `✎ ${msg("popup_override_active") || "Custom"}` : "✎";
+        syncOverrideToggle(Boolean(overrideTextarea.value.trim()));
         renderTemplateSummary2();
       });
       overrideToggle.addEventListener("click", () => {
         overrideWrap.hidden = !overrideWrap.hidden;
+        overrideToggle.setAttribute("aria-expanded", String(!overrideWrap.hidden));
         if (!overrideWrap.hidden) {
           overrideTextarea.focus();
         }
       });
-      overrideWrap.appendChild(overrideTextarea);
-      overrideToggleRow.append(overrideToggle);
-      card.append(overrideToggleRow, overrideWrap);
+      overrideWrap.append(overrideCaption, overrideTextarea);
+      card.appendChild(overrideWrap);
       sitesContainer.appendChild(card);
     });
     deps.syncToggleAllLabel();
@@ -7728,7 +7754,7 @@ function createTabLabelsRenderer(deps) {
     clearPromptBtn.textContent = t.clearPrompt;
     sitesLabel.textContent = t.sitesLabel;
     saveFavoriteBtn.textContent = t.saveFavorite;
-    sendBtn.textContent = t.send;
+    deps.syncToggleAllLabel();
     historySearchInput.placeholder = t.historySearch;
     favoritesSearchInput.placeholder = t.favoritesSearch;
     settingsTitle.textContent = t.settingsTitle;
@@ -8002,6 +8028,8 @@ function createPopupShell(deps) {
     const checkboxes = allCheckboxes2();
     const allChecked = checkboxes.length > 0 && checkboxes.every((checkbox) => checkbox.checked);
     toggleAllBtn.textContent = allChecked ? t.deselectAll : t.selectAll;
+    const checkedCount = checkboxes.filter((checkbox) => checkbox.checked).length;
+    sendBtn2.textContent = checkedCount > 0 ? t.sendCount(checkedCount) : t.send;
   }
   function applySiteSelection2(sentTo) {
     const selected = new Set(normalizeSiteIdList2(sentTo));

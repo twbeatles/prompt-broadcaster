@@ -2,7 +2,7 @@ import { isKorean, msg } from "./core";
 
 export const t = {
   title: msg("ext_name"),
-  desc: msg("ext_description"),
+  desc: msg("popup_tagline") || msg("ext_description"),
   tabs: {
     compose: msg("tab_write"),
     history: msg("tab_history"),
@@ -14,6 +14,14 @@ export const t = {
   selectAll: msg("popup_select_all"),
   deselectAll: msg("popup_deselect_all"),
   send: msg("popup_send"),
+  sendCount: (count: number) =>
+    msg("popup_send_count", [String(count)]) || msg("popup_send"),
+  retrySend: msg("popup_retry_send") || "Retry",
+  retryNewTab: msg("popup_retry_new_tab") || "Retry in new tab",
+  openSite: msg("popup_open_site") || "Open site",
+  openSiteHint:
+    msg("popup_open_site_hint") ||
+    "Check the site for a login prompt or layout change, then retry.",
   saveFavorite: msg("popup_save_favorite"),
   sending: (count: number) => msg("status_sending", [String(count)]),
   sent: (count: number) => msg("status_success", [String(count)]),
@@ -234,6 +242,17 @@ export const t = {
     msg("popup_service_test_success", [String(inputType)]) ||
     `Element found (${inputType})`,
   serviceTestFail: msg("popup_service_test_fail") || "Element not found.",
+  serviceTestTypeMismatch: (actual: string, expected: string) =>
+    msg("popup_service_test_type_mismatch", [String(actual), String(expected)]) ||
+    `Input found but type mismatched. Actual: ${actual}, expected: ${expected}`,
+  serviceTestSubmitOk:
+    msg("popup_service_test_submit_ok") || "Submit target was also found.",
+  serviceTestSubmitMissing:
+    msg("popup_service_test_submit_missing") ||
+    "Submit selector was not found after the temporary probe.",
+  serviceTestSubmitSkipped: (method: string) =>
+    msg("popup_service_test_submit_skipped", [String(method)]) ||
+    `Submit-button validation was skipped for ${method} submit.`,
   serviceTestError: (message: string) =>
     msg("popup_service_test_error", [String(message)]) ||
     `Selector test failed: ${message}`,

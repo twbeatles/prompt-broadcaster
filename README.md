@@ -24,7 +24,7 @@
    - [6. 스케줄링 및 예약 실행 (Schedules)](#6-스케줄링-및-예약-실행-schedules)
    - [7. 웹서핑 중 어디서나 호출하는 빠른 팔레트 (`Alt+Shift+F`)](#7-웹서핑-중-어디서나-호출하는-빠른-팔레트-altshiftf)
    - [8. AI 응답 로컬 수집 및 전송 결과 비교 뷰](#8-ai-응답-로컬-수집-및-전송-결과-비교-뷰)
-   - [9. 프롬프트 실험 매트릭스 (Experiment Matrix)](#9-프롬프트-실험-매트릭스-experiment-matrix)
+   - [9. 프롬프트 실험 매트릭스 (Experiment Matrix)](#9-프롬프트-비교-experiment-matrix)
    - [10. 템플릿 팩 & 서비스 그룹 관리](#10-템플릿-팩--서비스-그룹-관리)
    - [11. 커스텀 AI 사이트 추가 & 셀렉터 관리](#11-커스텀-ai-사이트-추가--셀렉터-관리)
    - [12. 데이터 백업 / 복원 (JSON v9) & 초기화](#12-데이터-백업--복원-json-v9--초기화)
@@ -91,8 +91,8 @@ npm run build
 1. **AI 서비스 로그인**: 전송하고자 하는 대상 AI 서비스(ChatGPT, Claude 등)에 브라우저로 미리 로그인해 둡니다.
 2. **팝업 열기**: Chrome 툴바의 **AI Prompt Broadcaster 아이콘**을 클릭하거나 단축키 <kbd>Alt</kbd> + <kbd>Shift</kbd> + <kbd>P</kbd>를 누릅니다.
 3. **프롬프트 입력**: 상단 텍스트 영역에 전달할 질문이나 프롬프트를 작성합니다.
-4. **대상 서비스 선택**: 하단의 서비스 카드(ChatGPT, Claude, Gemini 등)를 클릭하여 활성화합니다.
-5. **동시 전송**: <kbd>Ctrl</kbd> / <kbd>Cmd</kbd> + <kbd>Enter</kbd>를 누르거나 **전송(Send)** 버튼을 클릭합니다.
+4. **보낼 AI 선택**: 하단의 서비스 카드(ChatGPT, Claude, Gemini 등)를 클릭해 선택합니다.
+5. **동시 전송**: <kbd>Ctrl</kbd> / <kbd>Cmd</kbd> + <kbd>Enter</kbd>를 누르거나, 화면 하단에 항상 고정된 **'N개 AI에 보내기'** 버튼을 클릭합니다.
 6. **자동 전송 완료**: 각 AI 탭이 순차적으로 포커스되며 프롬프트가 자동으로 입력 및 발송됩니다!
 
 ---
@@ -134,8 +134,8 @@ npm run build
 ### 3. 서비스별 프롬프트 오버라이드 (Custom Prompt Override)
 여러 AI 모델의 특성에 맞게 서비스마다 조금씩 다른 프롬프트를 전달할 수 있습니다.
 
-- 작성 화면에서 서비스 카드의 **▸ (상세 옵션)** 아이콘을 클릭합니다.
-- **Custom prompt for this service (이 서비스 전용 프롬프트)** 토글을 켭니다.
+- 작성 화면에서 서비스 카드 오른쪽의 **✎ 아이콘**을 클릭합니다.
+- **'이 AI에만 다른 프롬프트 보내기'** 입력칸이 펼쳐집니다.
 - 해당 서비스 전용 프롬프트를 작성합니다. (비워둘 경우 상단 메인 프롬프트가 전달됩니다.)
 - *예시*: Claude에는 코딩 전용 상세 요구사항을 전달하고, ChatGPT에는 요약용 프롬프트를 동시에 전달할 수 있습니다.
 
@@ -196,13 +196,13 @@ flowchart LR
 각 AI가 내놓은 답변을 한 곳에서 비교하고 기록을 보관할 수 있습니다.
 
 - **AI 응답 자동 수집 (Response Capture)**: 전송이 완료된 후 각 AI 웹페이지에 렌더링된 최종 응답 텍스트를 로컬 히스토리에 자동으로 캡처하여 저장합니다.
-- **결과 비교 뷰 (Comparison View)**: 옵션 페이지의 히스토리 상세 모달에서 서비스별 전송 상태(✅ 성공, ❌ 실패, ⏳ 진행 중)와 함께 저장된 AI 답변을 나란히 비교할 수 있습니다.
+- **결과 비교 뷰 (Comparison View)**: 관리 페이지의 전송 기록 상세 창에서 서비스별 전송 상태(✅ 성공, ❌ 실패, ⏳ 진행 중)와 함께 저장된 AI 답변을 나란히 비교할 수 있습니다.
 - **부분 재전송 (History Resend Selection)**: 과거 전송 기록 중 특정 AI 서비스만 골라서 다시 전송할 수 있습니다.
-- **구조화된 결과 코드**: 단순 성공/실패를 넘어 `submitted`, `selector_timeout`, `auth_required`, `submit_failed` 등 상세 원인을 제공합니다.
+- **구조화된 결과 코드**: 단순 성공/실패를 넘어 `submitted`, `selector_timeout`, `auth_required`, `submit_failed` 등 상세 원인을 제공하며, 실패한 서비스 카드에는 사유와 함께 **다시 보내기 / 새 탭으로 다시 보내기 / 사이트 열기** 버튼이 표시됩니다.
 
 ---
 
-### 9. 프롬프트 실험 매트릭스 (Experiment Matrix)
+### 9. 프롬프트 비교 (Experiment Matrix)
 프롬프트 엔지니어링을 위해 다양한 프롬프트 변형과 변수 조합을 체계적으로 A/B 테스트할 수 있습니다.
 
 - **Variants × Variable Sets**: 여러 개의 프롬프트 후보군(Variants)과 테스트 데이터셋(Variable Sets)을 정의합니다.
@@ -255,7 +255,7 @@ flowchart LR
 |---|---|
 | <kbd>Ctrl</kbd> / <kbd>Cmd</kbd> + <kbd>Enter</kbd> | **프롬프트 방송 전송 (Send)** |
 | <kbd>Ctrl</kbd> / <kbd>Cmd</kbd> + <kbd>Shift</kbd> + <kbd>Enter</kbd> | **진행 중인 전송 취소 (Cancel)** |
-| <kbd>Ctrl</kbd> / <kbd>Cmd</kbd> + <kbd>1</kbd> ~ <kbd>4</kbd> | **탭 전환** (1: 작성, 2: 히스토리, 3: 즐겨찾기, 4: 설정) |
+| <kbd>Ctrl</kbd> / <kbd>Cmd</kbd> + <kbd>1</kbd> ~ <kbd>4</kbd> | **탭 전환** (1: 작성, 2: 기록, 3: 즐겨찾기, 4: 설정) |
 | <kbd>Ctrl</kbd> / <kbd>Cmd</kbd> + <kbd>A</kbd> | **전체 서비스 선택 / 해제** (입력창 외부 포커스 시) |
 | <kbd>Esc</kbd> | **열려 있는 모달, 메뉴, 오버레이 닫기** |
 

@@ -184,6 +184,9 @@ When `chrome.action.openPopup()` fails because Chrome has no active browser wind
 - Popup composer restore is `popupPromptIntent -> composeDraftPrompt -> lastSentPrompt`, and popup handoff is consumed after one use.
 - Quick palette uses `Alt+Shift+F`, matches popup favorite search across title/text/folder/tags/`#tag`, and falls back to popup handoff when additional inputs are required.
 - Options `Services` supports accessible `Move up` / `Move down` ordering controls, persisted through `appSettings.siteOrder`.
+- Popup layout: the compose panel scrolls inside `.compose-body` while `.compose-actions` (save favorite / stop / send) stays pinned at the bottom; the send button label shows the selected service count (`popup_send_count`, updated in `syncToggleAllLabel`). The settings tab is ordered Sending -> AI services -> Data -> manager-page link, and the service editor's advanced fields live in a collapsed `<details class="advanced-section">`.
+- Failed site cards render a `.site-recovery` row (result-code reason from `resultCodeLabels` plus localized retry / new-tab retry / open-site buttons) built by `card-state.ts` (`getRecoveryRow`) and `send-execution.ts`. Do not hardcode English labels there; add `_locales` keys instead.
+- UI wording convention (ko): history -> "기록", experiments -> "프롬프트 비교", template packs -> "즐겨찾기 팩", selector -> "입력창 (CSS 선택자)", injection -> "자동 입력". Keep `_locales/ko` and `_locales/en` key sets identical; a message may only use placeholders it declares.
 - Options `Dashboard` now renders four beginner-facing cards, recent activity, next actions, and a collapsed advanced stats area for usage share, recent daily counts, and top failure reasons.
 
 ### Selector checker

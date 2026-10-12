@@ -88,7 +88,32 @@ export function createSitePanelRenderer(
           checkbox.checked ? t.ariaSelected : t.ariaNotSelected
         }`,
       );
-      card.appendChild(mainRow);
+
+      const overrideLabel =
+        msg("popup_override_prompt_label") || "Custom prompt for this service";
+      const overrideActiveLabel = msg("popup_override_active") || "Custom";
+      const hasOverride = Boolean(state.sitePromptOverrides?.[site.id]?.trim());
+
+      const overrideToggle = document.createElement("button");
+      overrideToggle.className = `site-override-toggle${
+        hasOverride ? " active" : ""
+      }`;
+      overrideToggle.type = "button";
+      overrideToggle.dataset.siteOverrideToggle = site.id;
+      overrideToggle.textContent = "✎";
+      overrideToggle.setAttribute("aria-expanded", String(hasOverride));
+      const syncOverrideToggle = (active: boolean): void => {
+        overrideToggle.classList.toggle("active", active);
+        const label = active ? overrideActiveLabel : overrideLabel;
+        overrideToggle.title = label;
+        overrideToggle.setAttribute("aria-label", label);
+      };
+      syncOverrideToggle(hasOverride);
+
+      const cardHead = document.createElement("div");
+      cardHead.className = "site-card-head";
+      cardHead.append(mainRow, overrideToggle);
+      card.appendChild(cardHead);
 
       const openTabs = deps.getOpenSiteTabs(site.id);
       const selectedTarget = state.siteTargetSelections?.[site.id] ?? "default";
@@ -187,26 +212,13 @@ export function createSitePanelRenderer(
         card.appendChild(tabsWrap);
       }
 
-      const overrideToggleRow = document.createElement("div");
-      overrideToggleRow.className = "site-override-toggle-row";
-
-      const overrideToggle = document.createElement("button");
-      const hasOverride = Boolean(state.sitePromptOverrides?.[site.id]?.trim());
-      overrideToggle.className = `ghost-button small-button site-override-toggle${
-        hasOverride ? " active" : ""
-      }`;
-      overrideToggle.type = "button";
-      overrideToggle.dataset.siteOverrideToggle = site.id;
-      overrideToggle.title =
-        msg("popup_override_prompt_label") ||
-        "Custom prompt for this service";
-      overrideToggle.textContent = hasOverride
-        ? `✎ ${msg("popup_override_active") || "Custom"}`
-        : "✎";
-
-      const overrideWrap = document.createElement("div");
+      const overrideWrap = document.createElement("label");
       overrideWrap.className = "site-override-wrap";
       overrideWrap.hidden = !hasOverride;
+
+      const overrideCaption = document.createElement("span");
+      overrideCaption.className = "site-override-label";
+      overrideCaption.textContent = overrideLabel;
 
       const overrideTextarea = document.createElement("textarea");
       overrideTextarea.className = "site-override-textarea";
@@ -219,24 +231,20 @@ export function createSitePanelRenderer(
 
       overrideTextarea.addEventListener("input", () => {
         state.sitePromptOverrides[site.id] = overrideTextarea.value;
-        const nowActive = Boolean(overrideTextarea.value.trim());
-        overrideToggle.classList.toggle("active", nowActive);
-        overrideToggle.textContent = nowActive
-          ? `✎ ${msg("popup_override_active") || "Custom"}`
-          : "✎";
+        syncOverrideToggle(Boolean(overrideTextarea.value.trim()));
         renderTemplateSummary();
       });
 
       overrideToggle.addEventListener("click", () => {
         overrideWrap.hidden = !overrideWrap.hidden;
+        overrideToggle.setAttribute("aria-expanded", String(!overrideWrap.hidden));
         if (!overrideWrap.hidden) {
           overrideTextarea.focus();
         }
       });
 
-      overrideWrap.appendChild(overrideTextarea);
-      overrideToggleRow.append(overrideToggle);
-      card.append(overrideToggleRow, overrideWrap);
+      overrideWrap.append(overrideCaption, overrideTextarea);
+      card.appendChild(overrideWrap);
 
       sitesContainer.appendChild(card);
     });

@@ -358,6 +358,9 @@ var t = {
     healthWarning: msg("options_services_health_warning") || "Selector warning",
     healthHealthy: msg("options_services_health_healthy") || "Healthy",
     healthNoRecentRun: msg("options_services_health_no_recent_run") || "No recent run",
+    healthRecentFailure: msg("options_services_health_recent_failure") || "Recent failure",
+    healthVerified: msg("options_services_health_verified") || "Verified",
+    healthStrategy: msg("options_services_health_strategy") || "Input method",
     healthLogin: msg("options_services_health_login") || "Login",
     healthRetry: msg("options_services_health_retry") || "Retry failed",
     healthSelectorCheck: msg("options_services_health_selector_check") || "Selector check",
@@ -486,6 +489,7 @@ var t = {
     templatePackImport: msg("options_template_pack_import") || "Import pack JSON",
     templatePackEmpty: msg("options_template_pack_empty") || "No template packs yet.",
     templatePackDownload: msg("options_template_pack_download") || "Download",
+    templatePackCount: (count) => msg("options_template_pack_count", [String(count)]) || `${count} templates`,
     templatePackDefaultsIncluded: msg("options_template_pack_defaults_included") || "included",
     templatePackDefaultsRemoved: msg("options_template_pack_defaults_removed") || "removed",
     templatePackExported: msg("options_template_pack_exported") || "Template pack exported.",
@@ -3583,14 +3587,14 @@ function buildImportSummaryText(summary, { short = false } = {}) {
   const stateDroppedCount = summary?.builtInSiteStates?.droppedIds?.length ?? 0;
   if (isKorean) {
     const parts2 = [
-      `가져오기 완료: 커스텀 서비스 ${acceptedCount}개 적용`,
-      rejectedCount > 0 ? `건너뜀 ${rejectedCount}개` : "",
-      rewrittenCount > 0 ? `ID 재작성 ${rewrittenCount}개` : "",
+      `가져오기 완료: 직접 추가한 서비스 ${acceptedCount}개 적용`,
+      rejectedCount > 0 ? `제외 ${rejectedCount}개` : "",
+      rewrittenCount > 0 ? `ID 변경 ${rewrittenCount}개` : "",
       deniedCount > 0 ? `권한 거부 ${deniedCount}개` : ""
     ].filter(Boolean);
     if (!short && overrideAdjustedCount + overrideDroppedCount + stateDroppedCount > 0) {
       parts2.push(
-        `기본 서비스 보정 ${overrideAdjustedCount + overrideDroppedCount + stateDroppedCount}개`
+        `기본 서비스 조정 ${overrideAdjustedCount + overrideDroppedCount + stateDroppedCount}개`
       );
     }
     return parts2.join(", ");
@@ -5080,7 +5084,10 @@ function getHealthStatus(snapshot) {
     return { label: t.services.healthWarning, tone: "danger" };
   }
   if (snapshot?.lastFailureAt && (!snapshot?.lastSuccessAt || Date.parse(snapshot.lastFailureAt) > Date.parse(snapshot.lastSuccessAt))) {
-    return { label: snapshot.lastFailureCode || "Recent failure", tone: "warning" };
+    return {
+      label: t.settings.resultCodeLabels[snapshot.lastFailureCode] || t.services.healthRecentFailure,
+      tone: "warning"
+    };
   }
   if (snapshot?.lastSuccessAt) {
     return { label: t.services.healthHealthy, tone: "success" };
@@ -5104,9 +5111,9 @@ function renderServiceHealthCenter() {
         <div>
           <strong>${escapeHTML(snapshot.serviceName)}</strong>
           <div class="helper">
-            ${escapeHTML(status.label)}
-            ${snapshot.preferredStrategy ? ` · strategy: ${escapeHTML(snapshot.preferredStrategy)}` : ""}
-            ${verified ? ` · verified: ${escapeHTML(formatDateTime(verified))}` : ""}
+            <span class="health-status ${status.tone}">${escapeHTML(status.label)}</span>
+            ${snapshot.preferredStrategy ? ` · ${escapeHTML(t.services.healthStrategy)}: ${escapeHTML(snapshot.preferredStrategy)}` : ""}
+            ${verified ? ` · ${escapeHTML(t.services.healthVerified)}: ${escapeHTML(formatShortDate(verified))}` : ""}
           </div>
           ${selector ? `<code class="inline-code">${escapeHTML(selector)}</code>` : ""}
         </div>
@@ -5165,17 +5172,17 @@ function renderServicesSection() {
     const lastUsed = requestedEntries[0]?.createdAt ? formatDateTime(requestedEntries[0].createdAt) : t.services.none;
     return `
       <article class="panel service-card">
-        <div class="section-head">
-          <h2>${escapeHTML(site.name)}</h2>
-          <p>${escapeHTML(site.url)}</p>
+        <div class="service-card-head">
+          <span class="swatch" style="background:${escapeHTML(site.color || CHART_COLORS[index % CHART_COLORS.length])}"></span>
+          <div class="section-head">
+            <h2>${escapeHTML(site.name)}</h2>
+            <p>${escapeHTML(site.url)}</p>
+          </div>
         </div>
         <div class="metric-grid">
-          <div>${escapeHTML(t.services.inputType)}</div><div>${escapeHTML(site.inputType)}</div>
-          <div>${escapeHTML(t.services.waitTime)}</div><div>${escapeHTML(`${site.waitMs}ms`)}</div>
-          <div>${escapeHTML(t.services.requestCount)}</div><div>${requestCount}</div>
-          <div>${escapeHTML(t.services.successRate)}</div><div>${successRate}%</div>
-          <div>${escapeHTML(t.services.lastUsed)}</div><div>${escapeHTML(lastUsed)}</div>
-          <div>${escapeHTML(t.services.defaultColor)}</div><div><span class="swatch" style="background:${escapeHTML(site.color || CHART_COLORS[index % CHART_COLORS.length])}"></span></div>
+          <div class="metric"><span class="metric-label">${escapeHTML(t.services.requestCount)}</span><span class="metric-value">${requestCount}</span></div>
+          <div class="metric"><span class="metric-label">${escapeHTML(t.services.successRate)}</span><span class="metric-value">${requestCount > 0 ? `${successRate}%` : "–"}</span></div>
+          <div class="metric"><span class="metric-label">${escapeHTML(t.services.lastUsed)}</span><span class="metric-value">${escapeHTML(lastUsed)}</span></div>
         </div>
         <div class="settings-actions">
           <button class="btn ghost" type="button" data-move-site="${escapeHTML(site.id)}" data-direction="up" ${index === 0 ? "disabled" : ""}>${escapeHTML(t.services.moveUp)}</button>
@@ -5883,7 +5890,7 @@ function renderTemplatePacksSection() {
       <article class="service-health-row">
         <div>
           <strong>${escapeHTML(pack.title)}</strong>
-          <div class="helper">${pack.templates.length} templates · defaults ${pack.includeSensitiveDefaults ? escapeHTML(t.settings.templatePackDefaultsIncluded) : escapeHTML(t.settings.templatePackDefaultsRemoved)}</div>
+          <div class="helper">${escapeHTML(t.settings.templatePackCount(pack.templates.length))} · ${pack.includeSensitiveDefaults ? escapeHTML(t.settings.templatePackDefaultsIncluded) : escapeHTML(t.settings.templatePackDefaultsRemoved)}</div>
         </div>
         <div class="settings-actions">
           <button class="btn ghost" type="button" data-pack-download="${escapeHTML(pack.id)}">${escapeHTML(t.settings.templatePackDownload)}</button>

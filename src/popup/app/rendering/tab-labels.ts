@@ -73,7 +73,7 @@ export function createTabLabelsRenderer(deps: PopupRenderingDeps) {
     clearPromptBtn.textContent = t.clearPrompt;
     sitesLabel.textContent = t.sitesLabel;
     saveFavoriteBtn.textContent = t.saveFavorite;
-    sendBtn.textContent = t.send;
+    deps.syncToggleAllLabel();
     historySearchInput.placeholder = t.historySearch;
     favoritesSearchInput.placeholder = t.favoritesSearch;
     settingsTitle.textContent = t.settingsTitle;

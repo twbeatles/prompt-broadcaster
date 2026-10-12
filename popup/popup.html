@@ -13,7 +13,7 @@
         <span class="brand-mark">APB</span>
         <div>
           <h1 id="ext-title" data-i18n="ext_name">AI Prompt Broadcaster</h1>
-          <p id="ext-desc" data-i18n="ext_description">One prompt, many AI tabs.</p>
+          <p id="ext-desc" data-i18n="popup_tagline">One prompt, every AI at once</p>
         </div>
       </div>
       <nav class="tab-bar" role="tablist" aria-label="Popup sections" data-i18n-aria-label="popup_sections_aria">
@@ -26,11 +26,14 @@
 
     <main class="panel-stack">
       <section id="panel-compose" class="tab-panel active" data-panel="compose" role="tabpanel" aria-labelledby="tab-compose" tabindex="0">
-        <div class="prompt-toolbar">
-          <span id="prompt-counter" class="helper-text">0 chars</span>
-          <button id="clear-prompt-btn" class="ghost-button small-button" type="button"></button>
+        <div class="compose-body">
+        <div class="prompt-field">
+          <textarea id="prompt-input" data-i18n-placeholder="popup_placeholder"></textarea>
+          <div class="prompt-toolbar">
+            <span id="prompt-counter" class="helper-text">0 chars</span>
+            <button id="clear-prompt-btn" class="text-button" type="button"></button>
+          </div>
         </div>
-        <textarea id="prompt-input" data-i18n-placeholder="popup_placeholder"></textarea>
         <div id="template-summary" class="template-summary" hidden>
           <div class="template-summary-header">
             <span id="template-summary-label"></span>
@@ -41,9 +44,10 @@
         <div class="sites-section">
           <div class="section-row">
             <span id="sites-label" data-i18n="popup_sites_label"></span>
-            <button id="toggle-all" class="ghost-button" type="button" data-i18n="popup_select_all"></button>
+            <button id="toggle-all" class="text-button" type="button" data-i18n="popup_select_all"></button>
           </div>
           <div id="sites-container" class="sites-grid" role="listbox" aria-multiselectable="true"></div>
+        </div>
         </div>
 
         <div class="compose-actions">
@@ -71,42 +75,31 @@
 
       <section id="panel-settings" class="tab-panel" data-panel="settings" role="tabpanel" aria-labelledby="tab-settings" tabindex="0">
         <div class="settings-group">
-          <h2 id="settings-title" data-i18n="popup_settings_title"></h2>
-          <p id="settings-desc" class="helper-text" data-i18n="popup_settings_description"></p>
-        </div>
-
-        <div class="settings-group">
-          <label class="checkbox-row settings-toggle-row" for="reuse-existing-tabs-toggle">
-            <input id="reuse-existing-tabs-toggle" type="checkbox" />
-            <span id="reuse-existing-tabs-label"></span>
-          </label>
-          <p id="reuse-existing-tabs-desc" class="helper-text"></p>
-        </div>
-
-        <div class="settings-group">
-          <label class="checkbox-row settings-toggle-row" for="auto-capture-responses-toggle">
-            <input id="auto-capture-responses-toggle" type="checkbox" />
-            <span id="auto-capture-responses-label"></span>
-          </label>
-          <p id="auto-capture-responses-desc" class="helper-text"></p>
-        </div>
-
-        <div class="settings-group">
-          <label class="field-stack" for="wait-multiplier-range">
-            <span id="wait-multiplier-label"></span>
-            <div class="range-row">
-              <input id="wait-multiplier-range" type="range" min="0.5" max="3" step="0.1" value="1" />
-              <span id="wait-multiplier-value" class="helper-text">1.0x</span>
-            </div>
-          </label>
-        </div>
-
-        <div class="settings-actions">
-          <button id="open-options-btn" class="ghost-button" type="button" data-i18n="popup_open_options"></button>
-          <button id="clear-history-btn" class="ghost-button danger-button" type="button" data-i18n="settings_reset"></button>
-          <button id="export-json-btn" class="ghost-button" type="button" data-i18n="settings_export"></button>
-          <button id="import-json-btn" class="ghost-button" type="button" data-i18n="settings_import"></button>
-          <input id="import-json-input" type="file" accept="application/json" hidden />
+          <h2 data-i18n="popup_settings_send_title"></h2>
+          <div class="settings-item">
+            <label class="checkbox-row settings-toggle-row" for="reuse-existing-tabs-toggle">
+              <input id="reuse-existing-tabs-toggle" type="checkbox" />
+              <span id="reuse-existing-tabs-label"></span>
+            </label>
+            <p id="reuse-existing-tabs-desc" class="helper-text settings-item-desc"></p>
+          </div>
+          <div class="settings-item">
+            <label class="checkbox-row settings-toggle-row" for="auto-capture-responses-toggle">
+              <input id="auto-capture-responses-toggle" type="checkbox" />
+              <span id="auto-capture-responses-label"></span>
+            </label>
+            <p id="auto-capture-responses-desc" class="helper-text settings-item-desc"></p>
+          </div>
+          <div class="settings-item">
+            <label class="field-stack" for="wait-multiplier-range">
+              <span id="wait-multiplier-label"></span>
+              <div class="range-row">
+                <input id="wait-multiplier-range" type="range" min="0.5" max="3" step="0.1" value="1" />
+                <span id="wait-multiplier-value" class="helper-text">1.0x</span>
+              </div>
+            </label>
+            <p class="helper-text" data-i18n="settings_wait_multiplier_desc"></p>
+          </div>
         </div>
 
         <div class="settings-group service-settings-group">
@@ -155,15 +148,15 @@
               <div id="service-input-type-options" class="inline-radio-group">
                 <label class="inline-radio-option">
                   <input type="radio" name="service-input-type" value="textarea" checked />
-                  <span>textarea</span>
+                  <span data-i18n="popup_service_input_type_textarea">textarea</span>
                 </label>
                 <label class="inline-radio-option">
                   <input type="radio" name="service-input-type" value="contenteditable" />
-                  <span>contenteditable</span>
+                  <span data-i18n="popup_service_input_type_contenteditable">contenteditable</span>
                 </label>
                 <label class="inline-radio-option">
                   <input type="radio" name="service-input-type" value="input" />
-                  <span>input</span>
+                  <span data-i18n="popup_service_input_type_input">input</span>
                 </label>
               </div>
             </div>
@@ -176,16 +169,14 @@
             <label class="field-stack" for="service-submit-method-select">
               <span id="service-submit-method-label"></span>
               <select id="service-submit-method-select" class="search-input">
-                <option value="click">click</option>
-                <option value="enter">enter</option>
-                <option value="shift+enter">shift+enter</option>
+                <option value="click" data-i18n="popup_service_submit_click">click</option>
+                <option value="enter" data-i18n="popup_service_submit_enter">enter</option>
+                <option value="shift+enter" data-i18n="popup_service_submit_shift_enter">shift+enter</option>
               </select>
             </label>
 
-            <div class="modal-section">
-              <div class="section-row section-row-start">
-                <strong id="service-advanced-title"></strong>
-              </div>
+            <details class="modal-section advanced-section">
+              <summary id="service-advanced-title"></summary>
 
               <label class="field-stack" for="service-fallback-selectors-input">
                 <span id="service-fallback-selectors-label"></span>
@@ -241,8 +232,7 @@
                 <span id="service-verified-version-label"></span>
                 <input id="service-verified-version-input" class="search-input" type="text" />
               </label>
-
-            </div>
+            </details>
 
             <div class="field-stack">
               <span id="service-wait-label"></span>
@@ -277,6 +267,24 @@
             <button id="service-editor-cancel" class="ghost-button" type="button"></button>
             <button id="service-editor-save" class="primary-button" type="button"></button>
           </div>
+        </div>
+
+        <div class="settings-group">
+          <h2 id="settings-title" data-i18n="popup_settings_title"></h2>
+          <p id="settings-desc" class="helper-text" data-i18n="popup_settings_description"></p>
+          <div class="settings-actions settings-actions-split">
+            <button id="export-json-btn" class="ghost-button" type="button" data-i18n="settings_export"></button>
+            <button id="import-json-btn" class="ghost-button" type="button" data-i18n="settings_import"></button>
+            <input id="import-json-input" type="file" accept="application/json" hidden />
+          </div>
+          <div class="settings-actions">
+            <button id="clear-history-btn" class="ghost-button danger-button" type="button" data-i18n="settings_reset"></button>
+          </div>
+        </div>
+
+        <div class="settings-group settings-group-link">
+          <p class="helper-text" data-i18n="popup_open_options_desc"></p>
+          <button id="open-options-btn" class="ghost-button" type="button" data-i18n="popup_open_options"></button>
         </div>
       </section>
     </main>

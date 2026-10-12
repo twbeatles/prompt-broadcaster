@@ -2,7 +2,7 @@
 var isKorean = chrome.i18n.getUILanguage().toLowerCase().startsWith("ko");
 var COPY = isKorean ? {
   heroTitle: "AI Prompt Broadcaster에 오신 것을 환영합니다",
-  heroDesc: "프롬프트 하나로 ChatGPT, Gemini, Claude, Grok에 동시에 전송합니다.",
+  heroDesc: "프롬프트 하나를 ChatGPT, Gemini, Claude, Grok, Perplexity에 한 번에 보냅니다.",
   permissionTitle: "권한 안내",
   permissionDesc: "확장 프로그램은 자동 전송을 위해 아래 권한만 사용합니다.",
   privacyNote: "개인 데이터는 확장 프로그램 서버로 전송되지 않으며, 브라우저 밖으로 나가지 않습니다.",
@@ -15,17 +15,17 @@ var COPY = isKorean ? {
   permissions: [
     ["tabs", "각 AI 서비스를 새 탭으로 열기 위해 필요합니다."],
     ["scripting", "열린 탭에 프롬프트를 자동 입력하기 위해 필요합니다."],
-    ["storage", "히스토리와 즐겨찾기를 로컬에 저장하기 위해 필요합니다."],
+    ["storage", "전송 기록과 즐겨찾기를 이 브라우저에 저장하기 위해 필요합니다."],
     ["host_permissions", "지원하는 AI 사이트에서만 동작하도록 제한합니다."]
   ],
   usage: [
     ["1", "확장 아이콘을 클릭해 팝업을 엽니다."],
-    ["2", "프롬프트를 입력하고 전송할 AI 서비스를 선택합니다."],
-    ["3", "Send를 누르면 각 탭이 열리고 자동으로 전송됩니다."]
+    ["2", "프롬프트를 입력하고 보낼 AI를 선택합니다."],
+    ["3", "보내기를 누르면 각 AI 탭이 열리고 자동으로 전송됩니다."]
   ]
 } : {
   heroTitle: "Welcome to AI Prompt Broadcaster",
-  heroDesc: "Send one prompt to ChatGPT, Gemini, Claude, and Grok at the same time.",
+  heroDesc: "Send one prompt to ChatGPT, Gemini, Claude, Grok, and Perplexity at the same time.",
   permissionTitle: "Permission guide",
   permissionDesc: "The extension only uses the permissions below to automate sending.",
   privacyNote: "Your data is not sent to an extension server and does not leave the browser.",
@@ -37,14 +37,14 @@ var COPY = isKorean ? {
   finish: "Done — Start using it",
   permissions: [
     ["tabs", "Needed to open each AI service in a new tab."],
-    ["scripting", "Needed to inject the prompt into the opened tab."],
+    ["scripting", "Needed to type the prompt into the opened tab."],
     ["storage", "Needed to keep history and favorites locally."],
     ["host_permissions", "Restricted so the extension only runs on supported AI sites."]
   ],
   usage: [
     ["1", "Click the extension icon to open the popup."],
     ["2", "Enter a prompt and choose the AI services."],
-    ["3", "Click Send to open each tab and inject the prompt automatically."]
+    ["3", "Click Send to open each AI tab and submit the prompt automatically."]
   ]
 };
 

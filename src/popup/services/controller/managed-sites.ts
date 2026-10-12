@@ -27,8 +27,6 @@ export function createManagedSitesController(
   function buildManagedSiteMarkup(site: RuntimeSite): string {
     const chips = [
       `<span class="managed-site-chip">${escapeHtml(site.isBuiltIn ? t.serviceBuiltInBadge : t.serviceCustomBadge)}</span>`,
-      `<span class="managed-site-chip">${escapeHtml(site.inputType)}</span>`,
-      `<span class="managed-site-chip">${escapeHtml(`${site.waitMs}ms`)}</span>`,
     ];
     const selectorWarning = state.failedSelectors.get(site.id);
     const lastVerifiedStatus = deps.getSiteLastVerifiedStatus(site);
@@ -59,7 +57,7 @@ export function createManagedSitesController(
           <div class="managed-site-title">
             <span class="site-icon" style="--site-color:${escapeAttribute(site.color)}">${escapeHtml(getSiteIcon(site))}</span>
             <div class="managed-site-name-wrap">
-              <span class="managed-site-name">${escapeHtml(site.name)}</span>
+              <span class="managed-site-name">${escapeHtml(site.name)} ${chips.join("")}</span>
               <span class="managed-site-url">${escapeHtml(site.url)}</span>
             </div>
           </div>
@@ -68,11 +66,10 @@ export function createManagedSitesController(
             <span>${escapeHtml(t.serviceFieldEnabled)}</span>
           </label>
         </div>
-        <div class="managed-site-meta">${chips.join("")}</div>
         ${selectorWarningMarkup}
         <div class="managed-site-actions">
-          <button class="ghost-button" type="button" data-action="edit-service" data-site-id="${escapeAttribute(site.id)}">${escapeHtml(t.serviceEdit)}</button>
-          ${site.deletable ? `<button class="ghost-button danger-button" type="button" data-action="delete-service" data-site-id="${escapeAttribute(site.id)}">${escapeHtml(t.serviceDelete)}</button>` : ""}
+          <button class="ghost-button small-button" type="button" data-action="edit-service" data-site-id="${escapeAttribute(site.id)}">${escapeHtml(t.serviceEdit)}</button>
+          ${site.deletable ? `<button class="ghost-button small-button danger-button" type="button" data-action="delete-service" data-site-id="${escapeAttribute(site.id)}">${escapeHtml(t.serviceDelete)}</button>` : ""}
         </div>
       </article>
     `;

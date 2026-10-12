@@ -81,6 +81,7 @@
 .nav-button[data-section="dashboard"]::before  { content: "◈"; }
 .nav-button[data-section="history"]::before    { content: "☰"; }
 .nav-button[data-section="schedules"]::before  { content: "⏲"; }
+.nav-button[data-section="experiments"]::before { content: "⇄"; }
 .nav-button[data-section="services"]::before   { content: "⊞"; }
 .nav-button[data-section="settings"]::before   { content: "⚙"; }
 
@@ -121,6 +122,13 @@
   display: grid;
   gap: 20px;
   align-content: start;
+  max-width: 1180px;
+}
+
+/* Empty status/toast slots must not push the page down. */
+.status-line:empty,
+#toast-host:empty {
+  display: none;
 }
 
 .page-section { display: none; gap: 20px; }

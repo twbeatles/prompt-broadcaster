@@ -252,6 +252,9 @@ export function createPopupServiceEditorController(
     setServiceTestResult("");
     renderServicePermissionPreview(readServiceEditorDraft());
     serviceEditor.hidden = false;
+    // The editor opens below the service list, so bring it into view.
+    serviceEditor.scrollIntoView({ block: "start", behavior: "smooth" });
+    serviceNameInput.focus({ preventScroll: true });
   }
 
   async function ensureSiteOriginPermission(
