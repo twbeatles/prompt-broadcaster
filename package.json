@@ -3,6 +3,9 @@
   "version": "1.1.2",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=26.0.0"
+  },
   "scripts": {
     "clean": "node ./scripts/build.mjs --clean",
     "typecheck": "tsc --noEmit",
