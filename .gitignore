@@ -50,3 +50,9 @@ Thumbs.db
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Local AI agent working files (machine-local, do not commit)
+.agents/
+.grok/
+.specify/
+AGENTS.md
